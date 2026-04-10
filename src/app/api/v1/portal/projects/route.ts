@@ -1,27 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mockProjects } from "@/lib/projects/mock-data";
-import { CURRENT_PORTAL_USER } from "@/lib/portal/current-user";
+import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
 
-/**
- * GET /api/v1/portal/projects
- *
- * Returns ONLY projects visible to the current portal user's organization.
- * Strict filtering: organizationId match + isVisibleToClient + visibilitySettings.showProject
- */
 export async function GET(_request: NextRequest) {
-  // In a real app, this would come from session/JWT
-  const orgId = CURRENT_PORTAL_USER.organizationId;
-  const perms = CURRENT_PORTAL_USER.permissions;
+  const user = await getCurrentPortalUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-  if (!perms.canSeeProjects) {
-    return NextResponse.json(
-      { success: false, error: "Permission denied" },
-      { status: 403 }
-    );
+  if (!user.permissions.canSeeProjects) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const visibleProjects = mockProjects
-    .filter((p) => p.organizationId === orgId)
+    .filter((p) => p.organizationId === user.organizationId)
     .filter((p) => p.isVisibleToClient)
     .filter((p) => p.visibilitySettings.showProject);
 
@@ -30,7 +22,7 @@ export async function GET(_request: NextRequest) {
     data: visibleProjects,
     meta: {
       total: visibleProjects.length,
-      organizationId: orgId,
+      organizationId: user.organizationId,
     },
   });
 }

@@ -1,71 +1,51 @@
 import { NextResponse } from "next/server";
-import type { MonitoringAlertStage } from "@prisma/client";
-import { listAlerts, stageCounts, updateAlertStage } from "@/lib/monitoring/service";
-import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
-
-const VALID_STAGES: MonitoringAlertStage[] = [
-  "TRIAGE",
-  "INVESTIGATING",
-  "WAITING_PARTS",
-  "WAITING_VENDOR",
-  "WAITING_MAINTENANCE",
-  "RESOLVED",
-  "IGNORED",
-];
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
-function forbidden() {
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-}
+import prisma from "@/lib/prisma";
 
 export async function GET(req: Request) {
-  const me = await getCurrentUser();
-  if (!me) return unauthorized();
-  if (me.role.startsWith("CLIENT_")) return forbidden();
+  const { searchParams } = new URL(req.url);
+  const days = Number(searchParams.get("days")) || 7;
+  const stage = searchParams.get("stage");
+  const sourceType = searchParams.get("sourceType");
+  const orgId = searchParams.get("organizationId");
+  const resolved = searchParams.get("resolved");
 
-  const url = new URL(req.url);
-  const stage = url.searchParams.get("stage") as MonitoringAlertStage | null;
-  const sourceId = url.searchParams.get("sourceId");
-  const organizationId = url.searchParams.get("organizationId");
-  const search = url.searchParams.get("search");
-  const includeCounts = url.searchParams.get("counts") === "true";
+  const since = new Date();
+  since.setDate(since.getDate() - days);
 
-  const [alerts, counts] = await Promise.all([
-    listAlerts({
-      stage: stage && VALID_STAGES.includes(stage) ? stage : null,
-      sourceId,
-      organizationId,
-      search,
+  const where: any = { receivedAt: { gte: since } };
+  if (stage) where.stage = stage;
+  if (sourceType) where.sourceType = sourceType;
+  if (orgId) where.organizationId = orgId;
+  if (resolved === "true") where.isResolved = true;
+  if (resolved === "false") where.isResolved = false;
+
+  const [alerts, stageStats, sourceStats] = await Promise.all([
+    prisma.monitoringAlert.findMany({
+      where,
+      orderBy: { receivedAt: "desc" },
+      take: 500,
     }),
-    includeCounts ? stageCounts() : Promise.resolve(null),
+    prisma.monitoringAlert.groupBy({
+      by: ["stage"],
+      where: { receivedAt: { gte: since } },
+      _count: true,
+    }),
+    prisma.monitoringAlert.groupBy({
+      by: ["sourceType"],
+      where: { receivedAt: { gte: since } },
+      _count: true,
+    }),
   ]);
 
-  return NextResponse.json({ alerts, counts });
-}
-
-export async function PATCH(req: Request) {
-  const me = await getCurrentUser();
-  if (!me) return unauthorized();
-  if (!hasMinimumRole(me.role, "TECHNICIAN")) return forbidden();
-
-  let body: { id?: string; stage?: string; notes?: string | null };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-  if (!body.id) {
-    return NextResponse.json({ error: "id required" }, { status: 400 });
-  }
-  if (!body.stage || !VALID_STAGES.includes(body.stage as MonitoringAlertStage)) {
-    return NextResponse.json({ error: "invalid stage" }, { status: 400 });
-  }
-  await updateAlertStage(
-    body.id,
-    body.stage as MonitoringAlertStage,
-    body.notes
-  );
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    alerts,
+    stageStats: stageStats.map((r) => ({
+      stage: r.stage,
+      count: typeof r._count === "number" ? r._count : (r._count as any)?._all ?? 0,
+    })),
+    sourceStats: sourceStats.map((r) => ({
+      sourceType: r.sourceType,
+      count: typeof r._count === "number" ? r._count : (r._count as any)?._all ?? 0,
+    })),
+  });
 }

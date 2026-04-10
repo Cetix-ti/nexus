@@ -27,20 +27,32 @@ export async function GET() {
     );
   }
 
-  const config = await getDomainConfig();
-  const fullDomain = `${config.subdomain}.${ROOT_DOMAIN}`;
+  try {
+    const config = await getDomainConfig();
+    const fullDomain = `${config.subdomain}.${ROOT_DOMAIN}`;
 
-  const [status, availability] = await Promise.all([
-    getCertificateStatus(fullDomain),
-    testCertbotAvailability(),
-  ]);
+    const [status, availability] = await Promise.all([
+      getCertificateStatus(fullDomain).catch((e) => ({
+        isInstalled: false,
+        domain: fullDomain,
+        autoRenewActive: false,
+        errorMessage: e instanceof Error ? e.message : String(e),
+      })),
+      testCertbotAvailability().catch(() => ({
+        certbotInstalled: false,
+        pluginInstalled: false,
+        error: "certbot non disponible sur ce serveur",
+      })),
+    ]);
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      certificate: status,
-      availability,
-      domain: fullDomain,
-    },
-  });
+    return NextResponse.json({
+      success: true,
+      data: { certificate: status, availability, domain: fullDomain },
+    });
+  } catch (err) {
+    return NextResponse.json({
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    }, { status: 500 });
+  }
 }

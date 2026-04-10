@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { uploadOrgLogo, deleteFile, extractKeyFromUrl } from "@/lib/storage/minio";
+import { optimizeToDataUri, optimizeImage, PRESET_LOGO } from "@/lib/images/optimize";
 
 // Logos sous ce seuil sont stockés en data URI base64 directement dans la
 // colonne `logo` (text) — évite la dépendance MinIO et les problèmes
@@ -54,10 +55,13 @@ export async function POST(
     );
   }
 
-  const buf = Buffer.from(await file.arrayBuffer());
-  if (buf.length > 5 * 1024 * 1024) {
+  const rawBuf = Buffer.from(await file.arrayBuffer());
+  if (rawBuf.length > 5 * 1024 * 1024) {
     return NextResponse.json({ error: "Fichier > 5 Mo" }, { status: 413 });
   }
+
+  // SVGs are kept as-is (they're already resolution-independent)
+  const isSvg = mime === "image/svg+xml";
 
   // Delete the previous MinIO-hosted logo if any (no-op for inline data URIs).
   if (org.logo) {
@@ -72,23 +76,31 @@ export async function POST(
   }
 
   let logoUrl: string;
-  if (buf.length <= INLINE_LOGO_MAX_BYTES) {
-    // Stockage inline base64 — toujours visible depuis n'importe quel navigateur.
-    logoUrl = `data:${mime};base64,${buf.toString("base64")}`;
+
+  if (isSvg) {
+    // SVG: store inline as-is
+    logoUrl = `data:${mime};base64,${rawBuf.toString("base64")}`;
   } else {
-    // Gros fichier : on tente MinIO. Si ça échoue on renvoie une erreur claire.
-    try {
-      const upload = await uploadOrgLogo(id, file.name, buf, mime);
-      logoUrl = upload.url;
-    } catch (e) {
-      return NextResponse.json(
-        {
-          error:
-            "Stockage objet indisponible et fichier trop volumineux pour stockage inline (>500 Ko). Compressez votre logo.",
-          detail: e instanceof Error ? e.message : String(e),
-        },
-        { status: 503 }
-      );
+    // Raster image: optimize (resize to 256px max, convert to WebP)
+    const optimized = await optimizeToDataUri(rawBuf, PRESET_LOGO);
+
+    if (optimized.optimizedSize <= INLINE_LOGO_MAX_BYTES) {
+      logoUrl = optimized.dataUri;
+    } else {
+      // Still too large after optimization — try MinIO
+      try {
+        const optBuf = await optimizeImage(rawBuf, PRESET_LOGO);
+        const upload = await uploadOrgLogo(id, "logo.webp", optBuf.buffer, optBuf.mimeType);
+        logoUrl = upload.url;
+      } catch (e) {
+        return NextResponse.json(
+          {
+            error: "Stockage objet indisponible. Essayez un fichier plus petit.",
+            detail: e instanceof Error ? e.message : String(e),
+          },
+          { status: 503 },
+        );
+      }
     }
   }
 

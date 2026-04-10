@@ -13,6 +13,11 @@ import {
   Clock,
   Search,
   Settings,
+  ArrowLeft,
+  ChevronRight,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +59,7 @@ interface OrgStatusCount {
   organizationName: string | null;
   status: string;
   _count: number;
+  logo: string | null;
 }
 
 interface DashboardData {
@@ -61,6 +67,32 @@ interface DashboardData {
   stats: StatusCount[];
   orgStats: OrgStatusCount[];
   since: string;
+}
+
+interface ExpiryInfo {
+  expiryDate: string | null;
+  daysLeft: number | null;
+  isExpired: boolean;
+  isExpiringSoon: boolean;
+}
+
+interface OrgSummaryItem {
+  orgId: string | null;
+  orgName: string;
+  logo: string | null;
+  SUCCESS: number;
+  WARNING: number;
+  FAILED: number;
+  total: number;
+  lastAlert: string;
+}
+
+// Current view: overview or drilled into a specific org/status
+interface ViewState {
+  type: "overview" | "org" | "status";
+  orgId?: string | null;
+  orgName?: string;
+  status?: "SUCCESS" | "WARNING" | "FAILED";
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +157,20 @@ export default function BackupsPage() {
   const [days, setDays] = useState(7);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [orgFilter, setOrgFilter] = useState("all");
+  const [expiry, setExpiry] = useState<ExpiryInfo | null>(null);
+  const [view, setView] = useState<ViewState>({ type: "overview" });
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(0);
+
+  useEffect(() => {
+    fetch("/api/v1/settings/veeam")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.expiry) setExpiry(d.expiry);
+      })
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -145,7 +191,9 @@ export default function BackupsPage() {
     try {
       const res = await fetch("/api/v1/veeam/sync", { method: "POST" });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        const err = await res
+          .json()
+          .catch(() => ({ error: `HTTP ${res.status}` }));
         throw new Error(err.error || `Erreur ${res.status}`);
       }
       const result = await res.json();
@@ -160,6 +208,31 @@ export default function BackupsPage() {
     }
   }
 
+  // Navigate into a specific org or status
+  function drillOrg(orgId: string | null, orgName: string) {
+    setView({ type: "org", orgId, orgName });
+    setSearch("");
+    setStatusFilter("all");
+    setOrgFilter("all");
+    setCurrentPage(0);
+  }
+
+  function drillStatus(status: "SUCCESS" | "WARNING" | "FAILED") {
+    setView({ type: "status", status });
+    setSearch("");
+    setStatusFilter(status);
+    setOrgFilter("all");
+    setCurrentPage(0);
+  }
+
+  function goBack() {
+    setView({ type: "overview" });
+    setSearch("");
+    setStatusFilter("all");
+    setOrgFilter("all");
+    setCurrentPage(0);
+  }
+
   // ---- Derived data ----
   const statCounts = useMemo(() => {
     if (!data) return { SUCCESS: 0, WARNING: 0, FAILED: 0, total: 0 };
@@ -170,28 +243,27 @@ export default function BackupsPage() {
     return { ...m, total: m.SUCCESS + m.WARNING + m.FAILED };
   }, [data]);
 
-  // Build per-org summary
-  const orgSummary = useMemo(() => {
+  const orgSummary = useMemo((): OrgSummaryItem[] => {
     if (!data) return [];
-    const map = new Map<
-      string,
-      { orgId: string | null; orgName: string; SUCCESS: number; WARNING: number; FAILED: number; lastAlert: string }
-    >();
+    const map = new Map<string, OrgSummaryItem>();
     for (const row of data.orgStats) {
       const key = row.organizationId ?? "_unmatched";
       if (!map.has(key)) {
         map.set(key, {
           orgId: row.organizationId,
           orgName: row.organizationName ?? "Non associé",
+          logo: row.logo ?? null,
           SUCCESS: 0,
           WARNING: 0,
           FAILED: 0,
+          total: 0,
           lastAlert: "",
         });
       }
-      map.get(key)![row.status as "SUCCESS" | "WARNING" | "FAILED"] += row._count;
+      const entry = map.get(key)!;
+      entry[row.status as "SUCCESS" | "WARNING" | "FAILED"] += row._count;
+      entry.total += row._count;
     }
-    // Find last alert date per org
     for (const alert of data.alerts) {
       const key = alert.organizationId ?? "_unmatched";
       const entry = map.get(key);
@@ -200,17 +272,44 @@ export default function BackupsPage() {
       }
     }
     return Array.from(map.values()).sort((a, b) => {
-      // Failed first, then warning, then by name
       if (a.FAILED !== b.FAILED) return b.FAILED - a.FAILED;
       if (a.WARNING !== b.WARNING) return b.WARNING - a.WARNING;
       return a.orgName.localeCompare(b.orgName, "fr");
     });
   }, [data]);
 
+  // Filtered alerts based on current view + search + status filter
+  // Unique org names for the filter dropdown
+  const orgNames = useMemo(() => {
+    if (!data) return [];
+    const names = new Set<string>();
+    for (const a of data.alerts) {
+      names.add(a.organizationName ?? "Non associé");
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b, "fr"));
+  }, [data]);
+
   const filteredAlerts = useMemo(() => {
     if (!data) return [];
     return data.alerts.filter((a) => {
+      // View filter
+      if (view.type === "org") {
+        if (view.orgId === null) {
+          if (a.organizationId !== null) return false;
+        } else if (a.organizationId !== view.orgId) return false;
+      }
+      if (view.type === "status" && a.status !== view.status) return false;
+
+      // Status dropdown filter
       if (statusFilter !== "all" && a.status !== statusFilter) return false;
+
+      // Org dropdown filter
+      if (orgFilter !== "all") {
+        const alertOrgName = a.organizationName ?? "Non associé";
+        if (alertOrgName !== orgFilter) return false;
+      }
+
+      // Search
       if (search) {
         const q = search.toLowerCase();
         const hay = [a.jobName, a.organizationName, a.senderEmail, a.subject]
@@ -221,7 +320,19 @@ export default function BackupsPage() {
       }
       return true;
     });
-  }, [data, statusFilter, search]);
+  }, [data, view, statusFilter, orgFilter, search]);
+
+  // Current org detail (when drilled in)
+  const currentOrg = useMemo(() => {
+    if (view.type !== "org") return null;
+    return (
+      orgSummary.find(
+        (o) =>
+          (view.orgId === null && o.orgId === null) ||
+          o.orgId === view.orgId,
+      ) ?? null
+    );
+  }, [view, orgSummary]);
 
   if (loading && !data) {
     return (
@@ -233,15 +344,43 @@ export default function BackupsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
+      {/* ================================================================ */}
+      {/* Header                                                           */}
+      {/* ================================================================ */}
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
-            Sauvegardes
-          </h1>
-          <p className="mt-1 text-[13px] text-slate-500">
-            État des tâches Veeam de vos clients — derniers {days} jours
-          </p>
+        <div className="flex items-center gap-3">
+          {view.type !== "overview" && (
+            <button
+              onClick={goBack}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
+                Sauvegardes
+              </h1>
+              {view.type !== "overview" && (
+                <>
+                  <ChevronRight className="h-4 w-4 text-slate-400" />
+                  <span className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
+                    {view.type === "org"
+                      ? view.orgName
+                      : STATUS_CONFIG[view.status!].label}
+                  </span>
+                </>
+              )}
+            </div>
+            <p className="mt-1 text-[13px] text-slate-500">
+              {view.type === "overview"
+                ? `État des tâches Veeam — derniers ${days} jours`
+                : view.type === "org"
+                  ? `${filteredAlerts.length} alertes pour ce client`
+                  : `${filteredAlerts.length} alertes avec ce statut`}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Select
@@ -275,7 +414,25 @@ export default function BackupsPage() {
         </div>
       </div>
 
-      {/* Sync error banner */}
+      {/* Banners */}
+      {expiry?.isExpired && (
+        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 flex items-center gap-2 text-[12px] text-red-900">
+          <XCircle className="h-4 w-4 shrink-0" />
+          <span>
+            <strong>Secret Azure expiré</strong> le {expiry.expiryDate}.
+            Renouvelez-le dans Entra ID.
+          </span>
+        </div>
+      )}
+      {expiry?.isExpiringSoon && !expiry.isExpired && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 flex items-center gap-2 text-[12px] text-amber-900">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            Le secret Azure expire le {expiry.expiryDate} ({expiry.daysLeft}{" "}
+            jours).
+          </span>
+        </div>
+      )}
       {syncError && (
         <div className="rounded-lg border border-red-200 bg-red-50/60 px-3 py-2.5 text-[12px] text-red-900 flex items-center gap-2">
           <XCircle className="h-3.5 w-3.5 shrink-0" />
@@ -283,13 +440,17 @@ export default function BackupsPage() {
         </div>
       )}
 
-      {/* Stat cards */}
+      {/* ================================================================ */}
+      {/* Stat cards — clickable to filter by status                       */}
+      {/* ================================================================ */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard
           label="Total alertes"
           value={statCounts.total}
           icon={<HardDrive className="h-4 w-4 text-slate-600" />}
           bgClass="bg-slate-50"
+          active={view.type === "overview"}
+          onClick={goBack}
         />
         {(["SUCCESS", "WARNING", "FAILED"] as const).map((s) => {
           const cfg = STATUS_CONFIG[s];
@@ -301,93 +462,175 @@ export default function BackupsPage() {
               value={statCounts[s]}
               icon={<Icon className={cn("h-4 w-4", cfg.color)} />}
               bgClass={cfg.bg}
+              active={view.type === "status" && view.status === s}
+              onClick={() => drillStatus(s)}
             />
           );
         })}
       </div>
 
-      {/* Per-org summary */}
-      <div>
-        <h2 className="text-[15px] font-semibold text-slate-900 mb-3 flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-slate-500" />
-          État par client
-        </h2>
-        {orgSummary.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 flex flex-col items-center gap-3 text-[13px] text-slate-400">
-              <HardDrive className="h-10 w-10" strokeWidth={1.5} />
-              <p>Aucune alerte Veeam trouvée.</p>
-              <Link
-                href="/settings"
-                className="inline-flex items-center gap-1.5 text-[12px] font-medium text-blue-600 hover:text-blue-700"
-              >
-                <Settings className="h-3.5 w-3.5" />
-                Configurer la connexion IMAP dans Paramètres
-              </Link>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {orgSummary.map((org) => {
-              const worst: "FAILED" | "WARNING" | "SUCCESS" =
-                org.FAILED > 0
-                  ? "FAILED"
-                  : org.WARNING > 0
-                    ? "WARNING"
-                    : "SUCCESS";
-              const cfg = STATUS_CONFIG[worst];
-              return (
-                <Card
-                  key={org.orgId ?? "_unmatched"}
-                  className={cn(
-                    "transition-colors",
-                    worst === "FAILED" && "ring-1 ring-red-200/80",
-                    worst === "WARNING" && "ring-1 ring-amber-200/80",
-                  )}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-[13px] font-semibold text-slate-900 truncate">
-                        {org.orgName}
-                      </h3>
-                      <Badge variant={cfg.badge} className="text-[10px]">
-                        {cfg.label}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-4 text-[12px]">
-                      <span className="flex items-center gap-1 text-emerald-600">
-                        <CheckCircle2 className="h-3 w-3" />
-                        {org.SUCCESS}
-                      </span>
-                      <span className="flex items-center gap-1 text-amber-600">
-                        <AlertTriangle className="h-3 w-3" />
-                        {org.WARNING}
-                      </span>
-                      <span className="flex items-center gap-1 text-red-600">
-                        <XCircle className="h-3 w-3" />
-                        {org.FAILED}
-                      </span>
-                      {org.lastAlert && (
-                        <span className="ml-auto text-slate-400 flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {timeAgo(org.lastAlert)}
-                        </span>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {/* ================================================================ */}
+      {/* AI daily summary                                                 */}
+      {/* ================================================================ */}
+      {view.type === "overview" && <AiDailySummary />}
 
-      {/* Alert list */}
+      {/* ================================================================ */}
+      {/* Org detail header (when drilled into a client)                   */}
+      {/* ================================================================ */}
+      {view.type === "org" && currentOrg && (
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-4">
+              <OrgAvatar
+                logo={currentOrg.logo}
+                name={currentOrg.orgName}
+                size="lg"
+              />
+              <div className="flex-1 min-w-0">
+                <h2 className="text-[17px] font-semibold text-slate-900">
+                  {currentOrg.orgName}
+                </h2>
+                <p className="text-[12px] text-slate-500 mt-0.5">
+                  {currentOrg.total} alerte
+                  {currentOrg.total > 1 ? "s" : ""} sur les {days} derniers
+                  jours
+                </p>
+              </div>
+              <div className="flex items-center gap-6">
+                {(["SUCCESS", "WARNING", "FAILED"] as const).map((s) => {
+                  const cfg = STATUS_CONFIG[s];
+                  const Icon = cfg.icon;
+                  const count = currentOrg[s];
+                  return (
+                    <button
+                      key={s}
+                      onClick={() =>
+                        setStatusFilter(statusFilter === s ? "all" : s)
+                      }
+                      className={cn(
+                        "flex flex-col items-center gap-1 rounded-lg px-3 py-2 transition-colors",
+                        statusFilter === s
+                          ? `${cfg.bg} ring-1 ring-inset ${cfg.ring}`
+                          : "hover:bg-slate-50",
+                      )}
+                    >
+                      <Icon className={cn("h-4 w-4", cfg.color)} />
+                      <span
+                        className={cn(
+                          "text-[16px] font-bold tabular-nums",
+                          cfg.color,
+                        )}
+                      >
+                        {count}
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        {cfg.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ================================================================ */}
+      {/* Per-org tiles — only on overview                                 */}
+      {/* ================================================================ */}
+      {view.type === "overview" && (
+        <div>
+          <h2 className="text-[15px] font-semibold text-slate-900 mb-3 flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-slate-500" />
+            État par client
+          </h2>
+          {orgSummary.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 flex flex-col items-center gap-3 text-[13px] text-slate-400">
+                <HardDrive className="h-10 w-10" strokeWidth={1.5} />
+                <p>Aucune alerte Veeam trouvée.</p>
+                <Link
+                  href="/settings?section=veeam"
+                  className="inline-flex items-center gap-1.5 text-[12px] font-medium text-blue-600 hover:text-blue-700"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  Configurer la connexion dans Paramètres
+                </Link>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {orgSummary.map((org) => {
+                const worst: "FAILED" | "WARNING" | "SUCCESS" =
+                  org.FAILED > 0
+                    ? "FAILED"
+                    : org.WARNING > 0
+                      ? "WARNING"
+                      : "SUCCESS";
+                const cfg = STATUS_CONFIG[worst];
+                return (
+                  <Card
+                    key={org.orgId ?? "_unmatched"}
+                    className={cn(
+                      "transition-all cursor-pointer hover:shadow-md",
+                      worst === "FAILED" && "ring-1 ring-red-200/80",
+                      worst === "WARNING" && "ring-1 ring-amber-200/80",
+                    )}
+                    onClick={() => drillOrg(org.orgId, org.orgName)}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <OrgAvatar
+                          logo={org.logo}
+                          name={org.orgName}
+                          size="sm"
+                        />
+                        <h3 className="text-[13px] font-semibold text-slate-900 truncate flex-1">
+                          {org.orgName}
+                        </h3>
+                        <Badge variant={cfg.badge} className="text-[10px] shrink-0">
+                          {cfg.label}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-4 text-[12px]">
+                        <span className="flex items-center gap-1 text-emerald-600">
+                          <CheckCircle2 className="h-3 w-3" />
+                          {org.SUCCESS}
+                        </span>
+                        <span className="flex items-center gap-1 text-amber-600">
+                          <AlertTriangle className="h-3 w-3" />
+                          {org.WARNING}
+                        </span>
+                        <span className="flex items-center gap-1 text-red-600">
+                          <XCircle className="h-3 w-3" />
+                          {org.FAILED}
+                        </span>
+                        {org.lastAlert && (
+                          <span className="ml-auto text-slate-400 flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {timeAgo(org.lastAlert)}
+                          </span>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* Alert table — always visible, filtered by view                   */}
+      {/* ================================================================ */}
       <div>
         <div className="flex items-center justify-between gap-3 mb-3">
           <h2 className="text-[15px] font-semibold text-slate-900 flex items-center gap-2">
             <Clock className="h-4 w-4 text-slate-500" />
-            Historique des alertes
+            {view.type === "overview"
+              ? "Historique des alertes"
+              : "Alertes"}
           </h2>
           <div className="flex items-center gap-2">
             <Input
@@ -395,19 +638,36 @@ export default function BackupsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               iconLeft={<Search className="h-3.5 w-3.5" />}
-              className="w-56"
+              className="w-48"
             />
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-36">
-                <SelectValue placeholder="Statut" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous</SelectItem>
-                <SelectItem value="SUCCESS">Succès</SelectItem>
-                <SelectItem value="WARNING">Avertissement</SelectItem>
-                <SelectItem value="FAILED">Échec</SelectItem>
-              </SelectContent>
-            </Select>
+            {view.type !== "org" && (
+              <Select value={orgFilter} onValueChange={setOrgFilter}>
+                <SelectTrigger className="w-44">
+                  <SelectValue placeholder="Client" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les clients</SelectItem>
+                  {orgNames.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {view.type !== "status" && (
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Statut" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les statuts</SelectItem>
+                  <SelectItem value="SUCCESS">Succès</SelectItem>
+                  <SelectItem value="WARNING">Avertissement</SelectItem>
+                  <SelectItem value="FAILED">Échec</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </div>
 
@@ -419,12 +679,14 @@ export default function BackupsPage() {
                   <th className="px-4 py-3 font-medium text-slate-500">
                     Statut
                   </th>
-                  <th className="px-4 py-3 font-medium text-slate-500">
+                  <th className="px-4 py-3 font-medium text-slate-500 min-w-[350px]">
                     Tâche
                   </th>
-                  <th className="px-4 py-3 font-medium text-slate-500">
-                    Client
-                  </th>
+                  {view.type !== "org" && (
+                    <th className="px-4 py-3 font-medium text-slate-500">
+                      Client
+                    </th>
+                  )}
                   <th className="px-4 py-3 font-medium text-slate-500">
                     Expéditeur
                   </th>
@@ -434,7 +696,7 @@ export default function BackupsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredAlerts.map((a) => {
+                {filteredAlerts.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map((a) => {
                   const cfg = STATUS_CONFIG[a.status];
                   const Icon = cfg.icon;
                   return (
@@ -454,30 +716,48 @@ export default function BackupsPage() {
                           >
                             <Icon className="h-3.5 w-3.5" />
                           </div>
-                          <Badge variant={cfg.badge} className="text-[10.5px]">
+                          <Badge
+                            variant={cfg.badge}
+                            className="text-[10.5px]"
+                          >
                             {cfg.label}
                           </Badge>
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="text-[13px] font-medium text-slate-900 truncate max-w-[250px]">
+                        <p className="text-[13px] font-medium text-slate-900 truncate max-w-[500px]">
                           {a.jobName}
                         </p>
-                        <p className="text-[11px] text-slate-400 truncate max-w-[250px]">
+                        <p className="text-[11px] text-slate-400 truncate max-w-[500px]">
                           {a.subject}
                         </p>
                       </td>
-                      <td className="px-4 py-3 text-[12.5px]">
-                        {a.organizationName ? (
-                          <span className="text-slate-700 font-medium">
-                            {a.organizationName}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 italic">
-                            Non associé
-                          </span>
-                        )}
-                      </td>
+                      {view.type !== "org" && (
+                        <td className="px-4 py-3 text-[12.5px]">
+                          {a.organizationName ? (
+                            <button
+                              onClick={() =>
+                                drillOrg(
+                                  a.organizationId,
+                                  a.organizationName!,
+                                )
+                              }
+                              className="text-slate-700 font-medium hover:text-blue-600 transition-colors"
+                            >
+                              {a.organizationName}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() =>
+                                drillOrg(null, "Non associé")
+                              }
+                              className="text-slate-400 italic hover:text-slate-600 transition-colors"
+                            >
+                              Non associé
+                            </button>
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-[12px] font-mono text-slate-500">
                         {a.senderEmail}
                       </td>
@@ -490,7 +770,7 @@ export default function BackupsPage() {
                 {filteredAlerts.length === 0 && (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={view.type === "org" ? 4 : 5}
                       className="px-4 py-16 text-center text-[13px] text-slate-400"
                     >
                       <HardDrive
@@ -506,6 +786,48 @@ export default function BackupsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {filteredAlerts.length > pageSize && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+              <div className="flex items-center gap-2 text-[12px] text-slate-500">
+                <span>
+                  {currentPage * pageSize + 1}–{Math.min((currentPage + 1) * pageSize, filteredAlerts.length)} sur {filteredAlerts.length}
+                </span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(0); }}
+                  className="h-7 rounded border border-slate-200 bg-white px-1.5 text-[12px] text-slate-600"
+                >
+                  <option value={10}>10 / page</option>
+                  <option value={25}>25 / page</option>
+                  <option value={50}>50 / page</option>
+                  <option value={100}>100 / page</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                  disabled={currentPage === 0}
+                  className="h-7 px-2 rounded border border-slate-200 text-[12px] text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Précédent
+                </button>
+                <button
+                  onClick={() => setCurrentPage((p) => p + 1)}
+                  disabled={(currentPage + 1) * pageSize >= filteredAlerts.length}
+                  className="h-7 px-2 rounded border border-slate-200 text-[12px] text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Suivant
+                </button>
+              </div>
+            </div>
+          )}
+          {filteredAlerts.length > 0 && filteredAlerts.length <= pageSize && (
+            <div className="px-4 py-2 border-t border-slate-200 text-[11px] text-slate-400">
+              {filteredAlerts.length} résultat{filteredAlerts.length > 1 ? "s" : ""}
+            </div>
+          )}
         </Card>
       </div>
     </div>
@@ -516,19 +838,334 @@ export default function BackupsPage() {
 // Sub-components
 // ---------------------------------------------------------------------------
 
+function OrgAvatar({
+  logo,
+  name,
+  size = "sm",
+}: {
+  logo: string | null;
+  name: string;
+  size?: "sm" | "lg";
+}) {
+  const dim = size === "lg" ? "h-12 w-12" : "h-8 w-8";
+  const textSize = size === "lg" ? "text-[16px]" : "text-[12px]";
+  const rounding = size === "lg" ? "rounded-xl" : "rounded-lg";
+
+  if (logo) {
+    return (
+      <img
+        src={logo}
+        alt={name}
+        className={cn(
+          dim,
+          rounding,
+          "shrink-0 object-contain bg-white ring-1 ring-slate-200",
+        )}
+      />
+    );
+  }
+  return (
+    <div
+      className={cn(
+        dim,
+        rounding,
+        textSize,
+        "shrink-0 flex items-center justify-center font-bold text-white bg-gradient-to-br from-slate-500 to-slate-700",
+      )}
+    >
+      {name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
+
+function AiDailySummary() {
+  const [data, setData] = useState<{
+    html: string;
+    generatedAt: string;
+    alertCount: number;
+    failed: number;
+    warning: number;
+    success: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  // Auto-load cached summary on mount
+  useEffect(() => {
+    if (loaded) return;
+    setLoaded(true);
+    fetch("/api/v1/veeam/summary")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.html) setData(d);
+      })
+      .catch(() => {});
+  }, [loaded]);
+
+  function loadSummary() {
+    setLoading(true);
+    setError(null);
+    fetch("/api/v1/veeam/summary?refresh=1")
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((d) => {
+        setData(d);
+        setCollapsed(false);
+      })
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : String(e)),
+      )
+      .finally(() => setLoading(false));
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600 ring-1 ring-inset ring-violet-200/60">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-[14px] font-semibold text-slate-900">
+                Rapport matinal IA
+              </h3>
+              {data?.generatedAt && (
+                <p className="text-[11px] text-slate-400">
+                  Généré {fmtDate(data.generatedAt)} — {data.failed} échec
+                  {data.failed > 1 ? "s" : ""}, {data.warning} avert.
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {data && (
+              <button
+                onClick={() => setCollapsed((c) => !c)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                title={collapsed ? "Afficher" : "Masquer"}
+              >
+                {collapsed ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronUp className="h-4 w-4" />
+                )}
+              </button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadSummary}
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              {loading
+                ? "Analyse..."
+                : data
+                  ? "Rafraîchir"
+                  : "Générer le rapport"}
+            </Button>
+          </div>
+        </div>
+
+        {error && (
+          <p className="mt-3 text-[12px] text-red-600">{error}</p>
+        )}
+
+        {data && !collapsed && (
+          <div className="mt-4">
+            {/* Quick stat pills */}
+            {data.failed > 0 && (
+              <div className="flex items-center gap-3 mb-3">
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1 text-[12px] font-semibold text-red-700 ring-1 ring-inset ring-red-200/60">
+                  <XCircle className="h-3 w-3" />
+                  {data.failed} échec{data.failed > 1 ? "s" : ""}
+                </span>
+                {data.warning > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200/60">
+                    <AlertTriangle className="h-3 w-3" />
+                    {data.warning} avert.
+                  </span>
+                )}
+                <span className="text-[11px] text-slate-400">
+                  sur {data.alertCount} alertes totales
+                </span>
+              </div>
+            )}
+
+            {/* Rich HTML content from AI */}
+            <div
+              className="ai-summary-content rounded-xl border border-slate-200/80 bg-white p-4"
+              dangerouslySetInnerHTML={{ __html: data.html }}
+            />
+          </div>
+        )}
+
+        {!data && !loading && (
+          <p className="mt-3 text-[12px] text-slate-400">
+            Cliquez sur « Générer le rapport » pour une analyse IA des
+            échecs et avertissements des dernières 24 heures.
+          </p>
+        )}
+      </CardContent>
+
+      {/* Scoped styles for AI-generated HTML */}
+      <style jsx global>{`
+        .ai-summary-content p.summary,
+        .ai-summary-content > p:first-child {
+          font-size: 13px;
+          line-height: 1.7;
+          color: #334155;
+          margin-bottom: 14px;
+        }
+        .ai-summary-content p.recommendation {
+          font-size: 12.5px;
+          line-height: 1.6;
+          color: #1e40af;
+          background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
+          border: 1px solid #bfdbfe;
+          border-left: 3px solid #3b82f6;
+          border-radius: 8px;
+          padding: 12px 16px;
+          margin-top: 14px;
+        }
+        .ai-summary-content table {
+          width: 100%;
+          font-size: 12.5px;
+          border-collapse: separate;
+          border-spacing: 0;
+          margin: 10px 0;
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          overflow: hidden;
+        }
+        .ai-summary-content thead th {
+          text-align: left;
+          padding: 10px 14px;
+          font-weight: 600;
+          font-size: 10.5px;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: #64748b;
+          background: #f8fafc;
+          border-bottom: 2px solid #e2e8f0;
+        }
+        .ai-summary-content tbody td {
+          padding: 10px 14px;
+          color: #334155;
+          border-bottom: 1px solid #f1f5f9;
+          vertical-align: middle;
+        }
+        .ai-summary-content tbody td[rowspan],
+        .ai-summary-content tbody td.client-cell {
+          font-weight: 600;
+          color: #0f172a;
+          background: #f8fafc;
+          border-right: 1px solid #e2e8f0;
+        }
+        .ai-summary-content tbody td.server-cell {
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 11.5px;
+          color: #6366f1;
+          font-weight: 500;
+        }
+        .ai-summary-content tbody tr:last-child td {
+          border-bottom: none;
+        }
+        .ai-summary-content tbody tr:hover td {
+          background: #f8fafc;
+        }
+        .ai-summary-content tbody tr:hover td[rowspan] {
+          background: #f1f5f9;
+        }
+        .ai-summary-content td.status-failed,
+        .ai-summary-content .status-failed {
+          color: #dc2626;
+          font-weight: 700;
+          background: #fef2f2;
+          border-radius: 0;
+        }
+        .ai-summary-content td.status-warning,
+        .ai-summary-content .status-warning {
+          color: #d97706;
+          font-weight: 700;
+          background: #fffbeb;
+        }
+        .ai-summary-content td.failed,
+        .ai-summary-content .failed {
+          color: #dc2626;
+          font-weight: 700;
+          background: #fef2f2;
+        }
+        .ai-summary-content td.warning,
+        .ai-summary-content .warning {
+          color: #d97706;
+          font-weight: 700;
+          background: #fffbeb;
+        }
+        .ai-summary-content td.success,
+        .ai-summary-content .success {
+          color: #059669;
+          font-weight: 600;
+        }
+        .ai-summary-content ul,
+        .ai-summary-content ol {
+          font-size: 12.5px;
+          color: #334155;
+          padding-left: 20px;
+          margin: 8px 0;
+        }
+        .ai-summary-content li {
+          margin-bottom: 5px;
+          line-height: 1.5;
+        }
+        .ai-summary-content strong {
+          font-weight: 600;
+          color: #0f172a;
+        }
+        .ai-summary-content h3,
+        .ai-summary-content h4 {
+          font-size: 13px;
+          font-weight: 600;
+          color: #0f172a;
+          margin: 14px 0 6px;
+        }
+      `}</style>
+    </Card>
+  );
+}
+
 function StatCard({
   label,
   value,
   icon,
   bgClass,
+  active,
+  onClick,
 }: {
   label: string;
   value: number;
   icon: React.ReactNode;
   bgClass: string;
+  active?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <Card>
+    <Card
+      className={cn(
+        "transition-all cursor-pointer hover:shadow-md",
+        active && "ring-2 ring-blue-500/40",
+      )}
+      onClick={onClick}
+    >
       <CardContent className="flex items-center gap-3 p-4">
         <div
           className={cn(

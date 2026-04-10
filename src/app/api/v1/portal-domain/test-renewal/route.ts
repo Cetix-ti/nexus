@@ -44,11 +44,20 @@ export async function POST(request: NextRequest) {
   const fullDomain = `${config.subdomain}.${ROOT_DOMAIN}`;
   const email = config.acmeEmail || "admin@cetix.ca";
 
-  const result = await renewCertificate({
-    domain: fullDomain,
-    email,
-    dryRun,
-  });
+  let result;
+  try {
+    result = await renewCertificate({ domain: fullDomain, email, dryRun });
+  } catch (err) {
+    return NextResponse.json({
+      success: false,
+      data: {
+        domain: fullDomain,
+        dryRun,
+        error: err instanceof Error ? err.message : String(err),
+        output: "Certbot n'est pas installé ou inaccessible sur ce serveur.",
+      },
+    });
+  }
 
   await logRenewalAttempt({
     id: `ren_${Date.now()}`,

@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PRIORITY_CONFIG, type Ticket, type TicketPriority } from "@/lib/mock-data";
+import { useOrgLogosStore } from "@/stores/org-logos-store";
+import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
 
 interface TicketCardProps {
   ticket: Ticket;
@@ -58,6 +60,9 @@ export function TicketCard({ ticket, onClick }: TicketCardProps) {
   const PriorityIcon = PriorityCfg.Icon;
   const orgInitials = getInitials(ticket.organizationName);
   const orgGradient = getAvatarGradient(ticket.organizationName);
+  const orgLogo = useOrgLogosStore((s) => s.logos[ticket.organizationName]);
+  const assigneeAvatar = ticket.assigneeName ? useAgentAvatarsStore((s) => s.avatars[ticket.assigneeName!]) : null;
+  const isNew = Date.now() - new Date(ticket.createdAt).getTime() < 60 * 60 * 1000;
 
   return (
     <div
@@ -69,31 +74,19 @@ export function TicketCard({ ticket, onClick }: TicketCardProps) {
         "transition-all duration-200"
       )}
     >
-      {/* Top accent bar based on priority */}
-      <div
-        className="absolute inset-x-0 top-0 h-0.5 rounded-t-xl"
-        style={{ backgroundColor: priority.color }}
-      />
-
       <div className="p-3.5">
-        {/* Header row: priority pill + ticket number + SLA badge */}
+        {/* Header row: ticket number + new indicator + SLA badge */}
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5 min-w-0">
-            <div
-              className={cn(
-                "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 ring-1 ring-inset",
-                PriorityCfg.bg,
-                PriorityCfg.ring
-              )}
-            >
-              <PriorityIcon className={cn("h-2.5 w-2.5", PriorityCfg.tint)} strokeWidth={2.75} />
-              <span className={cn("text-[10px] font-semibold uppercase tracking-wider", PriorityCfg.tint)}>
-                {priority.label}
-              </span>
-            </div>
             <span className="font-mono text-[10.5px] text-slate-400 tabular-nums truncate">
               {ticket.number}
             </span>
+            {isNew && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 ring-1 ring-inset ring-blue-200/60">
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                <span className="text-[9px] font-medium text-blue-600">Nouveau</span>
+              </span>
+            )}
           </div>
 
           {ticket.slaBreached && (
@@ -114,14 +107,22 @@ export function TicketCard({ ticket, onClick }: TicketCardProps) {
 
         {/* Org + requester */}
         <div className="flex items-center gap-2 mb-3">
-          <div
-            className={cn(
-              "h-5 w-5 rounded-md bg-gradient-to-br flex items-center justify-center text-white text-[8.5px] font-bold shrink-0 shadow-sm",
-              orgGradient
-            )}
-          >
-            {orgInitials}
-          </div>
+          {orgLogo ? (
+            <img
+              src={orgLogo}
+              alt=""
+              className="h-5 w-5 rounded-md object-contain bg-white ring-1 ring-slate-200 shrink-0"
+            />
+          ) : (
+            <div
+              className={cn(
+                "h-5 w-5 rounded-md bg-gradient-to-br flex items-center justify-center text-white text-[8.5px] font-bold shrink-0 shadow-sm",
+                orgGradient
+              )}
+            >
+              {orgInitials}
+            </div>
+          )}
           <div className="min-w-0 flex-1">
             <p className="text-[11.5px] font-medium text-slate-700 truncate leading-tight">
               {ticket.organizationName}
@@ -134,8 +135,14 @@ export function TicketCard({ ticket, onClick }: TicketCardProps) {
 
         {/* Footer: meta + assignee */}
         <div className="flex items-center justify-between pt-2.5 border-t border-slate-100">
-          {/* Left: created time + (mock) comments/attachments */}
+          {/* Left: priority icon + created time + comments/attachments */}
           <div className="flex items-center gap-2.5 text-slate-400">
+            <span title={priority.label}>
+              <PriorityIcon
+                className={cn("h-3 w-3", PriorityCfg.tint)}
+                strokeWidth={2.5}
+              />
+            </span>
             <span className="inline-flex items-center gap-0.5 text-[10.5px] tabular-nums">
               <Clock className="h-2.5 w-2.5" strokeWidth={2.25} />
               {formatDistanceToNow(new Date(ticket.createdAt), {
@@ -157,15 +164,24 @@ export function TicketCard({ ticket, onClick }: TicketCardProps) {
 
           {/* Right: assignee */}
           {ticket.assigneeName ? (
-            <div
-              className={cn(
-                "h-5 w-5 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[8.5px] font-bold ring-2 ring-white shadow-sm",
-                getAvatarGradient(ticket.assigneeName)
-              )}
-              title={ticket.assigneeName}
-            >
-              {getInitials(ticket.assigneeName)}
-            </div>
+            assigneeAvatar ? (
+              <img
+                src={assigneeAvatar}
+                alt={ticket.assigneeName}
+                className="h-5 w-5 rounded-full object-cover ring-2 ring-white shadow-sm"
+                title={ticket.assigneeName}
+              />
+            ) : (
+              <div
+                className={cn(
+                  "h-5 w-5 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[8.5px] font-bold ring-2 ring-white shadow-sm",
+                  getAvatarGradient(ticket.assigneeName)
+                )}
+                title={ticket.assigneeName}
+              >
+                {getInitials(ticket.assigneeName)}
+              </div>
+            )
           ) : (
             <div
               className="h-5 w-5 rounded-full border border-dashed border-slate-300 flex items-center justify-center"

@@ -1,63 +1,50 @@
 import { NextResponse } from "next/server";
 import {
-  getVeeamImapConfig,
-  setVeeamImapConfig,
-  testImapConnection,
-} from "@/lib/veeam/imap-sync";
+  getVeeamGraphConfig,
+  setVeeamGraphConfig,
+  testGraphConnection,
+  getSecretExpiryInfo,
+} from "@/lib/veeam/graph-sync";
 
 export async function GET() {
-  const config = await getVeeamImapConfig();
-  if (!config) return NextResponse.json(null);
-  // Never return the password to the client
-  return NextResponse.json({ ...config, pass: config.pass ? "••••••••" : "" });
+  const config = await getVeeamGraphConfig();
+  const expiry = getSecretExpiryInfo();
+  return NextResponse.json({
+    config,
+    expiry,
+    hasAzureCredentials: !!(
+      process.env.AZURE_CLIENT_ID &&
+      process.env.AZURE_TENANT_ID &&
+      process.env.AZURE_CLIENT_SECRET
+    ),
+  });
 }
 
 export async function PUT(req: Request) {
   const body = await req.json();
-  const { host, port, secure, user, pass, folder } = body;
-  if (!host || !user) {
-    return NextResponse.json({ error: "host et user requis" }, { status: 422 });
+  const { mailbox, folderPath } = body;
+  if (!mailbox) {
+    return NextResponse.json(
+      { error: "L'adresse de la boîte aux lettres est requise" },
+      { status: 422 },
+    );
   }
-
-  // If pass is masked, keep the existing one
-  let realPass = pass;
-  if (pass === "••••••••") {
-    const existing = await getVeeamImapConfig();
-    realPass = existing?.pass ?? "";
-  }
-
-  const config = {
-    host,
-    port: Number(port) || 993,
-    secure: secure !== false,
-    user,
-    pass: realPass,
-    folder: folder || "INBOX",
-  };
-  await setVeeamImapConfig(config);
+  await setVeeamGraphConfig({
+    mailbox,
+    folderPath: folderPath || "Inbox",
+  });
   return NextResponse.json({ ok: true });
 }
 
 export async function POST(req: Request) {
   // Test connection + list folders
   const body = await req.json();
-  const { host, port, secure, user, pass } = body;
-
-  let realPass = pass;
-  if (pass === "••••••••") {
-    const existing = await getVeeamImapConfig();
-    realPass = existing?.pass ?? "";
+  const { mailbox } = body;
+  if (!mailbox) {
+    return NextResponse.json(
+      { ok: false, error: "Adresse de boîte aux lettres requise" },
+    );
   }
-
-  const config = {
-    host,
-    port: Number(port) || 993,
-    secure: secure !== false,
-    user,
-    pass: realPass,
-    folder: "INBOX",
-  };
-
-  const result = await testImapConnection(config);
+  const result = await testGraphConnection(mailbox);
   return NextResponse.json(result);
 }

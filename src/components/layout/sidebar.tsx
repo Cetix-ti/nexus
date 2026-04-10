@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/stores/sidebar";
+import { useUserAvatarStore } from "@/stores/user-avatar-store";
 import { useSession, signOut } from "next-auth/react";
 
 interface NavItem {
@@ -46,14 +47,12 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
       {
         label: "Tickets",
-        href: "/tickets",
+        href: "/tickets/kanban",
         icon: Ticket,
         children: [
-          { label: "Tous les tickets", href: "/tickets" },
+          { label: "Kanban", href: "/tickets/kanban" },
+          { label: "Liste", href: "/tickets" },
           { label: "Ma journée", href: "/tickets/my-day" },
-          { label: "Vue Kanban", href: "/tickets/kanban" },
-          { label: "Mes tickets", href: "/tickets?filter=mine" },
-          { label: "Non assignés", href: "/tickets?filter=unassigned" },
         ],
       },
     ],
@@ -81,7 +80,6 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Base de connaissances", href: "/knowledge", icon: BookOpen },
       { label: "Rapports", href: "/reports", icon: BarChart3 },
-      { label: "Automatisations", href: "/automations", icon: Zap },
     ],
   },
   {
@@ -100,25 +98,19 @@ function NavItemComponent({
   collapsed: boolean;
 }) {
   const pathname = usePathname();
-  const isActive =
-    pathname === item.href || pathname.startsWith(item.href + "/");
+  // For items with children, consider active if any child matches
   const hasChildren = !!item.children?.length;
-  const [expanded, setExpanded] = useState(isActive && hasChildren);
+  const isActive = hasChildren
+    ? item.children!.some((c) => pathname === c.href || pathname.startsWith(c.href + "/"))
+    : pathname === item.href || pathname.startsWith(item.href + "/");
+  const alwaysExpanded = hasChildren; // Children are always visible, no toggle
 
   const Icon = item.icon;
-
-  const handleClick = (e: React.MouseEvent) => {
-    if (hasChildren && !collapsed) {
-      e.preventDefault();
-      setExpanded((s) => !s);
-    }
-  };
 
   return (
     <div>
       <Link
         href={item.href}
-        onClick={handleClick}
         className={cn(
           "group relative flex items-center gap-3 rounded-lg text-[13.5px] font-medium transition-all duration-150",
           collapsed ? "h-10 w-10 mx-auto justify-center" : "h-10 px-3",
@@ -143,23 +135,12 @@ function NavItemComponent({
         />
 
         {!collapsed && (
-          <>
-            <span className="flex-1 truncate tracking-tight">{item.label}</span>
-            {hasChildren && (
-              <ChevronDown
-                className={cn(
-                  "h-3.5 w-3.5 text-slate-500 transition-transform duration-200",
-                  expanded ? "rotate-0" : "-rotate-90"
-                )}
-                strokeWidth={2.5}
-              />
-            )}
-          </>
+          <span className="flex-1 truncate tracking-tight">{item.label}</span>
         )}
       </Link>
 
       {/* Sub-items */}
-      {hasChildren && expanded && !collapsed && (
+      {hasChildren && alwaysExpanded && !collapsed && (
         <div className="mt-1 ml-[30px] space-y-0.5 border-l border-slate-800 pl-4 py-1">
           {item.children!.map((child) => {
             const childActive = pathname === child.href;
@@ -189,6 +170,7 @@ export function Sidebar() {
   const { data: session } = useSession();
 
   const user = session?.user;
+  const avatar = useUserAvatarStore((s) => s.avatar);
   const initials = user
     ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`
     : "NX";
@@ -274,8 +256,8 @@ export function Sidebar() {
             collapsed ? "p-2 justify-center" : "p-2.5"
           )}
         >
-          <div className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-[11px] font-semibold ring-2 ring-blue-500/20">
-            {initials}
+          <div className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-[11px] font-semibold ring-2 ring-blue-500/20 overflow-hidden">
+            {avatar ? <img src={avatar} alt="" className="w-full h-full object-cover" /> : initials}
           </div>
           {!collapsed && (
             <>

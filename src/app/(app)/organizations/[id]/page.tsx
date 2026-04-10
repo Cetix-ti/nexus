@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
 import { EditOrgModal, type EditOrgModalOrg } from "@/components/organizations/edit-org-modal";
 import { Pencil, ShieldCheck } from "lucide-react";
 import {
@@ -54,6 +55,7 @@ import { ClientBillingOverridesSection } from "@/components/billing/client-billi
 import { SupportTiersSection } from "@/components/billing/support-tiers-section";
 import { OrgAssetsTab } from "@/components/assets/org-assets-tab";
 import { OrgSlaSection } from "@/components/sla/org-sla-section";
+import { OrgPortalSection } from "@/components/portal/org-portal-section";
 import { Plus, X } from "lucide-react";
 
 const ORG_PORTAL_USERS: Record<string, Array<{ name: string; email: string; role: ClientPortalPermissions["portalRole"] | null }>> = {
@@ -587,7 +589,7 @@ const TABS = [
   { key: "billing", label: "Facturation" },
   { key: "contracts", label: "Contrats" },
   { key: "assets", label: "Actifs" },
-  { key: "portal_access", label: "Accès portail" },
+  { key: "portal_access", label: "Portail client" },
   { key: "sla", label: "SLA" },
 ] as const;
 
@@ -694,17 +696,24 @@ function OrgSitesTab({ initialSites }: { initialSites: Site[] }) {
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 placeholder="+1 514 555-0100"
               />
-              <Input
+              <AddressAutocomplete
                 label="Adresse"
                 value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-                placeholder="1234 boul. Laurier"
+                onChange={(v) => setForm({ ...form, address: v })}
+                onSelect={(result) => {
+                  setForm((f) => ({
+                    ...f,
+                    address: result.street || f.address,
+                    city: result.city ? `${result.city}, ${result.province}` : f.city,
+                  }));
+                }}
+                placeholder="Commencez à taper une adresse..."
               />
               <Input
                 label="Ville"
                 value={form.city}
                 onChange={(e) => setForm({ ...form, city: e.target.value })}
-                placeholder="Québec"
+                placeholder="Québec, QC"
               />
             </div>
             <div className="flex items-center gap-3">
@@ -1536,158 +1545,10 @@ export default function OrganizationDetailPage() {
 
       {/* Portal Access Tab */}
       {activeTab === "portal_access" && (
-        <div className="space-y-5">
-          <Card className="overflow-hidden">
-            <CardHeader>
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-blue-600" />
-                  Accès portail client
-                </CardTitle>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() =>
-                    setEditingPortalUser({
-                      id: `new_${Date.now()}`,
-                      name: "",
-                      email: "",
-                      organization: org?.name || "Organisation",
-                      role: "viewer",
-                    })
-                  }
-                >
-                  <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-                  Ajouter un utilisateur
-                </Button>
-              </div>
-            </CardHeader>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50/60">
-                    <th className="px-4 py-3 text-left font-medium text-gray-500">Contact</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-500">Courriel</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-500">Rôle portail</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-500">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {(dbPortalUsers ?? ORG_PORTAL_USERS[orgId] ?? ORG_PORTAL_USERS["org-1"] ?? [])
-                    .filter((u) => !removedPortalAccess.has(u.email))
-                    .map((u) => (
-                    <tr key={u.email} className="hover:bg-gray-50/80 transition-colors">
-                      <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
-                      <td className="px-4 py-3 text-gray-600">{u.email}</td>
-                      <td className="px-4 py-3">
-                        <Badge variant={portalRoleVariant(u.role)}>
-                          {u.role ? PORTAL_ROLE_LABELS[u.role] : "Pas d'accès"}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="inline-flex items-center gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Voir le portail comme cet utilisateur"
-                            onClick={() => {
-                              const role = (u.role || "viewer") as
-                                | "admin"
-                                | "manager"
-                                | "viewer";
-                              const basePerms =
-                                role === "admin"
-                                  ? DEFAULT_ADMIN_PERMISSIONS
-                                  : role === "manager"
-                                  ? DEFAULT_MANAGER_PERMISSIONS
-                                  : DEFAULT_VIEWER_PERMISSIONS;
-                              const matchedOrg =
-                                PORTAL_ORGS.find(
-                                  (po) =>
-                                    po.name.toLowerCase() ===
-                                    (org?.name || "").toLowerCase()
-                                ) || PORTAL_ORGS[0];
-                              startImpersonation({
-                                userId: u.email,
-                                name: u.name,
-                                email: u.email,
-                                organizationId: matchedOrg.id,
-                                organizationName: org?.name || "Organisation",
-                                role,
-                                permissions: { ...basePerms, portalRole: role },
-                                startedByName: "Admin",
-                                startedAt: new Date().toISOString(),
-                              });
-                              router.push("/portal");
-                            }}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              setEditingPortalUser({
-                                id: u.email,
-                                name: u.name,
-                                email: u.email,
-                                organization: org?.name || "Organisation",
-                                role: u.role || "viewer",
-                              })
-                            }
-                          >
-                            Modifier les permissions
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Retirer l'accès au portail"
-                            onClick={async () => {
-                              if (
-                                !confirm(
-                                  `Retirer l'accès au portail pour ${u.name} ?\n\nL'utilisateur restera dans la liste des contacts de l'entreprise — seul son accès au portail sera révoqué.`
-                                )
-                              )
-                                return;
-                              try {
-                                await fetch(
-                                  `/api/v1/portal-access/${encodeURIComponent(u.email)}`,
-                                  { method: "DELETE" }
-                                );
-                                setRemovedPortalAccess((prev) => new Set([...prev, u.email]));
-                              } catch (e) {
-                                alert(
-                                  "Erreur : " +
-                                    (e instanceof Error ? e.message : String(e))
-                                );
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {(dbPortalUsers ?? ORG_PORTAL_USERS[orgId] ?? []).length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-12 text-center text-gray-400">
-                        Aucun contact avec accès au portail. Cliquez sur «
-                        Ajouter un utilisateur » pour commencer.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-
-          {/* Approvers section */}
-          <OrgApproversSection
-            organizationId={orgId}
-            organizationName={org?.name || "Organisation"}
-          />
-        </div>
+        <OrgPortalSection
+          organizationId={orgId}
+          organizationName={o.name}
+        />
       )}
 
       {/* Assets Tab */}

@@ -40,6 +40,22 @@ export async function GET(req: Request) {
     }),
   ]);
 
+  // Fetch logos for all referenced orgs
+  const orgIds = [
+    ...new Set(
+      rawOrgStats
+        .map((r) => r.organizationId)
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+  const orgsWithLogos = orgIds.length
+    ? await prisma.organization.findMany({
+        where: { id: { in: orgIds } },
+        select: { id: true, logo: true },
+      })
+    : [];
+  const logoMap = new Map(orgsWithLogos.map((o) => [o.id, o.logo]));
+
   const stats = rawStats.map((r) => ({
     status: r.status,
     _count: extractCount(r),
@@ -50,6 +66,7 @@ export async function GET(req: Request) {
     organizationName: r.organizationName,
     status: r.status,
     _count: extractCount(r),
+    logo: r.organizationId ? (logoMap.get(r.organizationId) ?? null) : null,
   }));
 
   return NextResponse.json({

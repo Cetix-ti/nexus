@@ -1,7 +1,9 @@
 "use client";
 
 import { Suspense, useState, useMemo, useEffect } from "react";
+import { usePersistentState } from "@/lib/hooks/use-persistent-state";
 import { useTicketsStore } from "@/stores/tickets-store";
+import { useOrgLogosStore } from "@/stores/org-logos-store";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -56,6 +58,8 @@ function TicketsPageInner() {
   const tickets = useTicketsStore((s) => s.tickets);
   const loadAll = useTicketsStore((s) => s.loadAll);
   const loaded = useTicketsStore((s) => s.loaded);
+  const loadOrgLogos = useOrgLogosStore((s) => s.load);
+  useEffect(() => { loadOrgLogos(); }, [loadOrgLogos]);
   const searchParams = useSearchParams();
   const session = useSession();
   const filterParam = searchParams?.get("filter") ?? null;
@@ -74,11 +78,11 @@ function TicketsPageInner() {
     if (!loaded) loadAll();
   }, [loaded, loadAll]);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [activeTab, setActiveTab] = useState("all");
-  const [search, setSearch] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState<string>("all");
-  const [orgFilter, setOrgFilter] = useState<string>("all");
+  const [viewMode, setViewMode] = usePersistentState<ViewMode>("nexus.tickets.viewMode", "list");
+  const [activeTab, setActiveTab] = usePersistentState("nexus.tickets.tab", "all");
+  const [search, setSearch] = usePersistentState("nexus.tickets.search", "");
+  const [priorityFilter, setPriorityFilter] = usePersistentState("nexus.tickets.priority", "all");
+  const [orgFilter, setOrgFilter] = usePersistentState("nexus.tickets.org", "all");
 
   const filtered = useMemo(() => {
     let result = [...tickets];

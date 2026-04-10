@@ -16,15 +16,26 @@ import {
   X,
   FolderKanban,
   BarChart3,
+  Monitor,
+  Users,
 } from "lucide-react";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { PortalImpersonationBanner } from "@/components/portal/impersonation-banner";
 
-const navItems = [
+interface NavItem {
+  label: string;
+  href: string;
+  icon: any;
+  adminOnly?: boolean;
+}
+
+const navItems: NavItem[] = [
   { label: "Accueil", href: "/portal", icon: Home },
   { label: "Billets", href: "/portal/tickets", icon: Ticket },
   { label: "Projets", href: "/portal/projects", icon: FolderKanban },
+  { label: "Actifs", href: "/portal/assets", icon: Monitor },
   { label: "Rapports", href: "/portal/reports", icon: BarChart3 },
+  { label: "Contacts", href: "/portal/contacts", icon: Users, adminOnly: true },
   { label: "Nouveau billet", href: "/portal/tickets/new", icon: PlusCircle },
 ];
 
@@ -43,7 +54,9 @@ export default function PortalLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { user, org, organizationName } = usePortalUser();
+  const { user, organizationName, permissions } = usePortalUser();
+  const isAdmin = permissions.portalRole === "admin";
+  const visibleNav = navItems.filter((item) => !item.adminOnly || isAdmin);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -56,21 +69,27 @@ export default function PortalLayout({
   const displayName = user?.name || "Utilisateur";
   const displayEmail = user?.email || "";
   const orgName = organizationName || "Portail client";
-  const accentGradient = org?.accentGradient || "from-blue-500 to-blue-700";
+  const accentGradient = "from-blue-500 to-blue-700";
   const orgInitial = (orgName || "N").charAt(0).toUpperCase();
 
-  // Branding global du tenant (logo + couleur principale paramétrés
-  // depuis Settings → Général). Charge une seule fois au mount.
+  // Branding: load MSP branding + org logo
   const [brand, setBrand] = useState<{
     logo: string | null;
     primaryColor: string;
     companyName: string;
   } | null>(null);
+  const [orgLogo, setOrgLogo] = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/v1/settings/portal-branding")
       .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data) setBrand(data); })
+      .catch(() => {});
+    // Load the client org's own logo
+    fetch("/api/v1/portal/dashboard")
+      .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data) setBrand(data);
+        if (data?.orgLogo) setOrgLogo(data.orgLogo);
       })
       .catch(() => {});
   }, []);
@@ -108,7 +127,14 @@ export default function PortalLayout({
             {/* Logo + Org */}
             <div className="flex items-center gap-6 min-w-0 flex-1">
               <Link href="/portal" className="flex items-center gap-3">
-                {brand?.logo ? (
+                {orgLogo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={orgLogo}
+                    alt={orgName}
+                    className="h-10 w-10 rounded-xl object-contain bg-white ring-1 ring-slate-200 shadow-sm"
+                  />
+                ) : brand?.logo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={brand.logo}
@@ -144,7 +170,7 @@ export default function PortalLayout({
 
               {/* Desktop Navigation */}
               <nav className="hidden md:flex items-center gap-1">
-                {navItems.map((item) => {
+                {visibleNav.map((item) => {
                   const isActive =
                     item.href === "/portal"
                       ? pathname === "/portal"
@@ -250,7 +276,7 @@ export default function PortalLayout({
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-neutral-100 bg-white">
             <div className="mx-auto max-w-6xl px-4 py-3 space-y-1">
-              {navItems.map((item) => {
+              {visibleNav.map((item) => {
                 const isActive =
                   item.href === "/portal"
                     ? pathname === "/portal"

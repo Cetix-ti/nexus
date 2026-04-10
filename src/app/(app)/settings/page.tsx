@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   Settings,
@@ -25,6 +26,9 @@ import {
   MoreHorizontal,
   UserCog as UserCogIcon,
   HardDrive,
+  FolderKanban,
+  Ticket,
+  Eye,
 } from "lucide-react";
 import { PortalAccessSection } from "@/components/settings/portal-access-section";
 import { Button } from "@/components/ui/button";
@@ -52,7 +56,11 @@ import { KanbanColumnsSection } from "@/components/settings/kanban-columns-secti
 import { KanbanBoardsSection } from "@/components/settings/kanban-boards-section";
 import { IntegrationsSection } from "@/components/settings/integrations-section";
 import { PortalDomainSection } from "@/components/settings/portal-domain-section";
+import { MonitoringSection } from "@/components/settings/monitoring-section";
+import { PortalPreviewSection } from "@/components/settings/portal-preview-section";
 import { VeeamSection } from "@/components/settings/veeam-section";
+import { ProjectTypesSection } from "@/components/settings/project-types-section";
+import { EmailToTicketSection } from "@/components/settings/email-to-ticket-section";
 import { useSession } from "next-auth/react";
 import { EditUserModal, type EditUserModalUser } from "@/components/users/edit-user-modal";
 
@@ -60,29 +68,76 @@ import { EditUserModal, type EditUserModalUser } from "@/components/users/edit-u
 // Settings sections
 // ---------------------------------------------------------------------------
 
-const sections = [
-  { key: "general", label: "Général", icon: Settings },
-  { key: "users", label: "Utilisateurs", icon: Users },
-  { key: "roles", label: "Rôles & Permissions", icon: Shield },
-  { key: "notifications", label: "Notifications", icon: Bell },
-  { key: "email", label: "Email & SMTP", icon: Mail },
-  { key: "agents", label: "Profils & Signatures", icon: UserCircle },
-  { key: "portal_access", label: "Accès portail client", icon: UserCogIcon },
-  { key: "portal_domain", label: "Domaine du portail", icon: Globe, superAdminOnly: true },
-  { key: "sla", label: "SLA", icon: ShieldCheck },
-  { key: "categories", label: "Catégories", icon: Tag },
-  { key: "queues", label: "Files d'attente", icon: ListFilter },
-  { key: "tags", label: "Tags", icon: Layers },
-  { key: "kanban_boards", label: "Tableaux Kanban", icon: LayoutGrid },
-  { key: "kanban_columns", label: "Colonnes Kanban", icon: LayoutGrid },
-  { key: "billing_profiles", label: "Profils de facturation", icon: DollarSign },
-  { key: "contracts", label: "Contrats", icon: FileText },
-  { key: "integrations", label: "Intégrations", icon: Plug },
-  { key: "veeam", label: "Sauvegardes Veeam", icon: HardDrive },
-  { key: "api", label: "API", icon: Key },
-] as const;
+interface SettingsSection {
+  key: string;
+  label: string;
+  icon: any;
+  superAdminOnly?: boolean;
+}
 
-type SectionKey = (typeof sections)[number]["key"];
+interface SettingsGroup {
+  label: string;
+  sections: SettingsSection[];
+}
+
+const sectionGroups: SettingsGroup[] = [
+  {
+    label: "Général",
+    sections: [
+      { key: "general", label: "Général", icon: Settings },
+      { key: "users", label: "Utilisateurs", icon: Users },
+      { key: "roles", label: "Rôles & Permissions", icon: Shield },
+      { key: "agents", label: "Profils & Signatures", icon: UserCircle },
+    ],
+  },
+  {
+    label: "Tickets & Projets",
+    sections: [
+      { key: "categories", label: "Catégories", icon: Tag },
+      { key: "queues", label: "Files d'attente", icon: ListFilter },
+      { key: "tags", label: "Tags", icon: Layers },
+      { key: "sla", label: "SLA", icon: ShieldCheck },
+      { key: "kanban_boards", label: "Tableaux Kanban", icon: LayoutGrid },
+      { key: "kanban_columns", label: "Colonnes Kanban", icon: LayoutGrid },
+      { key: "project_types", label: "Types de projet", icon: FolderKanban },
+    ],
+  },
+  {
+    label: "Facturation",
+    sections: [
+      { key: "billing_profiles", label: "Profils de facturation", icon: DollarSign },
+      { key: "contracts", label: "Contrats", icon: FileText },
+    ],
+  },
+  {
+    label: "Communications",
+    sections: [
+      { key: "notifications", label: "Notifications", icon: Bell },
+      { key: "email", label: "Courriels", icon: Mail },
+    ],
+  },
+  {
+    label: "Portail client",
+    sections: [
+      { key: "portal_access", label: "Portail client", icon: UserCogIcon },
+      { key: "portal_preview", label: "Visualiser le portail", icon: Eye },
+      { key: "portal_domain", label: "Domaine du portail", icon: Globe, superAdminOnly: true },
+    ],
+  },
+  {
+    label: "Intégrations & Monitoring",
+    sections: [
+      { key: "integrations", label: "Intégrations", icon: Plug },
+      { key: "email_monitoring", label: "Surveillance par courriel", icon: Bell },
+      { key: "api", label: "API", icon: Key },
+    ],
+  },
+];
+
+// Flatten for type + lookup
+const sections = sectionGroups.flatMap((g) => g.sections);
+
+type SectionKey = string;
 
 // ---------------------------------------------------------------------------
 // Mock users
@@ -520,6 +575,7 @@ interface DbUserRow {
   roleBadge: "default" | "primary" | "success" | "warning" | "danger";
   status: string;
   lastLogin: string;
+  avatar: string | null;
 }
 
 function ROLE_BADGE(role: string): DbUserRow["roleBadge"] {
@@ -537,6 +593,7 @@ interface ApiUser {
   lastName: string;
   email: string;
   role: string;
+  avatar: string | null;
   isActive: boolean;
   lastLoginAt: string | null;
 }
@@ -564,6 +621,7 @@ function UsersSection() {
             lastLogin: u.lastLoginAt
               ? new Date(u.lastLoginAt).toLocaleDateString("fr-CA")
               : "Jamais",
+            avatar: u.avatar ?? null,
           }))
         );
       })
@@ -666,12 +724,13 @@ function UsersSection() {
                   <tr key={user.id} className="hover:bg-neutral-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
-                          {user.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </div>
+                        {user.avatar ? (
+                          <img src={user.avatar} alt="" className="h-8 w-8 rounded-full object-cover ring-1 ring-slate-200" />
+                        ) : (
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
+                            {user.name.split(" ").map((n) => n[0]).join("")}
+                          </div>
+                        )}
                         <span className="text-sm font-medium text-neutral-900">
                           {user.name}
                         </span>
@@ -769,9 +828,10 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   users: <UsersSection />,
   roles: <RolesSection />,
   notifications: <NotificationsSection />,
-  email: <EmailSection />,
+  email: <><EmailSection /><div className="mt-8"><EmailToTicketSection /></div></>,
   agents: <AgentProfilesSection />,
   portal_access: <PortalAccessSection />,
+  portal_preview: <PortalPreviewSection />,
   sla: <SLASection />,
   categories: <CategoriesSection />,
   queues: <QueuesSection />,
@@ -780,8 +840,9 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   kanban_columns: <KanbanColumnsSection />,
   billing_profiles: <BillingProfilesSection />,
   contracts: <ContractsSection />,
+  project_types: <ProjectTypesSection />,
   integrations: <IntegrationsSection />,
-  veeam: <VeeamSection />,
+  email_monitoring: <><VeeamSection /><div className="mt-10 pt-10 border-t border-slate-200"><MonitoringSection /></div></>,
   portal_domain: <PortalDomainSection />,
   api: (
     <PlaceholderSection
@@ -796,7 +857,9 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
 // ---------------------------------------------------------------------------
 
 export default function SettingsPage() {
-  const [activeSection, setActiveSection] = useState<SectionKey>("general");
+  const searchParams = useSearchParams();
+  const initialSection = (searchParams.get("section") as SectionKey) || "general";
+  const [activeSection, setActiveSection] = useState<SectionKey>(initialSection);
   const { data: session } = useSession();
   const role = (session?.user as any)?.role;
   const isSuperAdmin = role === "SUPER_ADMIN" || role === "MSP_ADMIN";
@@ -827,38 +890,52 @@ export default function SettingsPage() {
       {/* Layout: Sidebar + Content */}
       <div className="flex flex-col gap-6 lg:flex-row">
         {/* Settings Sidebar */}
-        <nav className="w-full shrink-0 lg:w-60">
-          <ul className="space-y-0.5">
-            {visibleSections.map((section) => {
-              const Icon = section.icon;
-              const isActive = effectiveSection === section.key;
-              const isProtected =
-                "superAdminOnly" in section && section.superAdminOnly;
+        <nav className="w-full shrink-0 lg:w-64">
+          <div className="space-y-4">
+            {sectionGroups.map((group) => {
+              const groupSections = group.sections.filter((s) => {
+                if (s.superAdminOnly) return isSuperAdmin;
+                return true;
+              });
+              if (groupSections.length === 0) return null;
               return (
-                <li key={section.key}>
-                  <button
-                    onClick={() => setActiveSection(section.key)}
-                    className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                      isActive
-                        ? "bg-blue-50 text-blue-700"
-                        : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span className="flex-1 text-left">{section.label}</span>
-                    {isProtected && (
-                      <span
-                        className="inline-flex h-4 items-center rounded bg-red-100 px-1 text-[8.5px] font-bold text-red-700 uppercase tracking-wider"
-                        title="Réservé aux super-admins"
-                      >
+                <div key={group.label}>
+                  <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                    {group.label}
+                  </p>
+                  <ul className="space-y-0.5">
+                    {groupSections.map((section) => {
+                      const Icon = section.icon;
+                      const isActive = effectiveSection === section.key;
+                      return (
+                        <li key={section.key}>
+                          <button
+                            onClick={() => setActiveSection(section.key)}
+                            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                              isActive
+                                ? "bg-blue-50 text-blue-700"
+                                : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+                            }`}
+                          >
+                            <Icon className="h-4 w-4" />
+                            <span className="flex-1 text-left">{section.label}</span>
+                            {section.superAdminOnly && (
+                              <span
+                                className="inline-flex h-4 items-center rounded bg-red-100 px-1 text-[8.5px] font-bold text-red-700 uppercase tracking-wider"
+                                title="Réservé aux super-admins"
+                              >
                         SA
                       </span>
                     )}
                   </button>
                 </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               );
             })}
-          </ul>
+          </div>
         </nav>
 
         {/* Content */}

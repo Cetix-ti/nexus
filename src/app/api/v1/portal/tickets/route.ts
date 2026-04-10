@@ -1,36 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listTickets } from "@/lib/tickets/service";
-import { CURRENT_PORTAL_USER } from "@/lib/portal/current-user";
+import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
 
-/**
- * GET /api/v1/portal/tickets
- *
- * Returns tickets visible to the current portal user.
- * - If canSeeAllOrganizationTickets: returns all org tickets
- * - Otherwise: returns only tickets where the contact is the requester
- */
 export async function GET(request: NextRequest) {
-  const sp = request.nextUrl.searchParams;
-  const orgName = CURRENT_PORTAL_USER.organizationName;
-  const perms = CURRENT_PORTAL_USER.permissions;
-
-  if (!perms.canAccessPortal) {
-    return NextResponse.json(
-      { success: false, error: "Permission denied" },
-      { status: 403 }
-    );
+  const user = await getCurrentPortalUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!user.permissions.canAccessPortal) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const sp = request.nextUrl.searchParams;
+
+  // Query DB with organization filter — no client-side filtering needed
   let result = await listTickets({
+    organizationId: user.organizationId,
     status: sp.get("status") || undefined,
     search: sp.get("search") || undefined,
   });
 
-  // Strict org filter (by name — until we wire CURRENT_PORTAL_USER.organizationId to a DB id)
-  result = result.filter((t) => t.organizationName === orgName);
-
-  if (!perms.canSeeAllOrganizationTickets) {
-    result = result.filter((t) => t.requesterEmail === CURRENT_PORTAL_USER.email);
+  // Standard users only see their own tickets
+  if (!user.permissions.canSeeAllOrgTickets) {
+    result = result.filter((t) => t.requesterEmail === user.email);
   }
 
   return NextResponse.json({
@@ -38,8 +31,8 @@ export async function GET(request: NextRequest) {
     data: result,
     meta: {
       total: result.length,
-      organizationId: CURRENT_PORTAL_USER.organizationId,
-      scope: perms.canSeeAllOrganizationTickets ? "all_org" : "own_only",
+      organizationId: user.organizationId,
+      scope: user.permissions.canSeeAllOrgTickets ? "all_org" : "own_only",
     },
   });
 }

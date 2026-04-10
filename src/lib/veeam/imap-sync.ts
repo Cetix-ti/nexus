@@ -133,13 +133,21 @@ export async function testImapConnection(config: VeeamImapConfig): Promise<{
   error?: string;
   folders?: string[];
 }> {
+  // For Exchange/O365: port 993 = implicit TLS (secure: true)
+  // port 143 = STARTTLS (secure: false, but upgraded)
   const client = new ImapFlow({
     host: config.host,
     port: config.port,
     secure: config.secure,
     auth: { user: config.user, pass: config.pass },
     logger: false,
-  });
+    tls: {
+      rejectUnauthorized: true,
+      minVersion: "TLSv1.2",
+    },
+    // Exchange Online can be slow to respond
+    greetTimeout: 15000,
+  } as any);
 
   try {
     await client.connect();
@@ -154,9 +162,14 @@ export async function testImapConnection(config: VeeamImapConfig): Promise<{
     walk(tree.folders ?? []);
     try { await client.logout(); } catch { /* ignore logout errors */ }
     return { ok: true, folders };
-  } catch (err) {
+  } catch (err: any) {
     try { await client.logout(); } catch { /* ignore */ }
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    // Extract the most useful error message
+    const msg = err?.responseText || err?.response || err?.message || String(err);
+    const code = err?.authenticationFailed ? "Authentification refusée — vérifiez l'utilisateur et le mot de passe." : null;
+    const detail = code || (typeof msg === "string" ? msg : JSON.stringify(msg));
+    console.error("[Veeam IMAP test] Error:", detail, err);
+    return { ok: false, error: detail };
   }
 }
 
@@ -174,7 +187,12 @@ export async function syncVeeamAlerts(config?: VeeamImapConfig | null): Promise<
     secure: cfg.secure,
     auth: { user: cfg.user, pass: cfg.pass },
     logger: false,
-  });
+    tls: {
+      rejectUnauthorized: true,
+      minVersion: "TLSv1.2",
+    },
+    greetTimeout: 15000,
+  } as any);
 
   const errors: string[] = [];
   let fetched = 0;

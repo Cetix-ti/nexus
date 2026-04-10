@@ -25,7 +25,7 @@ const COLUMN_COLORS = [
 // Sensible default column sets per groupBy
 export const DEFAULT_COLUMNS_BY_GROUP: Record<BoardGroupBy, BoardColumn[]> = {
   status: [
-    { id: "c_new", label: "Nouveau", value: "new", color: "#3B82F6", order: 0, visible: true },
+    { id: "c_new", label: "Non assigné", value: "new", color: "#64748B", order: 0, visible: true },
     { id: "c_open", label: "Ouvert", value: "open", color: "#0EA5E9", order: 1, visible: true },
     { id: "c_in_progress", label: "En cours", value: "in_progress", color: "#F59E0B", order: 2, visible: true },
     { id: "c_on_site", label: "Sur place", value: "on_site", color: "#06B6D4", order: 3, visible: true },

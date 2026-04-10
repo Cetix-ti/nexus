@@ -1,0 +1,360 @@
+// ============================================================================
+// MONITORING ALERT EMAIL SYNC — Microsoft Graph
+// Reads monitoring alert emails from configured folders, parses them,
+// detects source type (Zabbix, Atera, FortiGate, Wazuh, etc.),
+// matches to orgs, deduplicates, and detects resolutions.
+// ============================================================================
+
+import prisma from "@/lib/prisma";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface MonitoringEmailConfig {
+  mailbox: string;
+  folders: string[]; // Multiple folders to monitor, e.g. ["Inbox/ZABBIX", "Inbox/FORTIGATE"]
+}
+
+interface GraphMessage {
+  id: string;
+  internetMessageId: string;
+  subject: string;
+  from: { emailAddress: { address: string; name: string } };
+  receivedDateTime: string;
+  bodyPreview: string;
+  body: { content: string; contentType: string };
+}
+
+interface GraphFolder {
+  id: string;
+  displayName: string;
+}
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+const CONFIG_KEY = "monitoring.email";
+
+export async function getMonitoringConfig(): Promise<MonitoringEmailConfig | null> {
+  const row = await prisma.tenantSetting.findUnique({ where: { key: CONFIG_KEY } });
+  if (!row) return null;
+  return row.value as unknown as MonitoringEmailConfig;
+}
+
+export async function setMonitoringConfig(config: MonitoringEmailConfig) {
+  await prisma.tenantSetting.upsert({
+    where: { key: CONFIG_KEY },
+    create: { key: CONFIG_KEY, value: config as any },
+    update: { value: config as any },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Graph API (reuses Azure credentials)
+// ---------------------------------------------------------------------------
+
+let cachedToken: { accessToken: string; expiresAt: number } | null = null;
+
+async function getAccessToken(): Promise<string> {
+  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
+    return cachedToken.accessToken;
+  }
+  const res = await fetch(
+    `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: process.env.AZURE_CLIENT_ID!,
+        client_secret: process.env.AZURE_CLIENT_SECRET!,
+        scope: "https://graph.microsoft.com/.default",
+        grant_type: "client_credentials",
+      }),
+    },
+  );
+  if (!res.ok) throw new Error(`OAuth2 ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  cachedToken = { accessToken: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
+  return cachedToken.accessToken;
+}
+
+async function graphFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await getAccessToken();
+  const url = path.startsWith("http") ? path : `https://graph.microsoft.com/v1.0${path}`;
+  const res = await fetch(url, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) throw new Error(`Graph ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Folder resolution
+// ---------------------------------------------------------------------------
+
+const WELL_KNOWN: Record<string, string> = {
+  inbox: "Inbox", "boîte de réception": "Inbox",
+};
+
+async function resolveFolderId(mailbox: string, folderPath: string): Promise<string> {
+  const parts = folderPath.split("/").filter(Boolean);
+  const base = `/users/${encodeURIComponent(mailbox)}`;
+  if (parts.length === 0) {
+    return (await graphFetch<GraphFolder>(`${base}/mailFolders/Inbox`)).id;
+  }
+  let parentId: string | null = null;
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (i === 0) {
+      const wk = WELL_KNOWN[part.toLowerCase()];
+      if (wk) {
+        try { parentId = (await graphFetch<GraphFolder>(`${base}/mailFolders/${wk}`)).id; continue; }
+        catch { /* fall through */ }
+      }
+    }
+    const folderUrl: string = parentId ? `${base}/mailFolders/${parentId}/childFolders` : `${base}/mailFolders`;
+    const folderRes = await graphFetch<{ value: GraphFolder[] }>(folderUrl);
+    const found = folderRes.value.find((f: GraphFolder) => f.displayName.toLowerCase() === part.toLowerCase());
+    if (!found) throw new Error(`Dossier "${part}" introuvable`);
+    parentId = found.id;
+  }
+  return parentId!;
+}
+
+// ---------------------------------------------------------------------------
+// Source detection from email sender/subject
+// ---------------------------------------------------------------------------
+
+interface DetectedSource {
+  sourceType: string;
+  severity: "CRITICAL" | "HIGH" | "WARNING" | "INFO";
+  alertGroupKey: string | null;
+  isResolution: boolean;
+}
+
+function detectSource(subject: string, senderEmail: string, body: string): DetectedSource {
+  const subjectLower = subject.toLowerCase();
+  const senderLower = senderEmail.toLowerCase();
+  const text = `${subjectLower} ${body.slice(0, 1000).toLowerCase()}`;
+
+  let sourceType = "other";
+  if (senderLower.includes("zabbix") || text.includes("zabbix")) sourceType = "zabbix";
+  else if (senderLower.includes("atera") || text.includes("atera")) sourceType = "atera";
+  else if (text.includes("fortigate") || text.includes("fortinet") || text.includes("fortimail")) sourceType = "fortigate";
+  else if (text.includes("wazuh")) sourceType = "wazuh";
+  else if (text.includes("bitdefender")) sourceType = "bitdefender";
+
+  // Severity
+  let severity: DetectedSource["severity"] = "WARNING";
+  if (text.includes("critical") || text.includes("disaster") || text.includes("critique")) severity = "CRITICAL";
+  else if (text.includes("high") || text.includes("élevé")) severity = "HIGH";
+  else if (text.includes("information") || text.includes("info") || text.includes("ok")) severity = "INFO";
+
+  // Resolution detection
+  const isResolution =
+    text.includes("resolved") ||
+    text.includes("ok") && (text.includes("problem") || sourceType === "zabbix") ||
+    text.includes("recovery") ||
+    text.includes("résolu") ||
+    subjectLower.startsWith("ok:") ||
+    subjectLower.includes("resolved:");
+
+  // Group key for dedup — extract host/service from common patterns
+  let alertGroupKey: string | null = null;
+  // Zabbix: "Problem: <description> on <host>"
+  const zabbixMatch = subject.match(/(?:Problem|Resolved|OK):\s*(.+?)(?:\s+on\s+(.+))?$/i);
+  if (zabbixMatch) {
+    const desc = zabbixMatch[1]?.trim().slice(0, 80);
+    const host = zabbixMatch[2]?.trim().slice(0, 50);
+    alertGroupKey = `${sourceType}:${host || "unknown"}:${desc}`.toLowerCase();
+  }
+  if (!alertGroupKey) {
+    // Generic: use source + first meaningful part of subject
+    const cleanSubject = subject.replace(/\[.*?\]/g, "").replace(/\d{4}-\d{2}-\d{2}/g, "").trim().slice(0, 80);
+    alertGroupKey = `${sourceType}:${cleanSubject}`.toLowerCase();
+  }
+
+  return { sourceType, severity, alertGroupKey, isResolution };
+}
+
+// ---------------------------------------------------------------------------
+// Domain → org matching
+// ---------------------------------------------------------------------------
+
+async function buildDomainMap(): Promise<Map<string, { id: string; name: string }>> {
+  const orgs = await prisma.organization.findMany({
+    select: { id: true, name: true, domain: true, domains: true },
+  });
+  const map = new Map<string, { id: string; name: string }>();
+  for (const org of orgs) {
+    if (org.domain) map.set(org.domain.toLowerCase(), { id: org.id, name: org.name });
+    for (const d of org.domains ?? []) {
+      if (d) map.set(d.toLowerCase(), { id: org.id, name: org.name });
+    }
+  }
+  return map;
+}
+
+// ---------------------------------------------------------------------------
+// Test connection
+// ---------------------------------------------------------------------------
+
+export async function testMonitoringConnection(mailbox: string): Promise<{
+  ok: boolean;
+  error?: string;
+  folders?: string[];
+}> {
+  try {
+    await getAccessToken();
+    const res = await graphFetch<{ value: GraphFolder[] }>(
+      `/users/${encodeURIComponent(mailbox)}/mailFolders/Inbox/childFolders?$top=50`,
+    );
+    const folders = res.value.map((f: GraphFolder) => `Boîte de réception/${f.displayName}`);
+    return { ok: true, folders };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sync
+// ---------------------------------------------------------------------------
+
+export async function syncMonitoringAlerts(
+  config?: MonitoringEmailConfig | null,
+  options?: { sinceDays?: number },
+): Promise<{
+  fetched: number;
+  created: number;
+  resolved: number;
+  skipped: number;
+  errors: string[];
+}> {
+  const cfg = config ?? (await getMonitoringConfig());
+  if (!cfg || !cfg.folders.length) {
+    return { fetched: 0, created: 0, resolved: 0, skipped: 0, errors: ["Configuration non définie"] };
+  }
+
+  const errors: string[] = [];
+  let fetched = 0;
+  let created = 0;
+  let resolved = 0;
+  let skipped = 0;
+
+  try {
+    const domainMap = await buildDomainMap();
+
+    // Determine since date
+    // sinceDays: undefined = incremental, 0 = all history, N = last N days
+    const sinceDays = options?.sinceDays;
+    let since: Date;
+    if (sinceDays === undefined) {
+      const latest = await prisma.monitoringAlert.findFirst({
+        orderBy: { receivedAt: "desc" },
+        select: { receivedAt: true },
+      });
+      since = latest
+        ? new Date(latest.receivedAt.getTime() - 2 * 60 * 60 * 1000)
+        : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    } else if (sinceDays === 0) {
+      since = new Date(0); // all history
+    } else {
+      since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    }
+
+    for (const folder of cfg.folders) {
+      try {
+        const folderId = await resolveFolderId(cfg.mailbox, folder);
+        let nextLink: string | null =
+          `/users/${encodeURIComponent(cfg.mailbox)}/mailFolders/${folderId}/messages` +
+          `?$filter=receivedDateTime ge ${since.toISOString()}` +
+          `&$orderby=receivedDateTime asc` +
+          `&$top=50` +
+          `&$select=id,internetMessageId,subject,from,receivedDateTime,bodyPreview,body`;
+
+        interface GraphPage { value: GraphMessage[]; "@odata.nextLink"?: string; }
+
+        while (nextLink) {
+          const page: GraphPage = await graphFetch<GraphPage>(nextLink);
+
+          for (const msg of page.value) {
+            fetched++;
+            try {
+              const messageId = msg.internetMessageId || `graph-${msg.id}`;
+
+              // Dedup
+              const exists = await prisma.monitoringAlert.findUnique({
+                where: { messageId },
+                select: { id: true },
+              });
+              if (exists) { skipped++; continue; }
+
+              const senderEmail = msg.from?.emailAddress?.address?.toLowerCase() || "";
+              const senderDomain = senderEmail.split("@")[1] || "";
+              const bodyText = msg.bodyPreview || "";
+
+              const detected = detectSource(msg.subject, senderEmail, bodyText);
+
+              // Match org
+              const org = domainMap.get(senderDomain);
+
+              // If it's a resolution, try to mark the original alert as resolved
+              if (detected.isResolution && detected.alertGroupKey) {
+                const openAlert = await prisma.monitoringAlert.findFirst({
+                  where: {
+                    alertGroupKey: detected.alertGroupKey,
+                    isResolved: false,
+                  },
+                  orderBy: { receivedAt: "desc" },
+                  select: { id: true },
+                });
+                if (openAlert) {
+                  await prisma.monitoringAlert.update({
+                    where: { id: openAlert.id },
+                    data: { isResolved: true, resolvedAt: new Date(msg.receivedDateTime), stage: "RESOLVED" },
+                  });
+                  resolved++;
+                }
+              }
+
+              // Always store the alert (even resolutions, for history)
+              await prisma.monitoringAlert.create({
+                data: {
+                  organizationId: org?.id ?? null,
+                  organizationName: org?.name ?? null,
+                  sourceType: detected.sourceType,
+                  severity: detected.severity,
+                  stage: detected.isResolution ? "RESOLVED" : "TRIAGE",
+                  subject: msg.subject,
+                  body: bodyText.slice(0, 5000),
+                  senderEmail,
+                  senderDomain,
+                  messageId,
+                  receivedAt: new Date(msg.receivedDateTime),
+                  isResolved: detected.isResolution,
+                  resolvedAt: detected.isResolution ? new Date(msg.receivedDateTime) : null,
+                  alertGroupKey: detected.alertGroupKey,
+                },
+              });
+              created++;
+            } catch (err) {
+              errors.push(`${msg.id}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+
+          const rawNext: string | undefined = page["@odata.nextLink"];
+          nextLink = rawNext ? rawNext.replace("https://graph.microsoft.com/v1.0", "") : null;
+        }
+      } catch (err) {
+        errors.push(`Dossier "${folder}": ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  } catch (err) {
+    errors.push(err instanceof Error ? err.message : String(err));
+  }
+
+  return { fetched, created, resolved, skipped, errors };
+}

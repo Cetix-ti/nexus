@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   Pin,
@@ -32,9 +33,11 @@ export function KanbanBoardSwitcher({
 }: {
   onManage?: () => void;
 }) {
+  const router = useRouter();
   const boards = useKanbanBoardsStore((s) => s.boards);
   const activeBoardId = useKanbanBoardsStore((s) => s.activeBoardId);
   const setActiveBoard = useKanbanBoardsStore((s) => s.setActiveBoard);
+  const addBoard = useKanbanBoardsStore((s) => s.addBoard);
   const togglePin = useKanbanBoardsStore((s) => s.togglePin);
   const duplicateBoard = useKanbanBoardsStore((s) => s.duplicateBoard);
   const deleteBoard = useKanbanBoardsStore((s) => s.deleteBoard);
@@ -65,29 +68,15 @@ export function KanbanBoardSwitcher({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((s) => !s)}
-        className="flex items-center gap-2.5 h-10 pl-2 pr-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition-colors"
+        className="flex items-center gap-2 h-10 pl-3 pr-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition-colors"
       >
-        <div
-          className="h-7 w-7 rounded-md flex items-center justify-center text-[14px] shrink-0 ring-1 ring-inset"
-          style={{
-            backgroundColor: active.color + "15",
-            boxShadow: `inset 0 0 0 1px ${active.color}30`,
-          }}
-        >
-          {active.icon}
-        </div>
-        <div className="text-left min-w-0">
-          <p className="text-[13px] font-semibold text-slate-900 leading-none">
-            {active.name}
-          </p>
-          <p className="text-[10px] text-slate-500 leading-none mt-0.5 inline-flex items-center gap-1">
-            <ShareIcon className="h-2.5 w-2.5" />
-            {SHARE_SCOPE_LABELS[active.shareScope]}
-          </p>
-        </div>
+        <span className="text-[14px] shrink-0">{active.icon}</span>
+        <span className="text-[13px] font-semibold text-slate-900 whitespace-nowrap">
+          {active.name}
+        </span>
         <ChevronDown
           className={cn(
-            "h-3.5 w-3.5 text-slate-400 transition-transform",
+            "h-3.5 w-3.5 text-slate-400 transition-transform ml-1",
             open && "rotate-180"
           )}
         />
@@ -138,19 +127,15 @@ export function KanbanBoardSwitcher({
                       {board.isPinned && (
                         <Pin className="h-2.5 w-2.5 text-amber-500 fill-amber-500" />
                       )}
+                      <span title={SHARE_SCOPE_LABELS[board.shareScope]}>
+                        <SI className="h-3 w-3 text-slate-400 shrink-0" />
+                      </span>
                     </div>
                     {board.description && (
                       <p className="text-[10.5px] text-slate-500 truncate">
                         {board.description}
                       </p>
                     )}
-                    <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-slate-400">
-                      <SI className="h-2.5 w-2.5" />
-                      {board.shareScope === "team" &&
-                      board.sharedWithGroupNames.length > 0
-                        ? board.sharedWithGroupNames.join(", ")
-                        : SHARE_SCOPE_LABELS[board.shareScope]}
-                    </div>
                   </div>
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
                     <button
@@ -196,9 +181,31 @@ export function KanbanBoardSwitcher({
           </div>
           <div className="border-t border-slate-100 p-1.5">
             <button
-              onClick={() => {
+              onClick={async () => {
+                const name = prompt("Nom du nouveau tableau :");
+                if (!name?.trim()) return;
+                await addBoard({
+                  name: name.trim(),
+                  description: "",
+                  icon: "📋",
+                  color: "#3B82F6",
+                  groupBy: "status",
+                  shareScope: "everyone",
+                  sharedWithGroupIds: [],
+                  sharedWithGroupNames: [],
+                  isPinned: false,
+                  filterOrgIds: [],
+                  filterTechIds: [],
+                  filterPriorities: [],
+                  filterCategories: [],
+                  filterTicketTypes: [],
+                  filterTags: [],
+                  columns: [],
+                  customColumns: [],
+                  ownerId: "",
+                  ownerName: "",
+                });
                 setOpen(false);
-                onManage?.();
               }}
               className="w-full flex items-center gap-2 rounded-md px-3 py-2 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50"
             >
@@ -208,7 +215,11 @@ export function KanbanBoardSwitcher({
             <button
               onClick={() => {
                 setOpen(false);
-                onManage?.();
+                if (onManage) {
+                  onManage();
+                } else {
+                  router.push("/settings?section=kanban_boards");
+                }
               }}
               className="w-full flex items-center gap-2 rounded-md px-3 py-2 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50"
             >

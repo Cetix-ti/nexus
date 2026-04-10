@@ -113,6 +113,7 @@ export function PortalDomainSection() {
   const [acmeEmail, setAcmeEmail] = useState("");
   const [forceHttps, setForceHttps] = useState(true);
   const [autoRenew, setAutoRenew] = useState(true);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   async function loadAll() {
     setLoading(true);
@@ -573,14 +574,25 @@ export function PortalDomainSection() {
         </CardContent>
       </Card>
 
-      {/* INSTRUCTIONS */}
+      {/* INSTRUCTIONS — collapsed by default */}
       <Card className="border-blue-200/60 bg-blue-50/30">
         <CardContent className="p-5">
-          <h3 className="text-[13px] font-semibold text-slate-900 mb-2 inline-flex items-center gap-2">
-            <Terminal className="h-4 w-4 text-blue-600" strokeWidth={2.25} />
-            Instructions d&apos;installation initiale
-          </h3>
-          <p className="text-[12px] text-slate-600 mb-3">
+          <button
+            type="button"
+            onClick={() => setShowInstructions(!showInstructions)}
+            className="w-full flex items-center justify-between"
+          >
+            <h3 className="text-[13px] font-semibold text-slate-900 inline-flex items-center gap-2">
+              <Terminal className="h-4 w-4 text-blue-600" strokeWidth={2.25} />
+              Instructions d&apos;installation initiale
+            </h3>
+            <span className="text-[12px] text-blue-600 font-medium">
+              {showInstructions ? "Masquer" : "Afficher"}
+            </span>
+          </button>
+          {showInstructions && (
+          <>
+          <p className="text-[12px] text-slate-600 mb-3 mt-2">
             Si certbot n&apos;est pas installé, exécutez ces commandes une seule fois :
           </p>
           <div className="space-y-2">
@@ -614,6 +626,8 @@ systemctl status certbot.timer`}
   --non-interactive`}
             />
           </div>
+          </>
+          )}
         </CardContent>
       </Card>
     </div>

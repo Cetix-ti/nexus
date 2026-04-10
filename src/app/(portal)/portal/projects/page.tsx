@@ -12,10 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mockProjects, mockProjectMilestones } from "@/lib/projects/mock-data";
-import {
-  CURRENT_PORTAL_USER,
-  getCurrentPortalOrg,
-} from "@/lib/portal/current-user";
+import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { ProjectCard } from "@/components/portal/project-card";
 import type { Project } from "@/lib/projects/types";
 
@@ -45,10 +42,9 @@ function matchesFilter(p: Project, f: Filter): boolean {
 }
 
 export default function PortalProjectsPage() {
+  const { organizationId: orgId, organizationName } = usePortalUser();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
-
-  const orgId = getCurrentPortalOrg();
 
   const visibleProjects = useMemo(
     () =>
@@ -107,7 +103,7 @@ export default function PortalProjectsPage() {
         <p className="mt-2 text-base text-neutral-500">
           Suivez l&apos;avancement des projets en cours pour{" "}
           <span className="font-medium text-neutral-700">
-            {CURRENT_PORTAL_USER.organizationName}
+            {organizationName}
           </span>
         </p>
       </div>

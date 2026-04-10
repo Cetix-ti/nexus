@@ -1,274 +1,285 @@
 "use client";
 
-import React from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import {
-  PlusCircle,
   Ticket,
-  BookOpen,
+  Plus,
+  Monitor,
   Clock,
-  ArrowRight,
-  Megaphone,
   CheckCircle2,
   AlertCircle,
+  ArrowRight,
   Loader2,
-  FolderKanban,
+  BarChart3,
 } from "lucide-react";
-import { mockProjects } from "@/lib/projects/mock-data";
-import { getCurrentPortalOrg } from "@/lib/portal/current-user";
-import { ProjectCard } from "@/components/portal/project-card";
+import { cn } from "@/lib/utils";
+import { usePortalUser } from "@/lib/portal/use-portal-user";
 
-const recentTickets = [
-  {
-    id: "TK-1042",
-    subject: "Cannot access shared drive after password reset",
-    status: "In Progress",
-    statusVariant: "primary" as const,
-    priority: "High",
-    updated: "2 hours ago",
-  },
-  {
-    id: "TK-1038",
-    subject: "Request for additional monitor",
-    status: "Waiting on Me",
-    statusVariant: "warning" as const,
-    priority: "Low",
-    updated: "1 day ago",
-  },
-  {
-    id: "TK-1035",
-    subject: "VPN connection drops intermittently",
-    status: "Open",
-    statusVariant: "danger" as const,
-    priority: "Medium",
-    updated: "2 days ago",
-  },
-  {
-    id: "TK-1029",
-    subject: "New software license request - Figma",
-    status: "Resolved",
-    statusVariant: "success" as const,
-    priority: "Low",
-    updated: "5 days ago",
-  },
-  {
-    id: "TK-1021",
-    subject: "Email signature not updating correctly",
-    status: "Closed",
-    statusVariant: "default" as const,
-    priority: "Low",
-    updated: "1 week ago",
-  },
-];
+interface DashboardData {
+  stats: {
+    totalTickets: number;
+    openTickets: number;
+    resolvedTickets: number;
+    assetCount: number;
+  };
+  recentTickets: {
+    id: string;
+    number: string;
+    subject: string;
+    status: string;
+    priority: string;
+    updatedAt: string;
+    createdAt: string;
+  }[];
+  userName: string;
+  organizationName: string;
+  portalRole: string;
+}
 
-const announcements = [
-  {
-    title: "Scheduled Maintenance - Email Servers",
-    date: "Apr 8, 2026",
-    excerpt:
-      "Email services will be briefly unavailable on April 8th from 2:00 AM to 4:00 AM for routine maintenance.",
-  },
-  {
-    title: "New: Self-Service Password Reset",
-    date: "Apr 1, 2026",
-    excerpt:
-      "You can now reset your password directly from the login page without contacting IT support.",
-  },
-];
-
-const statusIcon = {
-  Open: AlertCircle,
-  "In Progress": Loader2,
-  "Waiting on Me": Clock,
-  Resolved: CheckCircle2,
-  Closed: CheckCircle2,
+const STATUS_STYLES: Record<string, { label: string; bg: string; text: string }> = {
+  new: { label: "Nouveau", bg: "bg-blue-50", text: "text-blue-700" },
+  open: { label: "Ouvert", bg: "bg-sky-50", text: "text-sky-700" },
+  in_progress: { label: "En cours", bg: "bg-amber-50", text: "text-amber-700" },
+  waiting_client: { label: "En attente", bg: "bg-violet-50", text: "text-violet-700" },
+  on_site: { label: "Sur place", bg: "bg-cyan-50", text: "text-cyan-700" },
+  resolved: { label: "Résolu", bg: "bg-emerald-50", text: "text-emerald-700" },
+  closed: { label: "Fermé", bg: "bg-slate-100", text: "text-slate-600" },
 };
 
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "À l'instant";
+  if (mins < 60) return `il y a ${mins}min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `il y a ${hours}h`;
+  return `il y a ${Math.floor(hours / 24)}j`;
+}
+
 export default function PortalHomePage() {
-  const orgId = getCurrentPortalOrg();
-  const portalProjects = mockProjects
-    .filter(
-      (p) =>
-        p.organizationId === orgId &&
-        p.isVisibleToClient &&
-        p.visibilitySettings.showProject &&
-        (p.status === "active" || p.status === "at_risk" || p.status === "planning")
-    )
-    .slice(0, 3);
+  const { user, organizationName } = usePortalUser();
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/v1/portal/dashboard")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setData(d))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  const greeting = user?.firstName
+    ? `Bonjour, ${user.firstName}`
+    : "Bienvenue";
 
   return (
     <div className="space-y-8">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">{greeting}</h1>
+        <p className="mt-1 text-[14px] text-slate-500">
+          Portail client — {organizationName || "Votre organisation"}
+        </p>
+      </div>
 
-      {/* Quick Action Cards */}
+      {/* Quick actions */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Link
           href="/portal/tickets/new"
-          className="group flex flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 shadow-sm hover:shadow-md hover:border-blue-200 transition-all"
+          className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group"
         >
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-[#2563EB] group-hover:bg-blue-100 transition-colors">
-            <PlusCircle className="h-6 w-6" />
+          <div className="h-11 w-11 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-100 transition-colors">
+            <Plus className="h-5 w-5" />
           </div>
-          <div className="text-center">
-            <h3 className="text-sm font-semibold text-neutral-900">
-              Submit a Ticket
-            </h3>
-            <p className="mt-1 text-xs text-neutral-500">
-              Report an issue or make a request
+          <div>
+            <p className="text-[14px] font-semibold text-slate-900">
+              Soumettre un billet
+            </p>
+            <p className="text-[12px] text-slate-500">
+              Créer une nouvelle demande
             </p>
           </div>
         </Link>
-
         <Link
           href="/portal/tickets"
-          className="group flex flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 shadow-sm hover:shadow-md hover:border-blue-200 transition-all"
+          className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group"
         >
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 transition-colors">
-            <Ticket className="h-6 w-6" />
+          <div className="h-11 w-11 rounded-xl bg-violet-50 flex items-center justify-center text-violet-600 group-hover:bg-violet-100 transition-colors">
+            <Ticket className="h-5 w-5" />
           </div>
-          <div className="text-center">
-            <h3 className="text-sm font-semibold text-neutral-900">
-              Track My Tickets
-            </h3>
-            <p className="mt-1 text-xs text-neutral-500">
-              View status and updates on your requests
+          <div>
+            <p className="text-[14px] font-semibold text-slate-900">
+              Mes billets
+            </p>
+            <p className="text-[12px] text-slate-500">
+              Suivre l&apos;avancement
             </p>
           </div>
         </Link>
-
         <Link
-          href="/portal/kb"
-          className="group flex flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 shadow-sm hover:shadow-md hover:border-blue-200 transition-all"
+          href="/portal/assets"
+          className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group"
         >
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600 group-hover:bg-amber-100 transition-colors">
-            <BookOpen className="h-6 w-6" />
+          <div className="h-11 w-11 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-100 transition-colors">
+            <Monitor className="h-5 w-5" />
           </div>
-          <div className="text-center">
-            <h3 className="text-sm font-semibold text-neutral-900">
-              Knowledge Base
-            </h3>
-            <p className="mt-1 text-xs text-neutral-500">
-              Find answers and how-to guides
+          <div>
+            <p className="text-[14px] font-semibold text-slate-900">
+              Mes actifs
+            </p>
+            <p className="text-[12px] text-slate-500">
+              Équipements assignés
             </p>
           </div>
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Tickets */}
-        <div className="lg:col-span-2">
-          <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between p-5 border-b border-neutral-100">
-              <h2 className="text-base font-semibold text-neutral-900">
-                My Recent Tickets
-              </h2>
-              <Link
-                href="/portal/tickets"
-                className="flex items-center gap-1 text-sm font-medium text-[#2563EB] hover:text-blue-700 transition-colors"
-              >
-                View all
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-            <div className="divide-y divide-neutral-100">
-              {recentTickets.map((ticket) => {
-                const Icon =
-                  statusIcon[ticket.status as keyof typeof statusIcon] ||
-                  AlertCircle;
+      {/* Stats */}
+      {data && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <StatCard
+            label="Billets ouverts"
+            value={data.stats.openTickets}
+            icon={<AlertCircle className="h-5 w-5 text-amber-600" />}
+            bg="bg-amber-50"
+          />
+          <StatCard
+            label="Total billets"
+            value={data.stats.totalTickets}
+            icon={<Ticket className="h-5 w-5 text-blue-600" />}
+            bg="bg-blue-50"
+          />
+          <StatCard
+            label="Résolus"
+            value={data.stats.resolvedTickets}
+            icon={<CheckCircle2 className="h-5 w-5 text-emerald-600" />}
+            bg="bg-emerald-50"
+          />
+          <StatCard
+            label="Actifs"
+            value={data.stats.assetCount}
+            icon={<Monitor className="h-5 w-5 text-violet-600" />}
+            bg="bg-violet-50"
+          />
+        </div>
+      )}
+
+      {/* Recent tickets */}
+      {data && data.recentTickets.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[16px] font-semibold text-slate-900">
+              Billets récents
+            </h2>
+            <Link
+              href="/portal/tickets"
+              className="text-[13px] text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+            >
+              Voir tout
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+            <div className="divide-y divide-slate-100">
+              {data.recentTickets.map((t) => {
+                const st = STATUS_STYLES[t.status] ?? STATUS_STYLES.open;
                 return (
                   <Link
-                    key={ticket.id}
-                    href={`/portal/tickets/${ticket.id}`}
-                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-neutral-50 transition-colors"
+                    key={t.id}
+                    href={`/portal/tickets/${t.id}`}
+                    className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/80 transition-colors"
                   >
-                    <Icon
-                      className={cn(
-                        "h-4.5 w-4.5 shrink-0",
-                        ticket.status === "In Progress" &&
-                          "text-[#2563EB]",
-                        ticket.status === "Open" && "text-red-500",
-                        ticket.status === "Waiting on Me" &&
-                          "text-amber-500",
-                        ticket.status === "Resolved" &&
-                          "text-emerald-500",
-                        ticket.status === "Closed" && "text-neutral-400"
-                      )}
-                    />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono text-neutral-400">
-                          {ticket.id}
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[11px] font-mono text-slate-400">
+                          {t.number}
                         </span>
-                        <Badge variant={ticket.statusVariant} className="text-[10px]">
-                          {ticket.status}
-                        </Badge>
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-md px-2 py-0.5 text-[10.5px] font-medium",
+                            st.bg,
+                            st.text,
+                          )}
+                        >
+                          {st.label}
+                        </span>
                       </div>
-                      <p className="mt-0.5 text-sm font-medium text-neutral-800 truncate">
-                        {ticket.subject}
+                      <p className="text-[14px] font-medium text-slate-900 truncate">
+                        {t.subject}
                       </p>
                     </div>
-                    <span className="text-xs text-neutral-400 shrink-0 hidden sm:block">
-                      {ticket.updated}
-                    </span>
+                    <div className="text-right shrink-0">
+                      <p className="text-[11px] text-slate-400 flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {timeAgo(t.updatedAt)}
+                      </p>
+                    </div>
                   </Link>
                 );
               })}
             </div>
           </div>
         </div>
+      )}
 
-        {/* Announcements */}
-        <div>
-          <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-            <div className="flex items-center gap-2 p-5 border-b border-neutral-100">
-              <Megaphone className="h-4 w-4 text-[#2563EB]" />
-              <h2 className="text-base font-semibold text-neutral-900">
-                Announcements
-              </h2>
-            </div>
-            <div className="divide-y divide-neutral-100">
-              {announcements.map((item, i) => (
-                <div key={i} className="p-5">
-                  <p className="text-xs text-neutral-400">{item.date}</p>
-                  <h3 className="mt-1 text-sm font-semibold text-neutral-900">
-                    {item.title}
-                  </h3>
-                  <p className="mt-1.5 text-xs text-neutral-500 leading-relaxed">
-                    {item.excerpt}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Projets en cours */}
-      {portalProjects.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <FolderKanban className="h-5 w-5 text-[#2563EB]" />
-              <h2 className="text-base font-semibold text-neutral-900">
-                Projets en cours
-              </h2>
-            </div>
-            <Link
-              href="/portal/projects"
-              className="flex items-center gap-1 text-sm font-medium text-[#2563EB] hover:text-blue-700 transition-colors"
-            >
-              Voir tous
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {portalProjects.map((p) => (
-              <ProjectCard key={p.id} project={p} compact />
-            ))}
-          </div>
+      {data && data.recentTickets.length === 0 && (
+        <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+          <Ticket className="h-10 w-10 mx-auto mb-3 text-slate-300" strokeWidth={1.5} />
+          <p className="text-[14px] text-slate-500">
+            Aucun billet pour le moment.
+          </p>
+          <Link
+            href="/portal/tickets/new"
+            className="inline-flex items-center gap-1.5 mt-3 text-[13px] font-medium text-blue-600 hover:text-blue-700"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Soumettre votre premier billet
+          </Link>
         </div>
       )}
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  icon,
+  bg,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+  bg: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <div
+          className={cn(
+            "h-10 w-10 rounded-xl flex items-center justify-center",
+            bg,
+          )}
+        >
+          {icon}
+        </div>
+        <div>
+          <p className="text-[22px] font-bold text-slate-900 tabular-nums">
+            {value}
+          </p>
+          <p className="text-[12px] text-slate-500">{label}</p>
+        </div>
+      </div>
     </div>
   );
 }

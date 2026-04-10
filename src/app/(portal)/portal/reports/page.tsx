@@ -1,299 +1,290 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
-  Clock,
-  Wallet,
   Ticket,
-  Receipt,
-  Inbox,
-  TrendingUp,
+  Clock,
+  DollarSign,
+  Database,
+  Loader2,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { mockProjects } from "@/lib/projects/mock-data";
-import {
-  CURRENT_PORTAL_USER,
-  getCurrentPortalOrg,
-  hasPortalPermission,
-} from "@/lib/portal/current-user";
+import { usePortalUser } from "@/lib/portal/use-portal-user";
 
-const PERIODS = [
-  { key: "7d", label: "7 jours" },
-  { key: "30d", label: "30 jours" },
-  { key: "quarter", label: "Trimestre" },
-  { key: "year", label: "Année" },
-];
+interface ReportData {
+  tickets: { total: number; open: number; resolved: number; closed: number };
+  projects: {
+    total: number;
+    active: number;
+    atRisk: number;
+    completed: number;
+    averageProgress: number;
+  } | null;
+  time: { totalHours: number; billableHours: number; includedHours: number } | null;
+  hourBanks: {
+    contractId: string;
+    contractName: string;
+    totalHours: number;
+    consumedHours: number;
+    remainingHours: number;
+    validFrom: string;
+    validTo: string;
+  }[] | null;
+  billing: { pendingAmount: number; invoicedAmount: number } | null;
+}
 
-function ChartPlaceholder({ color = "blue" }: { color?: "blue" | "emerald" | "violet" | "amber" }) {
-  const colorMap = {
-    blue: "from-blue-100 to-blue-50",
-    emerald: "from-emerald-100 to-emerald-50",
-    violet: "from-violet-100 to-violet-50",
-    amber: "from-amber-100 to-amber-50",
-  };
+export default function PortalReportsPage() {
+  const { permissions, organizationName } = usePortalUser();
+  const [data, setData] = useState<ReportData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const canReports = !!permissions.canSeeReports;
+  const canTime = !!permissions.canSeeTimeReports;
+  const canBank = !!permissions.canSeeHourBankBalance;
+  const canBilling = !!permissions.canSeeBillingReports;
+  const anyPermission = canReports || canTime || canBank || canBilling;
+
+  useEffect(() => {
+    if (!anyPermission) {
+      setLoading(false);
+      return;
+    }
+    fetch("/api/v1/portal/reports")
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((d) => setData(d.data ?? null))
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }, [anyPermission]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  if (!anyPermission) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-xl font-bold text-slate-900">Rapports</h1>
+        <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+          <Lock className="h-10 w-10 mx-auto mb-3 text-slate-300" strokeWidth={1.5} />
+          <p className="text-[14px] text-slate-500">
+            Aucun rapport n&apos;est disponible pour votre compte.
+          </p>
+          <p className="text-[12px] text-slate-400 mt-1">
+            Contactez votre administrateur pour obtenir l&apos;accès.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={cn(
-        "mt-4 h-24 w-full rounded-xl bg-gradient-to-b flex items-end justify-around p-3 gap-1.5",
-        colorMap[color]
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-slate-900">Rapports</h1>
+        <p className="text-[13px] text-slate-500 mt-0.5">
+          Données de {organizationName}
+        </p>
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[12px] text-red-800">
+          {error}
+        </div>
       )}
-    >
-      {[40, 65, 30, 80, 55, 90, 70].map((h, i) => (
-        <div
-          key={i}
-          className={cn(
-            "flex-1 rounded-md",
-            color === "blue" && "bg-blue-400/60",
-            color === "emerald" && "bg-emerald-400/60",
-            color === "violet" && "bg-violet-400/60",
-            color === "amber" && "bg-amber-400/60"
+
+      {data && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Tickets */}
+          {canReports && data.tickets && (
+            <ReportCard
+              title="Billets"
+              icon={<Ticket className="h-5 w-5 text-blue-600" />}
+              bg="bg-blue-50"
+            >
+              <div className="grid grid-cols-3 gap-4 mt-4">
+                <Metric label="Ouverts" value={data.tickets.open} color="text-amber-600" />
+                <Metric label="Résolus" value={data.tickets.resolved} color="text-emerald-600" />
+                <Metric label="Fermés" value={data.tickets.closed} color="text-slate-500" />
+              </div>
+              <div className="mt-3 pt-3 border-t border-slate-100 text-[12px] text-slate-500">
+                Total : <strong className="text-slate-800">{data.tickets.total}</strong> billets
+              </div>
+            </ReportCard>
           )}
-          style={{ height: `${h}%` }}
-        />
-      ))}
+
+          {/* Projects */}
+          {canReports && data.projects && (
+            <ReportCard
+              title="Projets"
+              icon={<BarChart3 className="h-5 w-5 text-violet-600" />}
+              bg="bg-violet-50"
+            >
+              <div className="grid grid-cols-3 gap-4 mt-4">
+                <Metric label="Actifs" value={data.projects.active} color="text-blue-600" />
+                <Metric label="À risque" value={data.projects.atRisk} color="text-red-600" />
+                <Metric label="Terminés" value={data.projects.completed} color="text-emerald-600" />
+              </div>
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-slate-500">Avancement moyen</span>
+                  <span className="font-bold text-slate-800">{data.projects.averageProgress}%</span>
+                </div>
+                <div className="mt-1.5 h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-violet-500 transition-all"
+                    style={{ width: `${data.projects.averageProgress}%` }}
+                  />
+                </div>
+              </div>
+            </ReportCard>
+          )}
+
+          {/* Time */}
+          {canTime && data.time && (
+            <ReportCard
+              title="Heures consommées"
+              icon={<Clock className="h-5 w-5 text-amber-600" />}
+              bg="bg-amber-50"
+            >
+              <div className="grid grid-cols-3 gap-4 mt-4">
+                <Metric label="Total" value={`${data.time.totalHours.toFixed(1)}h`} color="text-slate-800" />
+                <Metric label="Facturables" value={`${data.time.billableHours.toFixed(1)}h`} color="text-amber-600" />
+                <Metric label="Incluses" value={`${data.time.includedHours.toFixed(1)}h`} color="text-emerald-600" />
+              </div>
+            </ReportCard>
+          )}
+
+          {/* Hour banks */}
+          {canBank && data.hourBanks && data.hourBanks.length > 0 && (
+            <ReportCard
+              title="Banques d'heures"
+              icon={<Database className="h-5 w-5 text-emerald-600" />}
+              bg="bg-emerald-50"
+            >
+              <div className="space-y-3 mt-4">
+                {data.hourBanks.map((hb) => {
+                  const pct = hb.totalHours > 0
+                    ? Math.round((hb.consumedHours / hb.totalHours) * 100)
+                    : 0;
+                  return (
+                    <div key={hb.contractId}>
+                      <div className="flex items-center justify-between text-[12px] mb-1">
+                        <span className="font-medium text-slate-700">{hb.contractName}</span>
+                        <span className="text-slate-500">
+                          {hb.remainingHours.toFixed(1)}h restantes
+                        </span>
+                      </div>
+                      <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-all",
+                            pct > 90 ? "bg-red-500" : pct > 70 ? "bg-amber-500" : "bg-emerald-500",
+                          )}
+                          style={{ width: `${Math.min(pct, 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        {hb.consumedHours.toFixed(1)}h / {hb.totalHours}h ({pct}%)
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </ReportCard>
+          )}
+
+          {/* Billing */}
+          {canBilling && data.billing && (
+            <ReportCard
+              title="Facturation"
+              icon={<DollarSign className="h-5 w-5 text-blue-600" />}
+              bg="bg-blue-50"
+              className="md:col-span-2"
+            >
+              <div className="grid grid-cols-2 gap-6 mt-4">
+                <div>
+                  <p className="text-[12px] text-slate-500 mb-1">En attente de facturation</p>
+                  <p className="text-2xl font-bold text-slate-900 tabular-nums">
+                    {data.billing.pendingAmount.toLocaleString("fr-CA", {
+                      style: "currency",
+                      currency: "CAD",
+                    })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[12px] text-slate-500 mb-1">Déjà facturé</p>
+                  <p className="text-2xl font-bold text-emerald-700 tabular-nums">
+                    {data.billing.invoicedAmount.toLocaleString("fr-CA", {
+                      style: "currency",
+                      currency: "CAD",
+                    })}
+                  </p>
+                </div>
+              </div>
+            </ReportCard>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-export default function PortalReportsPage() {
-  const [period, setPeriod] = useState("30d");
-  const orgId = getCurrentPortalOrg();
-
-  const orgProjects = useMemo(
-    () =>
-      mockProjects.filter(
-        (p) =>
-          p.organizationId === orgId &&
-          p.isVisibleToClient &&
-          p.visibilitySettings.showProject
-      ),
-    [orgId]
-  );
-
-  const totalConsumed = orgProjects.reduce((s, p) => s + p.consumedHours, 0);
-  const activeProjects = orgProjects.filter((p) => p.status === "active").length;
-
-  // Mock hour bank
-  const hourBankPurchased = 200;
-  const hourBankConsumed = 137;
-  const hourBankPct = Math.round((hourBankConsumed / hourBankPurchased) * 100);
-
-  const canReports = hasPortalPermission("canSeeReports");
-  const canTime = hasPortalPermission("canSeeTimeReports");
-  const canBank = hasPortalPermission("canSeeHourBankBalance");
-  const canBilling = hasPortalPermission("canSeeBillingReports");
-
-  const anyReport = canReports || canTime || canBank || canBilling;
-
+function ReportCard({
+  title,
+  icon,
+  bg,
+  className,
+  children,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  bg: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-neutral-900">Mes rapports</h1>
-        <p className="mt-2 text-base text-neutral-500">
-          Vue d&apos;ensemble de l&apos;activité pour{" "}
-          <span className="font-medium text-neutral-700">
-            {CURRENT_PORTAL_USER.organizationName}
-          </span>
-        </p>
-      </div>
-
-      {/* Period selector */}
-      <div className="flex flex-wrap gap-2">
-        {PERIODS.map((p) => (
-          <button
-            key={p.key}
-            onClick={() => setPeriod(p.key)}
-            className={cn(
-              "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-              period === p.key
-                ? "bg-[#2563EB] text-white shadow-sm"
-                : "bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-50"
-            )}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      {!anyReport ? (
-        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-[#2563EB]">
-            <Inbox className="h-7 w-7" />
-          </div>
-          <h3 className="mt-4 text-base font-semibold text-neutral-900">
-            Aucun rapport disponible
-          </h3>
-          <p className="mt-1.5 text-sm text-neutral-500">
-            Vous n&apos;avez pas accès aux rapports. Contactez votre
-            administrateur.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {canReports && (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-[#2563EB]">
-                  <BarChart3 className="h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-base font-semibold text-neutral-900">
-                    Avancement des projets
-                  </h3>
-                  <p className="text-sm text-neutral-500">
-                    Suivi de la progression de vos projets actifs
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-neutral-900">
-                  {activeProjects}
-                </span>
-                <span className="text-sm text-neutral-500">
-                  projets en cours
-                </span>
-              </div>
-              <ChartPlaceholder color="blue" />
-            </div>
-          )}
-
-          {canTime && (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                  <Clock className="h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-base font-semibold text-neutral-900">
-                    Heures consommées
-                  </h3>
-                  <p className="text-sm text-neutral-500">
-                    Temps facturable utilisé sur la période
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-neutral-900">
-                  {totalConsumed.toFixed(1)}
-                </span>
-                <span className="text-sm text-neutral-500">heures</span>
-              </div>
-              <ChartPlaceholder color="emerald" />
-            </div>
-          )}
-
-          {canBank && (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                  <Wallet className="h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-base font-semibold text-neutral-900">
-                    Banque d&apos;heures
-                  </h3>
-                  <p className="text-sm text-neutral-500">
-                    Solde disponible
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4">
-                <div className="flex items-baseline justify-between">
-                  <div>
-                    <span className="text-3xl font-bold text-neutral-900">
-                      {hourBankPurchased - hourBankConsumed}
-                    </span>
-                    <span className="ml-1 text-sm text-neutral-500">
-                      h restantes
-                    </span>
-                  </div>
-                  <span className="text-sm font-medium text-neutral-600">
-                    {hourBankConsumed} / {hourBankPurchased} h
-                  </span>
-                </div>
-                <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-neutral-100">
-                  <div
-                    className={cn(
-                      "h-full rounded-full",
-                      hourBankPct > 80 ? "bg-red-500" : "bg-violet-500"
-                    )}
-                    style={{ width: `${hourBankPct}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-neutral-500">
-                  {hourBankPct}% de la banque consommée
-                </p>
-              </div>
-            </div>
-          )}
-
-          {canReports && (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                  <Ticket className="h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-base font-semibold text-neutral-900">
-                    Tickets ouverts / fermés
-                  </h3>
-                  <p className="text-sm text-neutral-500">
-                    Comparaison ouverture / résolution
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline gap-6">
-                <div>
-                  <p className="text-3xl font-bold text-neutral-900">24</p>
-                  <p className="text-xs text-neutral-500">ouverts</p>
-                </div>
-                <div>
-                  <p className="text-3xl font-bold text-emerald-600">19</p>
-                  <p className="text-xs text-neutral-500">fermés</p>
-                </div>
-                <div className="ml-auto flex items-center gap-1 text-xs font-medium text-emerald-600">
-                  <TrendingUp className="h-3.5 w-3.5" /> +12%
-                </div>
-              </div>
-              <ChartPlaceholder color="amber" />
-            </div>
-          )}
-
-          {canBilling && (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm lg:col-span-2">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-[#2563EB]">
-                  <Receipt className="h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-base font-semibold text-neutral-900">
-                    Préfacturation à venir
-                  </h3>
-                  <p className="text-sm text-neutral-500">
-                    Estimation des montants à facturer ce mois
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 flex flex-wrap items-baseline gap-6">
-                <div>
-                  <p className="text-3xl font-bold text-neutral-900">
-                    18 562 $
-                  </p>
-                  <p className="text-xs text-neutral-500">total estimé</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-semibold text-neutral-700">
-                    148.5 h
-                  </p>
-                  <p className="text-xs text-neutral-500">à facturer</p>
-                </div>
-              </div>
-              <ChartPlaceholder color="blue" />
-            </div>
-          )}
-        </div>
+    <div
+      className={cn(
+        "rounded-xl border border-slate-200 bg-white p-5 shadow-sm",
+        className,
       )}
+    >
+      <div className="flex items-center gap-3">
+        <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", bg)}>
+          {icon}
+        </div>
+        <h3 className="text-[15px] font-semibold text-slate-900">{title}</h3>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string | number;
+  color: string;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] text-slate-500">{label}</p>
+      <p className={cn("text-[18px] font-bold tabular-nums", color)}>
+        {value}
+      </p>
     </div>
   );
 }

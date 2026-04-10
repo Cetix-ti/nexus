@@ -36,6 +36,12 @@ model Organization {
   primaryColor String? @map("primary_color")
   plan        String   @default("standard")
   isActive    Boolean  @default(true) @map("is_active")
+
+  // Portal config
+  portalEnabled       Boolean  @default(true) @map("portal_enabled")
+  portalAuthProviders String[] @default([]) @map("portal_auth_providers")  // ["microsoft", "google", "local"]
+  portalDefaultRole   PortalRole? @map("portal_default_role")
+
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -106,6 +112,7 @@ model User {
   comments       Comment[]
   activities     Activity[]
   articles       Article[] @relation("ArticleAuthor")
+  assetNotes     AssetNote[]
 
   @@map("users")
 }
@@ -148,12 +155,24 @@ model Contact {
   jobTitle       String?      @map("job_title")
   isVIP          Boolean      @default(false) @map("is_vip")
   isActive       Boolean      @default(true) @map("is_active")
+
+  // Portal auth
+  passwordHash   String?      @map("password_hash")
+  portalEnabled  Boolean      @default(true) @map("portal_enabled")
+  lastPortalLoginAt DateTime? @map("last_portal_login_at")
+
+  // HR status: active, inactive, permanent_departure, partial_departure, temporary_departure
+  portalStatus   String?      @map("portal_status")
+
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   site           Site?        @relation(fields: [siteId], references: [id])
   tickets        Ticket[]     @relation("TicketRequester")
+  assignedAssets Asset[]      @relation("AssignedContact")
+  portalAccess   PortalAccessUser?
+  assetNotes     AssetNote[]  @relation("AssetNoteContact")
 
   @@map("contacts")
 }
@@ -482,11 +501,16 @@ model Asset {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
+  assignedContactId String?    @map("assigned_contact_id")
+
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   site           Site?        @relation(fields: [siteId], references: [id])
+  assignedContact Contact?    @relation("AssignedContact", fields: [assignedContactId], references: [id])
   tickets        TicketAsset[]
+  assetNotes     AssetNote[]
 
   @@index([organizationId, type])
+  @@index([assignedContactId])
   @@map("assets")
 }
 
@@ -897,10 +921,10 @@ model OrgIntegrationMapping {
 model PortalAccessUser {
   id                          String   @id @default(cuid())
   organizationId              String   @map("organization_id")
-  contactId                   String?  @map("contact_id")
+  contactId                   String?  @unique @map("contact_id")
   name                        String
   email                       String
-  portalRole                  PortalRole @default(VIEWER) @map("portal_role")
+  portalRole                  PortalRole @default(STANDARD) @map("portal_role")
   // Granular permission flags
   canAccessPortal             Boolean  @default(true) @map("can_access_portal")
   canSeeOwnTickets            Boolean  @default(true) @map("can_see_own_tickets")
@@ -916,9 +940,16 @@ model PortalAccessUser {
   canSeeHourBankBalance       Boolean  @default(false) @map("can_see_hour_bank_balance")
   canSeeDocuments             Boolean  @default(false) @map("can_see_documents")
   canSeeTeamMembers           Boolean  @default(false) @map("can_see_team_members")
+  // Asset & contact management permissions (portal admin)
+  canSeeOwnAssets             Boolean  @default(true) @map("can_see_own_assets")
+  canSeeAllOrgAssets          Boolean  @default(false) @map("can_see_all_org_assets")
+  canManageAssets             Boolean  @default(false) @map("can_manage_assets")
+  canManageContacts           Boolean  @default(false) @map("can_manage_contacts")
   lastLoginAt                 DateTime? @map("last_login_at")
   createdAt                   DateTime @default(now()) @map("created_at")
   updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  contact                     Contact? @relation(fields: [contactId], references: [id])
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -928,7 +959,8 @@ model PortalAccessUser {
 enum PortalRole {
   ADMIN
   MANAGER
-  VIEWER
+  STANDARD   // was VIEWER — all contacts get this by default
+  VIEWER     // kept for backward compat, maps to STANDARD
 }
 
 // ============================================================================
@@ -1085,6 +1117,84 @@ enum MonitoringAlertStage {
   WAITING_MAINTENANCE // Planifié dans une fenêtre de maintenance
   RESOLVED            // Traité
   IGNORED             // Faux positif / bruit ignoré
+}
+
+// ============================================================================
+// MONITORING ALERTS — parsed from email (Zabbix, Atera, FortiGate, Wazuh, etc.)
+// Separate from tickets — linked via optional ticketId.
+// ============================================================================
+
+model MonitoringAlert {
+  id               String                @id @default(cuid())
+  organizationId   String?               @map("organization_id")
+  organizationName String?               @map("organization_name")
+
+  // Alert identification
+  sourceType       String                @map("source_type")       // zabbix, atera, fortigate, wazuh, other
+  severity         MonitoringAlertSeverity @default(WARNING)
+  stage            MonitoringAlertStage   @default(TRIAGE)
+  subject          String
+  body             String                @default("") @db.Text
+  senderEmail      String                @map("sender_email")
+  senderDomain     String                @map("sender_domain")
+  messageId        String                @unique @map("message_id")
+  receivedAt       DateTime              @map("received_at")
+
+  // Resolution tracking
+  isResolved       Boolean               @default(false) @map("is_resolved")
+  resolvedAt       DateTime?             @map("resolved_at")
+  resolvedBy       String?               @map("resolved_by")      // userId
+
+  // Dedup: group key identifies "same alert" across emails
+  // e.g. "zabbix:host123:disk_space" — used to detect resolved alerts
+  alertGroupKey    String?               @map("alert_group_key")
+
+  // Linked ticket (created from this alert)
+  ticketId         String?               @map("ticket_id")
+
+  // Notes for Kanban workflow
+  notes            String?               @db.Text
+
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  @@index([organizationId, receivedAt])
+  @@index([stage, receivedAt])
+  @@index([sourceType])
+  @@index([alertGroupKey])
+  @@index([isResolved])
+  @@map("monitoring_alerts")
+}
+
+enum MonitoringAlertSeverity {
+  CRITICAL
+  HIGH
+  WARNING
+  INFO
+}
+
+// ============================================================================
+// ASSET NOTES
+// Public notes visible by portal admins + MSP agents.
+// Private notes visible only by MSP agents.
+// ============================================================================
+
+model AssetNote {
+  id          String   @id @default(cuid())
+  assetId     String   @map("asset_id")
+  authorId    String?  @map("author_id")    // User (MSP agent)
+  contactId   String?  @map("contact_id")   // Contact (portal admin)
+  body        String   @db.Text
+  isPrivate   Boolean  @default(false) @map("is_private")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  author      User?    @relation(fields: [authorId], references: [id])
+  contact     Contact? @relation("AssetNoteContact", fields: [contactId], references: [id])
+
+  @@index([assetId, createdAt])
+  @@map("asset_notes")
 }
 
 // ============================================================================

@@ -40,11 +40,7 @@ import {
   MILESTONE_STATUS_LABELS,
   PROJECT_ROLE_LABELS,
 } from "@/lib/projects/types";
-import {
-  CURRENT_PORTAL_USER,
-  getCurrentPortalOrg,
-  hasPortalPermission,
-} from "@/lib/portal/current-user";
+import { usePortalUser } from "@/lib/portal/use-portal-user";
 
 type Tab =
   | "overview"
@@ -61,10 +57,10 @@ export default function PortalProjectDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const { organizationId: orgId, permissions: portalPerms } = usePortalUser();
   const [tab, setTab] = useState<Tab>("overview");
 
   const project = mockProjects.find((p) => p.id === id);
-  const orgId = getCurrentPortalOrg();
 
   // Strict access control
   if (
@@ -96,7 +92,7 @@ export default function PortalProjectDetailPage({
     );
   }
 
-  if (!hasPortalPermission("canSeeProjectDetails")) {
+  if (!portalPerms.canSeeProjectDetails) {
     return (
       <div className="mx-auto max-w-6xl">
         <Link
@@ -191,14 +187,14 @@ export default function PortalProjectDetailPage({
       icon: ListChecks,
       show:
         v.showTasks &&
-        hasPortalPermission("canSeeProjectTasks") &&
+        portalPerms.canSeeProjectTasks &&
         tasks.length > 0,
     },
     {
       key: "kanban",
       label: "Kanban",
       icon: Layers,
-      show: hasPortalPermission("canSeeProjectLinkedTickets"),
+      show: portalPerms.canSeeProjectLinkedTickets,
     },
     {
       key: "tickets",
@@ -206,7 +202,7 @@ export default function PortalProjectDetailPage({
       icon: TicketIcon,
       show:
         v.showLinkedTickets &&
-        hasPortalPermission("canSeeProjectLinkedTickets"),
+        portalPerms.canSeeProjectLinkedTickets,
     },
     {
       key: "activity",
@@ -435,7 +431,7 @@ export default function PortalProjectDetailPage({
             </div>
           )}
 
-          {v.showTeamMembers && hasPortalPermission("canSeeTeamMembers") && (
+          {v.showTeamMembers && portalPerms.canSeeTeamMembers && (
             <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm lg:col-span-3">
               <h3 className="text-sm font-semibold text-neutral-900">
                 Équipe Cetix
@@ -681,7 +677,7 @@ export default function PortalProjectDetailPage({
       )}
 
       {/* Hidden value to satisfy unused lint */}
-      <span className="hidden">{CURRENT_PORTAL_USER.name}</span>
+      <span className="hidden">{""}</span>
     </div>
   );
 }

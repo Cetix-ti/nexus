@@ -22,6 +22,7 @@ import {
   RefreshCcw,
   Eye,
   Layers,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -466,6 +467,17 @@ export function OrgAssetsTab({ organizationId }: OrgAssetsTabProps) {
               </SelectContent>
             </Select>
           </div>
+          <Button
+            variant="outline"
+            onClick={() => {
+              import("@/lib/assets/export-pdf").then(({ exportAssetsPdf }) => {
+                exportAssetsPdf(filtered, organizationId);
+              }).catch(() => alert("Erreur lors de l'export PDF"));
+            }}
+          >
+            <Download className="h-4 w-4" strokeWidth={2.5} />
+            Exporter PDF
+          </Button>
           <Button variant="primary" onClick={openCreate}>
             <Plus className="h-4 w-4" strokeWidth={2.5} />
             Ajouter un actif

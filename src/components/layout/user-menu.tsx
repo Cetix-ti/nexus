@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import {
@@ -13,6 +14,7 @@ import {
   KeyRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useUserAvatarStore } from "@/stores/user-avatar-store";
 
 function getInitials(first?: string, last?: string): string {
   return `${first?.[0] || ""}${last?.[0] || ""}`.toUpperCase() || "NX";
@@ -34,6 +36,10 @@ export function UserMenu() {
   const user = session?.user;
 
   const initials = getInitials(user?.firstName, user?.lastName);
+  const loadAvatar = useUserAvatarStore((s) => s.load);
+  const avatar = useUserAvatarStore((s) => s.avatar);
+
+  useEffect(() => { loadAvatar(); }, [loadAvatar]);
   const fullName = user
     ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
     : "Utilisateur";
@@ -112,8 +118,8 @@ export function UserMenu() {
         className="ml-1 inline-flex items-center justify-center hover:bg-slate-100 rounded-lg p-1 transition-colors cursor-pointer"
         title={fullName}
       >
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-[12px] font-semibold ring-2 ring-white shadow-sm">
-          {initials}
+        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-[12px] font-semibold ring-2 ring-white shadow-sm overflow-hidden">
+          {avatar ? <img src={avatar} alt="" className="w-full h-full object-cover" /> : initials}
         </div>
       </button>
 
@@ -122,8 +128,8 @@ export function UserMenu() {
           {/* User card header */}
           <div className="px-4 py-4 bg-gradient-to-br from-blue-50/60 to-violet-50/40 border-b border-slate-100">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-[15px] font-semibold ring-2 ring-white shadow-sm shrink-0">
-                {initials}
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-[15px] font-semibold ring-2 ring-white shadow-sm shrink-0 overflow-hidden">
+                {avatar ? <img src={avatar} alt="" className="w-full h-full object-cover" /> : initials}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[14px] font-semibold text-slate-900 truncate">

@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
-import { syncVeeamAlerts } from "@/lib/veeam/imap-sync";
+import { syncVeeamAlerts } from "@/lib/veeam/graph-sync";
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
-    const result = await syncVeeamAlerts();
+    const body = await req.json().catch(() => ({}));
+    // sinceDays: number of days to import (0 = all history, undefined = incremental)
+    const sinceDays =
+      typeof body?.sinceDays === "number" ? body.sinceDays : undefined;
+    const result = await syncVeeamAlerts(null, { sinceDays });
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(

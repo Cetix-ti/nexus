@@ -7,34 +7,24 @@ import {
   mockProjectMembers,
   mockProjectActivities,
 } from "@/lib/projects/mock-data";
-import { CURRENT_PORTAL_USER } from "@/lib/portal/current-user";
+import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-/**
- * GET /api/v1/portal/projects/[id]
- *
- * Returns project details with strict client-visible filtering on:
- * - phases (only visible-to-client)
- * - milestones (only visible-to-client)
- * - tasks (only visible-to-client)
- * - activities (only visible-to-client)
- * - members (only if visibilitySettings.showTeamMembers)
- *
- * Each section is conditionally included based on visibilitySettings.
- */
 export async function GET(_request: NextRequest, context: RouteContext) {
+  const user = await getCurrentPortalUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await context.params;
-  const orgId = CURRENT_PORTAL_USER.organizationId;
-  const perms = CURRENT_PORTAL_USER.permissions;
+  const orgId = user.organizationId;
+  const perms = user.permissions;
 
   if (!perms.canSeeProjects) {
-    return NextResponse.json(
-      { success: false, error: "Permission denied" },
-      { status: 403 }
-    );
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const project = mockProjects.find((p) => p.id === id);

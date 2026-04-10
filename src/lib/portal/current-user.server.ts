@@ -1,14 +1,7 @@
 // Server-only helpers — never import from a client component.
 import { auth } from "@/lib/auth";
-import {
-  PORTAL_ORGS,
-  buildDefaultPermissions,
-  type PortalOrg,
-} from "@/lib/portal/org-resolver";
-import { mockClientPortalPermissions } from "@/lib/projects/mock-data";
-import {
-  type ClientPortalPermissions,
-} from "@/lib/projects/types";
+import prisma from "@/lib/prisma";
+import { resolveOrgById, type ResolvedOrg } from "@/lib/portal/org-resolver";
 
 export interface PortalUserContext {
   contactId: string;
@@ -17,16 +10,33 @@ export interface PortalUserContext {
   organizationSlug: string;
   name: string;
   email: string;
-  permissions: Omit<ClientPortalPermissions, "contactId" | "organizationId"> & {
-    contactId: string;
-    organizationId: string;
+  portalRole: "ADMIN" | "MANAGER" | "STANDARD";
+  permissions: {
+    canAccessPortal: boolean;
+    canSeeOwnTickets: boolean;
+    canSeeAllOrgTickets: boolean;
+    canCreateTickets: boolean;
+    canSeeProjects: boolean;
+    canSeeProjectDetails: boolean;
+    canSeeProjectTasks: boolean;
+    canSeeProjectLinkedTickets: boolean;
+    canSeeReports: boolean;
+    canSeeBillingReports: boolean;
+    canSeeTimeReports: boolean;
+    canSeeHourBankBalance: boolean;
+    canSeeDocuments: boolean;
+    canSeeTeamMembers: boolean;
+    canSeeOwnAssets: boolean;
+    canSeeAllOrgAssets: boolean;
+    canManageAssets: boolean;
+    canManageContacts: boolean;
   };
-  org: PortalOrg;
+  org: ResolvedOrg;
 }
 
 /**
- * Server-side: read the current portal user from the session.
- * Returns null if not signed in.
+ * Server-side: read the current portal user from the session,
+ * then look up their real permissions from the DB.
  */
 export async function getCurrentPortalUser(): Promise<PortalUserContext | null> {
   const session = await auth();
@@ -36,32 +46,51 @@ export async function getCurrentPortalUser(): Promise<PortalUserContext | null> 
   const orgId = u.organizationId as string | undefined;
   if (!orgId) return null;
 
-  const org = PORTAL_ORGS.find((o) => o.id === orgId);
+  const org = await resolveOrgById(orgId);
   if (!org) return null;
 
-  const existing = mockClientPortalPermissions.find(
-    (p) => p.organizationId === orgId
-  );
-  const perms =
-    existing ||
-    ({
-      ...buildDefaultPermissions(org),
-      contactId: `ct_${u.id}`,
-      organizationId: orgId,
-    } as ClientPortalPermissions);
+  // Find the contact + portal access record
+  const email = (u.email as string).toLowerCase();
+  const contact = await prisma.contact.findFirst({
+    where: { organizationId: orgId, email: { equals: email, mode: "insensitive" } },
+    include: { portalAccess: true },
+  });
+
+  const pa = contact?.portalAccess;
+
+  // Build permissions from DB or defaults
+  const permissions = {
+    canAccessPortal: pa?.canAccessPortal ?? true,
+    canSeeOwnTickets: pa?.canSeeOwnTickets ?? true,
+    canSeeAllOrgTickets: pa?.canSeeAllOrgTickets ?? false,
+    canCreateTickets: pa?.canCreateTickets ?? true,
+    canSeeProjects: pa?.canSeeProjects ?? false,
+    canSeeProjectDetails: pa?.canSeeProjectDetails ?? false,
+    canSeeProjectTasks: pa?.canSeeProjectTasks ?? false,
+    canSeeProjectLinkedTickets: pa?.canSeeProjectLinkedTickets ?? false,
+    canSeeReports: pa?.canSeeReports ?? false,
+    canSeeBillingReports: pa?.canSeeBillingReports ?? false,
+    canSeeTimeReports: pa?.canSeeTimeReports ?? false,
+    canSeeHourBankBalance: pa?.canSeeHourBankBalance ?? false,
+    canSeeDocuments: pa?.canSeeDocuments ?? false,
+    canSeeTeamMembers: pa?.canSeeTeamMembers ?? false,
+    canSeeOwnAssets: pa?.canSeeOwnAssets ?? true,
+    canSeeAllOrgAssets: pa?.canSeeAllOrgAssets ?? false,
+    canManageAssets: pa?.canManageAssets ?? false,
+    canManageContacts: pa?.canManageContacts ?? false,
+  };
+
+  const portalRole = pa?.portalRole ?? "STANDARD";
 
   return {
-    contactId: existing?.contactId || `ct_${u.id}`,
+    contactId: contact?.id ?? `ct_${u.id}`,
     organizationId: orgId,
     organizationName: u.organizationName || org.name,
     organizationSlug: u.organizationSlug || org.slug,
     name: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "Utilisateur",
-    email: u.email,
-    permissions: {
-      ...perms,
-      contactId: existing?.contactId || `ct_${u.id}`,
-      organizationId: orgId,
-    },
+    email,
+    portalRole: portalRole as "ADMIN" | "MANAGER" | "STANDARD",
+    permissions,
     org,
   };
 }

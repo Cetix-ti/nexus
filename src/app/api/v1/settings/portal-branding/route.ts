@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPortalBranding, setSetting } from "@/lib/tenant-settings/service";
 import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { optimizeToDataUri, PRESET_BRANDING } from "@/lib/images/optimize";
 
 const INLINE_LOGO_MAX_BYTES = 500 * 1024;
 const ALLOWED_MIME = new Set([
@@ -62,14 +63,19 @@ export async function PATCH(req: Request) {
         { status: 415 }
       );
     }
-    const buf = Buffer.from(await file.arrayBuffer());
-    if (buf.length > INLINE_LOGO_MAX_BYTES) {
-      return NextResponse.json(
-        { error: "Logo > 500 Ko (compresse l'image)" },
-        { status: 413 }
-      );
+    const rawBuf = Buffer.from(await file.arrayBuffer());
+    if (rawBuf.length > 5 * 1024 * 1024) {
+      return NextResponse.json({ error: "Fichier > 5 Mo" }, { status: 413 });
     }
-    const dataUri = `data:${mime};base64,${buf.toString("base64")}`;
+    // Optimize: resize to 400px max, convert to WebP
+    const isSvg = mime === "image/svg+xml";
+    let dataUri: string;
+    if (isSvg) {
+      dataUri = `data:${mime};base64,${rawBuf.toString("base64")}`;
+    } else {
+      const optimized = await optimizeToDataUri(rawBuf, PRESET_BRANDING);
+      dataUri = optimized.dataUri;
+    }
     const updated = await setSetting("portal.branding", { logo: dataUri });
     return NextResponse.json(updated);
   }

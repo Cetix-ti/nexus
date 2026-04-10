@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useUserAvatarStore } from "@/stores/user-avatar-store";
 import {
   User,
   Shield,
@@ -86,8 +87,9 @@ function AccountInner() {
 // ----------------------------------------------------------------------------
 
 function ProfileTab() {
-  const session = useSession();
-  const u = session.data?.user as
+  const { data: sessionData } = useSession();
+  const refreshAvatar = useUserAvatarStore((s) => s.refresh);
+  const u = sessionData?.user as
     | {
         id?: string;
         firstName?: string;
@@ -164,6 +166,8 @@ function ProfileTab() {
         throw new Error(data.error || `HTTP ${res.status}`);
       }
       setAvatar(dataUri);
+      // Refresh the global avatar store so topbar/sidebar update immediately
+      await refreshAvatar();
       setMessage({ tone: "ok", text: "Photo mise à jour" });
     } catch (err) {
       setMessage({
@@ -183,7 +187,10 @@ function ProfileTab() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: u.id, avatar: null }),
     });
-    if (res.ok) setAvatar(null);
+    if (res.ok) {
+      setAvatar(null);
+      await refreshAvatar();
+    }
   }
 
   async function handleSave(e: React.FormEvent) {

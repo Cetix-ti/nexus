@@ -3,24 +3,20 @@ import { listTickets } from "@/lib/tickets/service";
 import { mockProjects } from "@/lib/projects/mock-data";
 import { mockTimeEntries } from "@/lib/billing/mock-data";
 import { mockContracts } from "@/lib/billing/mock-data";
-import { CURRENT_PORTAL_USER } from "@/lib/portal/current-user";
+import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
 
-/**
- * GET /api/v1/portal/reports
- *
- * Returns aggregated reports for the current portal user's organization,
- * filtered by their permissions.
- */
 export async function GET(_request: NextRequest) {
-  const orgId = CURRENT_PORTAL_USER.organizationId;
-  const orgName = CURRENT_PORTAL_USER.organizationName;
-  const perms = CURRENT_PORTAL_USER.permissions;
+  const user = await getCurrentPortalUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const orgId = user.organizationId;
+  const orgName = user.organizationName;
+  const perms = user.permissions;
 
   if (!perms.canAccessPortal || !perms.canSeeReports) {
-    return NextResponse.json(
-      { success: false, error: "Permission denied" },
-      { status: 403 }
-    );
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const allTickets = await listTickets();

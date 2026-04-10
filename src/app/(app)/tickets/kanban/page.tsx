@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { usePersistentState } from "@/lib/hooks/use-persistent-state";
 import { useTicketsStore } from "@/stores/tickets-store";
+import { useOrgLogosStore } from "@/stores/org-logos-store";
+import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
 import Link from "next/link";
 import {
   LayoutList,
@@ -9,22 +12,17 @@ import {
   Search,
   Filter,
   ChevronRight,
+  Columns3,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { TicketKanbanView } from "@/components/tickets/ticket-kanban-view";
+import { useSession } from "next-auth/react";
 import { KanbanBoardSwitcher } from "@/components/tickets/kanban-board-switcher";
 import { useKanbanBoardsStore } from "@/stores/kanban-boards-store";
-
-const ORGANIZATION_OPTIONS = [
-  { label: "Cetix", value: "Cetix" },
-  { label: "Acme Corp", value: "Acme Corp" },
-  { label: "TechStart Inc", value: "TechStart Inc" },
-  { label: "Global Finance", value: "Global Finance" },
-  { label: "HealthCare Plus", value: "HealthCare Plus" },
-  { label: "MédiaCentre QC", value: "MédiaCentre QC" },
-];
+import { DEFAULT_COLUMNS_BY_GROUP } from "@/components/settings/kanban-columns-editor";
 
 const PRIORITY_OPTIONS = [
   { label: "Critique", value: "critical" },
@@ -33,26 +31,48 @@ const PRIORITY_OPTIONS = [
   { label: "Faible", value: "low" },
 ];
 
-const ASSIGNEE_OPTIONS = [
-  { label: "Marie Tremblay", value: "Marie Tremblay" },
-  { label: "Alexandre Dubois", value: "Alexandre Dubois" },
-  { label: "Sophie Lavoie", value: "Sophie Lavoie" },
-  { label: "Lucas Bergeron", value: "Lucas Bergeron" },
-  { label: "Non assignés", value: "__unassigned__" },
-];
-
 export default function KanbanPage() {
-  const [search, setSearch] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
-  const [orgFilter, setOrgFilter] = useState<string[]>([]);
-  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
+  const { data: session } = useSession();
+  const currentUserName = session?.user
+    ? `${(session.user as any).firstName ?? ""} ${(session.user as any).lastName ?? ""}`.trim()
+    : "";
+
+  const [search, setSearch] = usePersistentState("nexus.kanban.search", "");
+  const [priorityFilter, setPriorityFilter] = usePersistentState<string[]>("nexus.kanban.priority", []);
+  const [orgFilter, setOrgFilter] = usePersistentState<string[]>("nexus.kanban.org", []);
+  const [assigneeFilter, setAssigneeFilter] = usePersistentState<string[]>("nexus.kanban.assignee", []);
+  const [hiddenColumns, setHiddenColumns] = usePersistentState<string[]>("nexus.kanban.hiddenColumns", ["resolved"]);
+  const [myTicketsView, setMyTicketsView] = usePersistentState("nexus.kanban.myTickets", false);
+  const [columnMenuOpen, setColumnMenuOpen] = useState(false);
 
   const tickets = useTicketsStore((s) => s.tickets);
   const loadAll = useTicketsStore((s) => s.loadAll);
   const loaded = useTicketsStore((s) => s.loaded);
+  const loadOrgLogos = useOrgLogosStore((s) => s.load);
+  const loadAgentAvatars = useAgentAvatarsStore((s) => s.load);
   useEffect(() => {
     if (!loaded) loadAll();
-  }, [loaded, loadAll]);
+    loadOrgLogos();
+    loadAgentAvatars();
+  }, [loaded, loadAll, loadOrgLogos, loadAgentAvatars]);
+
+  // Dynamic filter options from actual ticket data
+  const orgOptions = useMemo(() => {
+    const names = new Set(tickets.map((t) => t.organizationName));
+    return Array.from(names).sort().map((n) => ({ label: n, value: n }));
+  }, [tickets]);
+
+  const assigneeOptions = useMemo(() => {
+    const names = new Set<string>();
+    let hasUnassigned = false;
+    for (const t of tickets) {
+      if (t.assigneeName) names.add(t.assigneeName);
+      else hasUnassigned = true;
+    }
+    const opts = Array.from(names).sort().map((n) => ({ label: n, value: n }));
+    if (hasUnassigned) opts.unshift({ label: "Non assignés", value: "__unassigned__" });
+    return opts;
+  }, [tickets]);
 
   // Active board filters (baked-in by the board template)
   const boards = useKanbanBoardsStore((s) => s.boards);
@@ -117,8 +137,15 @@ export default function KanbanPage() {
       });
     }
 
+    // "Mes tickets" quick view: show my tickets + unassigned
+    if (myTicketsView && currentUserName) {
+      result = result.filter(
+        (t) => !t.assigneeName || t.assigneeName === currentUserName,
+      );
+    }
+
     return result;
-  }, [tickets, search, priorityFilter, orgFilter, assigneeFilter, activeBoard]);
+  }, [tickets, search, priorityFilter, orgFilter, assigneeFilter, activeBoard, myTicketsView, currentUserName]);
 
   const activeFiltersCount =
     priorityFilter.length + orgFilter.length + assigneeFilter.length + (search ? 1 : 0);
@@ -170,6 +197,41 @@ export default function KanbanPage() {
           {/* Board switcher */}
           <KanbanBoardSwitcher />
 
+          {/* Column visibility toggle */}
+          <div className="relative">
+            <button
+              onClick={() => setColumnMenuOpen((v) => !v)}
+              className={cn(
+                "flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[12px] font-medium transition-colors",
+                hiddenColumns.length > 0
+                  ? "border-amber-300 bg-amber-50 text-amber-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              )}
+            >
+              <Columns3 className="h-3.5 w-3.5" />
+              Colonnes
+              {hiddenColumns.length > 0 && (
+                <span className="ml-0.5 text-[10px] bg-amber-200 text-amber-800 rounded-full h-4 w-4 flex items-center justify-center">
+                  {hiddenColumns.length}
+                </span>
+              )}
+            </button>
+            {columnMenuOpen && (
+              <ColumnVisibilityMenu
+                hiddenColumns={hiddenColumns}
+                onToggle={(value) => {
+                  setHiddenColumns((prev) =>
+                    prev.includes(value)
+                      ? prev.filter((v) => v !== value)
+                      : [...prev, value],
+                  );
+                }}
+                onClose={() => setColumnMenuOpen(false)}
+                groupBy={activeBoard?.groupBy || "status"}
+              />
+            )}
+          </div>
+
           {/* View switcher */}
           <div className="flex items-center gap-0.5 rounded-lg bg-slate-100/80 p-1 ring-1 ring-inset ring-slate-200/60">
             <Link
@@ -207,14 +269,14 @@ export default function KanbanPage() {
           width={170}
         />
         <MultiSelect
-          options={ORGANIZATION_OPTIONS}
+          options={orgOptions}
           selected={orgFilter}
           onChange={setOrgFilter}
           placeholder="Organisations"
           width={210}
         />
         <MultiSelect
-          options={ASSIGNEE_OPTIONS}
+          options={assigneeOptions}
           selected={assigneeFilter}
           onChange={setAssigneeFilter}
           placeholder="Assignés à"
@@ -222,7 +284,7 @@ export default function KanbanPage() {
         />
         {activeFiltersCount > 0 && (
           <button
-            onClick={clearAllFilters}
+            onClick={() => { clearAllFilters(); setMyTicketsView(false); }}
             className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg border border-slate-200 bg-white text-[13px] font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
           >
             <Filter className="h-3.5 w-3.5" strokeWidth={2.25} />
@@ -232,6 +294,21 @@ export default function KanbanPage() {
             </span>
           </button>
         )}
+
+        {/* Quick views — right aligned */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
+            onClick={() => setMyTicketsView((v) => !v)}
+            className={cn(
+              "inline-flex items-center gap-1.5 h-10 px-3.5 rounded-lg border text-[13px] font-medium transition-all duration-150",
+              myTicketsView
+                ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300"
+            )}
+          >
+            Mes tickets
+          </button>
+        </div>
       </div>
 
       {/* Mini stats strip */}
@@ -245,7 +322,7 @@ export default function KanbanPage() {
       </div>
 
       {/* Kanban board */}
-      <TicketKanbanView tickets={filtered} />
+      <TicketKanbanView tickets={filtered} hiddenColumns={hiddenColumns} />
     </div>
   );
 }
@@ -264,6 +341,57 @@ function StatPill({
       <span className={cn("h-1.5 w-1.5 rounded-full", dotClass)} />
       <span className="font-medium">{label}</span>
       <span className="font-semibold tabular-nums text-slate-900">{count}</span>
+    </div>
+  );
+}
+
+function ColumnVisibilityMenu({
+  hiddenColumns,
+  onToggle,
+  onClose,
+  groupBy,
+}: {
+  hiddenColumns: string[];
+  onToggle: (value: string) => void;
+  onClose: () => void;
+  groupBy: string;
+}) {
+  const columns = DEFAULT_COLUMNS_BY_GROUP[groupBy as keyof typeof DEFAULT_COLUMNS_BY_GROUP] || DEFAULT_COLUMNS_BY_GROUP.status;
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [onClose]);
+
+  return (
+    <div ref={ref} className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-xl border border-slate-200 bg-white shadow-lg py-1">
+      <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+        Colonnes visibles
+      </p>
+      {columns.map((col) => {
+        const visible = !hiddenColumns.includes(col.value);
+        return (
+          <button
+            key={col.id}
+            onClick={() => onToggle(col.value)}
+            className="flex items-center gap-2.5 w-full px-3 py-2 text-[12.5px] text-left hover:bg-slate-50 transition-colors"
+          >
+            <div className={cn(
+              "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+              visible ? "border-blue-500 bg-blue-500" : "border-slate-300 bg-white"
+            )}>
+              {visible && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
+            </div>
+            <span className={visible ? "text-slate-700" : "text-slate-400 line-through"}>
+              {col.label}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

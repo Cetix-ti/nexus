@@ -29,6 +29,7 @@ import { DEFAULT_COLUMNS_BY_GROUP } from "@/components/settings/kanban-columns-e
 
 interface TicketKanbanViewProps {
   tickets: Ticket[];
+  hiddenColumns?: string[];
 }
 
 // ----------------------------------------------------------------------------
@@ -99,7 +100,7 @@ function DroppableColumnBody({
 // ----------------------------------------------------------------------------
 // Main Kanban view
 // ----------------------------------------------------------------------------
-export function TicketKanbanView({ tickets }: TicketKanbanViewProps) {
+export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanViewProps) {
   const columnsConfig = useKanbanStore((s) => s.columns);
   const activeBoardId = useKanbanBoardsStore((s) => s.activeBoardId);
   const boards = useKanbanBoardsStore((s) => s.boards);
@@ -225,6 +226,7 @@ export function TicketKanbanView({ tickets }: TicketKanbanViewProps) {
 
     return cols
       .filter((c) => c.visible)
+      .filter((c) => !hiddenColumns.includes(c.value))
       .sort((a, b) => a.order - b.order)
       .map((col) => ({
         ...col,
@@ -237,7 +239,7 @@ export function TicketKanbanView({ tickets }: TicketKanbanViewProps) {
           ),
       }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeBoard, columnsConfig, localTickets, groupBy]);
+  }, [activeBoard, columnsConfig, localTickets, groupBy, hiddenColumns]);
 
   return (
     <>

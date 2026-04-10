@@ -3,16 +3,50 @@
 import { useSession } from "next-auth/react";
 import { useMemo } from "react";
 import { usePortalImpersonation } from "@/stores/portal-impersonation-store";
-import {
-  PORTAL_ORGS,
-  buildDefaultPermissions,
-  type PortalOrg,
-} from "@/lib/portal/org-resolver";
-import { mockClientPortalPermissions } from "@/lib/projects/mock-data";
-import {
-  DEFAULT_VIEWER_PERMISSIONS,
-  type ClientPortalPermissions,
-} from "@/lib/projects/types";
+
+export interface PortalPermissions {
+  portalRole: "standard" | "viewer" | "manager" | "admin";
+  canAccessPortal: boolean;
+  canSeeOwnTickets: boolean;
+  canSeeAllOrgTickets: boolean;
+  canCreateTickets: boolean;
+  canSeeProjects: boolean;
+  canSeeProjectDetails: boolean;
+  canSeeProjectTasks: boolean;
+  canSeeProjectLinkedTickets: boolean;
+  canSeeReports: boolean;
+  canSeeBillingReports: boolean;
+  canSeeTimeReports: boolean;
+  canSeeHourBankBalance: boolean;
+  canSeeDocuments: boolean;
+  canSeeTeamMembers: boolean;
+  canSeeOwnAssets: boolean;
+  canSeeAllOrgAssets: boolean;
+  canManageAssets: boolean;
+  canManageContacts: boolean;
+}
+
+const DEFAULT_PERMISSIONS: PortalPermissions = {
+  portalRole: "standard",
+  canAccessPortal: true,
+  canSeeOwnTickets: true,
+  canSeeAllOrgTickets: false,
+  canCreateTickets: true,
+  canSeeProjects: false,
+  canSeeProjectDetails: false,
+  canSeeProjectTasks: false,
+  canSeeProjectLinkedTickets: false,
+  canSeeReports: false,
+  canSeeBillingReports: false,
+  canSeeTimeReports: false,
+  canSeeHourBankBalance: false,
+  canSeeDocuments: false,
+  canSeeTeamMembers: false,
+  canSeeOwnAssets: true,
+  canSeeAllOrgAssets: false,
+  canManageAssets: false,
+  canManageContacts: false,
+};
 
 export interface UsePortalUserResult {
   isLoading: boolean;
@@ -24,17 +58,14 @@ export interface UsePortalUserResult {
     firstName: string;
     lastName: string;
   } | null;
-  org: PortalOrg | null;
   organizationId: string | null;
   organizationName: string | null;
-  permissions: Omit<ClientPortalPermissions, "contactId" | "organizationId">;
+  permissions: PortalPermissions;
 }
 
 /**
  * Client-side hook that reads the current portal user from the NextAuth
- * session and resolves their org + permissions.
- *
- * Use this in any client component inside the (portal) route group.
+ * session. Permissions are stored in the JWT at sign-in time (from DB).
  */
 export function usePortalUser(): UsePortalUserResult {
   const { data: session, status } = useSession();
@@ -44,9 +75,8 @@ export function usePortalUser(): UsePortalUserResult {
     const isLoading = status === "loading";
     const isAuthenticated = status === "authenticated";
 
-    // Impersonation takes priority over the real session
+    // Impersonation takes priority
     if (impersonating) {
-      const org = PORTAL_ORGS.find((o) => o.id === impersonating.organizationId) || null;
       const [first, ...rest] = impersonating.name.split(" ");
       return {
         isLoading: false,
@@ -58,42 +88,27 @@ export function usePortalUser(): UsePortalUserResult {
           firstName: first || "",
           lastName: rest.join(" "),
         },
-        org,
         organizationId: impersonating.organizationId,
         organizationName: impersonating.organizationName,
-        permissions: impersonating.permissions,
+        permissions: {
+          ...DEFAULT_PERMISSIONS,
+          ...(impersonating.permissions ?? {}),
+        },
       };
     }
 
     if (!session?.user) {
-      // Fallback to first org so the UI doesn't break in dev / before login
-      const fallback = PORTAL_ORGS[0];
       return {
         isLoading,
         isAuthenticated,
         user: null,
-        org: fallback,
-        organizationId: fallback.id,
-        organizationName: fallback.name,
-        permissions: DEFAULT_VIEWER_PERMISSIONS,
+        organizationId: null,
+        organizationName: null,
+        permissions: DEFAULT_PERMISSIONS,
       };
     }
 
     const u = session.user as any;
-    const orgId = u.organizationId as string | undefined;
-    const org = orgId
-      ? PORTAL_ORGS.find((o) => o.id === orgId) || null
-      : null;
-
-    const existing = orgId
-      ? mockClientPortalPermissions.find((p) => p.organizationId === orgId)
-      : null;
-
-    const perms = existing
-      ? existing
-      : org
-      ? buildDefaultPermissions(org)
-      : DEFAULT_VIEWER_PERMISSIONS;
 
     return {
       isLoading,
@@ -105,13 +120,12 @@ export function usePortalUser(): UsePortalUserResult {
         firstName: u.firstName ?? "",
         lastName: u.lastName ?? "",
       },
-      org,
-      organizationId: org?.id || null,
-      organizationName: u.organizationName || org?.name || null,
-      permissions: perms as Omit<
-        ClientPortalPermissions,
-        "contactId" | "organizationId"
-      >,
+      organizationId: u.organizationId || null,
+      organizationName: u.organizationName || null,
+      permissions: {
+        ...DEFAULT_PERMISSIONS,
+        portalRole: u.portalRole ?? "standard",
+      },
     };
   }, [session, status, impersonating]);
 }

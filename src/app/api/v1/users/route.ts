@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { getCurrentUser, hasMinimumRole, type UserRole } from "@/lib/auth-utils";
+import { optimizeToDataUri, PRESET_AVATAR } from "@/lib/images/optimize";
 
 const ROLE_VALUES = [
   "SUPER_ADMIN",
@@ -150,6 +151,20 @@ export async function POST(req: Request) {
   }
 }
 
+/** Optimize a data URI avatar image to WebP 192px max. */
+async function optimizeAvatar(dataUri: string): Promise<string> {
+  // Extract base64 from data URI
+  const match = dataUri.match(/^data:image\/[^;]+;base64,(.+)$/);
+  if (!match) return dataUri; // Not a data URI, return as-is
+  try {
+    const buf = Buffer.from(match[1], "base64");
+    const result = await optimizeToDataUri(buf, PRESET_AVATAR);
+    return result.dataUri;
+  } catch {
+    return dataUri; // Optimization failed, keep original
+  }
+}
+
 export async function PATCH(req: Request) {
   const me = await getCurrentUser();
   if (!me) return unauthorized();
@@ -184,7 +199,7 @@ export async function PATCH(req: Request) {
         ...(email !== undefined ? { email: email.toLowerCase() } : {}),
         ...(role !== undefined ? { role } : {}),
         ...(isActive !== undefined ? { isActive } : {}),
-        ...(avatar !== undefined ? { avatar } : {}),
+        ...(avatar !== undefined ? { avatar: avatar ? await optimizeAvatar(avatar) : null } : {}),
         ...(password
           ? { passwordHash: await bcrypt.hash(password, 12) }
           : {}),
