@@ -416,18 +416,49 @@ export default function TicketDetailPage() {
             {/* Status & Priority */}
             <SidebarSection title="Détails">
               <SidebarRow label="Statut">
-                <Badge variant={statusBadgeVariant[ticket.status]}>
-                  <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
-                  {statusCfg.label}
-                </Badge>
+                <select
+                  value={ticket.status}
+                  onChange={async (e) => {
+                    const newStatus = e.target.value;
+                    await fetch(`/api/v1/tickets/${ticket!.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ status: newStatus.toUpperCase() }),
+                    });
+                    window.location.reload();
+                  }}
+                  className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="new">Nouveau</option>
+                  <option value="open">Ouvert</option>
+                  <option value="in_progress">En cours</option>
+                  <option value="on_site">Sur place</option>
+                  <option value="waiting_client">En attente client</option>
+                  <option value="resolved">Résolu</option>
+                  <option value="closed">Fermé</option>
+                </select>
               </SidebarRow>
               <SidebarRow label="Priorité">
-                <Badge variant={priorityBadgeVariant[ticket.priority]}>
-                  <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", priorityCfg.dotClass)} />
-                  {priorityCfg.label}
-                </Badge>
+                <select
+                  value={ticket.priority}
+                  onChange={async (e) => {
+                    const newPriority = e.target.value;
+                    await fetch(`/api/v1/tickets/${ticket!.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ priority: newPriority.toUpperCase() }),
+                    });
+                    window.location.reload();
+                  }}
+                  className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="critical">Critique</option>
+                  <option value="high">Élevée</option>
+                  <option value="medium">Moyenne</option>
+                  <option value="low">Faible</option>
+                </select>
               </SidebarRow>
-              <SidebarRow label="Urgency">
+              <SidebarRow label="Urgence">
                 <span className="text-sm text-gray-700 capitalize">{ticket.urgency}</span>
               </SidebarRow>
               <SidebarRow label="Impact">
