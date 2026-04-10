@@ -15,6 +15,7 @@ import {
   X,
   Search,
   Crown,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -106,6 +107,9 @@ export function OrgPortalSection({ organizationId, organizationName }: Props) {
   const [saving, setSaving] = useState(false);
   const [editingContact, setEditingContact] = useState<PortalContact | null>(null);
   const [impersonateSearch, setImpersonateSearch] = useState("");
+  const [contactSearch, setContactSearch] = useState("");
+  const [showAdminPicker, setShowAdminPicker] = useState(false);
+  const [showApproverPicker, setShowApproverPicker] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -206,6 +210,21 @@ export function OrgPortalSection({ organizationId, organizationName }: Props) {
               <p className="text-[12px] text-slate-500">Gèrent les utilisateurs, actifs et voient tous les billets</p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowAdminPicker((v) => !v)}
+            className="inline-flex items-center gap-1.5 text-[12px] font-medium text-blue-600 hover:text-blue-700"
+          >
+            <Plus className="h-3.5 w-3.5" /> Ajouter un administrateur
+          </button>
+          {showAdminPicker && (
+            <QuickContactPicker
+              contacts={contacts.filter((c) => !admins.some((a) => a.id === c.id))}
+              onSelect={(c) => { updateContactRole(c, "ADMIN"); setShowAdminPicker(false); }}
+              onClose={() => setShowAdminPicker(false)}
+              placeholder="Rechercher un contact à promouvoir administrateur..."
+            />
+          )}
           {admins.length > 0 ? (
             <div className="space-y-2">
               {admins.map((c) => (
@@ -308,11 +327,21 @@ export function OrgPortalSection({ organizationId, organizationName }: Props) {
 
       {/* 5. ALL CONTACTS TABLE */}
       <Card className="overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-slate-200">
           <h3 className="text-[14px] font-semibold text-slate-900 flex items-center gap-2">
             <UserCog className="h-4 w-4 text-slate-500" /> Contacts et rôles
+            <span className="text-[11px] font-normal text-slate-400">{contacts.length}</span>
           </h3>
-          <span className="text-[11px] text-slate-400">{contacts.length} contact{contacts.length > 1 ? "s" : ""}</span>
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <input
+              type="text"
+              value={contactSearch}
+              onChange={(e) => setContactSearch(e.target.value)}
+              placeholder="Rechercher un contact..."
+              className="h-8 w-full pl-9 pr-3 rounded-lg border border-slate-200 bg-white text-[12px] placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -326,7 +355,14 @@ export function OrgPortalSection({ organizationId, organizationName }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {contacts.map((c) => {
+              {contacts
+                .filter((c) => {
+                  if (!contactSearch) return true;
+                  const q = contactSearch.toLowerCase();
+                  return `${c.firstName} ${c.lastName} ${c.email} ${c.jobTitle ?? ""}`.toLowerCase().includes(q);
+                })
+                .sort((a, b) => a.lastName.localeCompare(b.lastName, "fr"))
+                .map((c) => {
                 const role = c.portalAccess?.portalRole ?? "STANDARD";
                 const status = c.portalStatus ?? (c.isActive ? "active" : "inactive");
                 return (
@@ -439,6 +475,64 @@ function EditContactPortalModal({ contact, organizationId, onClose, onSaved }: {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function QuickContactPicker({
+  contacts,
+  onSelect,
+  onClose,
+  placeholder,
+}: {
+  contacts: PortalContact[];
+  onSelect: (c: PortalContact) => void;
+  onClose: () => void;
+  placeholder: string;
+}) {
+  const [q, setQ] = useState("");
+  const filtered = contacts
+    .filter((c) => {
+      if (!q) return true;
+      return `${c.firstName} ${c.lastName} ${c.email}`.toLowerCase().includes(q.toLowerCase());
+    })
+    .sort((a, b) => a.lastName.localeCompare(b.lastName, "fr"))
+    .slice(0, 8);
+
+  return (
+    <div className="rounded-lg border border-blue-200 bg-blue-50/30 p-3 space-y-2">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+        <input
+          type="text"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={placeholder}
+          autoFocus
+          className="h-8 w-full pl-8 pr-3 rounded-md border border-slate-200 bg-white text-[12px] placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+        />
+      </div>
+      <div className="space-y-0.5 max-h-40 overflow-y-auto">
+        {filtered.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onSelect(c)}
+            className="flex items-center justify-between w-full rounded-md px-2.5 py-1.5 text-left hover:bg-white transition-colors"
+          >
+            <div>
+              <span className="text-[12px] font-medium text-slate-900">{c.firstName} {c.lastName}</span>
+              <span className="text-[11px] text-slate-400 ml-2">{c.email}</span>
+            </div>
+          </button>
+        ))}
+        {filtered.length === 0 && (
+          <p className="text-[11px] text-slate-400 py-2 text-center">Aucun contact trouvé</p>
+        )}
+      </div>
+      <button type="button" onClick={onClose} className="text-[11px] text-slate-500 hover:text-slate-700">
+        Fermer
+      </button>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { chatCompletion, buildSystemPrompt } from "@/lib/ai/service";
+import { chatCompletion, buildSystemPrompt, saveMemory } from "@/lib/ai/service";
 
 export async function POST(req: Request) {
   try {
@@ -30,8 +30,8 @@ export async function POST(req: Request) {
       data: { conversationId: convoId, role: "user", content: message },
     });
 
-    // Build context-aware prompt
-    const systemPrompt = await buildSystemPrompt();
+    // Build context-aware prompt with user's memories
+    const systemPrompt = await buildSystemPrompt(me.id);
 
     // Get conversation history (last 20 messages for context)
     const history = await prisma.aiMessage.findMany({
@@ -51,14 +51,29 @@ export async function POST(req: Request) {
     // Call AI
     const reply = await chatCompletion(messages);
 
+    // Detect and process memory commands in the reply
+    let cleanReply = reply;
+    const memorySaveMatch = reply.match(/\[MEMORY_SAVE:(\w+):(.+?)\]/g);
+    if (memorySaveMatch) {
+      for (const match of memorySaveMatch) {
+        const parts = match.match(/\[MEMORY_SAVE:(\w+):(.+?)\]/);
+        if (parts) {
+          await saveMemory(parts[2], parts[1], "global", `agent:${me.id}`);
+        }
+        cleanReply = cleanReply.replace(match, "").trim();
+      }
+      if (cleanReply) cleanReply += "\n\n✅ Mémorisé.";
+      else cleanReply = "✅ Mémorisé.";
+    }
+
     // Save assistant reply
     await prisma.aiMessage.create({
-      data: { conversationId: convoId, role: "assistant", content: reply },
+      data: { conversationId: convoId, role: "assistant", content: cleanReply },
     });
 
     return NextResponse.json({
       conversationId: convoId,
-      reply,
+      reply: cleanReply,
     });
   } catch (err) {
     return NextResponse.json(

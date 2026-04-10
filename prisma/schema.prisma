@@ -1176,8 +1176,23 @@ enum MonitoringAlertSeverity {
 
 // ============================================================================
 // AI ASSISTANT
-// Conversations, messages, and category feedback for the AI assistant.
+// Conversations, messages, memory, and category feedback.
 // ============================================================================
+
+/// Central memory shared across all agents (org knowledge, procedures, patterns)
+model AiMemory {
+  id        String   @id @default(cuid())
+  scope     String   @default("global") // "global" or a userId for per-agent
+  category  String   // "client", "procedure", "pattern", "preference", etc.
+  content   String   @db.Text
+  source    String?  // "agent:userId", "auto", "system"
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([scope])
+  @@index([category])
+  @@map("ai_memories")
+}
 
 model AiConversation {
   id        String      @id @default(cuid())

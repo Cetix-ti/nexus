@@ -122,14 +122,68 @@ async function getRecentFeedback(limit = 15): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Build the system prompt with Nexus context
+// Memory system
 // ---------------------------------------------------------------------------
 
-export async function buildSystemPrompt(): Promise<string> {
-  const [ticketsSummary, categories, orgs] = await Promise.all([
+async function getMemories(userId: string): Promise<string> {
+  const [global, personal] = await Promise.all([
+    prisma.aiMemory.findMany({
+      where: { scope: "global" },
+      orderBy: { updatedAt: "desc" },
+      take: 30,
+    }),
+    prisma.aiMemory.findMany({
+      where: { scope: userId },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+    }),
+  ]);
+
+  const lines: string[] = [];
+  if (global.length > 0) {
+    lines.push("MÉMOIRE CENTRALE (partagée):");
+    for (const m of global) lines.push(`  [${m.category}] ${m.content}`);
+  }
+  if (personal.length > 0) {
+    lines.push("\nMÉMOIRE PERSONNELLE (cet agent):");
+    for (const m of personal) lines.push(`  [${m.category}] ${m.content}`);
+  }
+  return lines.join("\n");
+}
+
+export async function saveMemory(
+  content: string,
+  category: string,
+  scope: string, // "global" or userId
+  source: string,
+) {
+  await prisma.aiMemory.create({
+    data: { scope, category, content, source },
+  });
+}
+
+export async function deleteMemory(id: string) {
+  await prisma.aiMemory.delete({ where: { id } });
+}
+
+export async function listMemories(scope?: string) {
+  return prisma.aiMemory.findMany({
+    where: scope ? { scope } : undefined,
+    orderBy: { updatedAt: "desc" },
+    take: 100,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Build the system prompt with Nexus context + memories
+// ---------------------------------------------------------------------------
+
+export async function buildSystemPrompt(userId?: string): Promise<string> {
+  const [ticketsSummary, categories, orgs, memories] = await Promise.all([
     getRecentTicketsSummary(),
     getCategoriesList(),
     getOrgsSummary(),
+    userId ? getMemories(userId) : Promise.resolve(""),
   ]);
 
   return `Tu es l'assistant IA intégré à Nexus, une plateforme ITSM pour MSP (fournisseurs de services gérés).
@@ -146,12 +200,15 @@ ${categories}
 Tickets récents:
 ${ticketsSummary}
 
+${memories ? `\n${memories}\n` : ""}
 RÈGLES:
 - Réponds toujours en français
 - Sois concis et direct
 - Si on te demande des données spécifiques que tu n'as pas, dis-le clairement
 - Tu peux aider à: catégoriser des tickets, résumer des situations, chercher des infos, suggérer des actions
-- Format: utilise du markdown pour la lisibilité`;
+- Format: utilise du markdown pour la lisibilité
+- MÉMOIRE: Si l'utilisateur dit "retiens que...", "souviens-toi que...", "note que...", ou toute instruction similaire, réponds avec [MEMORY_SAVE:catégorie:contenu] pour que le système sauvegarde automatiquement. Catégories possibles: client, procedure, pattern, preference, note
+- Si l'utilisateur dit "oublie..." ou "supprime la mémoire...", réponds avec [MEMORY_DELETE:le contenu à supprimer]`;
 }
 
 // ---------------------------------------------------------------------------
