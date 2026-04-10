@@ -1,0 +1,118 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import {
+  listTimeEntries,
+  createTimeEntry,
+  deleteTimeEntry,
+} from "@/lib/billing/time-entries-service";
+import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+
+function unauthorized() {
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+function forbidden() {
+  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+}
+
+const createSchema = z.object({
+  ticketId: z.string().min(1),
+  organizationId: z.string().min(1),
+  timeType: z.string().min(1),
+  startedAt: z.string().datetime(),
+  endedAt: z.string().datetime().optional().nullable(),
+  durationMinutes: z.number().int().positive().max(24 * 60),
+  description: z.string().max(2000).optional(),
+  isAfterHours: z.boolean().optional(),
+  isWeekend: z.boolean().optional(),
+  isUrgent: z.boolean().optional(),
+  isOnsite: z.boolean().optional(),
+  coverageStatus: z.string().optional(),
+  coverageReason: z.string().optional(),
+  hourlyRate: z.number().optional().nullable(),
+  amount: z.number().optional().nullable(),
+});
+
+export async function GET(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return unauthorized();
+  if (me.role.startsWith("CLIENT_")) return forbidden();
+
+  const url = new URL(req.url);
+  const ticketId = url.searchParams.get("ticketId") || undefined;
+  const organizationId = url.searchParams.get("organizationId") || undefined;
+  const agentId = url.searchParams.get("agentId") || undefined;
+  const fromStr = url.searchParams.get("from");
+  const toStr = url.searchParams.get("to");
+
+  const rows = await listTimeEntries({
+    ticketId,
+    organizationId,
+    agentId,
+    from: fromStr ? new Date(fromStr) : undefined,
+    to: toStr ? new Date(toStr) : undefined,
+  });
+
+  return NextResponse.json(rows);
+}
+
+export async function POST(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return unauthorized();
+  if (!hasMinimumRole(me.role, "TECHNICIAN")) return forbidden();
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const parsed = createSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Validation failed", issues: parsed.error.issues },
+      { status: 400 }
+    );
+  }
+  const d = parsed.data;
+  try {
+    const created = await createTimeEntry({
+      ticketId: d.ticketId,
+      organizationId: d.organizationId,
+      agentId: me.id,
+      timeType: d.timeType,
+      startedAt: new Date(d.startedAt),
+      endedAt: d.endedAt ? new Date(d.endedAt) : null,
+      durationMinutes: d.durationMinutes,
+      description: d.description ?? "",
+      isAfterHours: d.isAfterHours,
+      isWeekend: d.isWeekend,
+      isUrgent: d.isUrgent,
+      isOnsite: d.isOnsite,
+      coverageStatus: d.coverageStatus,
+      coverageReason: d.coverageReason,
+      hourlyRate: d.hourlyRate ?? null,
+      amount: d.amount ?? null,
+    });
+    return NextResponse.json(created, { status: 201 });
+  } catch (e) {
+    console.error("time-entry create failed", e);
+    return NextResponse.json(
+      {
+        error: e instanceof Error ? e.message : "Erreur de création",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return unauthorized();
+  if (!hasMinimumRole(me.role, "TECHNICIAN")) return forbidden();
+  const id = new URL(req.url).searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+  await deleteTimeEntry(id);
+  return NextResponse.json({ ok: true });
+}

@@ -1,0 +1,241 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import bcrypt from "bcryptjs";
+import { Prisma } from "@prisma/client";
+import prisma from "@/lib/prisma";
+import { getCurrentUser, hasMinimumRole, type UserRole } from "@/lib/auth-utils";
+
+const ROLE_VALUES = [
+  "SUPER_ADMIN",
+  "MSP_ADMIN",
+  "SUPERVISOR",
+  "TECHNICIAN",
+  "CLIENT_ADMIN",
+  "CLIENT_USER",
+  "READ_ONLY",
+] as const;
+
+const userCreateSchema = z.object({
+  email: z.string().email(),
+  firstName: z.string().min(1).max(100),
+  lastName: z.string().min(1).max(100),
+  role: z.enum(ROLE_VALUES),
+  phone: z.string().max(50).optional().nullable(),
+  password: z.string().min(8).max(200).optional(),
+  isActive: z.boolean().optional(),
+});
+
+const userUpdateSchema = z
+  .object({
+    id: z.string().min(1),
+    email: z.string().email().optional(),
+    firstName: z.string().min(1).max(100).optional(),
+    lastName: z.string().min(1).max(100).optional(),
+    role: z.enum(ROLE_VALUES).optional(),
+    phone: z.string().max(50).optional().nullable(),
+    password: z.string().min(8).max(200).optional(),
+    isActive: z.boolean().optional(),
+    // Data URI base64 (image/*) ou null pour supprimer.
+    // Limite ~700 Ko encodé (~512 Ko binaire).
+    avatar: z.string().max(700_000).nullable().optional(),
+  })
+  .refine((d) => Object.keys(d).length > 1, {
+    message: "no fields to update",
+  });
+
+function unauthorized() {
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+function forbidden() {
+  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+}
+
+function serializeUser(u: {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  avatar: string | null;
+  phone: string | null;
+  isActive: boolean;
+  lastLoginAt: Date | null;
+}) {
+  return {
+    id: u.id,
+    email: u.email,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    name: `${u.firstName} ${u.lastName}`.trim(),
+    role: u.role,
+    avatar: u.avatar,
+    phone: u.phone,
+    isActive: u.isActive,
+    lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
+  };
+}
+
+export async function GET(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return unauthorized();
+  // Listing users is staff-only — clients must never see other tenants' users.
+  if (!hasMinimumRole(me.role, "READ_ONLY") || me.role.startsWith("CLIENT_")) {
+    return forbidden();
+  }
+
+  const url = new URL(req.url);
+  const role = url.searchParams.get("role");
+  const includeInactive = url.searchParams.get("includeInactive") === "true";
+  const includeSystem = url.searchParams.get("includeSystem") === "true";
+
+  const users = await prisma.user.findMany({
+    where: {
+      ...(role
+        ? { role: { in: role.split(",") as UserRole[] } }
+        : { role: { not: "CLIENT_USER" } }),
+      ...(includeInactive ? {} : { isActive: true }),
+      ...(includeSystem
+        ? {}
+        : { email: { not: "freshservice-import@cetix.ca" } }),
+    },
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+  });
+
+  return NextResponse.json(users.map(serializeUser));
+}
+
+export async function POST(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return unauthorized();
+  if (!hasMinimumRole(me.role, "MSP_ADMIN")) return forbidden();
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const parsed = userCreateSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Validation failed", issues: parsed.error.issues },
+      { status: 400 }
+    );
+  }
+  const data = parsed.data;
+  try {
+    const created = await prisma.user.create({
+      data: {
+        email: data.email.toLowerCase(),
+        firstName: data.firstName,
+        lastName: data.lastName,
+        role: data.role,
+        phone: data.phone ?? null,
+        isActive: data.isActive ?? true,
+        passwordHash: data.password
+          ? await bcrypt.hash(data.password, 12)
+          : null,
+      },
+    });
+    return NextResponse.json(serializeUser(created), { status: 201 });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return NextResponse.json(
+        { error: "Email already in use" },
+        { status: 409 }
+      );
+    }
+    console.error("user create failed", e);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return unauthorized();
+  // Users may edit themselves; admins may edit anyone.
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const parsed = userUpdateSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Validation failed", issues: parsed.error.issues },
+      { status: 400 }
+    );
+  }
+  const { id, password, role, isActive, email, avatar, ...rest } = parsed.data;
+  const isSelf = id === me.id;
+  const isAdmin = hasMinimumRole(me.role, "MSP_ADMIN");
+  if (!isSelf && !isAdmin) return forbidden();
+  // Only admins can change role / activation / email of other users.
+  if ((role !== undefined || isActive !== undefined) && !isAdmin) {
+    return forbidden();
+  }
+
+  try {
+    const updated = await prisma.user.update({
+      where: { id },
+      data: {
+        ...rest,
+        ...(email !== undefined ? { email: email.toLowerCase() } : {}),
+        ...(role !== undefined ? { role } : {}),
+        ...(isActive !== undefined ? { isActive } : {}),
+        ...(avatar !== undefined ? { avatar } : {}),
+        ...(password
+          ? { passwordHash: await bcrypt.hash(password, 12) }
+          : {}),
+      },
+    });
+    return NextResponse.json(serializeUser(updated));
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError) {
+      if (e.code === "P2002")
+        return NextResponse.json(
+          { error: "Email already in use" },
+          { status: 409 }
+        );
+      if (e.code === "P2025")
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    console.error("user update failed", e);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return unauthorized();
+  if (!hasMinimumRole(me.role, "MSP_ADMIN")) return forbidden();
+
+  const id = new URL(req.url).searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+  if (id === me.id) {
+    return NextResponse.json(
+      { error: "Cannot deactivate yourself" },
+      { status: 400 }
+    );
+  }
+  try {
+    // Soft delete: deactivate rather than destroy ticket history.
+    const updated = await prisma.user.update({
+      where: { id },
+      data: { isActive: false },
+    });
+    return NextResponse.json(serializeUser(updated));
+  } catch (e) {
+    if (
+      e instanceof Prisma.PrismaClientKnownRequestError &&
+      e.code === "P2025"
+    ) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    console.error("user delete failed", e);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
+}

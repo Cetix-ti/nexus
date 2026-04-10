@@ -1,0 +1,1121 @@
+// Nexus ITSM Platform - Database Schema
+// Multi-tenant MSP architecture with organization-level data isolation
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// MULTI-TENANT & ORGANIZATION
+// ============================================================================
+
+model Organization {
+  id          String   @id @default(cuid())
+  externalSource String? @map("external_source")
+  externalId  String?  @unique @map("external_id")
+  clientCode  String?  @unique @map("client_code")
+  name        String
+  slug        String   @unique
+  domain      String?
+  domains     String[] @default([])
+  website     String?
+  description String?  @db.Text
+  phone       String?
+  address     String?
+  city        String?
+  province    String?
+  postalCode  String?  @map("postal_code")
+  country     String?
+  logo        String?
+  logoOverridden Boolean @default(false) @map("logo_overridden")
+  lastEnrichedAt DateTime? @map("last_enriched_at")
+  primaryColor String? @map("primary_color")
+  plan        String   @default("standard")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  sites       Site[]
+  contacts    Contact[]
+  users       UserOrganization[]
+  tickets     Ticket[]
+  contracts   Contract[]
+  assets      Asset[]
+  categories  Category[]
+  slaPolicies SLAPolicy[]
+  queues      Queue[]
+  tags        Tag[]
+  articles    Article[]
+  articleCategories ArticleCategory[]
+  automations AutomationRule[]
+  announcements Announcement[]
+
+  @@map("organizations")
+}
+
+model Site {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  name           String
+  address        String?
+  city           String?
+  state          String?
+  postalCode     String?      @map("postal_code")
+  country        String?
+  phone          String?
+  isMain         Boolean      @default(false) @map("is_main")
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contacts       Contact[]
+  assets         Asset[]
+  tickets        Ticket[]
+
+  @@map("sites")
+}
+
+// ============================================================================
+// USERS, ROLES & PERMISSIONS
+// ============================================================================
+
+model User {
+  id             String    @id @default(cuid())
+  externalSource String?   @map("external_source")
+  externalId     String?   @unique @map("external_id")
+  email          String    @unique
+  passwordHash   String?   @map("password_hash")
+  firstName      String    @map("first_name")
+  lastName       String    @map("last_name")
+  avatar         String?
+  phone          String?
+  role           UserRole  @default(TECHNICIAN)
+  isActive       Boolean   @default(true) @map("is_active")
+  lastLoginAt    DateTime? @map("last_login_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organizations  UserOrganization[]
+  assignedTickets Ticket[]  @relation("AssignedTechnician")
+  createdTickets  Ticket[]  @relation("TicketCreator")
+  comments       Comment[]
+  activities     Activity[]
+  articles       Article[] @relation("ArticleAuthor")
+
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  MSP_ADMIN
+  SUPERVISOR
+  TECHNICIAN
+  CLIENT_ADMIN
+  CLIENT_USER
+  READ_ONLY
+}
+
+model UserOrganization {
+  id             String       @id @default(cuid())
+  userId         String       @map("user_id")
+  organizationId String       @map("organization_id")
+  role           UserRole     @default(CLIENT_USER)
+  isDefault      Boolean      @default(false) @map("is_default")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("user_organizations")
+}
+
+model Contact {
+  id             String       @id @default(cuid())
+  externalSource String?      @map("external_source")
+  externalId     String?      @unique @map("external_id")
+  organizationId String       @map("organization_id")
+  siteId         String?      @map("site_id")
+  firstName      String       @map("first_name")
+  lastName       String       @map("last_name")
+  email          String
+  phone          String?
+  jobTitle       String?      @map("job_title")
+  isVIP          Boolean      @default(false) @map("is_vip")
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site           Site?        @relation(fields: [siteId], references: [id])
+  tickets        Ticket[]     @relation("TicketRequester")
+
+  @@map("contacts")
+}
+
+// ============================================================================
+// TICKETS
+// ============================================================================
+
+model Ticket {
+  id             String        @id @default(cuid())
+  externalSource String?       @map("external_source")
+  externalId     String?       @unique @map("external_id")
+  number         Int           @unique @default(autoincrement())
+  organizationId String        @map("organization_id")
+  siteId         String?       @map("site_id")
+  requesterId    String?       @map("requester_id")
+  assigneeId     String?       @map("assignee_id")
+  creatorId      String        @map("creator_id")
+  categoryId     String?       @map("category_id")
+  queueId        String?       @map("queue_id")
+  slaPolicyId    String?       @map("sla_policy_id")
+
+  subject        String
+  description    String        @db.Text
+  descriptionHtml String?      @map("description_html") @db.Text
+
+  status         TicketStatus  @default(NEW)
+  priority       TicketPriority @default(MEDIUM)
+  urgency        TicketUrgency @default(MEDIUM)
+  impact         TicketImpact  @default(MEDIUM)
+  type           TicketType    @default(INCIDENT)
+  source         TicketSource  @default(PORTAL)
+
+  dueAt          DateTime?     @map("due_at")
+  firstResponseAt DateTime?   @map("first_response_at")
+  resolvedAt     DateTime?     @map("resolved_at")
+  closedAt       DateTime?     @map("closed_at")
+  slaBreached    Boolean       @default(false) @map("sla_breached")
+
+  isEscalated    Boolean       @default(false) @map("is_escalated")
+  isOverdue      Boolean       @default(false) @map("is_overdue")
+
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site           Site?         @relation(fields: [siteId], references: [id])
+  requester      Contact?      @relation("TicketRequester", fields: [requesterId], references: [id])
+  assignee       User?         @relation("AssignedTechnician", fields: [assigneeId], references: [id])
+  creator        User          @relation("TicketCreator", fields: [creatorId], references: [id])
+  category       Category?     @relation(fields: [categoryId], references: [id])
+  queue          Queue?        @relation(fields: [queueId], references: [id])
+  slaPolicy      SLAPolicy?   @relation(fields: [slaPolicyId], references: [id])
+
+  // Monitoring (alertes Zabbix/Atera/etc.)
+  monitoringSourceId String? @map("monitoring_source_id")
+  monitoringSource   MonitoringAlertSource? @relation("MonitoringAlertSource", fields: [monitoringSourceId], references: [id])
+  monitoringStage    MonitoringAlertStage? @map("monitoring_stage")
+  monitoringNotes    String? @map("monitoring_notes") @db.Text
+
+  comments       Comment[]
+  attachments    Attachment[]
+  activities     Activity[]
+  ticketTags     TicketTag[]
+  relatedAssets  TicketAsset[]
+
+  @@index([organizationId, status])
+  @@index([assigneeId])
+  @@index([requesterId])
+  @@index([createdAt])
+  @@index([status, priority])
+  @@index([monitoringSourceId, monitoringStage])
+  @@map("tickets")
+}
+
+enum TicketStatus {
+  NEW
+  OPEN
+  IN_PROGRESS
+  ON_SITE
+  PENDING
+  WAITING_CLIENT
+  WAITING_VENDOR
+  SCHEDULED
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum TicketPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TicketUrgency {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TicketImpact {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TicketType {
+  INCIDENT
+  SERVICE_REQUEST
+  PROBLEM
+  CHANGE
+  ALERT
+}
+
+enum TicketSource {
+  PORTAL
+  EMAIL
+  PHONE
+  CHAT
+  API
+  MONITORING
+  AUTOMATION
+}
+
+model Comment {
+  id         String      @id @default(cuid())
+  ticketId   String      @map("ticket_id")
+  authorId   String      @map("author_id")
+  body       String      @db.Text
+  bodyHtml   String?     @map("body_html") @db.Text
+  isInternal Boolean     @default(false) @map("is_internal")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+
+  ticket     Ticket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author     User        @relation(fields: [authorId], references: [id])
+  attachments Attachment[]
+
+  @@index([ticketId, createdAt])
+  @@map("comments")
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  ticketId   String?  @map("ticket_id")
+  commentId  String?  @map("comment_id")
+  fileName   String   @map("file_name")
+  fileSize   Int      @map("file_size")
+  mimeType   String   @map("mime_type")
+  url        String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  ticket     Ticket?  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  comment    Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}
+
+model Activity {
+  id         String   @id @default(cuid())
+  ticketId   String   @map("ticket_id")
+  userId     String?  @map("user_id")
+  action     String
+  field      String?
+  oldValue   String?  @map("old_value")
+  newValue   String?  @map("new_value")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@map("activities")
+}
+
+// ============================================================================
+// CATEGORIES, QUEUES & TAGS
+// ============================================================================
+
+model Category {
+  id             String       @id @default(cuid())
+  organizationId String?      @map("organization_id")
+  parentId       String?      @map("parent_id")
+  name           String
+  description    String?
+  icon           String?
+  sortOrder      Int          @default(0) @map("sort_order")
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent         Category?     @relation("CategoryTree", fields: [parentId], references: [id])
+  children       Category[]    @relation("CategoryTree")
+  tickets        Ticket[]
+
+  @@map("categories")
+}
+
+model Queue {
+  id             String       @id @default(cuid())
+  externalId     String?      @unique @map("external_id")
+  organizationId String?      @map("organization_id")
+  name           String
+  description    String?
+  isDefault      Boolean      @default(false) @map("is_default")
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tickets        Ticket[]
+
+  @@map("queues")
+}
+
+model Tag {
+  id             String       @id @default(cuid())
+  organizationId String?      @map("organization_id")
+  name           String
+  color          String       @default("#6B7280")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tickets        TicketTag[]
+
+  @@map("tags")
+}
+
+model TicketTag {
+  ticketId  String @map("ticket_id")
+  tagId     String @map("tag_id")
+
+  ticket    Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  tag       Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, tagId])
+  @@map("ticket_tags")
+}
+
+// ============================================================================
+// SLA
+// ============================================================================
+
+model SLAPolicy {
+  id                String       @id @default(cuid())
+  organizationId    String?      @map("organization_id")
+  name              String
+  description       String?
+  priority          TicketPriority
+  firstResponseMinutes Int      @map("first_response_minutes")
+  resolutionMinutes    Int      @map("resolution_minutes")
+  isActive          Boolean      @default(true) @map("is_active")
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tickets           Ticket[]
+
+  @@map("sla_policies")
+}
+
+// ============================================================================
+// CONTRACTS
+// ============================================================================
+
+model Contract {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  name           String
+  type           ContractType @default(SUPPORT)
+  status         ContractStatus @default(ACTIVE)
+  startDate      DateTime     @map("start_date")
+  endDate        DateTime?    @map("end_date")
+  monthlyHours   Float?       @map("monthly_hours")
+  hourlyRate     Float?       @map("hourly_rate")
+  notes          String?      @db.Text
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("contracts")
+}
+
+enum ContractType {
+  SUPPORT
+  MANAGED_SERVICES
+  PROJECT
+  HOURLY
+  RETAINER
+}
+
+enum ContractStatus {
+  DRAFT
+  ACTIVE
+  EXPIRING
+  EXPIRED
+  CANCELLED
+}
+
+// ============================================================================
+// ASSETS / CMDB
+// ============================================================================
+
+model Asset {
+  id             String       @id @default(cuid())
+  externalSource String?      @map("external_source")
+  externalId     String?      @unique @map("external_id")
+  organizationId String       @map("organization_id")
+  siteId         String?      @map("site_id")
+  name           String
+  type           AssetType    @default(OTHER)
+  status         AssetStatus  @default(ACTIVE)
+  manufacturer   String?
+  model          String?
+  serialNumber   String?      @map("serial_number")
+  purchaseDate   DateTime?    @map("purchase_date")
+  warrantyExpiry DateTime?    @map("warranty_expiry")
+  ipAddress      String?      @map("ip_address")
+  macAddress     String?      @map("mac_address")
+  notes          String?      @db.Text
+  metadata       Json?
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site           Site?        @relation(fields: [siteId], references: [id])
+  tickets        TicketAsset[]
+
+  @@index([organizationId, type])
+  @@map("assets")
+}
+
+enum AssetType {
+  WORKSTATION
+  LAPTOP
+  SERVER
+  NETWORK
+  PRINTER
+  MOBILE
+  MONITOR
+  PERIPHERAL
+  SOFTWARE
+  VIRTUAL_MACHINE
+  CLOUD_RESOURCE
+  OTHER
+}
+
+enum AssetStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+  RETIRED
+  LOST
+  DISPOSED
+}
+
+model TicketAsset {
+  ticketId String @map("ticket_id")
+  assetId  String @map("asset_id")
+
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  asset    Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, assetId])
+  @@map("ticket_assets")
+}
+
+// ============================================================================
+// KNOWLEDGE BASE
+// ============================================================================
+// Hierarchical categories (SharePoint-style document library). Each category
+// can have a parent to build a folder tree of arbitrary depth.
+
+model ArticleCategory {
+  id             String    @id @default(cuid())
+  organizationId String?   @map("organization_id")
+  parentId       String?   @map("parent_id")
+  name           String
+  slug           String
+  color          String    @default("#3B82F6")
+  icon           String    @default("📁")
+  description    String?
+  sortOrder      Int       @default(0) @map("sort_order")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization   Organization?     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent         ArticleCategory?  @relation("ArticleCategoryTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children       ArticleCategory[] @relation("ArticleCategoryTree")
+  articles       Article[]
+
+  @@unique([organizationId, parentId, slug])
+  @@index([parentId])
+  @@map("article_categories")
+}
+
+model Article {
+  id             String        @id @default(cuid())
+  externalSource String?       @map("external_source")
+  externalId     String?       @unique @map("external_id")
+  organizationId String?       @map("organization_id")
+  categoryId     String?       @map("category_id")
+  authorId       String?       @map("author_id")
+
+  title          String
+  slug           String
+  summary        String        @default("") @db.Text
+  body           String        @default("") @db.Text  // TipTap HTML
+
+  status         ArticleStatus @default(DRAFT)
+  isPublic       Boolean       @default(true) @map("is_public")
+  tags           String[]      @default([])
+
+  viewCount      Int           @default(0) @map("view_count")
+  helpfulCount   Int           @default(0) @map("helpful_count")
+  notHelpfulCount Int          @default(0) @map("not_helpful_count")
+
+  // Full-text search vector — populated by trigger, enables native PG search
+  // Uses french dictionary for proper accent/stemming handling.
+  searchVector   Unsupported("tsvector")? @map("search_vector")
+
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  publishedAt    DateTime?     @map("published_at")
+
+  organization   Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category       ArticleCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  author         User?            @relation("ArticleAuthor", fields: [authorId], references: [id])
+
+  @@unique([organizationId, slug])
+  @@index([status, isPublic])
+  @@index([categoryId])
+  @@index([searchVector], type: Gin)
+  @@map("articles")
+}
+
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// ============================================================================
+// ANNOUNCEMENTS
+// ============================================================================
+
+model Announcement {
+  id             String       @id @default(cuid())
+  organizationId String?      @map("organization_id")
+  title          String
+  body           String       @db.Text
+  type           String       @default("info")
+  isActive       Boolean      @default(true) @map("is_active")
+  startsAt       DateTime?    @map("starts_at")
+  endsAt         DateTime?    @map("ends_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("announcements")
+}
+
+// ============================================================================
+// AUTOMATIONS
+// ============================================================================
+
+model AutomationRule {
+  id             String       @id @default(cuid())
+  organizationId String?      @map("organization_id")
+  name           String
+  description    String?
+  trigger        String
+  conditions     Json
+  actions        Json
+  isActive       Boolean      @default(true) @map("is_active")
+  executionCount Int          @default(0) @map("execution_count")
+  lastExecutedAt DateTime?    @map("last_executed_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("automation_rules")
+}
+
+// ============================================================================
+// APPROVERS — ticket approval workflow per organization
+// ============================================================================
+
+model OrgApprover {
+  id              String        @id @default(cuid())
+  organizationId  String        @map("organization_id")
+  contactId       String?       @map("contact_id")
+  contactName     String        @map("contact_name")
+  contactEmail    String        @map("contact_email")
+  contactPhone    String?       @map("contact_phone")
+  jobTitle        String?       @map("job_title")
+  level           Int           @default(1)
+  isPrimary       Boolean       @default(false) @map("is_primary")
+  scope           ApproverScope @default(ALL_TICKETS)
+  scopeMinAmount  Float?        @map("scope_min_amount")
+  notifyByEmail   Boolean       @default(true) @map("notify_by_email")
+  notifyBySms     Boolean       @default(false) @map("notify_by_sms")
+  isActive        Boolean       @default(true) @map("is_active")
+  totalApproved   Int           @default(0) @map("total_approved")
+  totalRejected   Int           @default(0) @map("total_rejected")
+  averageResponseHours Float?   @map("average_response_hours")
+  addedBy         String?       @map("added_by")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@index([organizationId])
+  @@map("org_approvers")
+}
+
+enum ApproverScope {
+  ALL_TICKETS
+  HIGH_PRIORITY_ONLY
+  SPECIFIC_CATEGORIES
+  SPECIFIC_AMOUNTS
+}
+
+// ============================================================================
+// SLA OVERRIDES — per-org SLA profiles overriding the global defaults
+// ============================================================================
+
+model OrgSlaOverride {
+  id                    String         @id @default(cuid())
+  organizationId        String         @unique @map("organization_id")
+  // 4 priorities × 2 timings = 8 fields, simpler than a child table
+  lowFirstResponseHours       Float    @default(8)   @map("low_first_response_hours")
+  lowResolutionHours          Float    @default(72)  @map("low_resolution_hours")
+  mediumFirstResponseHours    Float    @default(4)   @map("medium_first_response_hours")
+  mediumResolutionHours       Float    @default(24)  @map("medium_resolution_hours")
+  highFirstResponseHours      Float    @default(1)   @map("high_first_response_hours")
+  highResolutionHours         Float    @default(8)   @map("high_resolution_hours")
+  criticalFirstResponseHours  Float    @default(0.25) @map("critical_first_response_hours")
+  criticalResolutionHours     Float    @default(4)   @map("critical_resolution_hours")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+
+  @@map("org_sla_overrides")
+}
+
+// Singleton row for the global SLA defaults
+model GlobalSlaProfile {
+  id                          String   @id @default("global")
+  lowFirstResponseHours       Float    @default(8)   @map("low_first_response_hours")
+  lowResolutionHours          Float    @default(72)  @map("low_resolution_hours")
+  mediumFirstResponseHours    Float    @default(4)   @map("medium_first_response_hours")
+  mediumResolutionHours       Float    @default(24)  @map("medium_resolution_hours")
+  highFirstResponseHours      Float    @default(1)   @map("high_first_response_hours")
+  highResolutionHours         Float    @default(8)   @map("high_resolution_hours")
+  criticalFirstResponseHours  Float    @default(0.25) @map("critical_first_response_hours")
+  criticalResolutionHours     Float    @default(4)   @map("critical_resolution_hours")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  @@map("global_sla_profile")
+}
+
+// ============================================================================
+// KANBAN BOARDS
+// ============================================================================
+
+model KanbanBoard {
+  id              String          @id @default(cuid())
+  ownerId         String?         @map("owner_id")
+  name            String
+  description     String?
+  icon            String          @default("📋")
+  color           String          @default("#3B82F6")
+  groupBy         BoardGroupBy    @default(STATUS) @map("group_by")
+  shareScope      BoardShareScope @default(PRIVATE) @map("share_scope")
+  sharedWithGroupIds   String[]   @default([]) @map("shared_with_group_ids")
+  sharedWithGroupNames String[]   @default([]) @map("shared_with_group_names")
+  filterOrgIds         String[]   @default([]) @map("filter_org_ids")
+  filterTechIds        String[]   @default([]) @map("filter_tech_ids")
+  filterCategories     String[]   @default([]) @map("filter_categories")
+  filterTags           String[]   @default([]) @map("filter_tags")
+  filterPriorities     String[]   @default([]) @map("filter_priorities")
+  filterTicketTypes    String[]   @default([]) @map("filter_ticket_types")
+  isPinned        Boolean         @default(false) @map("is_pinned")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  columns         KanbanBoardColumn[]
+
+  @@map("kanban_boards")
+}
+
+model KanbanBoardColumn {
+  id        String   @id @default(cuid())
+  boardId   String   @map("board_id")
+  label     String
+  value     String
+  color     String   @default("#3B82F6")
+  sortOrder Int      @default(0) @map("sort_order")
+  visible   Boolean  @default(true)
+
+  board     KanbanBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId])
+  @@map("kanban_board_columns")
+}
+
+enum BoardGroupBy {
+  STATUS
+  ORGANIZATION
+  PRIORITY
+  SLA
+  ASSIGNEE
+  CATEGORY
+  TICKET_TYPE
+}
+
+enum BoardShareScope {
+  PRIVATE
+  TEAM
+  EVERYONE
+}
+
+// ============================================================================
+// RECURRING TICKET TEMPLATES
+// ============================================================================
+
+model RecurringTicketTemplate {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  organizationId  String?  @map("organization_id")
+  organizationName String? @map("organization_name")
+  // Schedule (frequency + cadence)
+  frequency       String   // "daily" | "weekly" | "monthly" | "yearly"
+  scheduleConfig  Json     @map("schedule_config") // free-form per frequency
+  timeOfDay       String   @default("09:00") @map("time_of_day")
+  timezone        String   @default("America/Toronto")
+  nextRunAt       DateTime? @map("next_run_at")
+  lastRunAt       DateTime? @map("last_run_at")
+  isActive        Boolean  @default(true) @map("is_active")
+  // Ticket payload
+  ticketSubject   String   @map("ticket_subject")
+  ticketDescription String @map("ticket_description") @db.Text
+  ticketPriority  TicketPriority @default(MEDIUM) @map("ticket_priority")
+  ticketType      TicketType @default(SERVICE_REQUEST) @map("ticket_type")
+  ticketCategoryId String? @map("ticket_category_id")
+  ticketQueueId   String?  @map("ticket_queue_id")
+  ticketAssigneeId String? @map("ticket_assignee_id")
+  ticketTags      String[] @default([]) @map("ticket_tags")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([nextRunAt, isActive])
+  @@map("recurring_ticket_templates")
+}
+
+// ============================================================================
+// SUPPORT TIERS — per-client billing tiers (à la carte rates)
+// ============================================================================
+
+model SupportTier {
+  id              String   @id @default(cuid())
+  organizationId  String   @map("organization_id")
+  name            String
+  description     String?
+  hourlyRate      Float    @map("hourly_rate")
+  sortOrder       Int      @default(0) @map("sort_order")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([organizationId])
+  @@map("support_tiers")
+}
+
+// ============================================================================
+// INTEGRATIONS — tenant-wide integration configs (Atera, QB, Slack, etc.)
+// ============================================================================
+
+model TenantIntegration {
+  id                  String   @id @default(cuid())
+  provider            String   @unique
+  category            String
+  name                String
+  description         String?
+  status              String   @default("not_connected") // connected | not_connected | expired_token | error
+  authType            String   @map("auth_type")
+  apiKey              String?  @map("api_key") // encrypted at rest in prod
+  apiKeyMasked        String?  @map("api_key_masked")
+  apiBaseUrl          String?  @map("api_base_url")
+  oauthClientId       String?  @map("oauth_client_id")
+  oauthAccessToken    String?  @map("oauth_access_token")
+  oauthRefreshToken   String?  @map("oauth_refresh_token")
+  oauthExpiresAt      DateTime? @map("oauth_expires_at")
+  autoSync            Boolean  @default(false) @map("auto_sync")
+  syncIntervalMinutes Int?     @map("sync_interval_minutes")
+  lastSyncAt          DateTime? @map("last_sync_at")
+  nextSyncAt          DateTime? @map("next_sync_at")
+  totalRecordsSynced  Int      @default(0) @map("total_records_synced")
+  capabilities        String[] @default([])
+  lastErrorMessage    String?  @map("last_error_message")
+  connectedBy         String?  @map("connected_by")
+  connectedAt         DateTime? @map("connected_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  mappings            OrgIntegrationMapping[]
+
+  @@map("tenant_integrations")
+}
+
+model OrgIntegrationMapping {
+  id                String   @id @default(cuid())
+  organizationId    String   @map("organization_id")
+  integrationId     String   @map("integration_id")
+  provider          String
+  externalId        String   @map("external_id")
+  externalName      String   @map("external_name")
+  externalUrl       String?  @map("external_url")
+  syncedRecordType  String?  @map("synced_record_type")
+  syncedRecordCount Int      @default(0) @map("synced_record_count")
+  isActive          Boolean  @default(true) @map("is_active")
+  lastSyncAt        DateTime? @map("last_sync_at")
+  mappedBy          String?  @map("mapped_by")
+  mappedAt          DateTime @default(now()) @map("mapped_at")
+
+  integration       TenantIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+  @@index([provider])
+  @@map("org_integration_mappings")
+}
+
+// ============================================================================
+// PORTAL ACCESS — client portal users with permissions
+// ============================================================================
+
+model PortalAccessUser {
+  id                          String   @id @default(cuid())
+  organizationId              String   @map("organization_id")
+  contactId                   String?  @map("contact_id")
+  name                        String
+  email                       String
+  portalRole                  PortalRole @default(VIEWER) @map("portal_role")
+  // Granular permission flags
+  canAccessPortal             Boolean  @default(true) @map("can_access_portal")
+  canSeeOwnTickets            Boolean  @default(true) @map("can_see_own_tickets")
+  canSeeAllOrgTickets         Boolean  @default(false) @map("can_see_all_org_tickets")
+  canCreateTickets            Boolean  @default(true) @map("can_create_tickets")
+  canSeeProjects              Boolean  @default(false) @map("can_see_projects")
+  canSeeProjectDetails        Boolean  @default(false) @map("can_see_project_details")
+  canSeeProjectTasks          Boolean  @default(false) @map("can_see_project_tasks")
+  canSeeProjectLinkedTickets  Boolean  @default(false) @map("can_see_project_linked_tickets")
+  canSeeReports               Boolean  @default(false) @map("can_see_reports")
+  canSeeBillingReports        Boolean  @default(false) @map("can_see_billing_reports")
+  canSeeTimeReports           Boolean  @default(false) @map("can_see_time_reports")
+  canSeeHourBankBalance       Boolean  @default(false) @map("can_see_hour_bank_balance")
+  canSeeDocuments             Boolean  @default(false) @map("can_see_documents")
+  canSeeTeamMembers           Boolean  @default(false) @map("can_see_team_members")
+  lastLoginAt                 DateTime? @map("last_login_at")
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@map("portal_access_users")
+}
+
+enum PortalRole {
+  ADMIN
+  MANAGER
+  VIEWER
+}
+
+// ============================================================================
+// AUDIT LOG
+// ============================================================================
+
+model AssetCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  icon        String   @default("📦")
+  color       String   @default("#3B82F6")
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("asset_categories")
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  userId         String?  @map("user_id")
+  userEmail      String?  @map("user_email")
+  organizationId String?  @map("organization_id")
+  action         String   // e.g. "ticket.created", "user.login"
+  entityType     String?  @map("entity_type")
+  entityId       String?  @map("entity_id")
+  metadata       Json?
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// NEXTAUTH — Prisma adapter tables
+// ============================================================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+/// Saisies de temps facturables / non facturables sur les tickets.
+/// Relations volontairement non déclarées en Prisma (FK SQL uniquement)
+/// pour éviter d'avoir à éditer Ticket/User/Organization.
+model TimeEntry {
+  id              String   @id @default(cuid())
+  ticketId        String   @map("ticket_id")
+  organizationId  String   @map("organization_id")
+  agentId         String   @map("agent_id")
+  timeType        String   @map("time_type")
+  startedAt       DateTime @map("started_at")
+  endedAt         DateTime? @map("ended_at")
+  durationMinutes Int      @map("duration_minutes")
+  description     String   @default("") @db.Text
+  isAfterHours    Boolean  @default(false) @map("is_after_hours")
+  isWeekend       Boolean  @default(false) @map("is_weekend")
+  isUrgent        Boolean  @default(false) @map("is_urgent")
+  isOnsite        Boolean  @default(false) @map("is_onsite")
+  coverageStatus  String   @default("pending") @map("coverage_status")
+  coverageReason  String   @default("") @map("coverage_reason")
+  hourlyRate      Float?   @map("hourly_rate")
+  amount          Float?
+  approvalStatus  String   @default("draft") @map("approval_status")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([ticketId])
+  @@index([organizationId, startedAt])
+  @@index([agentId, startedAt])
+  @@map("time_entries")
+}
+
+/// Clé/valeur global du tenant (branding portail, préférences, etc.).
+/// Une seule ligne par clé. Ex: "portal.branding" → { logo, primaryColor }.
+model TenantSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("tenant_settings")
+}
+
+// ============================================================================
+// MONITORING ALERTS
+// Tickets émis par des systèmes de surveillance (Zabbix, Atera, etc.).
+// Le dashboard /monitoring affiche uniquement ces tickets, avec un workflow
+// dédié au triage / suivi d'achat de pièces / résolution.
+// ============================================================================
+
+/// Adresses e-mail expéditrices considérées comme des systèmes de monitoring.
+/// Tout ticket dont le requester (Contact) ou l'expéditeur d'origine matche
+/// l'un de ces patterns est marqué `monitoringSourceId` automatiquement.
+model MonitoringAlertSource {
+  id         String   @id @default(cuid())
+  /// Adresse e-mail OU motif (peut contenir un domaine, ex. "@zabbix.cetix.ca").
+  emailOrPattern String  @unique @map("email_or_pattern")
+  label      String
+  /// Couleur hex utilisée pour la pastille dans le dashboard.
+  color      String   @default("#3B82F6")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  alerts     Ticket[] @relation("MonitoringAlertSource")
+
+  @@map("monitoring_alert_sources")
+}
+
+/// Étapes de traitement spécifiques aux alertes monitoring (orthogonales au
+/// TicketStatus standard, qui reste utilisé pour la vue ticket classique).
+enum MonitoringAlertStage {
+  TRIAGE              // Vient d'arriver, à analyser
+  INVESTIGATING       // En cours d'investigation
+  WAITING_PARTS       // En attente d'achat / livraison de pièce
+  WAITING_VENDOR      // En attente d'un fournisseur tiers
+  WAITING_MAINTENANCE // Planifié dans une fenêtre de maintenance
+  RESOLVED            // Traité
+  IGNORED             // Faux positif / bruit ignoré
+}
+
+// ============================================================================
+// VEEAM BACKUP MONITORING
+// Alertes de sauvegarde Veeam parsées depuis une boîte mail IMAP.
+// ============================================================================
+
+model VeeamBackupAlert {
+  id               String   @id @default(cuid())
+  organizationId   String?  @map("organization_id")
+  organizationName String?  @map("organization_name")
+
+  jobName          String   @map("job_name")
+  status           VeeamJobStatus
+  senderEmail      String   @map("sender_email")
+  senderDomain     String   @map("sender_domain")
+  subject          String
+  bodySnippet      String   @default("") @map("body_snippet") @db.Text
+  messageId        String   @unique @map("message_id")
+  receivedAt       DateTime @map("received_at")
+
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, receivedAt])
+  @@index([status, receivedAt])
+  @@index([senderDomain])
+  @@map("veeam_backup_alerts")
+}
+
+enum VeeamJobStatus {
+  SUCCESS
+  WARNING
+  FAILED
+}

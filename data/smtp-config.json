@@ -1,0 +1,16 @@
+{
+  "host": "192.168.200.19",
+  "port": 25,
+  "secure": "none",
+  "username": "",
+  "password": "nexus@cetix.ca",
+  "fromEmail": "nexus@cetix.ca",
+  "fromName": "Cetix",
+  "replyTo": "nexus@cetix.ca",
+  "subjectPrefix": "[Cetix]",
+  "ticketCreationEnabled": true,
+  "isConfigured": false,
+  "lastTestSuccess": false,
+  "lastTestError": "self-signed certificate",
+  "lastTestAt": "2026-04-07T19:39:25.501Z"
+}

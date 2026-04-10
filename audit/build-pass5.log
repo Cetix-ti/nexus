@@ -1,0 +1,34 @@
+▲ Next.js 16.2.2 (Turbopack)
+- Environments: .env
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 36.9s
+  Running TypeScript ...
+  Finished TypeScript in 65s ...
+  Collecting page data using 3 workers ...
+  Generating static pages using 3 workers (0/62) ...
+  Generating static pages using 3 workers (15/62) 
+  Generating static pages using 3 workers (30/62) 
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+  Generating static pages using 3 workers (46/62) 
+⨯ useSearchParams() should be wrapped in a suspense boundary at page "/tickets". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at S (/opt/nexus/.next/server/chunks/ssr/node_modules_next_0w2y7fz._.js:2:2692)
+    at r (/opt/nexus/.next/server/chunks/ssr/node_modules_next_0w2y7fz._.js:4:6760)
+    at /opt/nexus/.next/server/chunks/ssr/src_app_(app)_tickets_page_tsx_0vh~4n1._.js:1:7867
+    at an (/opt/nexus/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:84267)
+    at ai (/opt/nexus/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:86086)
+    at al (/opt/nexus/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:107860)
+    at ao (/opt/nexus/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:105275)
+    at aa (/opt/nexus/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:84619)
+    at ai (/opt/nexus/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:86135)
+    at ai (/opt/nexus/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:104615)
+Error occurred prerendering page "/tickets". Read more: https://nextjs.org/docs/messages/prerender-error
+Export encountered an error on /(app)/tickets/page: /tickets, exiting the build.
+⨯ Next.js build worker exited with code: 1 and signal: null

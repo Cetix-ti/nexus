@@ -1,0 +1,871 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { cn } from "@/lib/utils";
+import {
+  Settings,
+  Users,
+  Shield,
+  Bell,
+  ShieldCheck,
+  Tag,
+  Layers,
+  ListFilter,
+  Plug,
+  Key,
+  LayoutGrid,
+  Globe,
+  Mail,
+  UserCircle,
+  DollarSign,
+  FileText,
+  Upload,
+  Pencil,
+  UserX,
+  MoreHorizontal,
+  UserCog as UserCogIcon,
+  HardDrive,
+} from "lucide-react";
+import { PortalAccessSection } from "@/components/settings/portal-access-section";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { CategoriesSection } from "@/components/settings/categories-section";
+import { SLASection } from "@/components/settings/sla-section";
+import { QueuesSection } from "@/components/settings/queues-section";
+import { TagsSection } from "@/components/settings/tags-section";
+import { RolesSection } from "@/components/settings/roles-section";
+import { NotificationsSection } from "@/components/settings/notifications-section";
+import { EmailSection } from "@/components/settings/email-section";
+import { AgentProfilesSection } from "@/components/settings/agent-profiles-section";
+import { BillingProfilesSection } from "@/components/settings/billing-profiles-section";
+import { ContractsSection } from "@/components/settings/contracts-section";
+import { KanbanColumnsSection } from "@/components/settings/kanban-columns-section";
+import { KanbanBoardsSection } from "@/components/settings/kanban-boards-section";
+import { IntegrationsSection } from "@/components/settings/integrations-section";
+import { PortalDomainSection } from "@/components/settings/portal-domain-section";
+import { VeeamSection } from "@/components/settings/veeam-section";
+import { useSession } from "next-auth/react";
+import { EditUserModal, type EditUserModalUser } from "@/components/users/edit-user-modal";
+
+// ---------------------------------------------------------------------------
+// Settings sections
+// ---------------------------------------------------------------------------
+
+const sections = [
+  { key: "general", label: "Général", icon: Settings },
+  { key: "users", label: "Utilisateurs", icon: Users },
+  { key: "roles", label: "Rôles & Permissions", icon: Shield },
+  { key: "notifications", label: "Notifications", icon: Bell },
+  { key: "email", label: "Email & SMTP", icon: Mail },
+  { key: "agents", label: "Profils & Signatures", icon: UserCircle },
+  { key: "portal_access", label: "Accès portail client", icon: UserCogIcon },
+  { key: "portal_domain", label: "Domaine du portail", icon: Globe, superAdminOnly: true },
+  { key: "sla", label: "SLA", icon: ShieldCheck },
+  { key: "categories", label: "Catégories", icon: Tag },
+  { key: "queues", label: "Files d'attente", icon: ListFilter },
+  { key: "tags", label: "Tags", icon: Layers },
+  { key: "kanban_boards", label: "Tableaux Kanban", icon: LayoutGrid },
+  { key: "kanban_columns", label: "Colonnes Kanban", icon: LayoutGrid },
+  { key: "billing_profiles", label: "Profils de facturation", icon: DollarSign },
+  { key: "contracts", label: "Contrats", icon: FileText },
+  { key: "integrations", label: "Intégrations", icon: Plug },
+  { key: "veeam", label: "Sauvegardes Veeam", icon: HardDrive },
+  { key: "api", label: "API", icon: Key },
+] as const;
+
+type SectionKey = (typeof sections)[number]["key"];
+
+// ---------------------------------------------------------------------------
+// Mock users
+// ---------------------------------------------------------------------------
+
+const mockUsers = [
+  {
+    id: "u1",
+    name: "Jean-Philippe Martin",
+    email: "jp.martin@cetix.ca",
+    role: "Administrateur",
+    roleBadge: "danger" as const,
+    status: "Actif",
+    lastLogin: "Aujourd'hui, 09:12",
+  },
+  {
+    id: "u2",
+    name: "Marie Tremblay",
+    email: "m.tremblay@cetix.ca",
+    role: "Technicien Senior",
+    roleBadge: "primary" as const,
+    status: "Actif",
+    lastLogin: "Aujourd'hui, 08:45",
+  },
+  {
+    id: "u3",
+    name: "Sophie Lavoie",
+    email: "s.lavoie@cetix.ca",
+    role: "Technicien",
+    roleBadge: "primary" as const,
+    status: "Actif",
+    lastLogin: "Hier, 17:30",
+  },
+  {
+    id: "u4",
+    name: "Lucas Bergeron",
+    email: "l.bergeron@cetix.ca",
+    role: "Technicien",
+    roleBadge: "primary" as const,
+    status: "Actif",
+    lastLogin: "Aujourd'hui, 10:05",
+  },
+  {
+    id: "u5",
+    name: "Isabelle Côté",
+    email: "i.cote@cetix.ca",
+    role: "Gestionnaire",
+    roleBadge: "warning" as const,
+    status: "Actif",
+    lastLogin: "Hier, 14:22",
+  },
+  {
+    id: "u6",
+    name: "Marc-André Roy",
+    email: "ma.roy@cetix.ca",
+    role: "Technicien",
+    roleBadge: "primary" as const,
+    status: "Inactif",
+    lastLogin: "Il y a 15 jours",
+  },
+];
+
+// ---------------------------------------------------------------------------
+// General Section
+// ---------------------------------------------------------------------------
+
+function GeneralSection() {
+  const [companyName, setCompanyName] = useState("");
+  const [primaryColor, setPrimaryColor] = useState("#2563EB");
+  const [logo, setLogo] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/settings/portal-branding")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        setCompanyName(data.companyName || "");
+        setPrimaryColor(data.primaryColor || "#2563EB");
+        setLogo(data.logo || null);
+      })
+      .catch((e) => console.error("branding load failed", e))
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setMessage(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/v1/settings/portal-branding", {
+        method: "PATCH",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setLogo(data.logo);
+      setMessage({ tone: "ok", text: "Logo mis à jour" });
+    } catch (err) {
+      setMessage({
+        tone: "err",
+        text: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleLogoDelete() {
+    if (!confirm("Supprimer le logo du portail ?")) return;
+    const res = await fetch("/api/v1/settings/portal-branding", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logo: null }),
+    });
+    const data = await res.json();
+    if (res.ok) setLogo(null);
+    else
+      setMessage({
+        tone: "err",
+        text: data.error || `HTTP ${res.status}`,
+      });
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/v1/settings/portal-branding", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyName, primaryColor }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setMessage({ tone: "ok", text: "Paramètres enregistrés" });
+    } catch (err) {
+      setMessage({
+        tone: "err",
+        text: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Branding portail */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Branding du portail</CardTitle>
+          <CardDescription>
+            Logo, couleur principale et nom affichés sur le portail client.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input
+              label="Nom de l'entreprise"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              disabled={!loaded}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700">
+              Logo du portail
+            </label>
+            <label
+              className="group relative flex h-32 cursor-pointer items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-neutral-300 bg-neutral-50 transition-colors hover:border-blue-400 hover:bg-blue-50/50"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const f = e.dataTransfer.files?.[0];
+                if (f) {
+                  const dt = new DataTransfer();
+                  dt.items.add(f);
+                  const fakeInput = document.createElement("input");
+                  fakeInput.type = "file";
+                  Object.defineProperty(fakeInput, "files", { value: dt.files });
+                  handleLogoUpload({
+                    target: fakeInput,
+                    currentTarget: fakeInput,
+                  } as unknown as React.ChangeEvent<HTMLInputElement>);
+                }
+              }}
+            >
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+                className="hidden"
+                onChange={handleLogoUpload}
+                disabled={uploading}
+              />
+              {logo ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={logo}
+                    alt="logo portail"
+                    className="max-h-28 max-w-[80%] object-contain"
+                  />
+                  <span className="absolute bottom-1.5 right-1.5 rounded-md bg-white/95 px-2 py-0.5 text-[10.5px] font-medium text-slate-600 ring-1 ring-slate-200 opacity-0 group-hover:opacity-100 transition-opacity">
+                    Cliquer pour remplacer
+                  </span>
+                </>
+              ) : (
+                <div className="text-center">
+                  {uploading ? (
+                    <p className="text-sm text-blue-600">Téléversement…</p>
+                  ) : (
+                    <>
+                      <Upload className="mx-auto h-8 w-8 text-neutral-400" />
+                      <p className="mt-2 text-sm text-neutral-500">
+                        Glissez votre logo ou{" "}
+                        <span className="font-medium text-blue-600">parcourir</span>
+                      </p>
+                      <p className="mt-1 text-xs text-neutral-400">
+                        PNG, JPG, SVG, WebP — max 500 Ko
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
+            </label>
+            {logo ? (
+              <button
+                type="button"
+                onClick={handleLogoDelete}
+                className="mt-1.5 text-xs text-red-500 hover:text-red-700"
+              >
+                Supprimer le logo
+              </button>
+            ) : null}
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700">
+              Couleur principale
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={primaryColor}
+                onChange={(e) => setPrimaryColor(e.target.value.toUpperCase())}
+                className="h-9 w-9 cursor-pointer rounded-lg border border-neutral-300"
+                disabled={!loaded}
+              />
+              <Input
+                value={primaryColor}
+                onChange={(e) => setPrimaryColor(e.target.value)}
+                className="w-32 font-mono"
+                disabled={!loaded}
+              />
+            </div>
+          </div>
+          {message ? (
+            <div
+              className={cn(
+                "rounded-lg border px-3 py-2 text-sm",
+                message.tone === "ok"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-red-200 bg-red-50 text-red-700"
+              )}
+            >
+              {message.text}
+            </div>
+          ) : null}
+          <div className="flex justify-end">
+            <Button variant="primary" onClick={handleSave} disabled={saving || !loaded}>
+              {saving ? "Enregistrement…" : "Enregistrer"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Regional Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Paramètres régionaux</CardTitle>
+          <CardDescription>
+            Fuseau horaire, langue et format de date
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700">
+                Fuseau horaire
+              </label>
+              <Select defaultValue="america_montreal">
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="america_montreal">
+                    America/Montreal (UTC-5)
+                  </SelectItem>
+                  <SelectItem value="america_toronto">
+                    America/Toronto (UTC-5)
+                  </SelectItem>
+                  <SelectItem value="america_vancouver">
+                    America/Vancouver (UTC-8)
+                  </SelectItem>
+                  <SelectItem value="europe_paris">
+                    Europe/Paris (UTC+1)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-neutral-700">
+                Langue
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-700">
+                  À venir
+                </span>
+              </label>
+              <Select defaultValue="fr" disabled>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fr">Français</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-[10.5px] text-neutral-400">
+                L&apos;internationalisation (i18n) sera ajoutée dans une prochaine version. L&apos;UI est actuellement disponible en français uniquement.
+              </p>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700">
+                Format de date
+              </label>
+              <Select defaultValue="dd_mm_yyyy">
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dd_mm_yyyy">JJ/MM/AAAA</SelectItem>
+                  <SelectItem value="mm_dd_yyyy">MM/JJ/AAAA</SelectItem>
+                  <SelectItem value="yyyy_mm_dd">AAAA-MM-JJ</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button variant="primary">Enregistrer</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Ticket Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Paramètres des tickets</CardTitle>
+          <CardDescription>
+            Configuration par défaut pour la création de tickets
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input
+              label="Préfixe de numérotation"
+              defaultValue="TK-"
+            />
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700">
+                Priorité par défaut
+              </label>
+              <Select defaultValue="medium">
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Basse</SelectItem>
+                  <SelectItem value="medium">Moyenne</SelectItem>
+                  <SelectItem value="high">Haute</SelectItem>
+                  <SelectItem value="critical">Critique</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700">
+                File d&apos;attente par défaut
+              </label>
+              <Select defaultValue="general">
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="general">Support général</SelectItem>
+                  <SelectItem value="network">Réseau</SelectItem>
+                  <SelectItem value="security">Sécurité</SelectItem>
+                  <SelectItem value="cloud">Infrastructure Cloud</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Input
+              label="Fermeture automatique après (jours)"
+              type="number"
+              defaultValue="7"
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button variant="primary">Enregistrer</Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Users Section
+// ---------------------------------------------------------------------------
+
+interface DbUserRow {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  roleBadge: "default" | "primary" | "success" | "warning" | "danger";
+  status: string;
+  lastLogin: string;
+}
+
+function ROLE_BADGE(role: string): DbUserRow["roleBadge"] {
+  if (role === "SUPER_ADMIN" || role === "MSP_ADMIN") return "danger";
+  if (role === "SUPERVISOR") return "warning";
+  if (role === "TECHNICIAN") return "primary";
+  if (role === "CLIENT_ADMIN") return "success";
+  return "default";
+}
+
+interface ApiUser {
+  id: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  lastLoginAt: string | null;
+}
+
+function UsersSection() {
+  const [editingUser, setEditingUser] = useState<EditUserModalUser | null>(null);
+  const [users, setUsers] = useState<DbUserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/users?includeInactive=true&includeSystem=true")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || !Array.isArray(data)) return;
+        setUsers(
+          (data as ApiUser[]).map((u) => ({
+            id: u.id,
+            name: u.name || `${u.firstName} ${u.lastName}`,
+            email: u.email,
+            role: u.role,
+            roleBadge: ROLE_BADGE(u.role),
+            status: u.isActive ? "Actif" : "Inactif",
+            lastLogin: u.lastLoginAt
+              ? new Date(u.lastLoginAt).toLocaleDateString("fr-CA")
+              : "Jamais",
+          }))
+        );
+      })
+      .catch((e) => console.error("users load failed", e))
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // setLoading(true) is intentionally NOT called here on subsequent reloads
+    // to avoid the react-hooks/set-state-in-effect anti-pattern.
+  }, [reloadKey]);
+
+  async function handleDeactivate(u: DbUserRow) {
+    if (
+      !confirm(
+        `Désactiver « ${u.name} » ? L'utilisateur ne pourra plus se connecter.`
+      )
+    )
+      return;
+    const res = await fetch(`/api/v1/users?id=${encodeURIComponent(u.id)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || `Échec (HTTP ${res.status})`);
+      return;
+    }
+    setReloadKey((k) => k + 1);
+  }
+
+  async function handleCreate() {
+    const email = prompt("Courriel du nouvel utilisateur ?");
+    if (!email) return;
+    const firstName = prompt("Prénom ?") || "";
+    const lastName = prompt("Nom ?") || "";
+    if (!firstName || !lastName) return;
+    const res = await fetch("/api/v1/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        firstName,
+        lastName,
+        role: "TECHNICIAN",
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || `Échec (HTTP ${res.status})`);
+      return;
+    }
+    setReloadKey((k) => k + 1);
+  }
+  void loading;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-neutral-900">Utilisateurs</h2>
+          <p className="text-sm text-neutral-500">
+            Gérez les comptes utilisateurs de votre organisation
+          </p>
+        </div>
+        <Button variant="primary" size="sm" onClick={handleCreate}>
+          Ajouter un utilisateur
+        </Button>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-neutral-200">
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                    Utilisateur
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                    Courriel
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                    Rôle
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                    Statut
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                    Dernière connexion
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {users.map((user) => (
+                  <tr key={user.id} className="hover:bg-neutral-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
+                          {user.name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")}
+                        </div>
+                        <span className="text-sm font-medium text-neutral-900">
+                          {user.name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-neutral-600">
+                      {user.email}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={user.roleBadge}>{user.role}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge
+                        variant={user.status === "Actif" ? "success" : "default"}
+                      >
+                        {user.status}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-neutral-500">
+                      {user.lastLogin}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setEditingUser({
+                              id: user.id,
+                              name: user.name,
+                              email: user.email,
+                              role: user.role,
+                              status: user.status,
+                            })
+                          }
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-700"
+                          onClick={() => handleDeactivate(user)}
+                          disabled={user.status === "Inactif"}
+                        >
+                          <UserX className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <EditUserModal
+        open={!!editingUser}
+        onClose={() => setEditingUser(null)}
+        user={editingUser}
+        onSaved={() => setReloadKey((k) => k + 1)}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Placeholder Section for non-implemented tabs
+// ---------------------------------------------------------------------------
+
+function PlaceholderSection({ title, description }: { title: string; description: string }) {
+  return (
+    <Card>
+      <CardContent className="flex flex-col items-center justify-center py-16">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100">
+          <Settings className="h-7 w-7 text-neutral-400" />
+        </div>
+        <h3 className="mt-4 text-lg font-semibold text-neutral-900">{title}</h3>
+        <p className="mt-1 text-sm text-neutral-500">{description}</p>
+        <Button variant="outline" className="mt-4">
+          Configurer
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section content map
+// ---------------------------------------------------------------------------
+
+const sectionContent: Record<SectionKey, React.ReactNode> = {
+  general: <GeneralSection />,
+  users: <UsersSection />,
+  roles: <RolesSection />,
+  notifications: <NotificationsSection />,
+  email: <EmailSection />,
+  agents: <AgentProfilesSection />,
+  portal_access: <PortalAccessSection />,
+  sla: <SLASection />,
+  categories: <CategoriesSection />,
+  queues: <QueuesSection />,
+  tags: <TagsSection />,
+  kanban_boards: <KanbanBoardsSection />,
+  kanban_columns: <KanbanColumnsSection />,
+  billing_profiles: <BillingProfilesSection />,
+  contracts: <ContractsSection />,
+  integrations: <IntegrationsSection />,
+  veeam: <VeeamSection />,
+  portal_domain: <PortalDomainSection />,
+  api: (
+    <PlaceholderSection
+      title="Clés API"
+      description="Gérez vos clés d'accès à l'API Nexus"
+    />
+  ),
+};
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
+export default function SettingsPage() {
+  const [activeSection, setActiveSection] = useState<SectionKey>("general");
+  const { data: session } = useSession();
+  const role = (session?.user as any)?.role;
+  const isSuperAdmin = role === "SUPER_ADMIN" || role === "MSP_ADMIN";
+
+  // Filter out super-admin only sections for regular users
+  const visibleSections = sections.filter((s) => {
+    if ("superAdminOnly" in s && s.superAdminOnly) return isSuperAdmin;
+    return true;
+  });
+
+  // Guard the active section in case user lost access
+  const effectiveSection = visibleSections.some((s) => s.key === activeSection)
+    ? activeSection
+    : "general";
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-neutral-900">
+          Paramètres
+        </h1>
+        <p className="mt-1 text-sm text-neutral-500">
+          Configurez votre plateforme Nexus
+        </p>
+      </div>
+
+      {/* Layout: Sidebar + Content */}
+      <div className="flex flex-col gap-6 lg:flex-row">
+        {/* Settings Sidebar */}
+        <nav className="w-full shrink-0 lg:w-60">
+          <ul className="space-y-0.5">
+            {visibleSections.map((section) => {
+              const Icon = section.icon;
+              const isActive = effectiveSection === section.key;
+              const isProtected =
+                "superAdminOnly" in section && section.superAdminOnly;
+              return (
+                <li key={section.key}>
+                  <button
+                    onClick={() => setActiveSection(section.key)}
+                    className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      isActive
+                        ? "bg-blue-50 text-blue-700"
+                        : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="flex-1 text-left">{section.label}</span>
+                    {isProtected && (
+                      <span
+                        className="inline-flex h-4 items-center rounded bg-red-100 px-1 text-[8.5px] font-bold text-red-700 uppercase tracking-wider"
+                        title="Réservé aux super-admins"
+                      >
+                        SA
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+
+        {/* Content */}
+        <div className="min-w-0 flex-1">
+          {sectionContent[effectiveSection]}
+        </div>
+      </div>
+    </div>
+  );
+}

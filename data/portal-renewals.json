@@ -1,0 +1,18 @@
+[
+  {
+    "id": "ren_1775586292546",
+    "attemptedAt": "2026-04-07T18:24:52.546Z",
+    "succeeded": true,
+    "durationMs": 1460,
+    "output": "Certificate not yet due for renewal\n\n- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\nCertificate not yet due for renewal; no action taken.\n- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n\nSaving debug log to /var/log/letsencrypt/letsencrypt.log",
+    "isDryRun": false
+  },
+  {
+    "id": "ren_1775590702117",
+    "attemptedAt": "2026-04-07T19:38:22.117Z",
+    "succeeded": true,
+    "durationMs": 36716,
+    "output": "Account registered.\nSimulating renewal of an existing certificate for nexus.cetix.ca\nWaiting 30 seconds for DNS changes to propagate\nThe dry run was successful.\n\nSaving debug log to /var/log/letsencrypt/letsencrypt.log",
+    "isDryRun": true
+  }
+]

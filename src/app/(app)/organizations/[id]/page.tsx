@@ -1,0 +1,1707 @@
+"use client";
+
+import { useState, useMemo, useEffect } from "react";
+import { useParams } from "next/navigation";
+import { PageLoader } from "@/components/ui/page-loader";
+// useRouter imported below alongside Eye + impersonation
+import Link from "next/link";
+import {
+  ArrowLeft,
+  Globe,
+  Phone,
+  Calendar,
+  Building2,
+  Ticket,
+  FileText,
+  MapPin,
+  Users,
+  Monitor,
+  Star,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Circle,
+  Search,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { EditOrgModal, type EditOrgModalOrg } from "@/components/organizations/edit-org-modal";
+import { Pencil, ShieldCheck } from "lucide-react";
+import {
+  PORTAL_ROLE_LABELS,
+  DEFAULT_VIEWER_PERMISSIONS,
+  DEFAULT_MANAGER_PERMISSIONS,
+  DEFAULT_ADMIN_PERMISSIONS,
+  type ClientPortalPermissions,
+} from "@/lib/projects/types";
+import { PORTAL_ORGS } from "@/lib/portal/org-resolver";
+import { usePortalImpersonation } from "@/stores/portal-impersonation-store";
+import { useRouter } from "next/navigation";
+import { Eye, Trash2 } from "lucide-react";
+import {
+  EditPortalAccessModal,
+  type PortalAccessUser,
+} from "@/components/portal/edit-portal-access-modal";
+import { OrgApproversSection } from "@/components/approvers/org-approvers-section";
+import { ContractModal } from "@/components/settings/contract-modal";
+import { FreshserviceImportModal } from "@/components/freshservice/freshservice-import-modal";
+import { Database } from "lucide-react";
+import type { Contract as BillingContract } from "@/lib/billing/types";
+import { ClientBillingOverridesSection } from "@/components/billing/client-billing-overrides-section";
+import { SupportTiersSection } from "@/components/billing/support-tiers-section";
+import { OrgAssetsTab } from "@/components/assets/org-assets-tab";
+import { OrgSlaSection } from "@/components/sla/org-sla-section";
+import { Plus, X } from "lucide-react";
+
+const ORG_PORTAL_USERS: Record<string, Array<{ name: string; email: string; role: ClientPortalPermissions["portalRole"] | null }>> = {
+  "org-1": [
+    { name: "Marc Tremblay", email: "marc.tremblay@cetix.ca", role: "admin" },
+    { name: "Sophie Gagnon", email: "sophie.gagnon@cetix.ca", role: "manager" },
+    { name: "Julien Lavoie", email: "julien.lavoie@cetix.ca", role: "viewer" },
+    { name: "Isabelle Roy", email: "isabelle.roy@cetix.ca", role: null },
+  ],
+  "org-2": [
+    { name: "James Wilson", email: "j.wilson@acmecorp.com", role: "admin" },
+    { name: "Sarah Chen", email: "s.chen@acmecorp.com", role: "manager" },
+    { name: "David Kumar", email: "d.kumar@acmecorp.com", role: "viewer" },
+  ],
+  "org-4": [
+    { name: "Nathalie Bergeron", email: "n.bergeron@globalfinance.ca", role: "admin" },
+    { name: "Pierre Dufour", email: "p.dufour@globalfinance.ca", role: "manager" },
+    { name: "Amélie Martin", email: "a.martin@globalfinance.ca", role: "viewer" },
+    { name: "Liam O'Brien", email: "l.obrien@globalfinance.ca", role: null },
+  ],
+};
+
+function portalRoleVariant(role: ClientPortalPermissions["portalRole"] | null): "danger" | "warning" | "primary" | "default" {
+  if (role === "admin") return "danger";
+  if (role === "manager") return "warning";
+  if (role === "viewer") return "primary";
+  return "default";
+}
+
+// ---------- Types ----------
+interface OrgDetail {
+  id: string;
+  name: string;
+  slug: string;
+  plan: "Standard" | "Premium" | "Enterprise";
+  status: "Actif" | "Inactif";
+  color: string;
+  domain: string;
+  phone: string;
+  createdAt: string;
+  openTickets: number;
+  activeContracts: number;
+  sitesCount: number;
+  contactsCount: number;
+  assetsCount: number;
+  logo?: string | null;
+}
+
+interface Site {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  phone: string;
+  primary: boolean;
+}
+
+interface Contact {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  jobTitle: string;
+  vip: boolean;
+}
+
+interface OrgTicket {
+  id: string;
+  number: string;
+  subject: string;
+  status: "Nouveau" | "Ouvert" | "En cours" | "Sur place" | "En attente" | "Résolu" | "Fermé";
+  priority: "Basse" | "Moyenne" | "Haute" | "Critique";
+  requester: string;
+  assignee: string | null;
+  createdAt: string;
+}
+
+interface Contract {
+  id: string;
+  name: string;
+  type: string;
+  status: "Actif" | "Expiré" | "Brouillon";
+  startDate: string;
+  endDate: string;
+  hours: number;
+  usedHours: number;
+}
+
+interface Asset {
+  id: string;
+  name: string;
+  type: string;
+  status: "En service" | "En maintenance" | "Retiré";
+  serial: string;
+  site: string;
+}
+
+interface Activity {
+  id: string;
+  text: string;
+  time: string;
+  type: "ticket" | "contract" | "contact" | "asset";
+  /** URL cible quand l'item est cliquable. */
+  href?: string;
+}
+
+// ---------- Mock Data by org ----------
+const orgsMap: Record<string, OrgDetail> = {
+  "org-1": { id: "org-1", name: "Cetix", slug: "cetix", plan: "Enterprise", status: "Actif", color: "bg-blue-600", domain: "cetix.ca", phone: "+1 514 555-0100", createdAt: "2023-06-15", openTickets: 7, activeContracts: 2, sitesCount: 4, contactsCount: 18, assetsCount: 42 },
+  "org-2": { id: "org-2", name: "Acme Corp", slug: "acme-corp", plan: "Premium", status: "Actif", color: "bg-emerald-600", domain: "acmecorp.com", phone: "+1 438 555-0200", createdAt: "2023-09-22", openTickets: 4, activeContracts: 1, sitesCount: 3, contactsCount: 12, assetsCount: 28 },
+  "org-3": { id: "org-3", name: "TechStart Inc", slug: "techstart-inc", plan: "Standard", status: "Actif", color: "bg-violet-600", domain: "techstart.io", phone: "+1 450 555-0300", createdAt: "2024-01-10", openTickets: 2, activeContracts: 1, sitesCount: 1, contactsCount: 5, assetsCount: 8 },
+  "org-4": { id: "org-4", name: "Global Finance", slug: "global-finance", plan: "Enterprise", status: "Actif", color: "bg-amber-600", domain: "globalfinance.ca", phone: "+1 514 555-0400", createdAt: "2022-11-03", openTickets: 11, activeContracts: 3, sitesCount: 6, contactsCount: 32, assetsCount: 96 },
+  "org-5": { id: "org-5", name: "HealthCare Plus", slug: "healthcare-plus", plan: "Premium", status: "Inactif", color: "bg-rose-600", domain: "healthcareplus.ca", phone: "+1 819 555-0500", createdAt: "2023-03-18", openTickets: 3, activeContracts: 0, sitesCount: 2, contactsCount: 9, assetsCount: 15 },
+  "org-6": { id: "org-6", name: "MédiaCentre QC", slug: "mediacentre-qc", plan: "Standard", status: "Actif", color: "bg-cyan-600", domain: "mediacentre.qc.ca", phone: "+1 418 555-0600", createdAt: "2024-08-01", openTickets: 1, activeContracts: 1, sitesCount: 1, contactsCount: 4, assetsCount: 6 },
+};
+
+const sitesData: Record<string, Site[]> = {
+  "org-1": [
+    { id: "s1", name: "Siège social", address: "500 Place d'Armes, Bureau 800", city: "Montréal, QC", phone: "+1 514 555-0101", primary: true },
+    { id: "s2", name: "Bureau Québec", address: "2875 Boul. Laurier, Suite 450", city: "Québec, QC", phone: "+1 418 555-0102", primary: false },
+    { id: "s3", name: "Entrepôt Laval", address: "1200 Autoroute Laval Ouest", city: "Laval, QC", phone: "+1 450 555-0103", primary: false },
+    { id: "s4", name: "Bureau Toronto", address: "100 King Street West, Suite 5600", city: "Toronto, ON", phone: "+1 416 555-0104", primary: false },
+  ],
+  "org-2": [
+    { id: "s5", name: "Head Office", address: "1 Place Ville Marie, Suite 3000", city: "Montréal, QC", phone: "+1 438 555-0201", primary: true },
+    { id: "s6", name: "R&D Lab", address: "345 Rue de la Gauchetière", city: "Montréal, QC", phone: "+1 438 555-0202", primary: false },
+    { id: "s7", name: "Warehouse", address: "8900 Boul. Métropolitain Est", city: "Anjou, QC", phone: "+1 438 555-0203", primary: false },
+  ],
+  "org-4": [
+    { id: "s8", name: "Tour principale", address: "1250 René-Lévesque Ouest", city: "Montréal, QC", phone: "+1 514 555-0401", primary: true },
+    { id: "s9", name: "Centre de données", address: "4444 Pierre-de-Coubertin", city: "Montréal, QC", phone: "+1 514 555-0402", primary: false },
+    { id: "s10", name: "Succursale Ottawa", address: "150 Elgin Street", city: "Ottawa, ON", phone: "+1 613 555-0403", primary: false },
+    { id: "s11", name: "Succursale Calgary", address: "225 6th Ave SW", city: "Calgary, AB", phone: "+1 403 555-0404", primary: false },
+    { id: "s12", name: "Succursale Vancouver", address: "1055 West Georgia Street", city: "Vancouver, BC", phone: "+1 604 555-0405", primary: false },
+    { id: "s13", name: "Succursale Halifax", address: "1969 Upper Water Street", city: "Halifax, NS", phone: "+1 902 555-0406", primary: false },
+  ],
+};
+
+const contactsData: Record<string, Contact[]> = {
+  "org-1": [
+    { id: "c1", firstName: "Marc", lastName: "Tremblay", email: "marc.tremblay@cetix.ca", phone: "+1 514 555-1001", jobTitle: "Directeur TI", vip: true },
+    { id: "c2", firstName: "Sophie", lastName: "Gagnon", email: "sophie.gagnon@cetix.ca", phone: "+1 514 555-1002", jobTitle: "Analyste d'affaires", vip: false },
+    { id: "c3", firstName: "Julien", lastName: "Lavoie", email: "julien.lavoie@cetix.ca", phone: "+1 514 555-1003", jobTitle: "Développeur principal", vip: false },
+    { id: "c4", firstName: "Isabelle", lastName: "Roy", email: "isabelle.roy@cetix.ca", phone: "+1 418 555-1004", jobTitle: "VP Opérations", vip: true },
+  ],
+  "org-2": [
+    { id: "c5", firstName: "James", lastName: "Wilson", email: "j.wilson@acmecorp.com", phone: "+1 438 555-2001", jobTitle: "CTO", vip: true },
+    { id: "c6", firstName: "Sarah", lastName: "Chen", email: "s.chen@acmecorp.com", phone: "+1 438 555-2002", jobTitle: "IT Manager", vip: false },
+    { id: "c7", firstName: "David", lastName: "Kumar", email: "d.kumar@acmecorp.com", phone: "+1 438 555-2003", jobTitle: "Sys Admin", vip: false },
+  ],
+  "org-4": [
+    { id: "c8", firstName: "Nathalie", lastName: "Bergeron", email: "n.bergeron@globalfinance.ca", phone: "+1 514 555-4001", jobTitle: "CISO", vip: true },
+    { id: "c9", firstName: "Pierre", lastName: "Dufour", email: "p.dufour@globalfinance.ca", phone: "+1 514 555-4002", jobTitle: "Dir. Infrastructure", vip: true },
+    { id: "c10", firstName: "Amélie", lastName: "Martin", email: "a.martin@globalfinance.ca", phone: "+1 514 555-4003", jobTitle: "Analyste sécurité", vip: false },
+  ],
+};
+
+const ticketsData: Record<string, OrgTicket[]> = {
+  "org-1": [
+    { id: "t1", number: "TK-1042", subject: "VPN ne fonctionne pas depuis le bureau de Québec", status: "Ouvert", priority: "Haute", requester: "Sophie Gagnon", assignee: "Marie Tremblay", createdAt: "2026-04-05" },
+    { id: "t2", number: "TK-1038", subject: "Mise à jour des licences Microsoft 365", status: "En cours", priority: "Moyenne", requester: "Marc Tremblay", assignee: "Alexandre Dubois", createdAt: "2026-04-04" },
+    { id: "t3", number: "TK-1035", subject: "Problème d'impression étage 3", status: "Sur place", priority: "Basse", requester: "Julien Lavoie", assignee: "Lucas Bergeron", createdAt: "2026-04-03" },
+    { id: "t4", number: "TK-1029", subject: "Accès SharePoint refusé pour l'équipe marketing", status: "En attente", priority: "Moyenne", requester: "Isabelle Roy", assignee: "Marie Tremblay", createdAt: "2026-04-02" },
+    { id: "t5", number: "TK-1021", subject: "Déploiement nouveau poste de travail - Bureau Toronto", status: "Sur place", priority: "Haute", requester: "Marc Tremblay", assignee: "Sophie Lavoie", createdAt: "2026-04-01" },
+    { id: "t6", number: "TK-1015", subject: "Alerte sécurité - tentative de connexion suspecte", status: "Ouvert", priority: "Critique", requester: "Sophie Gagnon", assignee: "Alexandre Dubois", createdAt: "2026-03-30" },
+    { id: "t7", number: "TK-1010", subject: "Demande de nouveau moniteur", status: "Résolu", priority: "Basse", requester: "Julien Lavoie", assignee: "Marie Tremblay", createdAt: "2026-03-28" },
+  ],
+  "org-2": [
+    { id: "t8", number: "TK-1040", subject: "Email delivery delays", status: "Ouvert", priority: "Haute", requester: "James Wilson", assignee: "Marie Tremblay", createdAt: "2026-04-05" },
+    { id: "t9", number: "TK-1036", subject: "New employee onboarding - Sarah Miller", status: "Sur place", priority: "Moyenne", requester: "Sarah Chen", assignee: "Lucas Bergeron", createdAt: "2026-04-03" },
+    { id: "t10", number: "TK-1030", subject: "Server room temperature alert", status: "Sur place", priority: "Critique", requester: "David Kumar", assignee: "Alexandre Dubois", createdAt: "2026-04-01" },
+    { id: "t11", number: "TK-1025", subject: "Backup job failed on file server", status: "Ouvert", priority: "Haute", requester: "David Kumar", assignee: "Marie Tremblay", createdAt: "2026-03-29" },
+  ],
+  "org-4": [
+    { id: "t12", number: "TK-1043", subject: "Firewall rule change request - Ottawa office", status: "Nouveau", priority: "Haute", requester: "Nathalie Bergeron", assignee: "Marie Tremblay", createdAt: "2026-04-06" },
+    { id: "t13", number: "TK-1041", subject: "Certificat SSL expire dans 7 jours", status: "Ouvert", priority: "Critique", requester: "Pierre Dufour", assignee: "Alexandre Dubois", createdAt: "2026-04-05" },
+    { id: "t14", number: "TK-1039", subject: "Mise à jour antivirus bloque application métier", status: "En cours", priority: "Haute", requester: "Amélie Martin", assignee: "Sophie Lavoie", createdAt: "2026-04-04" },
+    { id: "t15", number: "TK-1033", subject: "Demande d'accès VDI pour sous-traitants", status: "Sur place", priority: "Moyenne", requester: "Nathalie Bergeron", assignee: "Lucas Bergeron", createdAt: "2026-04-02" },
+    { id: "t16", number: "TK-1028", subject: "Performance dégradée sur l'application de trading", status: "Ouvert", priority: "Critique", requester: "Pierre Dufour", assignee: null, createdAt: "2026-03-31" },
+  ],
+};
+
+const contractsData: Record<string, Contract[]> = {
+  "org-1": [
+    { id: "ct1", name: "Support Infra Premium", type: "Support", status: "Actif", startDate: "2025-01-01", endDate: "2025-12-31", hours: 200, usedHours: 142 },
+    { id: "ct2", name: "Gestion réseau", type: "Gestion", status: "Actif", startDate: "2025-03-01", endDate: "2026-02-28", hours: 100, usedHours: 67 },
+  ],
+  "org-2": [
+    { id: "ct3", name: "Managed IT Services", type: "Support", status: "Actif", startDate: "2025-06-01", endDate: "2026-05-31", hours: 150, usedHours: 89 },
+  ],
+  "org-4": [
+    { id: "ct4", name: "Sécurité gérée", type: "Sécurité", status: "Actif", startDate: "2025-01-01", endDate: "2025-12-31", hours: 300, usedHours: 234 },
+    { id: "ct5", name: "Support Infrastructure", type: "Support", status: "Actif", startDate: "2025-04-01", endDate: "2026-03-31", hours: 250, usedHours: 178 },
+    { id: "ct6", name: "Migration Cloud", type: "Projet", status: "Actif", startDate: "2025-09-01", endDate: "2026-08-31", hours: 500, usedHours: 120 },
+  ],
+  "org-5": [],
+  "org-6": [
+    { id: "ct7", name: "Support de base", type: "Support", status: "Actif", startDate: "2024-08-01", endDate: "2025-07-31", hours: 50, usedHours: 32 },
+  ],
+};
+
+const assetsData: Record<string, Asset[]> = {
+  "org-1": [
+    { id: "a1", name: "SRV-PROD-01", type: "Serveur", status: "En service", serial: "SN-2024-001", site: "Siège social" },
+    { id: "a2", name: "SRV-BACKUP-01", type: "Serveur", status: "En service", serial: "SN-2024-002", site: "Siège social" },
+    { id: "a3", name: "FW-MAIN-01", type: "Pare-feu", status: "En service", serial: "FW-2023-015", site: "Siège social" },
+    { id: "a4", name: "SW-CORE-01", type: "Commutateur", status: "En service", serial: "SW-2024-008", site: "Siège social" },
+    { id: "a5", name: "AP-WIFI-QC-01", type: "Point d'accès", status: "En service", serial: "AP-2024-101", site: "Bureau Québec" },
+    { id: "a6", name: "SRV-DEV-01", type: "Serveur", status: "En maintenance", serial: "SN-2022-019", site: "Entrepôt Laval" },
+  ],
+  "org-2": [
+    { id: "a7", name: "SRV-WEB-01", type: "Serveur", status: "En service", serial: "SN-2023-044", site: "Head Office" },
+    { id: "a8", name: "NAS-STORAGE-01", type: "Stockage", status: "En service", serial: "NAS-2024-003", site: "Head Office" },
+    { id: "a9", name: "FW-LAB-01", type: "Pare-feu", status: "En service", serial: "FW-2024-022", site: "R&D Lab" },
+    { id: "a10", name: "UPS-MAIN-01", type: "Onduleur", status: "Retiré", serial: "UPS-2020-007", site: "Warehouse" },
+  ],
+  "org-4": [
+    { id: "a11", name: "SRV-TRADE-01", type: "Serveur", status: "En service", serial: "SN-2024-100", site: "Tour principale" },
+    { id: "a12", name: "SRV-TRADE-02", type: "Serveur", status: "En service", serial: "SN-2024-101", site: "Tour principale" },
+    { id: "a13", name: "FW-CORE-01", type: "Pare-feu", status: "En service", serial: "FW-2024-050", site: "Tour principale" },
+    { id: "a14", name: "SRV-DC-01", type: "Serveur", status: "En service", serial: "SN-2024-102", site: "Centre de données" },
+    { id: "a15", name: "SAN-MAIN-01", type: "Stockage", status: "En service", serial: "SAN-2024-010", site: "Centre de données" },
+    { id: "a16", name: "SRV-BACKUP-DC", type: "Serveur", status: "En maintenance", serial: "SN-2023-090", site: "Centre de données" },
+  ],
+};
+
+const activitiesData: Record<string, Activity[]> = {
+  "org-1": [
+    { id: "ac1", text: "Nouveau ticket TK-1042 créé par Sophie Gagnon", time: "Il y a 2 heures", type: "ticket" },
+    { id: "ac2", text: "Contrat \"Support Infra Premium\" : 142/200 heures utilisées", time: "Il y a 5 heures", type: "contract" },
+    { id: "ac3", text: "Ticket TK-1038 assigné à l'équipe infrastructure", time: "Il y a 1 jour", type: "ticket" },
+    { id: "ac4", text: "Nouveau contact ajouté : Éric Beaulieu", time: "Il y a 2 jours", type: "contact" },
+    { id: "ac5", text: "Serveur SRV-DEV-01 mis en maintenance", time: "Il y a 3 jours", type: "asset" },
+  ],
+  "org-2": [
+    { id: "ac6", text: "New ticket TK-1040 created by James Wilson", time: "Il y a 3 heures", type: "ticket" },
+    { id: "ac7", text: "Ticket TK-1030 resolved - Server room temp normalized", time: "Il y a 1 jour", type: "ticket" },
+    { id: "ac8", text: "Asset UPS-MAIN-01 retired from service", time: "Il y a 4 jours", type: "asset" },
+  ],
+  "org-4": [
+    { id: "ac9", text: "Ticket TK-1043 créé par Nathalie Bergeron (Critique)", time: "Il y a 1 heure", type: "ticket" },
+    { id: "ac10", text: "Contrat \"Migration Cloud\" : 120/500 heures utilisées", time: "Il y a 6 heures", type: "contract" },
+    { id: "ac11", text: "Alerte : Certificat SSL expire dans 7 jours", time: "Il y a 1 jour", type: "ticket" },
+    { id: "ac12", text: "Nouveau site ajouté : Succursale Halifax", time: "Il y a 5 jours", type: "contact" },
+  ],
+};
+
+// ---------- Helpers ----------
+const planBadgeVariant = (plan: string) => {
+  switch (plan) {
+    case "Enterprise": return "primary" as const;
+    case "Premium": return "warning" as const;
+    default: return "default" as const;
+  }
+};
+
+const statusBadgeVariant = (s: string) => {
+  switch (s) {
+    case "Actif": case "En service": return "success" as const;
+    case "Inactif": case "Expiré": case "Retiré": return "danger" as const;
+    case "En attente": case "En maintenance": case "Brouillon": return "warning" as const;
+    default: return "default" as const;
+  }
+};
+
+const ticketStatusIcon = (s: string) => {
+  switch (s) {
+    case "Nouveau": return <Circle className="h-3.5 w-3.5 text-blue-500" />;
+    case "Ouvert": return <AlertCircle className="h-3.5 w-3.5 text-amber-500" />;
+    case "En cours": return <Clock className="h-3.5 w-3.5 text-violet-500" />;
+    case "Sur place": return <MapPin className="h-3.5 w-3.5 text-cyan-500" />;
+    case "En attente": return <Clock className="h-3.5 w-3.5 text-orange-500" />;
+    case "Résolu": return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />;
+    case "Fermé": return <CheckCircle2 className="h-3.5 w-3.5 text-gray-400" />;
+    default: return <Circle className="h-3.5 w-3.5 text-gray-400" />;
+  }
+};
+
+// Status group config for the org tickets tab
+const TICKET_STATUS_GROUPS: { key: OrgTicket["status"]; label: string; bg: string; ring: string; dot: string }[] = [
+  { key: "Nouveau", label: "Nouveau", bg: "bg-blue-50/60", ring: "ring-blue-200/60", dot: "bg-blue-500" },
+  { key: "Ouvert", label: "Ouvert", bg: "bg-amber-50/60", ring: "ring-amber-200/60", dot: "bg-amber-500" },
+  { key: "En cours", label: "En cours", bg: "bg-violet-50/60", ring: "ring-violet-200/60", dot: "bg-violet-500" },
+  { key: "En attente", label: "En attente", bg: "bg-orange-50/60", ring: "ring-orange-200/60", dot: "bg-orange-500" },
+  { key: "Résolu", label: "Résolu", bg: "bg-emerald-50/60", ring: "ring-emerald-200/60", dot: "bg-emerald-500" },
+  { key: "Fermé", label: "Fermé", bg: "bg-slate-50/60", ring: "ring-slate-200/60", dot: "bg-slate-400" },
+];
+
+function getInitialsName(name: string): string {
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+function getAvatarGradient(name: string): string {
+  const gradients = [
+    "from-blue-500 to-blue-700",
+    "from-violet-500 to-violet-700",
+    "from-emerald-500 to-emerald-700",
+    "from-amber-500 to-amber-700",
+    "from-rose-500 to-rose-700",
+    "from-cyan-500 to-cyan-700",
+    "from-fuchsia-500 to-fuchsia-700",
+    "from-indigo-500 to-indigo-700",
+  ];
+  const hash = name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  return gradients[hash % gradients.length];
+}
+
+function OrgTicketsTab({ tickets }: { tickets: OrgTicket[] }) {
+  const onSiteTickets = tickets.filter((t) => t.status === "Sur place");
+  const otherTickets = tickets.filter((t) => t.status !== "Sur place");
+
+  return (
+    <div className="space-y-5">
+      {/* SUR PLACE — Featured section */}
+      <Card className="overflow-hidden ring-1 ring-cyan-200/60 border-cyan-200/80">
+        <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-cyan-50/80 to-blue-50/40 border-b border-cyan-100">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-cyan-100 flex items-center justify-center text-cyan-600 ring-1 ring-inset ring-cyan-200/60">
+              <MapPin className="h-5 w-5" strokeWidth={2.25} />
+            </div>
+            <div>
+              <h3 className="text-[15px] font-semibold text-slate-900">
+                Tickets à faire sur place
+              </h3>
+              <p className="text-[12.5px] text-slate-600">
+                Interventions nécessitant un déplacement chez le client
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex h-7 items-center rounded-full bg-white px-3 text-[13px] font-bold text-cyan-700 tabular-nums ring-1 ring-inset ring-cyan-200">
+            {onSiteTickets.length} {onSiteTickets.length === 1 ? "ticket" : "tickets"}
+          </span>
+        </div>
+        {onSiteTickets.length === 0 ? (
+          <div className="p-12 text-center">
+            <p className="text-[13px] text-slate-500">
+              Aucun ticket nécessitant une intervention sur place actuellement.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {onSiteTickets.map((t) => (
+              <div
+                key={t.id}
+                className="group flex items-center gap-4 px-5 py-3.5 hover:bg-cyan-50/30 transition-colors"
+              >
+                <span className="font-mono text-[11px] font-semibold text-cyan-600 tabular-nums shrink-0">
+                  {t.number}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13.5px] font-semibold text-slate-900 truncate">
+                    {t.subject}
+                  </p>
+                  <p className="text-[11.5px] text-slate-500 mt-0.5">
+                    Demandé par {t.requester} •{" "}
+                    {new Date(t.createdAt).toLocaleDateString("fr-CA")}
+                  </p>
+                </div>
+                <Badge variant={priorityColor(t.priority)}>{t.priority}</Badge>
+                {t.assignee ? (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div
+                      className={cn(
+                        "h-7 w-7 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[10px] font-semibold ring-2 ring-white shadow-sm",
+                        getAvatarGradient(t.assignee)
+                      )}
+                      title={t.assignee}
+                    >
+                      {getInitialsName(t.assignee)}
+                    </div>
+                    <span className="text-[12px] text-slate-700 hidden md:inline">
+                      {t.assignee}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-[11.5px] italic text-slate-400 shrink-0">
+                    Non assigné
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* OTHER STATUSES — Grouped */}
+      {TICKET_STATUS_GROUPS.map((group) => {
+        const groupTickets = otherTickets.filter((t) => t.status === group.key);
+        if (groupTickets.length === 0) return null;
+        return (
+          <Card key={group.key} className="overflow-hidden">
+            <div
+              className={cn(
+                "flex items-center justify-between px-5 py-3 border-b border-slate-100 ring-1 ring-inset",
+                group.bg,
+                group.ring
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className={cn("h-2 w-2 rounded-full", group.dot)} />
+                <h3 className="text-[12.5px] font-semibold uppercase tracking-[0.04em] text-slate-700">
+                  {group.label}
+                </h3>
+                <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-md bg-white px-1.5 text-[11px] font-bold text-slate-700 tabular-nums shadow-sm ring-1 ring-inset ring-slate-200/60">
+                  {groupTickets.length}
+                </span>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50/40">
+                    <th className="px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      #
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      Sujet
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      Priorité
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      Assigné à
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      Demandeur
+                    </th>
+                    <th className="px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      Créé le
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupTickets.map((t) => (
+                    <tr
+                      key={t.id}
+                      className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-colors"
+                    >
+                      <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500 tabular-nums">
+                        {t.number}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="font-medium text-slate-900">
+                          {t.subject}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <Badge variant={priorityColor(t.priority)}>
+                          {t.priority}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {t.assignee ? (
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={cn(
+                                "h-6 w-6 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[9px] font-semibold ring-2 ring-white shadow-sm",
+                                getAvatarGradient(t.assignee)
+                              )}
+                            >
+                              {getInitialsName(t.assignee)}
+                            </div>
+                            <span className="text-[12px] text-slate-700 whitespace-nowrap">
+                              {t.assignee}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[11.5px] italic text-slate-400">
+                            Non assigné
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-[12px] text-slate-600">
+                        {t.requester}
+                      </td>
+                      <td className="px-3 py-2.5 text-[12px] text-slate-500 tabular-nums">
+                        {new Date(t.createdAt).toLocaleDateString("fr-CA")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        );
+      })}
+
+      {tickets.length === 0 && (
+        <Card>
+          <div className="p-12 text-center text-slate-400 text-[13px]">
+            Aucun ticket trouvé pour cette organisation.
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+const priorityColor = (p: string) => {
+  switch (p) {
+    case "Critique": return "danger" as const;
+    case "Haute": return "warning" as const;
+    case "Moyenne": return "default" as const;
+    case "Basse": return "success" as const;
+    default: return "outline" as const;
+  }
+};
+
+const activityIcon = (type: string) => {
+  switch (type) {
+    case "ticket": return <Ticket className="h-4 w-4 text-blue-500" />;
+    case "contract": return <FileText className="h-4 w-4 text-emerald-500" />;
+    case "contact": return <Users className="h-4 w-4 text-violet-500" />;
+    case "asset": return <Monitor className="h-4 w-4 text-amber-500" />;
+    default: return <Circle className="h-4 w-4 text-gray-400" />;
+  }
+};
+
+// ---------- Tabs ----------
+const TABS = [
+  { key: "overview", label: "Aperçu" },
+  { key: "sites", label: "Sites" },
+  { key: "contacts", label: "Contacts" },
+  { key: "tickets", label: "Tickets" },
+  { key: "billing", label: "Facturation" },
+  { key: "contracts", label: "Contrats" },
+  { key: "assets", label: "Actifs" },
+  { key: "portal_access", label: "Accès portail" },
+  { key: "sla", label: "SLA" },
+] as const;
+
+type TabKey = (typeof TABS)[number]["key"];
+
+// ---------- Sites Tab (editable) ----------
+function OrgSitesTab({ initialSites }: { initialSites: Site[] }) {
+  const [sites, setSites] = useState<Site[]>(initialSites);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState<Omit<Site, "id">>({
+    name: "",
+    address: "",
+    city: "",
+    phone: "",
+    primary: false,
+  });
+
+  function startCreate() {
+    setForm({ name: "", address: "", city: "", phone: "", primary: false });
+    setEditingId(null);
+    setCreating(true);
+  }
+
+  function startEdit(site: Site) {
+    setForm({
+      name: site.name,
+      address: site.address,
+      city: site.city,
+      phone: site.phone,
+      primary: site.primary,
+    });
+    setEditingId(site.id);
+    setCreating(false);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setCreating(false);
+  }
+
+  function saveSite() {
+    if (!form.name.trim()) return;
+    if (editingId) {
+      setSites((prev) =>
+        prev.map((s) => (s.id === editingId ? { ...s, ...form } : s))
+      );
+    } else if (creating) {
+      setSites((prev) => [
+        ...prev,
+        { id: `site_${Date.now()}`, ...form },
+      ]);
+    }
+    cancelEdit();
+  }
+
+  function deleteSite(id: string) {
+    setSites((prev) => prev.filter((s) => s.id !== id));
+  }
+
+  function setPrimary(id: string) {
+    setSites((prev) =>
+      prev.map((s) => ({ ...s, primary: s.id === id }))
+    );
+  }
+
+  const isEditing = editingId !== null || creating;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-[15px] font-semibold text-slate-900">
+            Sites de l&apos;organisation
+          </h3>
+          <p className="mt-0.5 text-[12px] text-slate-500">
+            Gérez les adresses physiques et bureaux du client
+          </p>
+        </div>
+        {!isEditing && (
+          <Button variant="primary" size="md" onClick={startCreate}>
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+            Nouveau site
+          </Button>
+        )}
+      </div>
+
+      {isEditing && (
+        <Card className="border-blue-200 bg-blue-50/30">
+          <div className="p-5 space-y-3">
+            <h4 className="text-[13px] font-semibold text-slate-900">
+              {editingId ? "Modifier le site" : "Nouveau site"}
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input
+                label="Nom du site"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Siège social Québec"
+              />
+              <Input
+                label="Téléphone"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                placeholder="+1 514 555-0100"
+              />
+              <Input
+                label="Adresse"
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+                placeholder="1234 boul. Laurier"
+              />
+              <Input
+                label="Ville"
+                value={form.city}
+                onChange={(e) => setForm({ ...form, city: e.target.value })}
+                placeholder="Québec"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, primary: !form.primary })}
+                className={cn(
+                  "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors",
+                  form.primary ? "bg-blue-600" : "bg-slate-300"
+                )}
+              >
+                <span
+                  className={cn(
+                    "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow translate-y-0.5",
+                    form.primary ? "translate-x-[18px]" : "translate-x-0.5"
+                  )}
+                />
+              </button>
+              <span className="text-[12.5px] text-slate-700">
+                Site principal
+              </span>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={cancelEdit}>
+                Annuler
+              </Button>
+              <Button variant="primary" size="sm" onClick={saveSite}>
+                Enregistrer
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200/80 bg-slate-50/60">
+                <th className="px-4 py-3 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                  Nom
+                </th>
+                <th className="px-4 py-3 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                  Adresse
+                </th>
+                <th className="px-4 py-3 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                  Ville
+                </th>
+                <th className="px-4 py-3 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                  Téléphone
+                </th>
+                <th className="px-4 py-3 text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                  Principal
+                </th>
+                <th className="px-4 py-3 text-right text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {sites.map((s) => (
+                <tr
+                  key={s.id}
+                  className="hover:bg-slate-50/80 transition-colors group"
+                >
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    {s.name}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600 text-[12.5px]">
+                    {s.address}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600 text-[12.5px]">
+                    {s.city}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600 text-[12.5px]">
+                    {s.phone}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {s.primary ? (
+                      <Badge variant="primary">Principal</Badge>
+                    ) : (
+                      <button
+                        onClick={() => setPrimary(s.id)}
+                        className="text-[11px] text-slate-400 hover:text-blue-600"
+                      >
+                        Définir
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => startEdit(s)}
+                        className="h-7 w-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-200/60 hover:text-slate-900"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deleteSite(s.id)}
+                        className="h-7 w-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:bg-red-50 hover:text-red-600"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {sites.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-slate-400 text-[13px]">
+                    Aucun site. Cliquez sur « Nouveau site » pour en créer un.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ---------- Component ----------
+export default function OrganizationDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const startImpersonation = usePortalImpersonation((s) => s.startImpersonation);
+  const [removedPortalAccess, setRemovedPortalAccess] = useState<Set<string>>(new Set());
+  const [dbPortalUsers, setDbPortalUsers] = useState<
+    Array<{ id: string; name: string; email: string; role: ClientPortalPermissions["portalRole"] | null }> | null
+  >(null);
+  const orgId = params.id as string;
+  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [tabSearch, setTabSearch] = useState("");
+  const [editingOrg, setEditingOrg] = useState<EditOrgModalOrg | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [editingPortalUser, setEditingPortalUser] = useState<PortalAccessUser | null>(null);
+  const [editingContract, setEditingContract] = useState<BillingContract | null>(null);
+  const [creatingContract, setCreatingContract] = useState(false);
+  const [dbOrg, setDbOrg] = useState<{
+    id: string;
+    name: string;
+    slug: string;
+    domain: string | null;
+    isActive: boolean;
+    sitesCount: number;
+    contactsCount: number;
+    assetsCount: number;
+    openTickets: number;
+    activeContracts: number;
+    createdAt: string;
+    logo: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    // Reset immédiat à chaque changement d'orgId — sinon, le temps que le
+    // fetch revienne, on continue d'afficher les données de l'org précédente,
+    // ce qui donne un flash visible "mauvaise compagnie".
+    setDbOrg(null);
+    setDbPortalUsers(null);
+    let cancelled = false;
+    fetch(`/api/v1/organizations/${orgId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setDbOrg(data);
+      })
+      .catch(() => {});
+    fetch(`/api/v1/portal-access?organizationId=${orgId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        setDbPortalUsers(
+          data.map((u: any) => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            role: (u.role || "viewer") as ClientPortalPermissions["portalRole"],
+          }))
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
+
+  const org = orgsMap[orgId];
+
+  // Fallback for unknown org ids
+  const fallbackOrg: OrgDetail = {
+    id: orgId,
+    name: "Organisation inconnue",
+    slug: orgId,
+    plan: "Standard",
+    status: "Inactif",
+    color: "bg-gray-500",
+    domain: "-",
+    phone: "-",
+    createdAt: "-",
+    openTickets: 0,
+    activeContracts: 0,
+    sitesCount: 0,
+    contactsCount: 0,
+    assetsCount: 0,
+  };
+
+  // Real DB org takes priority — overrides hardcoded mock fields when available
+  const o: OrgDetail = dbOrg
+    ? {
+        ...(org || fallbackOrg),
+        id: dbOrg.id,
+        name: dbOrg.name,
+        slug: dbOrg.slug,
+        domain: dbOrg.domain || "—",
+        status: dbOrg.isActive ? "Actif" : "Inactif",
+        sitesCount: dbOrg.sitesCount,
+        contactsCount: dbOrg.contactsCount,
+        assetsCount: dbOrg.assetsCount,
+        openTickets: dbOrg.openTickets,
+        activeContracts: dbOrg.activeContracts,
+        createdAt: dbOrg.createdAt,
+        logo: dbOrg.logo,
+      }
+    : org || fallbackOrg;
+  const fallbackSites = sitesData[orgId] || sitesData["org-1"] || [];
+  const sites = fallbackSites; // TODO: wire to /api/v1/sites once endpoint exists
+  const fallbackContacts = contactsData[orgId] || contactsData["org-1"] || [];
+  const [dbContacts, setDbContacts] = useState<Contact[] | null>(null);
+  useEffect(() => {
+    fetch(`/api/v1/contacts?organizationId=${orgId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        setDbContacts(
+          data.map((c: any) => ({
+            id: c.id,
+            firstName: c.firstName,
+            lastName: c.lastName,
+            email: c.email,
+            phone: c.phone || "—",
+            jobTitle: c.jobTitle || "—",
+            vip: c.vip || false,
+          }))
+        );
+      })
+      .catch(() => {});
+  }, [orgId]);
+  const contacts = dbContacts ?? fallbackContacts;
+  const fallbackTickets = ticketsData[orgId] || ticketsData["org-1"] || [];
+  const [dbTickets, setDbTickets] = useState<OrgTicket[] | null>(null);
+  useEffect(() => {
+    fetch(`/api/v1/tickets?organizationId=${orgId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        const STATUS_FR: Record<string, OrgTicket["status"]> = {
+          new: "Nouveau",
+          open: "Ouvert",
+          in_progress: "En cours",
+          on_site: "Sur place",
+          waiting_client: "En attente",
+          waiting_vendor: "En attente",
+          pending: "En attente",
+          resolved: "Résolu",
+          closed: "Fermé",
+          cancelled: "Fermé",
+        };
+        const PRIO_FR: Record<string, OrgTicket["priority"]> = {
+          low: "Basse",
+          medium: "Moyenne",
+          high: "Haute",
+          critical: "Critique",
+        };
+        setDbTickets(
+          data.slice(0, 200).map((t: any) => ({
+            id: t.id,
+            number: t.number,
+            subject: t.subject,
+            status: STATUS_FR[t.status] || "Ouvert",
+            priority: PRIO_FR[t.priority] || "Moyenne",
+            requester: t.requesterName || "—",
+            assignee: t.assigneeName,
+            createdAt: t.createdAt,
+          }))
+        );
+      })
+      .catch(() => {});
+  }, [orgId]);
+  const tickets = dbTickets ?? fallbackTickets;
+
+  const [dbContracts, setDbContracts] = useState<Contract[] | null>(null);
+  useEffect(() => {
+    fetch(`/api/v1/contracts?organizationId=${orgId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        const STATUS_FR: Record<string, Contract["status"]> = {
+          ACTIVE: "Actif",
+          EXPIRED: "Expiré",
+          DRAFT: "Brouillon",
+          CANCELLED: "Expiré",
+          EXPIRING: "Actif",
+        };
+        setDbContracts(
+          data.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            type: c.type,
+            status: STATUS_FR[c.status] || "Brouillon",
+            startDate: c.startDate?.slice(0, 10) || "",
+            endDate: c.endDate?.slice(0, 10) || "",
+            hours: c.monthlyHours || 0,
+            usedHours: 0,
+          }))
+        );
+      })
+      .catch(() => {});
+  }, [orgId]);
+  const contracts = dbContracts ?? contractsData[orgId] ?? contractsData["org-1"] ?? [];
+  const assets = assetsData[orgId] || assetsData["org-1"] || [];
+  const activities = activitiesData[orgId] || activitiesData["org-1"] || [];
+
+  // Tab-level search filter
+  const filteredSites = useMemo(() => {
+    if (!tabSearch.trim()) return sites;
+    const q = tabSearch.toLowerCase();
+    return sites.filter((s) => s.name.toLowerCase().includes(q) || s.city.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
+  }, [sites, tabSearch]);
+
+  const filteredContacts = useMemo(() => {
+    if (!tabSearch.trim()) return contacts;
+    const q = tabSearch.toLowerCase();
+    return contacts.filter((c) => `${c.firstName} ${c.lastName}`.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.jobTitle.toLowerCase().includes(q));
+  }, [contacts, tabSearch]);
+
+  const filteredTickets = useMemo(() => {
+    if (!tabSearch.trim()) return tickets;
+    const q = tabSearch.toLowerCase();
+    return tickets.filter((t) => t.subject.toLowerCase().includes(q) || t.number.toLowerCase().includes(q) || t.requester.toLowerCase().includes(q));
+  }, [tickets, tabSearch]);
+
+  const filteredContracts = useMemo(() => {
+    if (!tabSearch.trim()) return contracts;
+    const q = tabSearch.toLowerCase();
+    return contracts.filter((c) => c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q));
+  }, [contracts, tabSearch]);
+
+  const filteredAssets = useMemo(() => {
+    if (!tabSearch.trim()) return assets;
+    const q = tabSearch.toLowerCase();
+    return assets.filter((a) => a.name.toLowerCase().includes(q) || a.type.toLowerCase().includes(q) || a.serial.toLowerCase().includes(q) || a.site.toLowerCase().includes(q));
+  }, [assets, tabSearch]);
+
+  const showTabSearch = activeTab !== "overview";
+
+  // Tant que la vraie org n'est pas chargée, on affiche un loader plutôt
+  // que les données mock figées (qui faisaient apparaître brièvement la
+  // mauvaise compagnie).
+  if (!dbOrg) {
+    return (
+      <div className="flex flex-col gap-6">
+        <Link
+          href="/organizations"
+          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors w-fit"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Retour aux organisations
+        </Link>
+        <PageLoader variant="detail" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Back */}
+      <Link href="/organizations" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors w-fit">
+        <ArrowLeft className="h-4 w-4" />
+        Retour aux organisations
+      </Link>
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          {o.logo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={o.logo}
+              alt={o.name}
+              className="h-14 w-14 rounded-xl object-contain bg-white ring-1 ring-slate-200"
+            />
+          ) : (
+            <div className={cn("flex h-14 w-14 items-center justify-center rounded-xl text-xl font-bold text-white", o.color)}>
+              {o.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-gray-900">{o.name}</h1>
+              <Badge variant={planBadgeVariant(o.plan)}>{o.plan}</Badge>
+              <Badge variant={statusBadgeVariant(o.status)}>{o.status}</Badge>
+            </div>
+            <p className="mt-0.5 text-sm text-gray-500">{o.domain}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="md"
+            onClick={() => setImportOpen(true)}
+          >
+            <Database className="h-4 w-4" strokeWidth={2.25} />
+            Importer Freshservice
+          </Button>
+          <Button
+            variant="outline"
+            size="md"
+            onClick={() =>
+              setEditingOrg({
+                id: o.id,
+                name: o.name,
+                slug: o.slug,
+                plan: o.plan,
+                domain: o.domain,
+                isActive: o.status === "Actif",
+                clientCode: (dbOrg as any)?.clientCode || null,
+                website: (dbOrg as any)?.website || null,
+                description: (dbOrg as any)?.description || null,
+                phone: (dbOrg as any)?.phone || null,
+                address: (dbOrg as any)?.address || null,
+                city: (dbOrg as any)?.city || null,
+                province: (dbOrg as any)?.province || null,
+                postalCode: (dbOrg as any)?.postalCode || null,
+                country: (dbOrg as any)?.country || null,
+                logo: (dbOrg as any)?.logo || null,
+              })
+            }
+          >
+            <Pencil className="h-4 w-4" />
+            Modifier
+          </Button>
+        </div>
+      </div>
+
+      <EditOrgModal
+        open={!!editingOrg}
+        onClose={() => setEditingOrg(null)}
+        org={editingOrg}
+      />
+
+      <FreshserviceImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+      />
+
+      <EditPortalAccessModal
+        open={!!editingPortalUser}
+        user={editingPortalUser}
+        onClose={() => setEditingPortalUser(null)}
+        onSave={() => setEditingPortalUser(null)}
+      />
+
+      {(editingContract || creatingContract) && (
+        <ContractModal
+          contract={editingContract}
+          onClose={() => {
+            setEditingContract(null);
+            setCreatingContract(false);
+          }}
+          onSave={() => {
+            setEditingContract(null);
+            setCreatingContract(false);
+          }}
+        />
+      )}
+
+
+      {/* Tabs */}
+      <div className="flex items-center justify-between border-b border-gray-200">
+        <div className="flex gap-0">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => { setActiveTab(tab.key); setTabSearch(""); }}
+              className={cn(
+                "relative px-4 py-3 text-sm font-medium transition-colors",
+                activeTab === tab.key
+                  ? "text-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              )}
+            >
+              {tab.label}
+              {activeTab === tab.key && (
+                <span className="absolute inset-x-0 bottom-0 h-0.5 bg-blue-600 rounded-full" />
+              )}
+            </button>
+          ))}
+        </div>
+        {showTabSearch && (
+          <div className="w-64 pb-2">
+            <Input
+              placeholder="Rechercher..."
+              value={tabSearch}
+              onChange={(e) => setTabSearch(e.target.value)}
+              iconLeft={<Search className="h-4 w-4" />}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "overview" && (
+        <div className="grid grid-cols-3 gap-6">
+          {/* Left column */}
+          <div className="col-span-2 flex flex-col gap-6">
+            {/* Stats */}
+            <div className="grid grid-cols-5 gap-4">
+              {[
+                { label: "Tickets ouverts", value: o.openTickets, icon: Ticket, color: "text-blue-600 bg-blue-50" },
+                { label: "Contrats actifs", value: o.activeContracts, icon: FileText, color: "text-emerald-600 bg-emerald-50" },
+                { label: "Sites", value: o.sitesCount, icon: MapPin, color: "text-violet-600 bg-violet-50" },
+                { label: "Contacts", value: o.contactsCount, icon: Users, color: "text-amber-600 bg-amber-50" },
+                { label: "Actifs", value: o.assetsCount, icon: Monitor, color: "text-rose-600 bg-rose-50" },
+              ].map((stat) => (
+                <Card key={stat.label} className="p-4 text-center">
+                  <div className={cn("mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg", stat.color)}>
+                    <stat.icon className="h-5 w-5" />
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                  <p className="text-xs text-gray-500 mt-1">{stat.label}</p>
+                </Card>
+              ))}
+            </div>
+
+            {/* Recent Tickets */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Tickets récents</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="divide-y divide-gray-100">
+                  {tickets.slice(0, 5).map((t) => (
+                    <Link
+                      key={t.id}
+                      href={`/tickets/${t.id}?back=${encodeURIComponent(`/organizations/${orgId}`)}`}
+                      className="-mx-2 flex items-center justify-between rounded-md px-2 py-3 first:pt-0 last:pb-0 hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        {ticketStatusIcon(t.status)}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono text-gray-400">{t.number}</span>
+                            <span className="text-sm font-medium text-gray-900 hover:text-blue-700">{t.subject}</span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-0.5">{t.requester} - {new Date(t.createdAt).toLocaleDateString("fr-CA")}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={priorityColor(t.priority)}>{t.priority}</Badge>
+                        <Badge variant={statusBadgeVariant(t.status)}>{t.status}</Badge>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right column */}
+          <div className="flex flex-col gap-6">
+            {/* Info card */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Informations</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <Globe className="h-4 w-4 text-gray-400 shrink-0" />
+                    <div>
+                      <dt className="text-xs text-gray-500">Domaine</dt>
+                      <dd className="text-sm font-medium text-gray-900">{o.domain}</dd>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Phone className="h-4 w-4 text-gray-400 shrink-0" />
+                    <div>
+                      <dt className="text-xs text-gray-500">Téléphone</dt>
+                      <dd className="text-sm font-medium text-gray-900">{o.phone}</dd>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-4 w-4 text-gray-400 shrink-0" />
+                    <div>
+                      <dt className="text-xs text-gray-500">Plan</dt>
+                      <dd className="text-sm"><Badge variant={planBadgeVariant(o.plan)}>{o.plan}</Badge></dd>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Calendar className="h-4 w-4 text-gray-400 shrink-0" />
+                    <div>
+                      <dt className="text-xs text-gray-500">Date de création</dt>
+                      <dd className="text-sm font-medium text-gray-900">{o.createdAt !== "-" ? new Date(o.createdAt).toLocaleDateString("fr-CA", { year: "numeric", month: "long", day: "numeric" }) : "-"}</dd>
+                    </div>
+                  </div>
+                </dl>
+              </CardContent>
+            </Card>
+
+            {/* Activity */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Activité récente</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {activities.map((a) => {
+                    const href =
+                      a.href ??
+                      (a.type === "ticket"
+                        ? `/tickets?organizationId=${orgId}`
+                        : a.type === "contact"
+                        ? `/contacts?organizationId=${orgId}`
+                        : a.type === "asset"
+                        ? `/assets?organizationId=${orgId}`
+                        : null);
+                    const inner = (
+                      <>
+                        <div className="mt-0.5 shrink-0">{activityIcon(a.type)}</div>
+                        <div>
+                          <p className="text-sm text-gray-700">{a.text}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{a.time}</p>
+                        </div>
+                      </>
+                    );
+                    return href ? (
+                      <Link
+                        key={a.id}
+                        href={href}
+                        className="-mx-2 flex gap-3 rounded-md px-2 py-1.5 hover:bg-slate-50 transition-colors"
+                      >
+                        {inner}
+                      </Link>
+                    ) : (
+                      <div key={a.id} className="flex gap-3">
+                        {inner}
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Sites Tab */}
+      {activeTab === "sites" && (
+        <OrgSitesTab initialSites={filteredSites} />
+      )}
+
+      {/* Contacts Tab */}
+      {activeTab === "contacts" && (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50/60">
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Nom</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Courriel</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Téléphone</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Poste</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-500">VIP</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredContacts.map((c) => (
+                  <tr key={c.id} className="hover:bg-gray-50/80 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
+                          {c.firstName.charAt(0)}{c.lastName.charAt(0)}
+                        </div>
+                        <span className="font-medium text-gray-900">{c.firstName} {c.lastName}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{c.email}</td>
+                    <td className="px-4 py-3 text-gray-600">{c.phone}</td>
+                    <td className="px-4 py-3 text-gray-600">{c.jobTitle}</td>
+                    <td className="px-4 py-3 text-center">
+                      {c.vip && <Star className="inline h-4 w-4 text-amber-500 fill-amber-500" />}
+                    </td>
+                  </tr>
+                ))}
+                {filteredContacts.length === 0 && (
+                  <tr><td colSpan={5} className="px-4 py-12 text-center text-gray-400">Aucun contact trouvé.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Tickets Tab */}
+      {activeTab === "tickets" && (
+        <OrgTicketsTab tickets={filteredTickets} />
+      )}
+
+      {/* Billing Tab */}
+      {activeTab === "billing" && (
+        <div className="space-y-5">
+          <ClientBillingOverridesSection
+            organizationId={orgId}
+            organizationName={o.name}
+          />
+          <SupportTiersSection
+            organizationId={orgId}
+            organizationName={o.name}
+          />
+        </div>
+      )}
+
+      {/* Contracts Tab */}
+      {activeTab === "contracts" && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div>
+              <h3 className="text-[15px] font-semibold text-slate-900">
+                Contrats actifs
+              </h3>
+              <p className="mt-0.5 text-[12px] text-slate-500">
+                Gérez les ententes contractuelles avec ce client
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setCreatingContract(true)}
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+              Nouveau contrat
+            </Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50/60">
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Nom</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Type</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Statut</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Début</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Fin</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Heures</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredContracts.map((c) => (
+                  <tr key={c.id} className="hover:bg-gray-50/80 transition-colors">
+                    <td className="px-4 py-3 font-medium text-gray-900">{c.name}</td>
+                    <td className="px-4 py-3 text-gray-600">{c.type}</td>
+                    <td className="px-4 py-3"><Badge variant={statusBadgeVariant(c.status)}>{c.status}</Badge></td>
+                    <td className="px-4 py-3 text-gray-500">{new Date(c.startDate).toLocaleDateString("fr-CA")}</td>
+                    <td className="px-4 py-3 text-gray-500">{new Date(c.endDate).toLocaleDateString("fr-CA")}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 w-24 rounded-full bg-gray-100 overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full rounded-full",
+                              c.usedHours / c.hours > 0.9 ? "bg-red-500" : c.usedHours / c.hours > 0.7 ? "bg-amber-500" : "bg-blue-500"
+                            )}
+                            style={{ width: `${Math.min(100, (c.usedHours / c.hours) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-500">{c.usedHours}/{c.hours}h</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          // Build a Contract object from the displayed row
+                          const fakeContract: BillingContract = {
+                            id: c.id,
+                            organizationId: orgId,
+                            organizationName: org?.name || "",
+                            name: c.name,
+                            contractNumber: c.id,
+                            type: "hour_bank" as const,
+                            status: "active" as const,
+                            billingProfileId: "bp_standard",
+                            startDate: c.startDate,
+                            endDate: c.endDate,
+                            description: "",
+                            autoRenew: false,
+                            hourBank: {
+                              totalHoursPurchased: c.hours,
+                              hoursConsumed: c.usedHours,
+                              eligibleTimeTypes: ["remote_work", "onsite_work", "preparation", "follow_up"],
+                              carryOverHours: false,
+                              allowOverage: true,
+                              overageRate: 145,
+                              includesTravel: false,
+                              includesOnsite: true,
+                              validFrom: c.startDate,
+                              validTo: c.endDate,
+                            },
+                            createdAt: c.startDate,
+                            updatedAt: c.startDate,
+                          };
+                          setEditingContract(fakeContract);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+                {filteredContracts.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-400">Aucun contrat trouvé. Cliquez sur « Nouveau contrat » pour commencer.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Portal Access Tab */}
+      {activeTab === "portal_access" && (
+        <div className="space-y-5">
+          <Card className="overflow-hidden">
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-blue-600" />
+                  Accès portail client
+                </CardTitle>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() =>
+                    setEditingPortalUser({
+                      id: `new_${Date.now()}`,
+                      name: "",
+                      email: "",
+                      organization: org?.name || "Organisation",
+                      role: "viewer",
+                    })
+                  }
+                >
+                  <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                  Ajouter un utilisateur
+                </Button>
+              </div>
+            </CardHeader>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50/60">
+                    <th className="px-4 py-3 text-left font-medium text-gray-500">Contact</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-500">Courriel</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-500">Rôle portail</th>
+                    <th className="px-4 py-3 text-right font-medium text-gray-500">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(dbPortalUsers ?? ORG_PORTAL_USERS[orgId] ?? ORG_PORTAL_USERS["org-1"] ?? [])
+                    .filter((u) => !removedPortalAccess.has(u.email))
+                    .map((u) => (
+                    <tr key={u.email} className="hover:bg-gray-50/80 transition-colors">
+                      <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
+                      <td className="px-4 py-3 text-gray-600">{u.email}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant={portalRoleVariant(u.role)}>
+                          {u.role ? PORTAL_ROLE_LABELS[u.role] : "Pas d'accès"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Voir le portail comme cet utilisateur"
+                            onClick={() => {
+                              const role = (u.role || "viewer") as
+                                | "admin"
+                                | "manager"
+                                | "viewer";
+                              const basePerms =
+                                role === "admin"
+                                  ? DEFAULT_ADMIN_PERMISSIONS
+                                  : role === "manager"
+                                  ? DEFAULT_MANAGER_PERMISSIONS
+                                  : DEFAULT_VIEWER_PERMISSIONS;
+                              const matchedOrg =
+                                PORTAL_ORGS.find(
+                                  (po) =>
+                                    po.name.toLowerCase() ===
+                                    (org?.name || "").toLowerCase()
+                                ) || PORTAL_ORGS[0];
+                              startImpersonation({
+                                userId: u.email,
+                                name: u.name,
+                                email: u.email,
+                                organizationId: matchedOrg.id,
+                                organizationName: org?.name || "Organisation",
+                                role,
+                                permissions: { ...basePerms, portalRole: role },
+                                startedByName: "Admin",
+                                startedAt: new Date().toISOString(),
+                              });
+                              router.push("/portal");
+                            }}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setEditingPortalUser({
+                                id: u.email,
+                                name: u.name,
+                                email: u.email,
+                                organization: org?.name || "Organisation",
+                                role: u.role || "viewer",
+                              })
+                            }
+                          >
+                            Modifier les permissions
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Retirer l'accès au portail"
+                            onClick={async () => {
+                              if (
+                                !confirm(
+                                  `Retirer l'accès au portail pour ${u.name} ?\n\nL'utilisateur restera dans la liste des contacts de l'entreprise — seul son accès au portail sera révoqué.`
+                                )
+                              )
+                                return;
+                              try {
+                                await fetch(
+                                  `/api/v1/portal-access/${encodeURIComponent(u.email)}`,
+                                  { method: "DELETE" }
+                                );
+                                setRemovedPortalAccess((prev) => new Set([...prev, u.email]));
+                              } catch (e) {
+                                alert(
+                                  "Erreur : " +
+                                    (e instanceof Error ? e.message : String(e))
+                                );
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {(dbPortalUsers ?? ORG_PORTAL_USERS[orgId] ?? []).length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-12 text-center text-gray-400">
+                        Aucun contact avec accès au portail. Cliquez sur «
+                        Ajouter un utilisateur » pour commencer.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Approvers section */}
+          <OrgApproversSection
+            organizationId={orgId}
+            organizationName={org?.name || "Organisation"}
+          />
+        </div>
+      )}
+
+      {/* Assets Tab */}
+      {activeTab === "assets" && (
+        <OrgAssetsTab organizationId={orgId} />
+      )}
+
+      {/* SLA Tab */}
+      {activeTab === "sla" && (
+        <OrgSlaSection
+          organizationId={orgId}
+          organizationName={o.name}
+        />
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,1509 @@
+
+/opt/nexus/prisma/seed.ts
+   31:32  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+   34:34  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+   37:30  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+   42:32  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+  113:9   warning  'demarrage' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  325:11  warning  'ticket' is assigned a value but never used     @typescript-eslint/no-unused-vars
+
+/opt/nexus/scripts/import-freshservice.ts
+  12:8  warning  'path' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/app/(app)/assets/[id]/page.tsx
+  12:3  warning  'Hash' is defined but never used           @typescript-eslint/no-unused-vars
+  17:3  warning  'ExternalLink' is defined but never used   @typescript-eslint/no-unused-vars
+  19:3  warning  'AlertTriangle' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/app/(app)/automations/page.tsx
+  12:3  warning  'Bell' is defined but never used           @typescript-eslint/no-unused-vars
+  13:3  warning  'UserPlus' is defined but never used       @typescript-eslint/no-unused-vars
+  14:3  warning  'AlertTriangle' is defined but never used  @typescript-eslint/no-unused-vars
+  16:3  warning  'Tag' is defined but never used            @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/app/(app)/contacts/page.tsx
+  273:34  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:273:34
+  271 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">
+  272 |                   <button className="inline-flex items-center" onClick={() => handleSort("name")}>
+> 273 |                     Nom complet <SortIcon col="name" />
+      |                                  ^^^^^^^^ This component is created during render
+  274 |                   </button>
+  275 |                 </th>
+  276 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:185:20
+  183 |   const vipContacts = contacts.filter((c) => c.vip).length;
+  184 |
+> 185 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 186 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 187 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 188 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 189 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 190 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 191 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 192 |   };
+      | ^^^^ The component is created during render here
+  193 |
+  194 |   return (
+  195 |     <div className="flex flex-col gap-6">                    react-hooks/static-components
+  278:31  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:278:31
+  276 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">
+  277 |                   <button className="inline-flex items-center" onClick={() => handleSort("email")}>
+> 278 |                     Courriel <SortIcon col="email" />
+      |                               ^^^^^^^^ This component is created during render
+  279 |                   </button>
+  280 |                 </th>
+  281 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">Téléphone</th>
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:185:20
+  183 |   const vipContacts = contacts.filter((c) => c.vip).length;
+  184 |
+> 185 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 186 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 187 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 188 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 189 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 190 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 191 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 192 |   };
+      | ^^^^ The component is created during render here
+  193 |
+  194 |   return (
+  195 |     <div className="flex flex-col gap-6">          react-hooks/static-components
+  284:35  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:284:35
+  282 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">
+  283 |                   <button className="inline-flex items-center" onClick={() => handleSort("organization")}>
+> 284 |                     Organisation <SortIcon col="organization" />
+      |                                   ^^^^^^^^ This component is created during render
+  285 |                   </button>
+  286 |                 </th>
+  287 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:185:20
+  183 |   const vipContacts = contacts.filter((c) => c.vip).length;
+  184 |
+> 185 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 186 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 187 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 188 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 189 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 190 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 191 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 192 |   };
+      | ^^^^ The component is created during render here
+  193 |
+  194 |   return (
+  195 |     <div className="flex flex-col gap-6">  react-hooks/static-components
+  289:28  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:289:28
+  287 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">
+  288 |                   <button className="inline-flex items-center" onClick={() => handleSort("jobTitle")}>
+> 289 |                     Poste <SortIcon col="jobTitle" />
+      |                            ^^^^^^^^ This component is created during render
+  290 |                   </button>
+  291 |                 </th>
+  292 |                 <th className="px-4 py-3 text-center font-medium text-gray-500">VIP</th>
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:185:20
+  183 |   const vipContacts = contacts.filter((c) => c.vip).length;
+  184 |
+> 185 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 186 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 187 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 188 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 189 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 190 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 191 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 192 |   };
+      | ^^^^ The component is created during render here
+  193 |
+  194 |   return (
+  195 |     <div className="flex flex-col gap-6">              react-hooks/static-components
+  295:30  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:295:30
+  293 |                 <th className="px-4 py-3 text-center font-medium text-gray-500">
+  294 |                   <button className="inline-flex items-center" onClick={() => handleSort("tickets")}>
+> 295 |                     Tickets <SortIcon col="tickets" />
+      |                              ^^^^^^^^ This component is created during render
+  296 |                   </button>
+  297 |                 </th>
+  298 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:185:20
+  183 |   const vipContacts = contacts.filter((c) => c.vip).length;
+  184 |
+> 185 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 186 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 187 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 188 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 189 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 190 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 191 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 192 |   };
+      | ^^^^ The component is created during render here
+  193 |
+  194 |   return (
+  195 |     <div className="flex flex-col gap-6">                    react-hooks/static-components
+  300:29  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:300:29
+  298 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">
+  299 |                   <button className="inline-flex items-center" onClick={() => handleSort("status")}>
+> 300 |                     Statut <SortIcon col="status" />
+      |                             ^^^^^^^^ This component is created during render
+  301 |                   </button>
+  302 |                 </th>
+  303 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">Permissions portail</th>
+
+/opt/nexus/src/app/(app)/contacts/page.tsx:185:20
+  183 |   const vipContacts = contacts.filter((c) => c.vip).length;
+  184 |
+> 185 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 186 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 187 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 188 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 189 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 190 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 191 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 192 |   };
+      | ^^^^ The component is created during render here
+  193 |
+  194 |   return (
+  195 |     <div className="flex flex-col gap-6">  react-hooks/static-components
+
+/opt/nexus/src/app/(app)/dashboard/page.tsx
+  38:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  39:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  61:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/(app)/knowledge/[slug]/page.tsx
+   9:3   warning  'ArrowLeft' is defined but never used  @typescript-eslint/no-unused-vars
+  18:3   warning  'Wifi' is defined but never used       @typescript-eslint/no-unused-vars
+  22:10  warning  'cn' is defined but never used         @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/app/(app)/organizations/[id]/page.tsx
+    12:3   warning  'Building2' is defined but never used                                                                                                                                                                                                       @typescript-eslint/no-unused-vars
+   867:24  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+   925:24  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+   965:38  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+   995:24  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+  1009:9   warning  The 'contracts' logical expression could make the dependencies of useMemo Hook (at line 1036) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'contracts' in its own useMemo() Hook  react-hooks/exhaustive-deps
+  1010:9   warning  The 'assets' logical expression could make the dependencies of useMemo Hook (at line 1042) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'assets' in its own useMemo() Hook        react-hooks/exhaustive-deps
+  1038:9   warning  'filteredAssets' is assigned a value but never used                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+  1089:39  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+  1090:36  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+  1091:40  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+  1092:34  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+  1093:36  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+  1094:33  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+  1095:37  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+  1096:39  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+  1097:36  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+  1098:33  error    Unexpected any. Specify a different type                                                                                                                                                                                                    @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/(app)/organizations/page.tsx
+  326:26  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:326:26
+  324 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">
+  325 |                   <button className="inline-flex items-center" onClick={() => handleSort("name")}>
+> 326 |                     Nom <SortIcon col="name" />
+      |                          ^^^^^^^^ This component is created during render
+  327 |                   </button>
+  328 |                 </th>
+  329 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">Slug</th>
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:248:20
+  246 |   const totalContacts = organizations.reduce((sum, o) => sum + o.contacts, 0);
+  247 |
+> 248 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 249 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 250 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 251 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 252 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 253 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 254 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 255 |   };
+      | ^^^^ The component is created during render here
+  256 |
+  257 |   return (
+  258 |     <div className="flex flex-col gap-6">                                             react-hooks/static-components
+  332:42  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:332:42
+  330 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">
+  331 |                   <button className="inline-flex items-center" onClick={() => handleSort("billingMode")}>
+> 332 |                     Mode de facturation <SortIcon col="billingMode" />
+      |                                          ^^^^^^^^ This component is created during render
+  333 |                   </button>
+  334 |                 </th>
+  335 |                 <th className="px-4 py-3 text-center font-medium text-gray-500">
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:248:20
+  246 |   const totalContacts = organizations.reduce((sum, o) => sum + o.contacts, 0);
+  247 |
+> 248 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 249 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 250 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 251 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 252 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 253 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 254 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 255 |   };
+      | ^^^^ The component is created during render here
+  256 |
+  257 |   return (
+  258 |     <div className="flex flex-col gap-6">      react-hooks/static-components
+  337:28  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:337:28
+  335 |                 <th className="px-4 py-3 text-center font-medium text-gray-500">
+  336 |                   <button className="inline-flex items-center" onClick={() => handleSort("sites")}>
+> 337 |                     Sites <SortIcon col="sites" />
+      |                            ^^^^^^^^ This component is created during render
+  338 |                   </button>
+  339 |                 </th>
+  340 |                 <th className="px-4 py-3 text-center font-medium text-gray-500">
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:248:20
+  246 |   const totalContacts = organizations.reduce((sum, o) => sum + o.contacts, 0);
+  247 |
+> 248 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 249 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 250 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 251 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 252 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 253 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 254 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 255 |   };
+      | ^^^^ The component is created during render here
+  256 |
+  257 |   return (
+  258 |     <div className="flex flex-col gap-6">                                            react-hooks/static-components
+  342:31  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:342:31
+  340 |                 <th className="px-4 py-3 text-center font-medium text-gray-500">
+  341 |                   <button className="inline-flex items-center" onClick={() => handleSort("contacts")}>
+> 342 |                     Contacts <SortIcon col="contacts" />
+      |                               ^^^^^^^^ This component is created during render
+  343 |                   </button>
+  344 |                 </th>
+  345 |                 <th className="px-4 py-3 text-center font-medium text-gray-500">
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:248:20
+  246 |   const totalContacts = organizations.reduce((sum, o) => sum + o.contacts, 0);
+  247 |
+> 248 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 249 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 250 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 251 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 252 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 253 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 254 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 255 |   };
+      | ^^^^ The component is created during render here
+  256 |
+  257 |   return (
+  258 |     <div className="flex flex-col gap-6">                                react-hooks/static-components
+  347:38  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:347:38
+  345 |                 <th className="px-4 py-3 text-center font-medium text-gray-500">
+  346 |                   <button className="inline-flex items-center" onClick={() => handleSort("openTickets")}>
+> 347 |                     Tickets ouverts <SortIcon col="openTickets" />
+      |                                      ^^^^^^^^ This component is created during render
+  348 |                   </button>
+  349 |                 </th>
+  350 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">Contrat</th>
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:248:20
+  246 |   const totalContacts = organizations.reduce((sum, o) => sum + o.contacts, 0);
+  247 |
+> 248 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 249 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 250 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 251 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 252 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 253 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 254 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 255 |   };
+      | ^^^^ The component is created during render here
+  256 |
+  257 |   return (
+  258 |     <div className="flex flex-col gap-6">  react-hooks/static-components
+  353:30  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:353:30
+  351 |                 <th className="px-4 py-3 text-left font-medium text-gray-500">
+  352 |                   <button className="inline-flex items-center" onClick={() => handleSort("createdAt")}>
+> 353 |                     Créé le <SortIcon col="createdAt" />
+      |                              ^^^^^^^^ This component is created during render
+  354 |                   </button>
+  355 |                 </th>
+  356 |                 <th className="px-4 py-3 text-right font-medium text-gray-500">Actions</th>
+
+/opt/nexus/src/app/(app)/organizations/page.tsx:248:20
+  246 |   const totalContacts = organizations.reduce((sum, o) => sum + o.contacts, 0);
+  247 |
+> 248 |   const SortIcon = ({ col }: { col: SortKey }) => {
+      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 249 |     if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 250 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 251 |       <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 252 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 253 |       <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 254 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 255 |   };
+      | ^^^^ The component is created during render here
+  256 |
+  257 |   return (
+  258 |     <div className="flex flex-col gap-6">                       react-hooks/static-components
+
+/opt/nexus/src/app/(app)/projects/[id]/page.tsx
+  126:22  error  React Hook "useTicketsStore" is called conditionally. React Hooks must be called in the exact same order in every component render  react-hooks/rules-of-hooks
+  127:26  error  React Hook "useTicketsStore" is called conditionally. React Hooks must be called in the exact same order in every component render  react-hooks/rules-of-hooks
+  128:25  error  React Hook "useTicketsStore" is called conditionally. React Hooks must be called in the exact same order in every component render  react-hooks/rules-of-hooks
+  129:3   error  React Hook "useEffect" is called conditionally. React Hooks must be called in the exact same order in every component render        react-hooks/rules-of-hooks
+
+/opt/nexus/src/app/(app)/reports/page.tsx
+   16:10  warning  'Badge' is defined but never used         @typescript-eslint/no-unused-vars
+  482:46  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/(app)/settings/page.tsx
+   24:3   warning  'MoreHorizontal' is defined but never used      @typescript-eslint/no-unused-vars
+   87:7   warning  'mockUsers' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  354:10  warning  'loading' is assigned a value but never used    @typescript-eslint/no-unused-vars
+  362:24  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+  552:34  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/(app)/tickets/new/page.tsx
+  83:23  warning  Compilation Skipped: Use of incompatible library
+
+This API returns functions which cannot be memoized without leading to stale UI. To prevent this, by default React Compiler will skip memoizing this component/hook. However, you may see issues if values from this API are passed to other components/hooks that are memoized.
+
+/opt/nexus/src/app/(app)/tickets/new/page.tsx:83:23
+  81 |   });
+  82 |
+> 83 |   const selectedOrg = watch("organizationName");
+     |                       ^^^^^ React Hook Form's `useForm()` API returns a `watch()` function which cannot be memoized safely.
+  84 |   const availableRequesters = selectedOrg ? REQUESTERS[selectedOrg] ?? [] : [];
+  85 |
+  86 |   function onSubmit(data: TicketFormData) {  react-hooks/incompatible-library
+
+/opt/nexus/src/app/(auth)/login/page.tsx
+  16:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/app/(auth)/login/page.tsx:16:7
+  14 |     const err = params.get("error");
+  15 |     if (err) {
+> 16 |       setError(
+     |       ^^^^^^^^ Avoid calling setState() directly within an effect
+  17 |         err === "CredentialsSignin"
+  18 |           ? "Identifiants invalides. Veuillez réessayer."
+  19 |           : `Erreur: ${err}`  react-hooks/set-state-in-effect
+
+/opt/nexus/src/app/(portal)/portal/kb/page.tsx
+  4:8  warning  'Link' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/app/(portal)/portal/login/page.tsx
+   9:9  warning  'router' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  40:9  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/app/(portal)/portal/login/page.tsx:40:9
+  38 |     if (err) {
+  39 |       if (err === "AccessDenied") {
+> 40 |         setError(
+     |         ^^^^^^^^ Avoid calling setState() directly within an effect
+  41 |           "Votre compte n'est associé à aucune organisation cliente. Contactez votre administrateur."
+  42 |         );
+  43 |       } else if (err === "CredentialsSignin") {  react-hooks/set-state-in-effect
+
+/opt/nexus/src/app/(portal)/portal/projects/[id]/page.tsx
+  127:18  error  React Hook "useMemo" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?  react-hooks/rules-of-hooks
+  134:22  error  React Hook "useMemo" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?  react-hooks/rules-of-hooks
+  141:17  error  React Hook "useMemo" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?  react-hooks/rules-of-hooks
+  148:22  error  React Hook "useMemo" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?  react-hooks/rules-of-hooks
+  155:19  error  React Hook "useMemo" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?  react-hooks/rules-of-hooks
+
+/opt/nexus/src/app/(portal)/portal/tickets/page.tsx
+  10:3  warning  'ArrowUpDown' is defined but never used   @typescript-eslint/no-unused-vars
+  11:3  warning  'ChevronRight' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/app/api/v1/dashboard/stats/route.ts
+    8:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   30:69  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   31:69  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   32:86  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   70:47  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   87:47  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  103:47  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  119:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  122:71  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/api/v1/freshservice/history/route.ts
+  13:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/api/v1/freshservice/import/route.ts
+  19:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  53:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  53:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  54:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/api/v1/freshservice/preview/route.ts
+  10:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/api/v1/portal-domain/cert-status/route.ts
+  22:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/api/v1/portal-domain/route.ts
+  28:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  96:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  96:66  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  97:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/api/v1/portal-domain/test-cloudflare/route.ts
+  24:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/api/v1/portal-domain/test-renewal/route.ts
+  27:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  87:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/app/api/v1/portal/projects/route.ts
+  11:27  warning  '_request' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/app/api/v1/portal/reports/route.ts
+  14:27  warning  '_request' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/app/api/v1/tickets/[id]/comments/route.ts
+  28:12  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+  74:12  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/app/api/v1/users/route.ts
+  14:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/components/approvers/org-approvers-section.tsx
+    3:20  warning  'useMemo' is defined but never used       @typescript-eslint/no-unused-vars
+  120:24  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/components/assets/asset-modal.tsx
+  66:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/assets/asset-modal.tsx:66:7
+  64 |   useEffect(() => {
+  65 |     if (open) {
+> 66 |       setForm(asset ?? emptyAsset(organizationId));
+     |       ^^^^^^^ Avoid calling setState() directly within an effect
+  67 |       setTab("identification");
+  68 |     }
+  69 |   }, [open, asset, organizationId]);  react-hooks/set-state-in-effect
+
+/opt/nexus/src/components/assets/atera-mapping-modal.tsx
+  31:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/assets/atera-mapping-modal.tsx:31:5
+  29 |   useEffect(() => {
+  30 |     if (!open) return;
+> 31 |     setSearch("");
+     |     ^^^^^^^^^ Avoid calling setState() directly within an effect
+  32 |     setSelected(null);
+  33 |     setError(null);
+  34 |     setLoading(true);  react-hooks/set-state-in-effect
+
+/opt/nexus/src/components/assets/org-assets-tab.tsx
+  203:25  error  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+/opt/nexus/src/components/assets/org-assets-tab.tsx:203:25
+  201 |     const newAssets: OrgAsset[] = [
+  202 |       {
+> 203 |         id: `ast-sync-${Date.now()}-1`,
+      |                         ^^^^^^^^^^ Cannot call impure function
+  204 |         organizationId,
+  205 |         name: `SYNC-${provider.toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`,
+  206 |         type: "workstation",                                                   react-hooks/purity
+  205:60  error  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+/opt/nexus/src/components/assets/org-assets-tab.tsx:205:60
+  203 |         id: `ast-sync-${Date.now()}-1`,
+  204 |         organizationId,
+> 205 |         name: `SYNC-${provider.toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`,
+      |                                                            ^^^^^^^^^^^^^ Cannot call impure function
+  206 |         type: "workstation",
+  207 |         status: "active",
+  208 |         source: provider,  react-hooks/purity
+  209:47  error  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+/opt/nexus/src/components/assets/org-assets-tab.tsx:209:47
+  207 |         status: "active",
+  208 |         source: provider,
+> 209 |         externalId: `${provider}-${Math.floor(Math.random() * 100000)}`,
+      |                                               ^^^^^^^^^^^^^ Cannot call impure function
+  210 |         manufacturer: "Dell",
+  211 |         model: "OptiPlex 7090",
+  212 |         os: "Windows",                                       react-hooks/purity
+  217:43  error  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+/opt/nexus/src/components/assets/org-assets-tab.tsx:217:43
+  215 |         ramGb: 16,
+  216 |         storageGb: 512,
+> 217 |         ipAddress: `10.10.20.${Math.floor(Math.random() * 200 + 20)}`,
+      |                                           ^^^^^^^^^^^^^ Cannot call impure function
+  218 |         isMonitored: true,
+  219 |         tags: ["auto-sync"],
+  220 |         createdAt: now,                                                           react-hooks/purity
+  226:25  error  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+/opt/nexus/src/components/assets/org-assets-tab.tsx:226:25
+  224 |       },
+  225 |       {
+> 226 |         id: `ast-sync-${Date.now()}-2`,
+      |                         ^^^^^^^^^^ Cannot call impure function
+  227 |         organizationId,
+  228 |         name: `SYNC-${provider.toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`,
+  229 |         type: "laptop",                                                                                   react-hooks/purity
+  228:60  error  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+/opt/nexus/src/components/assets/org-assets-tab.tsx:228:60
+  226 |         id: `ast-sync-${Date.now()}-2`,
+  227 |         organizationId,
+> 228 |         name: `SYNC-${provider.toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`,
+      |                                                            ^^^^^^^^^^^^^ Cannot call impure function
+  229 |         type: "laptop",
+  230 |         status: "active",
+  231 |         source: provider,       react-hooks/purity
+
+/opt/nexus/src/components/automations/automation-rule-modal.tsx
+  54:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/automations/automation-rule-modal.tsx:54:7
+  52 |   useEffect(() => {
+  53 |     if (open) {
+> 54 |       setName(rule?.name || "");
+     |       ^^^^^^^ Avoid calling setState() directly within an effect
+  55 |       setDescription(rule?.description || "");
+  56 |       setTrigger(rule?.trigger || TRIGGERS[0].value);
+  57 |       setConditions(rule?.conditions || "");  react-hooks/set-state-in-effect
+
+/opt/nexus/src/components/billing/client-billing-overrides-section.tsx
+  521:23  error  `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`  react/no-unescaped-entities
+
+/opt/nexus/src/components/contacts/edit-contact-modal.tsx
+  99:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/contacts/edit-contact-modal.tsx:99:7
+   97 |     if (contact) {
+   98 |       const { first, last } = splitName(contact.name);
+>  99 |       setFirstName(first);
+      |       ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  100 |       setLastName(last);
+  101 |       setEmail(contact.email || "");
+  102 |       setPhone(contact.phone || "");  react-hooks/set-state-in-effect
+
+/opt/nexus/src/components/knowledge/manage-categories-modal.tsx
+  17:10  warning  'cn' is defined but never used               @typescript-eslint/no-unused-vars
+  25:7   warning  'COLORS' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/components/knowledge/new-article-modal.tsx
+  47:9  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/knowledge/new-article-modal.tsx:47:9
+  45 |     if (open) {
+  46 |       if (article) {
+> 47 |         setTitle(article.title);
+     |         ^^^^^^^^ Avoid calling setState() directly within an effect
+  48 |         setCategoryId(article.categoryId);
+  49 |         setSummary(article.summary);
+  50 |         setBody(article.body);  react-hooks/set-state-in-effect
+
+/opt/nexus/src/components/layout/breadcrumbs.tsx
+  39:23  error    Unexpected any. Specify a different type                                                                     @typescript-eslint/no-explicit-any
+  98:6   warning  React Hook useEffect has a missing dependency: 'segments'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/opt/nexus/src/components/layout/user-menu.tsx
+  41:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/components/organizations/edit-org-modal.tsx
+  4:13  warning  'Building2' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/components/organizations/enrich-preview-modal.tsx
+  213:20  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                 @typescript-eslint/no-explicit-any
+  357:31  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/opt/nexus/src/components/portal/edit-portal-access-modal.tsx
+  155:7  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/portal/edit-portal-access-modal.tsx:155:7
+  153 |   useEffect(() => {
+  154 |     if (user) {
+> 155 |       setRole(user.role);
+      |       ^^^^^^^ Avoid calling setState() directly within an effect
+  156 |       setPermissions(buildPermissionsFromUser(user));
+  157 |       setName(user.name || "");
+  158 |       setEmail(user.email || "");  react-hooks/set-state-in-effect
+  160:6  warning  React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array. If 'setPermissions' needs the current value of 'user', you can also switch to useReducer instead of useState and read 'user' in the reducer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   react-hooks/exhaustive-deps
+
+/opt/nexus/src/components/projects/project-kanban-quick-view.tsx
+   19:10  warning  'Badge' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                @typescript-eslint/no-unused-vars
+  102:5   error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/projects/project-kanban-quick-view.tsx:102:5
+  100 |
+  101 |   useEffect(() => {
+> 102 |     setLocalStatus(ticket?.status);
+      |     ^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  103 |     setLocalEntries([]);
+  104 |     setTimeType("remote_work");
+  105 |     setDuration("30");  react-hooks/set-state-in-effect
+
+/opt/nexus/src/components/scheduling/intervention-modal.tsx
+  98:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/scheduling/intervention-modal.tsx:98:7
+   96 |     if (!open) return;
+   97 |     if (intervention) {
+>  98 |       setTitle(intervention.title);
+      |       ^^^^^^^^ Avoid calling setState() directly within an effect
+   99 |       setType(intervention.type);
+  100 |       setStatus(intervention.status);
+  101 |       setDate(toDateInput(intervention.startsAt));  react-hooks/set-state-in-effect
+
+/opt/nexus/src/components/scheduling/recurring-template-modal.tsx
+  118:7   error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/scheduling/recurring-template-modal.tsx:118:7
+  116 |   useEffect(() => {
+  117 |     if (template) {
+> 118 |       setForm({ ...template });
+      |       ^^^^^^^ Avoid calling setState() directly within an effect
+  119 |     } else {
+  120 |       setForm(emptyTemplate());
+  121 |     }  react-hooks/set-state-in-effect
+  480:69  error  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  499:73  error  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/components/scheduling/scheduler-timeline-view.tsx
+   4:18  warning  'isSameDay' is defined but never used                                                                   @typescript-eslint/no-unused-vars
+  52:6   warning  React Hook useMemo has a missing dependency: 'today'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/opt/nexus/src/components/scheduling/scheduler-week-view.tsx
+  82:16  warning  '_technicians' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/components/settings/billing-profiles-section.tsx
+   56:27  error  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+/opt/nexus/src/components/settings/billing-profiles-section.tsx:56:27
+  54 |     const copy: BillingProfile = {
+  55 |       ...p,
+> 56 |       id: `${p.id}_copy_${Date.now()}`,
+     |                           ^^^^^^^^^^ Cannot call impure function
+  57 |       name: `${p.name} (copie)`,
+  58 |       isDefault: false,
+  59 |     };                                    react-hooks/purity
+  233:29  error  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+/opt/nexus/src/components/settings/billing-profiles-section.tsx:233:29
+  231 |           profile={
+  232 |             editing || {
+> 233 |               id: `bp_new_${Date.now()}`,
+      |                             ^^^^^^^^^^ Cannot call impure function
+  234 |               name: "",
+  235 |               description: "",
+  236 |               standardRate: 125,  react-hooks/purity
+
+/opt/nexus/src/components/settings/contract-modal.tsx
+  88:27  error  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+/opt/nexus/src/components/settings/contract-modal.tsx:88:27
+  86 |   const [draft, setDraft] = useState<Contract>(
+  87 |     contract || {
+> 88 |       id: `contract_new_${Date.now()}`,
+     |                           ^^^^^^^^^^ Cannot call impure function
+  89 |       organizationId: "",
+  90 |       organizationName: "",
+  91 |       name: "",  react-hooks/purity
+
+/opt/nexus/src/components/settings/edit-email-template-modal.tsx
+  46:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/settings/edit-email-template-modal.tsx:46:7
+  44 |   useEffect(() => {
+  45 |     if (open) {
+> 46 |       setName(template?.name || "");
+     |       ^^^^^^^ Avoid calling setState() directly within an effect
+  47 |       setSubject(template?.subject || "");
+  48 |       setBody(
+  49 |         template?.body ||  react-hooks/set-state-in-effect
+
+/opt/nexus/src/components/settings/edit-signature-modal.tsx
+  71:7  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/settings/edit-signature-modal.tsx:71:7
+  69 |   useEffect(() => {
+  70 |     if (agent) {
+> 71 |       setSignatureHtml(agent.signatureHtml || plainToHtml(agent.signature));
+     |       ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  72 |       setTab("editor");
+  73 |     }
+  74 |   }, [agent?.id]);  react-hooks/set-state-in-effect
+  74:6  warning  React Hook useEffect has a missing dependency: 'agent'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           react-hooks/exhaustive-deps
+
+/opt/nexus/src/components/settings/portal-domain-section.tsx
+  10:3   warning  'Lock' is defined but never used             @typescript-eslint/no-unused-vars
+  11:3   warning  'Calendar' is defined but never used         @typescript-eslint/no-unused-vars
+  14:3   warning  'ExternalLink' is defined but never used     @typescript-eslint/no-unused-vars
+  98:10  warning  'config' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/components/tickets/kanban-board-switcher.tsx
+   8:3  warning  'Pencil' is defined but never used       @typescript-eslint/no-unused-vars
+  21:8  warning  'KanbanBoard' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/components/tickets/new-ticket-modal.tsx
+  4:39  warning  'UserPlus' is defined but never used  @typescript-eslint/no-unused-vars
+  4:49  warning  'Trash2' is defined but never used    @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx
+    9:10  warning  'Avatar' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 @typescript-eslint/no-unused-vars
+    9:18  warning  'AvatarFallback' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+  117:22  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:117:22
+  115 |               <th className="w-24 px-3 py-3">
+  116 |                 <button onClick={() => toggleSort("number")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
+> 117 |                   # <SortIcon field="number" />
+      |                      ^^^^^^^^ This component is created during render
+  118 |                 </button>
+  119 |               </th>
+  120 |               <th className="min-w-[280px] px-3 py-3">
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:92:3
+   90 |   }
+   91 |
+>  92 |   function SortIcon({ field }: { field: SortField }) {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  93 |     if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  94 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  95 |       <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  96 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  97 |       <ArrowDown className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  98 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  99 |   }
+      | ^^^^ The component is created during render here
+  100 |
+  101 |   return (
+  102 |     <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">                         react-hooks/static-components
+  122:28  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:122:28
+  120 |               <th className="min-w-[280px] px-3 py-3">
+  121 |                 <button onClick={() => toggleSort("subject")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
+> 122 |                   Subject <SortIcon field="subject" />
+      |                            ^^^^^^^^ This component is created during render
+  123 |                 </button>
+  124 |               </th>
+  125 |               <th className="px-3 py-3">
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:92:3
+   90 |   }
+   91 |
+>  92 |   function SortIcon({ field }: { field: SortField }) {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  93 |     if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  94 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  95 |       <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  96 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  97 |       <ArrowDown className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  98 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  99 |   }
+      | ^^^^ The component is created during render here
+  100 |
+  101 |   return (
+  102 |     <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">                react-hooks/static-components
+  127:33  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:127:33
+  125 |               <th className="px-3 py-3">
+  126 |                 <button onClick={() => toggleSort("organizationName")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
+> 127 |                   Organization <SortIcon field="organizationName" />
+      |                                 ^^^^^^^^ This component is created during render
+  128 |                 </button>
+  129 |               </th>
+  130 |               <th className="px-3 py-3">
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:92:3
+   90 |   }
+   91 |
+>  92 |   function SortIcon({ field }: { field: SortField }) {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  93 |     if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  94 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  95 |       <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  96 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  97 |       <ArrowDown className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  98 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  99 |   }
+      | ^^^^ The component is created during render here
+  100 |
+  101 |   return (
+  102 |     <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">  react-hooks/static-components
+  132:27  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:132:27
+  130 |               <th className="px-3 py-3">
+  131 |                 <button onClick={() => toggleSort("status")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
+> 132 |                   Status <SortIcon field="status" />
+      |                           ^^^^^^^^ This component is created during render
+  133 |                 </button>
+  134 |               </th>
+  135 |               <th className="px-3 py-3">
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:92:3
+   90 |   }
+   91 |
+>  92 |   function SortIcon({ field }: { field: SortField }) {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  93 |     if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  94 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  95 |       <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  96 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  97 |       <ArrowDown className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  98 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  99 |   }
+      | ^^^^ The component is created during render here
+  100 |
+  101 |   return (
+  102 |     <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">                                  react-hooks/static-components
+  137:29  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:137:29
+  135 |               <th className="px-3 py-3">
+  136 |                 <button onClick={() => toggleSort("priority")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
+> 137 |                   Priority <SortIcon field="priority" />
+      |                             ^^^^^^^^ This component is created during render
+  138 |                 </button>
+  139 |               </th>
+  140 |               <th className="px-3 py-3">
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:92:3
+   90 |   }
+   91 |
+>  92 |   function SortIcon({ field }: { field: SortField }) {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  93 |     if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  94 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  95 |       <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  96 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  97 |       <ArrowDown className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  98 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  99 |   }
+      | ^^^^ The component is created during render here
+  100 |
+  101 |   return (
+  102 |     <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">                          react-hooks/static-components
+  142:29  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:142:29
+  140 |               <th className="px-3 py-3">
+  141 |                 <button onClick={() => toggleSort("assigneeName")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
+> 142 |                   Assignee <SortIcon field="assigneeName" />
+      |                             ^^^^^^^^ This component is created during render
+  143 |                 </button>
+  144 |               </th>
+  145 |               <th className="px-3 py-3">
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:92:3
+   90 |   }
+   91 |
+>  92 |   function SortIcon({ field }: { field: SortField }) {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  93 |     if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  94 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  95 |       <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  96 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  97 |       <ArrowDown className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  98 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  99 |   }
+      | ^^^^ The component is created during render here
+  100 |
+  101 |   return (
+  102 |     <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">                  react-hooks/static-components
+  147:28  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:147:28
+  145 |               <th className="px-3 py-3">
+  146 |                 <button onClick={() => toggleSort("createdAt")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
+> 147 |                   Created <SortIcon field="createdAt" />
+      |                            ^^^^^^^^ This component is created during render
+  148 |                 </button>
+  149 |               </th>
+  150 |               <th className="px-3 py-3">
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:92:3
+   90 |   }
+   91 |
+>  92 |   function SortIcon({ field }: { field: SortField }) {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  93 |     if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  94 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  95 |       <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  96 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  97 |       <ArrowDown className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  98 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  99 |   }
+      | ^^^^ The component is created during render here
+  100 |
+  101 |   return (
+  102 |     <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">                          react-hooks/static-components
+  152:24  error    Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:152:24
+  150 |               <th className="px-3 py-3">
+  151 |                 <button onClick={() => toggleSort("dueAt")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
+> 152 |                   Due <SortIcon field="dueAt" />
+      |                        ^^^^^^^^ This component is created during render
+  153 |                 </button>
+  154 |               </th>
+  155 |             </tr>
+
+/opt/nexus/src/components/tickets/ticket-list-view.tsx:92:3
+   90 |   }
+   91 |
+>  92 |   function SortIcon({ field }: { field: SortField }) {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  93 |     if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  94 |     return sortDir === "asc" ? (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  95 |       <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  96 |     ) : (
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  97 |       <ArrowDown className="h-3.5 w-3.5 text-blue-600" />
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  98 |     );
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+>  99 |   }
+      | ^^^^ The component is created during render here
+  100 |
+  101 |   return (
+  102 |     <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">                                                                 react-hooks/static-components
+  158:34  warning  'idx' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/components/tickets/ticket-quick-view-modal.tsx
+   11:3  warning  'Building2' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+  154:5  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/tickets/ticket-quick-view-modal.tsx:154:5
+  152 |   // Reset state when ticket changes
+  153 |   useEffect(() => {
+> 154 |     setReplyText("");
+      |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  155 |     setIsInternal(false);
+  156 |     setAttachments([]);
+  157 |     setLocalComments([]);  react-hooks/set-state-in-effect
+  176:9  warning  'priorityCfg' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/components/ui/data-table.tsx
+  44:17  warning  Compilation Skipped: Use of incompatible library
+
+This API returns functions which cannot be memoized without leading to stale UI. To prevent this, by default React Compiler will skip memoizing this component/hook. However, you may see issues if values from this API are passed to other components/hooks that are memoized.
+
+/opt/nexus/src/components/ui/data-table.tsx:44:17
+  42 |   const [rowSelection, setRowSelection] = React.useState({});
+  43 |
+> 44 |   const table = useReactTable({
+     |                 ^^^^^^^^^^^^^ TanStack Table's `useReactTable()` API returns functions that cannot be memoized safely
+  45 |     data,
+  46 |     columns,
+  47 |     getCoreRowModel: getCoreRowModel(),  react-hooks/incompatible-library
+
+/opt/nexus/src/components/ui/input.tsx
+  15:27  error  React Hook "React.useId" is called conditionally. React Hooks must be called in the exact same order in every component render  react-hooks/rules-of-hooks
+
+/opt/nexus/src/components/ui/loading.tsx
+  40:11  error  An interface declaring no members is equivalent to its supertype  @typescript-eslint/no-empty-object-type
+
+/opt/nexus/src/components/ui/rich-text-editor.tsx
+  15:12  warning  'ImageIcon' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/components/ui/textarea.tsx
+  13:30  error  React Hook "React.useId" is called conditionally. React Hooks must be called in the exact same order in every component render  react-hooks/rules-of-hooks
+
+/opt/nexus/src/components/users/edit-user-modal.tsx
+  67:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/opt/nexus/src/components/users/edit-user-modal.tsx:67:7
+  65 |     if (user) {
+  66 |       const { first, last } = splitName(user.name);
+> 67 |       setFirstName(first);
+     |       ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  68 |       setLastName(last);
+  69 |       setEmail(user.email || "");
+  70 |       setPhone(user.phone || "");  react-hooks/set-state-in-effect
+
+/opt/nexus/src/lib/approvers/service.ts
+   4:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   7:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  11:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  43:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  63:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/assets/service.ts
+  10:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  14:54  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/audit/service.ts
+  10:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/auth.ts
+  121:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  212:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  215:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  226:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  227:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  228:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  229:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  230:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  233:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  234:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  235:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  236:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  238:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  239:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  248:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  249:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  250:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  251:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  252:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  253:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  254:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  261:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  262:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  263:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  264:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  265:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  266:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  267:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/automations/service.ts
+   7:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  20:53  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/billing/engine.ts
+   9:3   warning  'CoverageStatus' is defined but never used  @typescript-eslint/no-unused-vars
+  49:18  error    Unexpected any. Specify a different type    @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/billing/support-tiers-data.ts
+  16:36  warning  'i' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/lib/enrichment/website-enricher.ts
+  136:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  137:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  151:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  159:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  159:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  252:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/freshservice/mapper.ts
+    9:3   warning  'FsUser' is defined but never used                 @typescript-eslint/no-unused-vars
+   14:3   warning  'FsSolutionCategory' is defined but never used     @typescript-eslint/no-unused-vars
+  166:10  warning  'gradientForName' is defined but never used        @typescript-eslint/no-unused-vars
+  428:13  warning  'isAfterHours' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/lib/freshservice/parser.ts
+  124:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  143:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  145:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  146:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  176:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  178:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  199:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  216:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  218:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  221:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  289:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  332:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  334:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  342:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  518:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/freshservice/writer.ts
+   31:36  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+   34:38  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+   37:34  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+   41:36  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+  305:30  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+  305:55  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+  345:15  warning  'ticket' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  405:17  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+  446:74  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+  446:97  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/integrations/atera-client.ts
+  42:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/integrations/mock-data.ts
+  19:10  warning  'hoursFromNow' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/lib/kanban-boards/service.ts
+    3:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   22:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   22:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   23:16  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   44:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   63:53  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   77:54  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   78:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  103:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/kb/service.ts
+  51:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/orgs/service.ts
+  135:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  169:56  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/portal-access/service.ts
+   3:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  37:47  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  38:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  67:59  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  68:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/portal-domain/certbot.ts
+  9:8  warning  'path' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/lib/portal/current-user.server.ts
+  35:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/portal/use-portal-user.ts
+  82:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/scheduling/mock-data.ts
+  8:10  warning  'today' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/lib/scheduling/service.ts
+   7:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  11:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/seed.ts
+  131:9  warning  'cetixHQ' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/lib/sla/service.ts
+   3:7   warning  'PRIORITIES' is assigned a value but only used as a type  @typescript-eslint/no-unused-vars
+   4:6   warning  'Priority' is defined but never used                      @typescript-eslint/no-unused-vars
+  13:28  error    Unexpected any. Specify a different type                  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/lib/storage/minio.ts
+  46:14  warning  'e' is defined but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/lib/tickets/service.ts
+   26:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   29:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   33:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   74:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   77:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   99:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  139:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  140:64  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  141:58  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  167:79  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  168:85  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/stores/kanban-boards-store.ts
+  315:21  warning  '_' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  315:35  warning  '_c' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  315:50  warning  '_u' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/opt/nexus/src/stores/kb-store.ts
+   41:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   62:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  111:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  112:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  213:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/opt/nexus/src/stores/portal-impersonation-store.ts
+  36:79  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 294 problems (220 errors, 74 warnings)
+

@@ -1,0 +1,9 @@
+{
+  "subdomain": "nexus",
+  "dnsConfigured": false,
+  "forceHttps": true,
+  "autoRenewEnabled": true,
+  "acmeEmail": "admin@cetix.ca",
+  "updatedAt": "2026-04-07T18:24:43.794Z",
+  "updatedBy": "Jean-Philippe Côté"
+}

@@ -1,0 +1,127 @@
+▲ Next.js 16.2.2 (Turbopack)
+- Environments: .env
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 47s
+  Running TypeScript ...
+  Finished TypeScript in 72s ...
+  Collecting page data using 3 workers ...
+  Generating static pages using 3 workers (0/66) ...
+  Generating static pages using 3 workers (16/66) 
+  Generating static pages using 3 workers (32/66) 
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+  Generating static pages using 3 workers (49/66) 
+✓ Generating static pages using 3 workers (66/66) in 3.0s
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /account
+├ ƒ /api/auth/[...nextauth]
+├ ƒ /api/v1/approvers
+├ ƒ /api/v1/approvers/[id]
+├ ƒ /api/v1/asset-categories
+├ ƒ /api/v1/asset-categories/[id]
+├ ƒ /api/v1/assets
+├ ƒ /api/v1/assets/[id]
+├ ƒ /api/v1/audit
+├ ƒ /api/v1/automations
+├ ƒ /api/v1/automations/[id]
+├ ƒ /api/v1/contacts
+├ ƒ /api/v1/contracts
+├ ƒ /api/v1/dashboard/stats
+├ ƒ /api/v1/freshservice/history
+├ ƒ /api/v1/freshservice/import
+├ ƒ /api/v1/freshservice/preview
+├ ƒ /api/v1/integrations/atera/customers
+├ ƒ /api/v1/integrations/atera/customers/[id]/agents
+├ ƒ /api/v1/integrations/atera/test
+├ ƒ /api/v1/integrations/mappings
+├ ƒ /api/v1/integrations/smtp/config
+├ ƒ /api/v1/integrations/smtp/send-test
+├ ƒ /api/v1/integrations/smtp/test
+├ ƒ /api/v1/kanban-boards
+├ ƒ /api/v1/kanban-boards/[id]
+├ ƒ /api/v1/kb/articles
+├ ƒ /api/v1/kb/articles/[id]
+├ ƒ /api/v1/kb/categories
+├ ƒ /api/v1/kb/categories/[id]
+├ ƒ /api/v1/monitoring/alerts
+├ ƒ /api/v1/monitoring/sources
+├ ƒ /api/v1/organizations
+├ ƒ /api/v1/organizations/[id]
+├ ƒ /api/v1/organizations/[id]/assets
+├ ƒ /api/v1/organizations/[id]/assets/sync
+├ ƒ /api/v1/organizations/[id]/billing
+├ ƒ /api/v1/organizations/[id]/enrich
+├ ƒ /api/v1/organizations/[id]/integrations
+├ ƒ /api/v1/organizations/[id]/logo
+├ ƒ /api/v1/portal-access
+├ ƒ /api/v1/portal-access/[id]
+├ ƒ /api/v1/portal-domain
+├ ƒ /api/v1/portal-domain/cert-status
+├ ƒ /api/v1/portal-domain/test-cloudflare
+├ ƒ /api/v1/portal-domain/test-renewal
+├ ƒ /api/v1/portal/projects
+├ ƒ /api/v1/portal/projects/[id]
+├ ƒ /api/v1/portal/reports
+├ ƒ /api/v1/portal/tickets
+├ ƒ /api/v1/projects
+├ ƒ /api/v1/projects/[id]
+├ ƒ /api/v1/scheduling/templates
+├ ƒ /api/v1/scheduling/templates/[id]
+├ ƒ /api/v1/settings/portal-branding
+├ ƒ /api/v1/sla/global
+├ ƒ /api/v1/sla/orgs/[orgId]
+├ ƒ /api/v1/tickets
+├ ƒ /api/v1/tickets/[id]
+├ ƒ /api/v1/tickets/[id]/comments
+├ ƒ /api/v1/time-entries
+├ ƒ /api/v1/users
+├ ○ /assets
+├ ƒ /assets/[id]
+├ ○ /automations
+├ ○ /billing
+├ ○ /contacts
+├ ○ /dashboard
+├ ○ /help
+├ ○ /icon.png
+├ ○ /knowledge
+├ ƒ /knowledge/[slug]
+├ ○ /login
+├ ○ /monitoring
+├ ○ /organizations
+├ ƒ /organizations/[id]
+├ ○ /portal
+├ ○ /portal/kb
+├ ○ /portal/login
+├ ○ /portal/projects
+├ ƒ /portal/projects/[id]
+├ ○ /portal/reports
+├ ○ /portal/tickets
+├ ƒ /portal/tickets/[id]
+├ ○ /portal/tickets/new
+├ ○ /projects
+├ ƒ /projects/[id]
+├ ○ /reports
+├ ○ /scheduling
+├ ○ /settings
+├ ○ /tickets
+├ ƒ /tickets/[id]
+├ ○ /tickets/kanban
+└ ○ /tickets/new
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

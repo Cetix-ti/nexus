@@ -1,0 +1,471 @@
+"use client";
+
+import { useState, useMemo, useEffect } from "react";
+import { PageLoader } from "@/components/ui/page-loader";
+import Link from "next/link";
+import {
+  Plus,
+  Search,
+  Building2,
+  FileText,
+  MapPin,
+  Users,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
+  Pencil,
+} from "lucide-react";
+import { EditOrgModal, type EditOrgModalOrg } from "@/components/organizations/edit-org-modal";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+import { CONTRACT_TYPE_LABELS, type ContractType } from "@/lib/billing/types";
+
+// ---------- Types ----------
+interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  billingMode: ContractType;
+  sites: number;
+  contacts: number;
+  openTickets: number;
+  contractStatus: "Actif" | "Expiré" | "En attente";
+  createdAt: string;
+  color: string;
+  domain: string;
+  phone: string;
+  logo?: string | null;
+}
+
+// ---------- Demo Data fallback (used until API loads) ----------
+const FALLBACK_ORGS: Organization[] = [
+  {
+    id: "org-1",
+    name: "Cetix",
+    slug: "cetix",
+    billingMode: "msp_monthly",
+    sites: 4,
+    contacts: 18,
+    openTickets: 7,
+    contractStatus: "Actif",
+    createdAt: "2023-06-15",
+    color: "bg-blue-600",
+    domain: "cetix.ca",
+    phone: "+1 514 555-0100",
+  },
+  {
+    id: "org-2",
+    name: "Acme Corp",
+    slug: "acme-corp",
+    billingMode: "hour_bank",
+    sites: 3,
+    contacts: 12,
+    openTickets: 4,
+    contractStatus: "Actif",
+    createdAt: "2023-09-22",
+    color: "bg-emerald-600",
+    domain: "acmecorp.com",
+    phone: "+1 438 555-0200",
+  },
+  {
+    id: "org-3",
+    name: "TechStart Inc",
+    slug: "techstart-inc",
+    billingMode: "time_and_materials",
+    sites: 1,
+    contacts: 5,
+    openTickets: 2,
+    contractStatus: "Actif",
+    createdAt: "2024-01-10",
+    color: "bg-violet-600",
+    domain: "techstart.io",
+    phone: "+1 450 555-0300",
+  },
+  {
+    id: "org-4",
+    name: "Global Finance",
+    slug: "global-finance",
+    billingMode: "msp_monthly",
+    sites: 6,
+    contacts: 32,
+    openTickets: 11,
+    contractStatus: "Actif",
+    createdAt: "2022-11-03",
+    color: "bg-amber-600",
+    domain: "globalfinance.ca",
+    phone: "+1 514 555-0400",
+  },
+  {
+    id: "org-5",
+    name: "HealthCare Plus",
+    slug: "healthcare-plus",
+    billingMode: "hour_bank",
+    sites: 2,
+    contacts: 9,
+    openTickets: 3,
+    contractStatus: "Expiré",
+    createdAt: "2023-03-18",
+    color: "bg-rose-600",
+    domain: "healthcareplus.ca",
+    phone: "+1 819 555-0500",
+  },
+  {
+    id: "org-6",
+    name: "MédiaCentre QC",
+    slug: "mediacentre-qc",
+    billingMode: "time_and_materials",
+    sites: 1,
+    contacts: 4,
+    openTickets: 1,
+    contractStatus: "En attente",
+    createdAt: "2024-08-01",
+    color: "bg-cyan-600",
+    domain: "mediacentre.qc.ca",
+    phone: "+1 418 555-0600",
+  },
+];
+
+// ---------- Helpers ----------
+const billingModeBadgeVariant = (mode: ContractType): "default" | "primary" | "success" | "warning" | "danger" | "outline" => {
+  switch (mode) {
+    case "msp_monthly":
+      return "primary";
+    case "hour_bank":
+      return "warning";
+    case "time_and_materials":
+      return "default";
+    case "prepaid_block":
+      return "success";
+    case "hybrid":
+      return "outline";
+  }
+};
+
+const contractBadgeVariant = (status: Organization["contractStatus"]) => {
+  switch (status) {
+    case "Actif":
+      return "success" as const;
+    case "Expiré":
+      return "danger" as const;
+    case "En attente":
+      return "warning" as const;
+  }
+};
+
+type SortKey = "name" | "billingMode" | "sites" | "contacts" | "openTickets" | "createdAt";
+type SortDir = "asc" | "desc";
+
+// ---------- Component ----------
+export default function OrganizationsPage() {
+  const [search, setSearch] = useState("");
+  const [billingModeFilter, setBillingModeFilter] = useState("all");
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [editingOrg, setEditingOrg] = useState<EditOrgModalOrg | null>(null);
+  const [creatingOrg, setCreatingOrg] = useState(false);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/organizations")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (Array.isArray(data)) {
+          setOrganizations(data as Organization[]);
+        }
+      })
+      .catch((e) => console.error("Failed to load orgs", e))
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  void FALLBACK_ORGS;
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const filtered = useMemo(() => {
+    let result = [...organizations];
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (o) =>
+          o.name.toLowerCase().includes(q) ||
+          o.slug.toLowerCase().includes(q) ||
+          o.domain.toLowerCase().includes(q)
+      );
+    }
+
+    if (billingModeFilter !== "all") {
+      result = result.filter((o) => o.billingMode === billingModeFilter);
+    }
+
+    result.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "name":
+          cmp = a.name.localeCompare(b.name);
+          break;
+        case "billingMode":
+          cmp = a.billingMode.localeCompare(b.billingMode);
+          break;
+        case "sites":
+          cmp = a.sites - b.sites;
+          break;
+        case "contacts":
+          cmp = a.contacts - b.contacts;
+          break;
+        case "openTickets":
+          cmp = a.openTickets - b.openTickets;
+          break;
+        case "createdAt":
+          cmp = a.createdAt.localeCompare(b.createdAt);
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+
+    return result;
+  }, [organizations, search, billingModeFilter, sortKey, sortDir]);
+
+  // Stats
+  const totalOrgs = organizations.length;
+  const activeContracts = organizations.filter((o) => o.contractStatus === "Actif").length;
+  const totalSites = organizations.reduce((sum, o) => sum + o.sites, 0);
+  const totalContacts = organizations.reduce((sum, o) => sum + o.contacts, 0);
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortKey !== col) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-gray-400" />;
+    return sortDir === "asc" ? (
+      <ChevronUp className="ml-1 h-3.5 w-3.5 text-blue-600" />
+    ) : (
+      <ChevronDown className="ml-1 h-3.5 w-3.5 text-blue-600" />
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-gray-900">Organisations</h1>
+          <span className="inline-flex h-7 items-center rounded-full bg-gray-100 px-2.5 text-sm font-medium text-gray-600">
+            {filtered.length}
+          </span>
+        </div>
+        <Button variant="primary" size="md" onClick={() => setCreatingOrg(true)}>
+          <Plus className="h-4 w-4" strokeWidth={2.5} />
+          Ajouter une organisation
+        </Button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          { label: "Organisations totales", value: totalOrgs, icon: Building2, color: "text-blue-600 bg-blue-50" },
+          { label: "Contrats actifs", value: activeContracts, icon: FileText, color: "text-emerald-600 bg-emerald-50" },
+          { label: "Sites totaux", value: totalSites, icon: MapPin, color: "text-violet-600 bg-violet-50" },
+          { label: "Contacts totaux", value: totalContacts, icon: Users, color: "text-amber-600 bg-amber-50" },
+        ].map((stat) => (
+          <Card key={stat.label} className="flex items-center gap-4 p-5">
+            <div className={cn("flex h-11 w-11 items-center justify-center rounded-lg", stat.color)}>
+              <stat.icon className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">{stat.label}</p>
+              <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-3">
+        <div className="w-80">
+          <Input
+            placeholder="Rechercher une organisation..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            iconLeft={<Search className="h-4 w-4" />}
+          />
+        </div>
+        <Select value={billingModeFilter} onValueChange={setBillingModeFilter}>
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder="Mode de facturation" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tous les modes</SelectItem>
+            {Object.entries(CONTRACT_TYPE_LABELS).map(([k, v]) => (
+              <SelectItem key={k} value={k}>
+                {v}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Table */}
+      {!loaded ? (
+        <PageLoader variant="table" rows={8} label="Chargement des organisations…" />
+      ) : (
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50/60">
+                <th className="px-4 py-3 text-left font-medium text-gray-500">
+                  <button className="inline-flex items-center" onClick={() => handleSort("name")}>
+                    Nom <SortIcon col="name" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500">Slug</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500">
+                  <button className="inline-flex items-center" onClick={() => handleSort("billingMode")}>
+                    Mode de facturation <SortIcon col="billingMode" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-center font-medium text-gray-500">
+                  <button className="inline-flex items-center" onClick={() => handleSort("sites")}>
+                    Sites <SortIcon col="sites" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-center font-medium text-gray-500">
+                  <button className="inline-flex items-center" onClick={() => handleSort("contacts")}>
+                    Contacts <SortIcon col="contacts" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-center font-medium text-gray-500">
+                  <button className="inline-flex items-center" onClick={() => handleSort("openTickets")}>
+                    Tickets ouverts <SortIcon col="openTickets" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500">Contrat</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500">
+                  <button className="inline-flex items-center" onClick={() => handleSort("createdAt")}>
+                    Créé le <SortIcon col="createdAt" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-right font-medium text-gray-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filtered.map((org) => (
+                <tr
+                  key={org.id}
+                  className="group transition-colors hover:bg-gray-50/80"
+                >
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/organizations/${org.id}`}
+                      className="flex items-center gap-3"
+                    >
+                      {org.logo ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={org.logo}
+                          alt={org.name}
+                          className="h-9 w-9 shrink-0 rounded-lg object-contain bg-white ring-1 ring-slate-200"
+                        />
+                      ) : (
+                        <div
+                          className={cn(
+                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white",
+                            org.color
+                          )}
+                        >
+                          {org.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <span className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+                        {org.name}
+                      </span>
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 font-mono text-xs">{org.slug}</td>
+                  <td className="px-4 py-3">
+                    <Badge variant={billingModeBadgeVariant(org.billingMode)}>
+                      {CONTRACT_TYPE_LABELS[org.billingMode]}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-center text-gray-700">{org.sites}</td>
+                  <td className="px-4 py-3 text-center text-gray-700">{org.contacts}</td>
+                  <td className="px-4 py-3 text-center text-gray-700">{org.openTickets}</td>
+                  <td className="px-4 py-3">
+                    <Badge variant={contractBadgeVariant(org.contractStatus)}>
+                      {org.contractStatus}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500">
+                    {new Date(org.createdAt).toLocaleDateString("fr-CA")}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setEditingOrg({
+                          id: org.id,
+                          name: org.name,
+                          slug: org.slug,
+                          plan: "Standard",
+                          domain: org.domain,
+                          isActive: org.contractStatus === "Actif",
+                        })
+                      }
+                      title="Modifier"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-12 text-center text-gray-400">
+                    Aucune organisation trouvée.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      )}
+
+      <EditOrgModal
+        open={!!editingOrg}
+        onClose={() => setEditingOrg(null)}
+        org={editingOrg}
+      />
+
+      <EditOrgModal
+        open={creatingOrg}
+        onClose={() => setCreatingOrg(false)}
+        org={null}
+      />
+    </div>
+  );
+}

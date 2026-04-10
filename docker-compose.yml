@@ -1,0 +1,86 @@
+# Nexus ITSM — Infrastructure de développement
+# Usage: docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus
+      POSTGRES_DB: nexus
+      # Tuning raisonnable pour un service-desk — ajuster en prod
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=fr_CA.UTF-8 --lc-ctype=fr_CA.UTF-8"
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_size=2GB"
+      - "-c"
+      - "checkpoint_timeout=15min"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "log_min_duration_statement=500"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Fichiers binaires (pièces jointes tickets, images KB, logos, backups)
+  # API S3-compatible — presigned URLs, versioning, zero-licensing.
+  minio:
+    image: minio/minio:latest
+    container_name: nexus-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: nexus
+      MINIO_ROOT_PASSWORD: nexus-dev-secret
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # Cache/sessions/queues (BullMQ pour l'envoi d'emails, imports FS, etc.)
+  redis:
+    image: redis:7-alpine
+    container_name: nexus-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres-data:
+  minio-data:
+  redis-data:
