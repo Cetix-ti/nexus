@@ -64,7 +64,7 @@ export default function LoginPage() {
 
         <div className="bg-white rounded-2xl shadow-lg shadow-slate-200/50 border border-slate-200/60 p-8">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-semibold text-slate-900">Connexion</h1>
+            <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">Connexion</h1>
             <p className="text-slate-500 mt-1.5 text-sm">
               Accédez à votre espace de gestion
             </p>

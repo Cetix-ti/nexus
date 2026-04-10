@@ -260,7 +260,7 @@ export default function BillingPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
             Préfacturation
           </h1>
           <p className="mt-1 text-[13px] text-slate-500">
@@ -276,7 +276,7 @@ export default function BillingPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
             Préfacturation
           </h1>
           <p className="mt-1 text-[13px] text-slate-500">

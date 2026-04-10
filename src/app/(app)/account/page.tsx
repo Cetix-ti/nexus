@@ -46,7 +46,7 @@ function AccountInner() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Mon compte</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Mon compte</h1>
         <p className="text-[13px] text-slate-500">
           Gérez votre profil, votre sécurité et vos préférences personnelles.
         </p>

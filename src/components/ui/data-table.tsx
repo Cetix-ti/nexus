@@ -84,7 +84,7 @@ function DataTable<TData, TValue>({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+      <div className="overflow-hidden overflow-x-auto rounded-lg border border-neutral-200 bg-white shadow-sm">
         <table className="w-full caption-bottom text-sm">
           <thead className="border-b border-neutral-200 bg-neutral-50">
             {table.getHeaderGroups().map((headerGroup) => (

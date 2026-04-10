@@ -214,7 +214,7 @@ export default function PortalReportsPage() {
               <div className="grid grid-cols-2 gap-6 mt-4">
                 <div>
                   <p className="text-[12px] text-slate-500 mb-1">En attente de facturation</p>
-                  <p className="text-2xl font-bold text-slate-900 tabular-nums">
+                  <p className="text-xl sm:text-2xl font-bold text-slate-900 tabular-nums">
                     {data.billing.pendingAmount.toLocaleString("fr-CA", {
                       style: "currency",
                       currency: "CAD",
@@ -223,7 +223,7 @@ export default function PortalReportsPage() {
                 </div>
                 <div>
                   <p className="text-[12px] text-slate-500 mb-1">Déjà facturé</p>
-                  <p className="text-2xl font-bold text-emerald-700 tabular-nums">
+                  <p className="text-xl sm:text-2xl font-bold text-emerald-700 tabular-nums">
                     {data.billing.invoicedAmount.toLocaleString("fr-CA", {
                       style: "currency",
                       currency: "CAD",

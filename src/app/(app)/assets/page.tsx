@@ -214,7 +214,7 @@ export default function AssetsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-neutral-900">Actifs</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">Actifs</h1>
           <span className="inline-flex h-7 items-center rounded-full bg-neutral-100 px-2.5 text-sm font-medium text-neutral-600">
             {filtered.length}
           </span>
@@ -249,7 +249,7 @@ export default function AssetsPage() {
             </div>
             <div>
               <p className="text-sm text-neutral-500">Total Actifs</p>
-              <p className="text-2xl font-bold text-neutral-900">{stats.total}</p>
+              <p className="text-xl sm:text-2xl font-bold text-neutral-900">{stats.total}</p>
             </div>
           </CardContent>
         </Card>
@@ -260,7 +260,7 @@ export default function AssetsPage() {
             </div>
             <div>
               <p className="text-sm text-neutral-500">Actifs Actifs</p>
-              <p className="text-2xl font-bold text-neutral-900">{stats.active}</p>
+              <p className="text-xl sm:text-2xl font-bold text-neutral-900">{stats.active}</p>
             </div>
           </CardContent>
         </Card>
@@ -271,7 +271,7 @@ export default function AssetsPage() {
             </div>
             <div>
               <p className="text-sm text-neutral-500">En maintenance</p>
-              <p className="text-2xl font-bold text-neutral-900">{stats.maintenance}</p>
+              <p className="text-xl sm:text-2xl font-bold text-neutral-900">{stats.maintenance}</p>
             </div>
           </CardContent>
         </Card>
@@ -282,7 +282,7 @@ export default function AssetsPage() {
             </div>
             <div>
               <p className="text-sm text-neutral-500">Retirés</p>
-              <p className="text-2xl font-bold text-neutral-900">{stats.retired}</p>
+              <p className="text-xl sm:text-2xl font-bold text-neutral-900">{stats.retired}</p>
             </div>
           </CardContent>
         </Card>
@@ -290,7 +290,7 @@ export default function AssetsPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="w-80">
+        <div className="w-full sm:w-80">
           <Input
             placeholder="Rechercher un actif..."
             value={search}

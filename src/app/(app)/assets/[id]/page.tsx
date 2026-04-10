@@ -148,7 +148,7 @@ export default function AssetDetailPage() {
             </div>
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-neutral-900">
+                <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">
                   {asset.name}
                 </h1>
                 <Badge variant="primary">{asset.typeLabel}</Badge>

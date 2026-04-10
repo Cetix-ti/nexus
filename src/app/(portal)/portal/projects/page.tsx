@@ -117,7 +117,7 @@ export default function PortalProjectsPage() {
             </div>
             <div>
               <p className="text-xs text-neutral-500">Projets en cours</p>
-              <p className="text-2xl font-bold text-neutral-900">
+              <p className="text-xl sm:text-2xl font-bold text-neutral-900">
                 {activeCount}
               </p>
             </div>
@@ -130,7 +130,7 @@ export default function PortalProjectsPage() {
             </div>
             <div>
               <p className="text-xs text-neutral-500">Heures consommées</p>
-              <p className="text-2xl font-bold text-neutral-900">
+              <p className="text-xl sm:text-2xl font-bold text-neutral-900">
                 {totalConsumedHours.toFixed(1)} h
               </p>
             </div>

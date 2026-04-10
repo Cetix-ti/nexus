@@ -180,7 +180,7 @@ export function IntegrationsSection() {
 
       {/* Filter row */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="w-72">
+        <div className="w-full sm:w-72">
           <Input
             placeholder="Rechercher une intégration..."
             value={search}

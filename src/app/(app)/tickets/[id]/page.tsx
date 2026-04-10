@@ -403,7 +403,7 @@ export default function TicketDetailPage() {
         </div>
 
         {/* Right: Sidebar */}
-        <div className="w-80 flex-shrink-0 overflow-y-auto bg-gray-50/50">
+        <div className="hidden lg:block w-80 flex-shrink-0 overflow-y-auto bg-gray-50/50">
           <div className="p-5 space-y-5">
             {/* Status & Priority */}
             <SidebarSection title="Details">

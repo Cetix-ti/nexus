@@ -11,7 +11,7 @@ export default function HelpPage() {
           <HelpCircle className="h-5 w-5" strokeWidth={2.25} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Aide & support</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Aide & support</h1>
           <p className="text-[13px] text-slate-500">
             Documentation, questions fréquentes et contact équipe.
           </p>

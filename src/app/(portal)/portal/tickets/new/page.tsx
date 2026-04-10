@@ -74,7 +74,7 @@ export default function PortalNewTicketPage() {
       </Link>
 
       <div>
-        <h1 className="text-2xl font-bold text-neutral-900">
+        <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">
           Soumettre un nouveau billet
         </h1>
         <p className="mt-1.5 text-sm text-neutral-500">

@@ -106,7 +106,7 @@ export default function NewTicketPage() {
 
       <div className="mx-auto w-full max-w-4xl p-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Create New Ticket</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Create New Ticket</h1>
           <p className="mt-1 text-sm text-gray-500">Fill in the details to create a new support ticket.</p>
         </div>
 

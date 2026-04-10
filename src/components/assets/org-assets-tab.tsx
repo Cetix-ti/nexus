@@ -433,7 +433,7 @@ export function OrgAssetsTab({ organizationId }: OrgAssetsTabProps) {
               iconLeft={<Search className="h-4 w-4" />}
             />
           </div>
-          <div className="grid grid-cols-3 gap-2 lg:w-auto lg:flex">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 lg:w-auto lg:flex">
             <Select value={typeFilter} onValueChange={setTypeFilter}>
               <SelectTrigger className="lg:w-44"><SelectValue placeholder="Type" /></SelectTrigger>
               <SelectContent>

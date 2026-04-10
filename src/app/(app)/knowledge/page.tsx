@@ -216,7 +216,7 @@ export default function KnowledgePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-neutral-900">Base de connaissances</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">Base de connaissances</h1>
           <span className="inline-flex h-7 items-center rounded-full bg-neutral-100 px-2.5 text-sm font-medium text-neutral-600">
             {stats.total} articles
           </span>
@@ -242,7 +242,7 @@ export default function KnowledgePage() {
             </div>
             <div>
               <p className="text-sm text-neutral-500">Total Articles</p>
-              <p className="text-2xl font-bold text-neutral-900">{stats.total}</p>
+              <p className="text-xl sm:text-2xl font-bold text-neutral-900">{stats.total}</p>
             </div>
           </CardContent>
         </Card>
@@ -253,7 +253,7 @@ export default function KnowledgePage() {
             </div>
             <div>
               <p className="text-sm text-neutral-500">Publiés</p>
-              <p className="text-2xl font-bold text-neutral-900">{stats.published}</p>
+              <p className="text-xl sm:text-2xl font-bold text-neutral-900">{stats.published}</p>
             </div>
           </CardContent>
         </Card>
@@ -264,7 +264,7 @@ export default function KnowledgePage() {
             </div>
             <div>
               <p className="text-sm text-neutral-500">Brouillons</p>
-              <p className="text-2xl font-bold text-neutral-900">{stats.drafts}</p>
+              <p className="text-xl sm:text-2xl font-bold text-neutral-900">{stats.drafts}</p>
             </div>
           </CardContent>
         </Card>
@@ -275,7 +275,7 @@ export default function KnowledgePage() {
             </div>
             <div>
               <p className="text-sm text-neutral-500">Vues totales</p>
-              <p className="text-2xl font-bold text-neutral-900">
+              <p className="text-xl sm:text-2xl font-bold text-neutral-900">
                 {stats.totalViews.toLocaleString("fr-CA")}
               </p>
             </div>
@@ -348,7 +348,7 @@ export default function KnowledgePage() {
                 </span>
               ))}
             </nav>
-            <div className="w-72">
+            <div className="w-full sm:w-72">
               <Input
                 placeholder="Rechercher dans cette section..."
                 value={search}

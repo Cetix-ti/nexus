@@ -297,7 +297,7 @@ export default function PortalProjectDetailPage({
               <span className="text-5xl font-bold text-neutral-900">
                 {project.progressPercent}
               </span>
-              <span className="mb-1.5 text-2xl font-semibold text-neutral-400">
+              <span className="mb-1.5 text-xl sm:text-2xl font-semibold text-neutral-400">
                 %
               </span>
             </div>

@@ -219,7 +219,7 @@ function TicketsPageInner() {
 
         {/* Search + filters */}
         <div className="flex items-center gap-2">
-          <div className="w-72">
+          <div className="w-full sm:w-72">
             <Input
               placeholder="Rechercher un ticket..."
               value={search}

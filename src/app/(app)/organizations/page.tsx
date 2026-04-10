@@ -271,7 +271,7 @@ export default function OrganizationsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900">Organisations</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Organisations</h1>
           <span className="inline-flex h-7 items-center rounded-full bg-gray-100 px-2.5 text-sm font-medium text-gray-600">
             {filtered.length}
           </span>
@@ -296,7 +296,7 @@ export default function OrganizationsPage() {
             </div>
             <div>
               <p className="text-sm text-gray-500">{stat.label}</p>
-              <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900">{stat.value}</p>
             </div>
           </Card>
         ))}
@@ -304,7 +304,7 @@ export default function OrganizationsPage() {
 
       {/* Filters */}
       <div className="flex items-center gap-3">
-        <div className="w-80">
+        <div className="w-full sm:w-80">
           <Input
             placeholder="Rechercher une organisation..."
             value={search}

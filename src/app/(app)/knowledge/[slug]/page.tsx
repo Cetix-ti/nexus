@@ -105,7 +105,7 @@ export default function ArticlePage() {
                   <Badge variant="primary">{article.category}</Badge>
                   <Badge variant="success">Publié</Badge>
                 </div>
-                <h1 className="text-2xl font-bold text-neutral-900">
+                <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">
                   {article.title}
                 </h1>
               </div>

@@ -69,7 +69,7 @@ export default function PortalLoginPage() {
         <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-lg shadow-blue-900/20 mb-4">
           <span className="text-xl font-bold text-white">N</span>
         </div>
-        <h1 className="text-2xl font-bold text-neutral-900">Portail client</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">Portail client</h1>
         <p className="mt-1.5 text-sm text-neutral-500">
           Connectez-vous pour accéder à vos billets et projets
         </p>

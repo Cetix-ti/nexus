@@ -192,7 +192,7 @@ export default function SchedulingPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="w-72">
+        <div className="w-full sm:w-72">
           <Input
             placeholder="Rechercher un modèle..."
             value={search}

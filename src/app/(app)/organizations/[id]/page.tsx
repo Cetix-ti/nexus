@@ -1112,7 +1112,7 @@ export default function OrganizationDetailPage() {
           )}
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-900">{o.name}</h1>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{o.name}</h1>
               <Badge variant={planBadgeVariant(o.plan)}>{o.plan}</Badge>
               <Badge variant={statusBadgeVariant(o.status)}>{o.status}</Badge>
             </div>
@@ -1242,7 +1242,7 @@ export default function OrganizationDetailPage() {
                   <div className={cn("mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg", stat.color)}>
                     <stat.icon className="h-5 w-5" />
                   </div>
-                  <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">{stat.value}</p>
                   <p className="text-xs text-gray-500 mt-1">{stat.label}</p>
                 </Card>
               ))}

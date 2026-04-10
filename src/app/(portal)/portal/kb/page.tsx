@@ -113,7 +113,7 @@ export default function PortalKnowledgeBasePage() {
           <BookOpen className="h-3.5 w-3.5" />
           Knowledge Base
         </div>
-        <h1 className="text-2xl font-bold text-neutral-900">
+        <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">
           Find answers to your questions
         </h1>
         <p className="mt-2 text-sm text-neutral-500 max-w-md mx-auto">
