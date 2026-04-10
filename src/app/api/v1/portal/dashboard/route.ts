@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
 
 export async function GET() {
+  try {
   const user = await getCurrentPortalUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -71,4 +72,7 @@ export async function GET() {
     organizationName: user.organizationName,
     portalRole: user.portalRole,
   });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 });
+  }
 }

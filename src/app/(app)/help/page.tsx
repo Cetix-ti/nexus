@@ -42,7 +42,7 @@ export default function HelpPage() {
           icon={HelpCircle}
           title="Documentation complète"
           description="Pages d'aide détaillées (à venir)."
-          href="#"
+          href="/help"
         />
       </div>
     </div>

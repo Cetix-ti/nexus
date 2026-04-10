@@ -8,6 +8,7 @@ function extractCount(row: any): number {
 }
 
 export async function GET(req: Request) {
+  try {
   const { searchParams } = new URL(req.url);
   const days = Number(searchParams.get("days")) || 7;
   const status = searchParams.get("status");
@@ -75,4 +76,7 @@ export async function GET(req: Request) {
     orgStats,
     since: since.toISOString(),
   });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 });
+  }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
 export async function GET(req: Request) {
+  try {
   const { searchParams } = new URL(req.url);
   const days = Number(searchParams.get("days")) || 30;
 
@@ -115,4 +116,7 @@ export async function GET(req: Request) {
       };
     }),
   });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 });
+  }
 }

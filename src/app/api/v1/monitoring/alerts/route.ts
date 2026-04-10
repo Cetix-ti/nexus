@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
 export async function GET(req: Request) {
+  try {
   const { searchParams } = new URL(req.url);
   const days = Number(searchParams.get("days")) || 7;
   const stage = searchParams.get("stage");
@@ -48,4 +49,7 @@ export async function GET(req: Request) {
       count: typeof r._count === "number" ? r._count : (r._count as any)?._all ?? 0,
     })),
   });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 });
+  }
 }
