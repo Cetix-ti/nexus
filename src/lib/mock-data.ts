@@ -88,28 +88,28 @@ export const STATUS_CONFIG: Record<
   { label: string; color: string; bgClass: string; textClass: string; dotClass: string }
 > = {
   new: {
-    label: "New",
+    label: "Nouveau",
     color: "#2563EB",
     bgClass: "bg-blue-100",
     textClass: "text-blue-700",
     dotClass: "bg-blue-500",
   },
   open: {
-    label: "Open",
+    label: "Ouvert",
     color: "#0EA5E9",
     bgClass: "bg-sky-100",
     textClass: "text-sky-700",
     dotClass: "bg-sky-500",
   },
   in_progress: {
-    label: "In Progress",
+    label: "En cours",
     color: "#F59E0B",
     bgClass: "bg-amber-100",
     textClass: "text-amber-700",
     dotClass: "bg-amber-500",
   },
   waiting_client: {
-    label: "Waiting Client",
+    label: "En attente client",
     color: "#8B5CF6",
     bgClass: "bg-purple-100",
     textClass: "text-purple-700",
@@ -123,14 +123,14 @@ export const STATUS_CONFIG: Record<
     dotClass: "bg-cyan-500",
   },
   resolved: {
-    label: "Resolved",
+    label: "Résolu",
     color: "#10B981",
     bgClass: "bg-emerald-100",
     textClass: "text-emerald-700",
     dotClass: "bg-emerald-500",
   },
   closed: {
-    label: "Closed",
+    label: "Fermé",
     color: "#6B7280",
     bgClass: "bg-gray-100",
     textClass: "text-gray-700",
@@ -143,7 +143,7 @@ export const PRIORITY_CONFIG: Record<
   { label: string; color: string; bgClass: string; textClass: string; dotClass: string; borderClass: string }
 > = {
   critical: {
-    label: "Critical",
+    label: "Critique",
     color: "#EF4444",
     bgClass: "bg-red-100",
     textClass: "text-red-700",
@@ -151,7 +151,7 @@ export const PRIORITY_CONFIG: Record<
     borderClass: "border-l-red-500",
   },
   high: {
-    label: "High",
+    label: "Élevée",
     color: "#F97316",
     bgClass: "bg-orange-100",
     textClass: "text-orange-700",
@@ -159,7 +159,7 @@ export const PRIORITY_CONFIG: Record<
     borderClass: "border-l-orange-500",
   },
   medium: {
-    label: "Medium",
+    label: "Moyenne",
     color: "#EAB308",
     bgClass: "bg-yellow-100",
     textClass: "text-yellow-700",
@@ -167,7 +167,7 @@ export const PRIORITY_CONFIG: Record<
     borderClass: "border-l-yellow-500",
   },
   low: {
-    label: "Low",
+    label: "Faible",
     color: "#22C55E",
     bgClass: "bg-green-100",
     textClass: "text-green-700",

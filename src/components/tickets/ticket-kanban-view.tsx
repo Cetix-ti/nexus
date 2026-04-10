@@ -137,9 +137,22 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
     const ticketId = active.id as string;
     const newStatus = over.id as TicketStatus;
 
+    // Update local state immediately (optimistic)
     setLocalTickets((prev) =>
       prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus } : t))
     );
+
+    // Persist to DB
+    fetch(`/api/v1/tickets/${ticketId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus.toUpperCase() }),
+    }).catch(() => {
+      // Revert on failure
+      setLocalTickets((prev) =>
+        prev.map((t) => (t.id === ticketId ? { ...t, status: active.id as TicketStatus } : t))
+      );
+    });
   }
 
   // Extract the grouping key from a ticket for the active groupBy

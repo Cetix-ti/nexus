@@ -168,26 +168,34 @@ export default function TicketDetailPage() {
     return tmp.textContent?.trim() || "";
   }
 
-  function handleSendReply() {
+  async function handleSendReply() {
     if (!stripHtml(commentText) || sending) return;
     setSending(true);
-    setTimeout(() => {
-      const newComment: LocalComment = {
-        id: `local-${Date.now()}`,
-        kind: "comment",
-        authorName: "Jean-Philippe Côté",
-        content: commentText,
-        isInternal,
-        createdAt: new Date().toISOString(),
-      };
-      setLocalComments((prev) => [...prev, newComment]);
-      setCommentText("");
-      setAttachments([]);
-      setSending(false);
-      setTimeout(() => {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
-      }, 100);
-    }, 350);
+    try {
+      const res = await fetch(`/api/v1/tickets/${ticket!.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: commentText, isInternal }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const newComment: LocalComment = {
+          id: data.data?.id ?? `local-${Date.now()}`,
+          kind: "comment",
+          authorName: data.data?.authorName ?? "Moi",
+          content: commentText,
+          isInternal,
+          createdAt: data.data?.createdAt ?? new Date().toISOString(),
+        };
+        setLocalComments((prev) => [...prev, newComment]);
+        setCommentText("");
+        setAttachments([]);
+        setTimeout(() => {
+          window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+        }, 100);
+      }
+    } catch { /* ignore */ }
+    finally { setSending(false); }
   }
 
   // SLA mock calculation
@@ -406,14 +414,14 @@ export default function TicketDetailPage() {
         <div className="w-full lg:w-80 flex-shrink-0 overflow-y-auto bg-gray-50/50">
           <div className="p-5 space-y-5">
             {/* Status & Priority */}
-            <SidebarSection title="Details">
-              <SidebarRow label="Status">
+            <SidebarSection title="Détails">
+              <SidebarRow label="Statut">
                 <Badge variant={statusBadgeVariant[ticket.status]}>
                   <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
                   {statusCfg.label}
                 </Badge>
               </SidebarRow>
-              <SidebarRow label="Priority">
+              <SidebarRow label="Priorité">
                 <Badge variant={priorityBadgeVariant[ticket.priority]}>
                   <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", priorityCfg.dotClass)} />
                   {priorityCfg.label}
@@ -432,7 +440,7 @@ export default function TicketDetailPage() {
 
             {/* People */}
             <SidebarSection title="People">
-              <SidebarRow label="Assignee">
+              <SidebarRow label="Assigné à">
                 {ticket.assigneeName ? (
                   <div className="flex items-center gap-2">
                     <Avatar className="h-5 w-5">
@@ -509,10 +517,10 @@ export default function TicketDetailPage() {
 
             {/* Classification */}
             <SidebarSection title="Classification">
-              <SidebarRow label="Category">
+              <SidebarRow label="Catégorie">
                 <span className="text-sm text-gray-700">{ticket.categoryName}</span>
               </SidebarRow>
-              <SidebarRow label="Queue">
+              <SidebarRow label="File">
                 <span className="text-sm text-gray-700">{ticket.queueName}</span>
               </SidebarRow>
               <SidebarRow label="Source">
@@ -555,7 +563,7 @@ export default function TicketDetailPage() {
 
             {/* Tags */}
             {ticket.tags.length > 0 && (
-              <SidebarSection title="Tags">
+              <SidebarSection title="Étiquettes">
                 <div className="flex flex-wrap gap-1.5">
                   {ticket.tags.map((tag) => (
                     <span
@@ -571,12 +579,12 @@ export default function TicketDetailPage() {
 
             {/* Dates */}
             <SidebarSection title="Dates">
-              <SidebarRow label="Created">
+              <SidebarRow label="Créé le">
                 <span className="text-xs text-gray-500">
                   {format(new Date(ticket.createdAt), "MMM d, yyyy HH:mm")}
                 </span>
               </SidebarRow>
-              <SidebarRow label="Updated">
+              <SidebarRow label="Modifié le">
                 <span className="text-xs text-gray-500">
                   {format(new Date(ticket.updatedAt), "MMM d, yyyy HH:mm")}
                 </span>

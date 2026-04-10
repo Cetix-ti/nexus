@@ -106,7 +106,7 @@ export default function NewTicketPage() {
 
       <div className="mx-auto w-full max-w-4xl p-6">
         <div className="mb-6">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Create New Ticket</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Nouveau ticket</h1>
           <p className="mt-1 text-sm text-gray-500">Fill in the details to create a new support ticket.</p>
         </div>
 
@@ -115,7 +115,7 @@ export default function NewTicketPage() {
           <div className="rounded-lg border border-gray-200 bg-white p-5">
             <div className="space-y-4">
               <Input
-                label="Subject"
+                label="Sujet"
                 placeholder="Brief description of the issue"
                 error={errors.subject?.message}
                 {...register("subject")}
@@ -348,7 +348,7 @@ export default function NewTicketPage() {
               </div>
 
               <Input
-                label="Tags"
+                label="Étiquettes"
                 placeholder="Comma-separated tags"
                 {...register("tags")}
               />

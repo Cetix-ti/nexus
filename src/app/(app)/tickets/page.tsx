@@ -31,7 +31,7 @@ type ViewMode = "list" | "kanban";
 
 const STATUS_TABS: { key: string; label: string; filter: TicketStatus[] | null }[] = [
   { key: "all", label: "All", filter: null },
-  { key: "open", label: "Open", filter: ["new", "open"] },
+  { key: "open", label: "Ouverts", filter: ["new", "open"] },
   { key: "in_progress", label: "In Progress", filter: ["in_progress"] },
   { key: "waiting", label: "En attente", filter: ["waiting_client"] },
   { key: "on_site", label: "Sur place", filter: ["on_site"] },
