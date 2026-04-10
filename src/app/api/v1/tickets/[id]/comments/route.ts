@@ -1,80 +1,87 @@
 import { NextRequest, NextResponse } from "next/server";
-import { tickets, comments } from "../../../_lib/mock-data";
+import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  try {
-    const { id } = await params;
-    const ticket = tickets.find((t) => t.id === id || t.number.toString() === id);
+  const { id } = await params;
 
-    if (!ticket) {
-      return NextResponse.json(
-        { success: false, error: "Ticket not found" },
-        { status: 404 }
-      );
-    }
-
-    const ticketComments = comments
-      .filter((c) => c.ticketId === ticket.id)
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-    return NextResponse.json({
-      success: true,
-      data: ticketComments,
-      meta: { total: ticketComments.length },
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch comments" },
-      { status: 500 }
-    );
+  const ticket = await prisma.ticket.findFirst({
+    where: { OR: [{ id }, { number: parseInt(id) || -1 }] },
+    select: { id: true },
+  });
+  if (!ticket) {
+    return NextResponse.json({ success: false, error: "Ticket not found" }, { status: 404 });
   }
+
+  const comments = await prisma.comment.findMany({
+    where: { ticketId: ticket.id },
+    include: { author: { select: { firstName: true, lastName: true, avatar: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return NextResponse.json({
+    success: true,
+    data: comments.map((c) => ({
+      id: c.id,
+      ticketId: c.ticketId,
+      authorId: c.authorId,
+      authorName: c.author ? `${c.author.firstName} ${c.author.lastName}` : "Système",
+      authorAvatar: c.author?.avatar ?? null,
+      content: c.body,
+      isInternal: c.isInternal,
+      createdAt: c.createdAt.toISOString(),
+    })),
+    meta: { total: comments.length },
+  });
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  try {
-    const { id } = await params;
-    const ticket = tickets.find((t) => t.id === id || t.number.toString() === id);
-
-    if (!ticket) {
-      return NextResponse.json(
-        { success: false, error: "Ticket not found" },
-        { status: 404 }
-      );
-    }
-
-    const body = await request.json();
-
-    if (!body.content || typeof body.content !== "string" || body.content.trim().length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Comment content is required" },
-        { status: 400 }
-      );
-    }
-
-    const newComment = {
-      id: `cmt_${Date.now()}`,
-      ticketId: ticket.id,
-      authorId: body.authorId || "usr_01",
-      authorName: body.authorName || "Jean-Philippe Martin",
-      content: body.content.trim(),
-      isInternal: body.isInternal ?? false,
-      createdAt: new Date().toISOString(),
-    };
-
-    return NextResponse.json(
-      { success: true, data: newComment },
-      { status: 201 }
-    );
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, error: "Failed to create comment" },
-      { status: 500 }
-    );
+  const me = await getCurrentUser();
+  if (!me) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  const { id } = await params;
+  const ticket = await prisma.ticket.findFirst({
+    where: { OR: [{ id }, { number: parseInt(id) || -1 }] },
+    select: { id: true },
+  });
+  if (!ticket) {
+    return NextResponse.json({ success: false, error: "Ticket not found" }, { status: 404 });
+  }
+
+  const body = await request.json();
+  if (!body.content?.trim()) {
+    return NextResponse.json({ success: false, error: "Content required" }, { status: 400 });
+  }
+
+  const comment = await prisma.comment.create({
+    data: {
+      ticketId: ticket.id,
+      authorId: me.id,
+      body: body.content.trim(),
+      isInternal: body.isInternal ?? false,
+    },
+    include: { author: { select: { firstName: true, lastName: true, avatar: true } } },
+  });
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      id: comment.id,
+      ticketId: comment.ticketId,
+      authorId: comment.authorId,
+      authorName: comment.author ? `${comment.author.firstName} ${comment.author.lastName}` : me.email,
+      authorAvatar: comment.author?.avatar ?? null,
+      content: comment.body,
+      isInternal: comment.isInternal,
+      createdAt: comment.createdAt.toISOString(),
+    },
+  }, { status: 201 });
 }

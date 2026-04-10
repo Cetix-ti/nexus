@@ -1,15 +1,50 @@
 import type { NextRequest } from "next/server";
-import { successResponse, errorResponse } from "@/lib/api-helpers";
-import { getMockAssetsForOrg } from "@/lib/assets/mock-data";
-import type { OrgAsset } from "@/lib/assets/types";
+import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const assets = getMockAssetsForOrg(id);
-  return successResponse(assets, { total: assets.length, organizationId: id });
+
+  const dbAssets = await prisma.asset.findMany({
+    where: { organizationId: id },
+    include: {
+      site: { select: { name: true } },
+      assignedContact: { select: { firstName: true, lastName: true } },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  // Map to OrgAsset shape expected by the frontend
+  const assets = dbAssets.map((a) => ({
+    id: a.id,
+    organizationId: a.organizationId,
+    name: a.name,
+    type: a.type.toLowerCase(),
+    status: a.status.toLowerCase(),
+    source: a.externalSource ?? "manual",
+    externalId: a.externalId,
+    manufacturer: a.manufacturer,
+    model: a.model,
+    serialNumber: a.serialNumber,
+    ipAddress: a.ipAddress,
+    macAddress: a.macAddress,
+    siteName: a.site?.name ?? null,
+    assignedToContactName: a.assignedContact
+      ? `${a.assignedContact.firstName} ${a.assignedContact.lastName}`
+      : null,
+    isMonitored: !!a.externalSource,
+    lastSeenAt: a.updatedAt.toISOString(),
+    tags: [],
+    notes: a.notes,
+    createdAt: a.createdAt.toISOString(),
+    updatedAt: a.updatedAt.toISOString(),
+    metadata: a.metadata,
+  }));
+
+  return NextResponse.json(assets);
 }
 
 export async function POST(
@@ -18,48 +53,31 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const body = (await req.json()) as Partial<OrgAsset>;
+    const body = await req.json();
     if (!body.name || !body.type) {
-      return errorResponse("Les champs 'name' et 'type' sont requis", 422);
+      return NextResponse.json(
+        { error: "Les champs 'name' et 'type' sont requis" },
+        { status: 422 },
+      );
     }
-    const now = new Date().toISOString();
-    const asset: OrgAsset = {
-      id: `ast-${Math.random().toString(36).slice(2, 10)}`,
-      organizationId: id,
-      name: body.name,
-      type: body.type,
-      status: body.status ?? "active",
-      source: body.source ?? "manual",
-      isMonitored: body.isMonitored ?? false,
-      tags: body.tags ?? [],
-      createdAt: now,
-      updatedAt: now,
-      manufacturer: body.manufacturer,
-      model: body.model,
-      serialNumber: body.serialNumber,
-      assetTag: body.assetTag,
-      os: body.os,
-      osVersion: body.osVersion,
-      cpuModel: body.cpuModel,
-      cpuCores: body.cpuCores,
-      ramGb: body.ramGb,
-      storageGb: body.storageGb,
-      ipAddress: body.ipAddress,
-      macAddress: body.macAddress,
-      fqdn: body.fqdn,
-      siteId: body.siteId,
-      siteName: body.siteName,
-      rackPosition: body.rackPosition,
-      purchaseDate: body.purchaseDate,
-      warrantyExpiry: body.warrantyExpiry,
-      endOfLifeDate: body.endOfLifeDate,
-      purchaseCost: body.purchaseCost,
-      assignedToContactName: body.assignedToContactName,
-      notes: body.notes,
-      externalId: body.externalId,
-    };
-    return successResponse(asset, undefined, 201);
+
+    const asset = await prisma.asset.create({
+      data: {
+        organizationId: id,
+        name: body.name,
+        type: (body.type as string).toUpperCase() as any,
+        status: body.status ? (body.status as string).toUpperCase() as any : "ACTIVE",
+        manufacturer: body.manufacturer,
+        model: body.model,
+        serialNumber: body.serialNumber,
+        ipAddress: body.ipAddress,
+        macAddress: body.macAddress,
+        notes: body.notes,
+      },
+    });
+
+    return NextResponse.json(asset, { status: 201 });
   } catch {
-    return errorResponse("Corps de requête invalide", 400);
+    return NextResponse.json({ error: "Corps de requête invalide" }, { status: 400 });
   }
 }
