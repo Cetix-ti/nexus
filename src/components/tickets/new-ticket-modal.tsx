@@ -153,23 +153,54 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
     setSelectedApprovers([]);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    console.log("New ticket:", {
-      subject,
-      description,
-      organization,
-      requester,
-      type,
-      priority,
-      category,
-      queue,
-      assignee,
-      requireApproval,
-      approvers: selectedApprovers,
-    });
-    reset();
-    onClose();
+    if (!subject.trim()) return;
+
+    try {
+      const res = await fetch("/api/v1/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject,
+          description,
+          organizationName: organization,
+          requesterName: requester,
+          type,
+          priority,
+          category,
+          queue,
+          assigneeName: assignee,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || `Erreur HTTP ${res.status}`);
+        return;
+      }
+
+      // Save AI category feedback if suggestion was used
+      if (aiCategory?.category && category) {
+        fetch("/api/v1/ai/categorize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "feedback",
+            subject,
+            description,
+            suggestedCategory: aiCategory.category,
+            confirmedCategory: category,
+          }),
+        }).catch(() => {});
+      }
+
+      reset();
+      onClose();
+      window.location.reload();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erreur de création");
+    }
   }
 
   function toggleApprover(name: string) {

@@ -2,7 +2,9 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { AdvancedRichEditor } from "@/components/ui/advanced-rich-editor";
 import {
   ArrowLeft,
@@ -32,12 +34,44 @@ const priorities = [
 ];
 
 export default function PortalNewTicketPage() {
+  const router = useRouter();
+  const { organizationName } = usePortalUser();
   const [subject, setSubject] = useState("");
   const [category, setCategory] = useState("");
   const [priority, setPriority] = useState("medium");
   const [description, setDescription] = useState("");
   const [files, setFiles] = useState<string[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    if (!subject.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/v1/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject,
+          description,
+          organizationName,
+          category,
+          priority,
+          type: "incident",
+        }),
+      });
+      if (res.ok) {
+        router.push("/portal/tickets");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "Erreur lors de la création");
+      }
+    } catch {
+      alert("Erreur réseau");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -233,9 +267,13 @@ export default function PortalNewTicketPage() {
             >
               Annuler
             </Link>
-            <button className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors">
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || !subject.trim()}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
               <Send className="h-4 w-4" />
-              Soumettre le billet
+              {submitting ? "Envoi..." : "Soumettre le billet"}
             </button>
           </div>
         </div>

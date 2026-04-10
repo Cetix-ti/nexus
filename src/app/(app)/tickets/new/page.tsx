@@ -83,10 +83,29 @@ export default function NewTicketPage() {
   const selectedOrg = watch("organizationName");
   const availableRequesters = selectedOrg ? REQUESTERS[selectedOrg] ?? [] : [];
 
-  function onSubmit(data: TicketFormData) {
-    // Mock submit -- in production this would POST to API
-    console.log("New ticket data:", data);
-    router.push("/tickets");
+  async function onSubmit(data: TicketFormData) {
+    try {
+      const res = await fetch("/api/v1/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: data.subject,
+          description: data.description,
+          organizationName: data.organizationName,
+          requesterName: data.requesterName,
+          type: data.type,
+          priority: data.priority,
+        }),
+      });
+      if (res.ok) {
+        router.push("/tickets");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "Erreur lors de la création");
+      }
+    } catch {
+      alert("Erreur réseau");
+    }
   }
 
   return (
@@ -101,7 +120,7 @@ export default function NewTicketPage() {
           Tickets
         </button>
         <ChevronRight className="h-3.5 w-3.5 text-gray-300" />
-        <span className="text-sm text-gray-500">New Ticket</span>
+        <span className="text-sm text-gray-500">Nouveau ticket</span>
       </div>
 
       <div className="mx-auto w-full max-w-4xl p-6">
