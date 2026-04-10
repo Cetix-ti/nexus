@@ -51,6 +51,182 @@ export async function chatCompletion(
 }
 
 // ---------------------------------------------------------------------------
+// RAG — Retrieval-Augmented Generation
+// Searches Nexus DB for relevant data based on the user's query,
+// then injects the results into the prompt.
+// ---------------------------------------------------------------------------
+
+/** Extract search terms from a natural language question */
+function extractSearchTerms(message: string): string[] {
+  // Remove common French stop words and punctuation
+  const stopWords = new Set([
+    "le", "la", "les", "de", "du", "des", "un", "une", "et", "ou", "en",
+    "est", "ce", "que", "qui", "quoi", "dans", "pour", "sur", "avec",
+    "mon", "ma", "mes", "son", "sa", "ses", "nous", "vous", "leur",
+    "quel", "quelle", "quels", "quelles", "comment", "pourquoi",
+    "combien", "quand", "fait", "faire", "été", "avoir", "être",
+    "pas", "plus", "très", "bien", "aussi", "tout", "tous", "cette",
+    "ces", "aux", "par", "il", "elle", "ils", "elles", "je", "tu",
+    "moi", "toi", "lui", "eux", "se", "ne", "si", "mais", "donc",
+    "car", "ni", "the", "and", "is", "are", "was", "has", "have",
+    "can", "could", "would", "should", "will", "does", "did",
+  ]);
+
+  return message
+    .toLowerCase()
+    .replace(/[?!.,;:'"()[\]{}]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !stopWords.has(w));
+}
+
+/** Search tickets, comments, and descriptions matching the query */
+async function searchTickets(query: string, limit = 15): Promise<string> {
+  const terms = extractSearchTerms(query);
+  if (terms.length === 0) return "";
+
+  // Build OR conditions for each term
+  const orConditions = terms.flatMap((term) => [
+    { subject: { contains: term, mode: "insensitive" as const } },
+    { description: { contains: term, mode: "insensitive" as const } },
+  ]);
+
+  const tickets = await prisma.ticket.findMany({
+    where: { OR: orConditions },
+    include: {
+      organization: { select: { name: true } },
+      requester: { select: { firstName: true, lastName: true } },
+      assignee: { select: { firstName: true, lastName: true } },
+      comments: { select: { body: true, createdAt: true }, take: 3, orderBy: { createdAt: "desc" } },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: limit,
+  });
+
+  if (tickets.length === 0) return "";
+
+  return tickets.map((t) => {
+    const comments = t.comments.length > 0
+      ? `\n  Commentaires: ${t.comments.map((c) => c.body.slice(0, 150)).join(" | ")}`
+      : "";
+    return `INC-${1000 + t.number}: ${t.subject} [${t.status}/${t.priority}] — ${t.organization?.name ?? "?"} — Demandeur: ${t.requester ? `${t.requester.firstName} ${t.requester.lastName}` : "?"} — Assigné: ${t.assignee ? `${t.assignee.firstName} ${t.assignee.lastName}` : "Non assigné"} — ${t.createdAt.toLocaleDateString("fr-CA")}\n  Description: ${t.description.slice(0, 200)}${comments}`;
+  }).join("\n\n");
+}
+
+/** Search Veeam alerts matching the query */
+async function searchVeeamAlerts(query: string, limit = 10): Promise<string> {
+  const terms = extractSearchTerms(query);
+  if (terms.length === 0) return "";
+
+  const orConditions = terms.flatMap((term) => [
+    { subject: { contains: term, mode: "insensitive" as const } },
+    { jobName: { contains: term, mode: "insensitive" as const } },
+    { organizationName: { contains: term, mode: "insensitive" as const } },
+    { senderEmail: { contains: term, mode: "insensitive" as const } },
+  ]);
+
+  const alerts = await prisma.veeamBackupAlert.findMany({
+    where: { OR: orConditions },
+    orderBy: { receivedAt: "desc" },
+    take: limit,
+  });
+
+  if (alerts.length === 0) return "";
+  return alerts.map((a) =>
+    `[${a.status}] ${a.jobName} — ${a.organizationName ?? "?"} — ${a.senderEmail} — ${a.receivedAt.toLocaleDateString("fr-CA")}`,
+  ).join("\n");
+}
+
+/** Search monitoring alerts matching the query */
+async function searchMonitoringAlerts(query: string, limit = 10): Promise<string> {
+  const terms = extractSearchTerms(query);
+  if (terms.length === 0) return "";
+
+  const orConditions = terms.flatMap((term) => [
+    { subject: { contains: term, mode: "insensitive" as const } },
+    { organizationName: { contains: term, mode: "insensitive" as const } },
+    { body: { contains: term, mode: "insensitive" as const } },
+  ]);
+
+  const alerts = await prisma.monitoringAlert.findMany({
+    where: { OR: orConditions },
+    orderBy: { receivedAt: "desc" },
+    take: limit,
+  });
+
+  if (alerts.length === 0) return "";
+  return alerts.map((a) =>
+    `[${a.severity}/${a.stage}] ${a.subject} — ${a.organizationName ?? "?"} (${a.sourceType}) — ${a.receivedAt.toLocaleDateString("fr-CA")}`,
+  ).join("\n");
+}
+
+/** Search KB articles matching the query */
+async function searchKbArticles(query: string, limit = 5): Promise<string> {
+  const terms = extractSearchTerms(query);
+  if (terms.length === 0) return "";
+
+  const orConditions = terms.flatMap((term) => [
+    { title: { contains: term, mode: "insensitive" as const } },
+    { body: { contains: term, mode: "insensitive" as const } },
+  ]);
+
+  const articles = await prisma.article.findMany({
+    where: { OR: orConditions, status: "PUBLISHED" },
+    orderBy: { updatedAt: "desc" },
+    take: limit,
+    select: { title: true, summary: true, body: true },
+  });
+
+  if (articles.length === 0) return "";
+  return articles.map((a) =>
+    `📄 ${a.title}\n  ${(a.summary || a.body).slice(0, 200)}`,
+  ).join("\n\n");
+}
+
+/** Search contacts/orgs matching the query */
+async function searchContacts(query: string, limit = 10): Promise<string> {
+  const terms = extractSearchTerms(query);
+  if (terms.length === 0) return "";
+
+  const orConditions = terms.flatMap((term) => [
+    { firstName: { contains: term, mode: "insensitive" as const } },
+    { lastName: { contains: term, mode: "insensitive" as const } },
+    { email: { contains: term, mode: "insensitive" as const } },
+  ]);
+
+  const contacts = await prisma.contact.findMany({
+    where: { OR: orConditions },
+    include: { organization: { select: { name: true } } },
+    take: limit,
+  });
+
+  if (contacts.length === 0) return "";
+  return contacts.map((c) =>
+    `${c.firstName} ${c.lastName} (${c.email}) — ${c.organization?.name ?? "?"} — ${c.jobTitle ?? ""} — ${c.isActive ? "Actif" : "Inactif"}`,
+  ).join("\n");
+}
+
+/** Master RAG function — searches all data sources */
+export async function ragSearch(userMessage: string): Promise<string> {
+  const [tickets, veeam, monitoring, kb, contacts] = await Promise.all([
+    searchTickets(userMessage),
+    searchVeeamAlerts(userMessage),
+    searchMonitoringAlerts(userMessage),
+    searchKbArticles(userMessage),
+    searchContacts(userMessage),
+  ]);
+
+  const sections: string[] = [];
+  if (tickets) sections.push(`TICKETS TROUVÉS:\n${tickets}`);
+  if (veeam) sections.push(`ALERTES VEEAM TROUVÉES:\n${veeam}`);
+  if (monitoring) sections.push(`ALERTES MONITORING TROUVÉES:\n${monitoring}`);
+  if (kb) sections.push(`ARTICLES KB TROUVÉS:\n${kb}`);
+  if (contacts) sections.push(`CONTACTS TROUVÉS:\n${contacts}`);
+
+  if (sections.length === 0) return "";
+  return "\n\nRÉSULTATS DE RECHERCHE PERTINENTS:\n" + sections.join("\n\n");
+}
+
+// ---------------------------------------------------------------------------
 // Context builders — fetch Nexus data to inject into prompts
 // ---------------------------------------------------------------------------
 

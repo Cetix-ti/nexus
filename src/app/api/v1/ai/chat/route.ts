@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { chatCompletion, buildSystemPrompt, saveMemory } from "@/lib/ai/service";
+import { chatCompletion, buildSystemPrompt, saveMemory, ragSearch } from "@/lib/ai/service";
 
 export async function POST(req: Request) {
   try {
@@ -31,7 +31,10 @@ export async function POST(req: Request) {
     });
 
     // Build context-aware prompt with user's memories
-    const systemPrompt = await buildSystemPrompt(me.id);
+    const [systemPrompt, ragResults] = await Promise.all([
+      buildSystemPrompt(me.id),
+      ragSearch(message),
+    ]);
 
     // Get conversation history (last 20 messages for context)
     const history = await prisma.aiMessage.findMany({
@@ -40,8 +43,13 @@ export async function POST(req: Request) {
       take: 20,
     });
 
+    // Inject RAG results into the system prompt
+    const fullSystemPrompt = ragResults
+      ? `${systemPrompt}\n${ragResults}`
+      : systemPrompt;
+
     const messages = [
-      { role: "system" as const, content: systemPrompt },
+      { role: "system" as const, content: fullSystemPrompt },
       ...history.map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
