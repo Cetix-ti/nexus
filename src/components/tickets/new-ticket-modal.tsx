@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Plus, Check, ShieldCheck, UserPlus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -254,18 +254,11 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
               <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
                 Demandeur
               </label>
-              <Select value={requester} onValueChange={setRequester} disabled={!organization}>
-                <SelectTrigger>
-                  <SelectValue placeholder={organization ? "Sélectionner..." : "Choisir une organisation"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {requesters.map((r) => (
-                    <SelectItem key={r.name} value={r.name}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <RequesterSearch
+                value={requester}
+                onChange={setRequester}
+                organizationName={organization}
+              />
             </div>
           </div>
 
@@ -311,18 +304,7 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
               <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
                 Catégorie
               </label>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CategoryCascade value={category} onChange={setCategory} />
             </div>
             <div>
               <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
@@ -497,6 +479,198 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Category cascade (up to 3 levels)
+// ---------------------------------------------------------------------------
+
+interface CatNode {
+  id: string;
+  name: string;
+  parentId: string | null;
+  children?: CatNode[];
+}
+
+function CategoryCascade({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [categories, setCategories] = useState<CatNode[]>([]);
+  const [level1, setLevel1] = useState("");
+  const [level2, setLevel2] = useState("");
+  const [level3, setLevel3] = useState("");
+
+  useEffect(() => {
+    fetch("/api/v1/asset-categories")
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => {
+        // Try ticket categories endpoint first
+        if (!Array.isArray(data) || data.length === 0) {
+          // Fallback: use hardcoded CATEGORIES
+          setCategories([
+            { id: "1", name: "Matériel", parentId: null },
+            { id: "2", name: "Logiciels", parentId: null },
+            { id: "3", name: "Réseau & VPN", parentId: null },
+            { id: "4", name: "Compte & Accès", parentId: null },
+            { id: "5", name: "Email", parentId: null },
+            { id: "6", name: "Sécurité", parentId: null },
+          ]);
+        } else {
+          setCategories(data);
+        }
+      })
+      .catch(() => {
+        setCategories([
+          { id: "1", name: "Matériel", parentId: null },
+          { id: "2", name: "Logiciels", parentId: null },
+          { id: "3", name: "Réseau & VPN", parentId: null },
+          { id: "4", name: "Compte & Accès", parentId: null },
+          { id: "5", name: "Email", parentId: null },
+          { id: "6", name: "Sécurité", parentId: null },
+        ]);
+      });
+  }, []);
+
+  const roots = categories.filter((c) => !c.parentId);
+  const level2Options = level1 ? categories.filter((c) => c.parentId === level1) : [];
+  const level3Options = level2 ? categories.filter((c) => c.parentId === level2) : [];
+
+  function handleLevel1(v: string) {
+    setLevel1(v);
+    setLevel2("");
+    setLevel3("");
+    const cat = categories.find((c) => c.id === v);
+    onChange(cat?.name ?? v);
+  }
+
+  function handleLevel2(v: string) {
+    setLevel2(v);
+    setLevel3("");
+    const cat = categories.find((c) => c.id === v);
+    onChange(cat?.name ?? v);
+  }
+
+  function handleLevel3(v: string) {
+    setLevel3(v);
+    const cat = categories.find((c) => c.id === v);
+    onChange(cat?.name ?? v);
+  }
+
+  return (
+    <div className="space-y-2">
+      <Select value={level1} onValueChange={handleLevel1}>
+        <SelectTrigger><SelectValue placeholder="Catégorie..." /></SelectTrigger>
+        <SelectContent>
+          {roots.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      {level2Options.length > 0 && (
+        <Select value={level2} onValueChange={handleLevel2}>
+          <SelectTrigger><SelectValue placeholder="Sous-catégorie..." /></SelectTrigger>
+          <SelectContent>
+            {level2Options.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
+      {level3Options.length > 0 && (
+        <Select value={level3} onValueChange={handleLevel3}>
+          <SelectTrigger><SelectValue placeholder="Élément..." /></SelectTrigger>
+          <SelectContent>
+            {level3Options.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Requester search with autocomplete
+// ---------------------------------------------------------------------------
+
+function RequesterSearch({
+  value,
+  onChange,
+  organizationName,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  organizationName: string;
+}) {
+  const [query, setQuery] = useState(value);
+  const [results, setResults] = useState<{ name: string; email: string }[]>([]);
+  const [open, setOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<NodeJS.Timeout>(undefined);
+
+  useEffect(() => {
+    setQuery(value);
+  }, [value]);
+
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    if (query.length < 2) { setResults([]); return; }
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/v1/contacts/search?q=${encodeURIComponent(query)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        let filtered = Array.isArray(data) ? data : [];
+        // Filter by org if one is selected
+        if (organizationName) {
+          filtered = filtered.filter((c: any) => c.organizationName === organizationName);
+        }
+        setResults(filtered.map((c: any) => ({
+          name: `${c.firstName} ${c.lastName}`,
+          email: c.email,
+        })));
+        setOpen(true);
+      } catch { /* ignore */ }
+      finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [query, organizationName]);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); onChange(e.target.value); }}
+        onFocus={() => { if (results.length > 0) setOpen(true); }}
+        placeholder="Taper un nom ou un courriel..."
+        className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 text-[13px] text-slate-900 placeholder:text-slate-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+      />
+      {searching && (
+        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
+        </div>
+      )}
+      {open && results.length > 0 && (
+        <div className="absolute z-[210] mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-lg max-h-48 overflow-y-auto">
+          {results.map((r) => (
+            <button
+              key={r.email}
+              type="button"
+              onClick={() => { onChange(r.name); setQuery(r.name); setOpen(false); }}
+              className="flex flex-col w-full px-3 py-2 text-left hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0"
+            >
+              <span className="text-[13px] font-medium text-slate-900">{r.name}</span>
+              <span className="text-[11px] text-slate-400">{r.email}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
