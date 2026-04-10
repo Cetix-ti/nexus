@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
+import { AiChatWidget } from "@/components/ai/ai-chat-widget";
 import { Topbar } from "@/components/layout/topbar";
 import { useSidebarStore } from "@/stores/sidebar";
 
@@ -72,6 +73,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         )}
       </div>
+
+      {/* AI Chat Widget — floating */}
+      <AiChatWidget />
     </div>
   );
 }

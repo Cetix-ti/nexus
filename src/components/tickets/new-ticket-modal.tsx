@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X, Plus, Check, ShieldCheck, UserPlus, Trash2 } from "lucide-react";
+import { X, Plus, Check, ShieldCheck, UserPlus, Trash2, Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -130,6 +130,8 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
   const [type, setType] = useState("incident");
   const [priority, setPriority] = useState("medium");
   const [category, setCategory] = useState("");
+  const [aiCategory, setAiCategory] = useState<{ category: string; confidence: string; reasoning: string } | null>(null);
+  const [aiCategorizing, setAiCategorizing] = useState(false);
   const [queue, setQueue] = useState("");
   const [assignee, setAssignee] = useState("");
   const [requireApproval, setRequireApproval] = useState(false);
@@ -301,9 +303,47 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
           {/* Category + Queue */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-                Catégorie
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[13px] font-medium text-slate-700">Catégorie</label>
+                <button
+                  type="button"
+                  disabled={aiCategorizing || !subject}
+                  onClick={async () => {
+                    setAiCategorizing(true);
+                    setAiCategory(null);
+                    try {
+                      const res = await fetch("/api/v1/ai/categorize", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ subject, description }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        setAiCategory(data);
+                        if (data.category) setCategory(data.category);
+                      }
+                    } catch { /* ignore */ }
+                    finally { setAiCategorizing(false); }
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-violet-600 hover:text-violet-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {aiCategorizing ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3 w-3" />
+                  )}
+                  Suggérer par IA
+                </button>
+              </div>
+              {aiCategory && (
+                <div className="mb-2 rounded-lg bg-violet-50 border border-violet-200/60 px-3 py-2 text-[11.5px]">
+                  <span className="font-medium text-violet-700">{aiCategory.category}</span>
+                  <span className="text-violet-500 ml-2">({aiCategory.confidence})</span>
+                  {aiCategory.reasoning && (
+                    <p className="text-violet-500 mt-0.5">{aiCategory.reasoning}</p>
+                  )}
+                </div>
+              )}
               <CategoryCascade value={category} onChange={setCategory} />
             </div>
             <div>
