@@ -226,7 +226,7 @@ export default function AutomationsPage() {
                       {rule.name}
                     </h3>
                     <Badge variant={rule.active ? "success" : "default"}>
-                      {rule.active ? "Active" : "Inactive"}
+                      {rule.active ? "Actif" : "Inactif"}
                     </Badge>
                   </div>
                   <p className="text-sm text-neutral-500">{rule.description}</p>
