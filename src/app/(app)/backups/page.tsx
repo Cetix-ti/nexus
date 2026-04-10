@@ -496,7 +496,7 @@ export default function BackupsPage() {
                   jours
                 </p>
               </div>
-              <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3 sm:gap-6">
                 {(["SUCCESS", "WARNING", "FAILED"] as const).map((s) => {
                   const cfg = STATUS_CONFIG[s];
                   const Icon = cfg.icon;

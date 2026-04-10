@@ -125,7 +125,7 @@ export default function PortalLayout({
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="flex h-16 items-center justify-between">
             {/* Logo + Org */}
-            <div className="flex items-center gap-6 min-w-0 flex-1">
+            <div className="flex items-center gap-3 sm:gap-6 min-w-0 flex-1">
               <Link href="/portal" className="flex items-center gap-3">
                 {orgLogo ? (
                   // eslint-disable-next-line @next/next/no-img-element

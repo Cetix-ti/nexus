@@ -1192,8 +1192,8 @@ export default function OrganizationDetailPage() {
 
 
       {/* Tabs */}
-      <div className="flex items-center justify-between border-b border-gray-200">
-        <div className="flex gap-0">
+      <div className="border-b border-gray-200 overflow-x-auto">
+        <div className="flex gap-0 min-w-max">
           {TABS.map((tab) => (
             <button
               key={tab.key}

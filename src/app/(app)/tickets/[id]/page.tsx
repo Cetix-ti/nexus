@@ -208,7 +208,7 @@ export default function TicketDetailPage() {
         <span className="text-sm font-mono text-gray-500">{ticket.number}</span>
       </div>
 
-      <div className="flex flex-1 gap-0">
+      <div className="flex flex-col lg:flex-row flex-1 gap-0">
         {/* Left: Main content */}
         <div className="flex-1 overflow-y-auto border-r border-gray-200">
           <div className="p-6">
@@ -403,7 +403,7 @@ export default function TicketDetailPage() {
         </div>
 
         {/* Right: Sidebar */}
-        <div className="hidden lg:block w-80 flex-shrink-0 overflow-y-auto bg-gray-50/50">
+        <div className="w-full lg:w-80 flex-shrink-0 overflow-y-auto bg-gray-50/50">
           <div className="p-5 space-y-5">
             {/* Status & Priority */}
             <SidebarSection title="Details">
