@@ -53,6 +53,8 @@ import { AssetModal } from "./asset-modal";
 import { RmmIntegrationCard } from "./rmm-integration-card";
 import { AteraMappingModal } from "./atera-mapping-modal";
 import { cn } from "@/lib/utils";
+import { useSortable } from "@/lib/hooks/use-sortable";
+import { SortableHeader } from "@/components/ui/sortable-header";
 
 interface AteraMapping {
   externalId: string;
@@ -195,6 +197,8 @@ export function OrgAssetsTab({ organizationId }: OrgAssetsTabProps) {
       return true;
     });
   }, [assets, search, typeFilter, statusFilter, sourceFilter]);
+
+  const { sorted: sortedAssets, sort: assetSort, toggleSort: toggleAssetSort } = useSortable(filtered, "name");
 
   const stats = useMemo(() => {
     const monitored = assets.filter((a) => a.isMonitored).length;
@@ -491,20 +495,20 @@ export function OrgAssetsTab({ organizationId }: OrgAssetsTabProps) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/60 text-left">
-                <th className="px-4 py-3 font-medium text-slate-500">Nom</th>
-                <th className="px-4 py-3 font-medium text-slate-500">Type</th>
-                <th className="px-4 py-3 font-medium text-slate-500">Statut</th>
-                <th className="px-4 py-3 font-medium text-slate-500">OS</th>
-                <th className="px-4 py-3 font-medium text-slate-500">IP</th>
-                <th className="px-4 py-3 font-medium text-slate-500">Site</th>
-                <th className="px-4 py-3 font-medium text-slate-500">Dernier utilisateur</th>
-                <th className="px-4 py-3 font-medium text-slate-500">Source</th>
+                <SortableHeader label="Nom" sortKey="name" sort={assetSort} onToggle={toggleAssetSort} />
+                <SortableHeader label="Type" sortKey="type" sort={assetSort} onToggle={toggleAssetSort} />
+                <SortableHeader label="Statut" sortKey="status" sort={assetSort} onToggle={toggleAssetSort} />
+                <SortableHeader label="OS" sortKey="os" sort={assetSort} onToggle={toggleAssetSort} />
+                <SortableHeader label="IP" sortKey="ipAddress" sort={assetSort} onToggle={toggleAssetSort} />
+                <SortableHeader label="Site" sortKey="siteName" sort={assetSort} onToggle={toggleAssetSort} />
+                <SortableHeader label="Dernier utilisateur" sortKey="lastLoggedUser" sort={assetSort} onToggle={toggleAssetSort} />
+                <SortableHeader label="Source" sortKey="source" sort={assetSort} onToggle={toggleAssetSort} />
                 <th className="px-4 py-3 font-medium text-slate-500">Vu</th>
                 <th className="px-4 py-3 font-medium text-slate-500 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((a) => {
+              {sortedAssets.map((a) => {
                 const Icon = TYPE_ICONS[a.type];
                 return (
                   <tr key={a.id} className="hover:bg-slate-50/80 transition-colors">

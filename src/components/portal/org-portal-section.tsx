@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { useSortable } from "@/lib/hooks/use-sortable";
+import { SortableHeader } from "@/components/ui/sortable-header";
 import { useRouter } from "next/navigation";
 import {
   ShieldCheck,
@@ -186,6 +188,20 @@ export function OrgPortalSection({ organizationId, organizationName }: Props) {
   const admins = contacts.filter((c) =>
     c.portalAccess?.portalRole === "ADMIN" || c.portalAccess?.portalRole === "MANAGER",
   );
+
+  // Filtered + sorted contacts for the table
+  const filteredContacts = useMemo(() => {
+    if (!contactSearch) return contacts;
+    const q = contactSearch.toLowerCase();
+    return contacts.filter((c) =>
+      `${c.firstName} ${c.lastName} ${c.email} ${c.jobTitle ?? ""}`.toLowerCase().includes(q),
+    );
+  }, [contacts, contactSearch]);
+
+  const { sorted: sortedContacts, sort: contactSort, toggleSort: toggleContactSort } = useSortable(
+    filteredContacts,
+    "lastName",
+  );
   const impersonateFiltered = impersonateSearch
     ? contacts.filter((c) =>
         `${c.firstName} ${c.lastName} ${c.email}`.toLowerCase().includes(impersonateSearch.toLowerCase()),
@@ -347,22 +363,15 @@ export function OrgPortalSection({ organizationId, organizationName }: Props) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/60 text-left">
-                <th className="px-4 py-3 font-medium text-slate-500">Contact</th>
-                <th className="px-4 py-3 font-medium text-slate-500">Courriel</th>
-                <th className="px-4 py-3 font-medium text-slate-500">Statut</th>
+                <SortableHeader label="Contact" sortKey="lastName" sort={contactSort} onToggle={toggleContactSort} />
+                <SortableHeader label="Courriel" sortKey="email" sort={contactSort} onToggle={toggleContactSort} />
+                <SortableHeader label="Statut" sortKey="portalStatus" sort={contactSort} onToggle={toggleContactSort} />
                 <th className="px-4 py-3 font-medium text-slate-500">Rôle</th>
                 <th className="px-4 py-3 text-right font-medium text-slate-500">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {contacts
-                .filter((c) => {
-                  if (!contactSearch) return true;
-                  const q = contactSearch.toLowerCase();
-                  return `${c.firstName} ${c.lastName} ${c.email} ${c.jobTitle ?? ""}`.toLowerCase().includes(q);
-                })
-                .sort((a, b) => a.lastName.localeCompare(b.lastName, "fr"))
-                .map((c) => {
+              {sortedContacts.map((c) => {
                 const role = c.portalAccess?.portalRole ?? "STANDARD";
                 const status = c.portalStatus ?? (c.isActive ? "active" : "inactive");
                 return (

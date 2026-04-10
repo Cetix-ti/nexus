@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { useSortable } from "@/lib/hooks/use-sortable";
+import { SortableHeader } from "@/components/ui/sortable-header";
 import {
   Users,
   Search,
@@ -68,13 +70,13 @@ export default function PortalContactsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = contacts.filter((c) => {
+  const filtered = useMemo(() => contacts.filter((c) => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return `${c.firstName} ${c.lastName} ${c.email} ${c.jobTitle ?? ""}`
-      .toLowerCase()
-      .includes(q);
-  });
+    return `${c.firstName} ${c.lastName} ${c.email} ${c.jobTitle ?? ""}`.toLowerCase().includes(q);
+  }), [contacts, search]);
+
+  const { sorted: sortedContacts, sort: contactSort, toggleSort: toggleContactSort } = useSortable(filtered, "lastName");
 
   if (permissions.portalRole !== "admin" && !permissions.canManageContacts) {
     return (
@@ -112,10 +114,10 @@ export default function PortalContactsPage() {
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/60 text-left">
-              <th className="px-4 py-3 font-medium text-slate-500">Nom</th>
-              <th className="px-4 py-3 font-medium text-slate-500">Courriel</th>
-              <th className="px-4 py-3 font-medium text-slate-500">Poste</th>
-              <th className="px-4 py-3 font-medium text-slate-500">Statut</th>
+              <SortableHeader label="Nom" sortKey="lastName" sort={contactSort} onToggle={toggleContactSort} />
+              <SortableHeader label="Courriel" sortKey="email" sort={contactSort} onToggle={toggleContactSort} />
+              <SortableHeader label="Poste" sortKey="jobTitle" sort={contactSort} onToggle={toggleContactSort} />
+              <SortableHeader label="Statut" sortKey="portalStatus" sort={contactSort} onToggle={toggleContactSort} />
               <th className="px-4 py-3 font-medium text-slate-500">Actifs</th>
               <th className="px-4 py-3 text-right font-medium text-slate-500">
                 Actions
@@ -123,7 +125,7 @@ export default function PortalContactsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtered.map((c) => (
+            {sortedContacts.map((c) => (
               <tr
                 key={c.id}
                 className="hover:bg-slate-50/80 transition-colors"
