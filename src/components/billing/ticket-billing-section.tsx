@@ -379,7 +379,7 @@ function EntryList({
   }
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200/80">
-      <table className="w-full text-[13px]">
+      <div className="overflow-x-auto"><table className="w-full text-[13px]">
         <thead className="bg-slate-50/70">
           <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             <th className="px-3 py-2.5">Date</th>
@@ -441,7 +441,7 @@ function EntryList({
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     </div>
   );
 }

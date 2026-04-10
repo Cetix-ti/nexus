@@ -283,7 +283,7 @@ export default function OrganizationsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         {[
           { label: "Organisations totales", value: totalOrgs, icon: Building2, color: "text-blue-600 bg-blue-50" },
           { label: "Contrats actifs", value: activeContracts, icon: FileText, color: "text-emerald-600 bg-emerald-50" },

@@ -1226,11 +1226,11 @@ export default function OrganizationDetailPage() {
 
       {/* Tab Content */}
       {activeTab === "overview" && (
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
           {/* Left column */}
           <div className="col-span-2 flex flex-col gap-6">
             {/* Stats */}
-            <div className="grid grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
               {[
                 { label: "Tickets ouverts", value: o.openTickets, icon: Ticket, color: "text-blue-600 bg-blue-50" },
                 { label: "Contrats actifs", value: o.activeContracts, icon: FileText, color: "text-emerald-600 bg-emerald-50" },

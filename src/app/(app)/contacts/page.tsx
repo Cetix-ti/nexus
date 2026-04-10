@@ -219,7 +219,7 @@ export default function ContactsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         {[
           { label: "Contacts totaux", value: totalContacts, icon: Users, color: "text-blue-600 bg-blue-50" },
           { label: "Actifs", value: activeContacts, icon: UserCheck, color: "text-emerald-600 bg-emerald-50" },

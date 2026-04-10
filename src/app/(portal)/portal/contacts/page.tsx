@@ -109,7 +109,7 @@ export default function PortalContactsPage() {
       />
 
       <Card className="overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/60 text-left">
               <th className="px-4 py-3 font-medium text-slate-500">Nom</th>
@@ -176,7 +176,7 @@ export default function PortalContactsPage() {
               </tr>
             )}
           </tbody>
-        </table>
+        </table></div>
       </Card>
 
       {editing && (

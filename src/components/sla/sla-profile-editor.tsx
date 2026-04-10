@@ -48,7 +48,7 @@ function HoursInput({
 export function SlaProfileEditor({ profile, onChange, disabled }: Props) {
   return (
     <div className="rounded-xl border border-slate-200/80 bg-white overflow-hidden">
-      <table className="w-full text-[13px]">
+      <div className="overflow-x-auto"><table className="w-full text-[13px]">
         <thead>
           <tr className="border-b border-slate-200/80 bg-slate-50/60">
             <th className="px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
@@ -101,7 +101,7 @@ export function SlaProfileEditor({ profile, onChange, disabled }: Props) {
             );
           })}
         </tbody>
-      </table>
+      </table></div>
     </div>
   );
 }

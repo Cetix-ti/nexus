@@ -111,7 +111,7 @@ export default function PortalReportsPage() {
               icon={<Ticket className="h-5 w-5 text-blue-600" />}
               bg="bg-blue-50"
             >
-              <div className="grid grid-cols-3 gap-4 mt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
                 <Metric label="Ouverts" value={data.tickets.open} color="text-amber-600" />
                 <Metric label="Résolus" value={data.tickets.resolved} color="text-emerald-600" />
                 <Metric label="Fermés" value={data.tickets.closed} color="text-slate-500" />
@@ -129,7 +129,7 @@ export default function PortalReportsPage() {
               icon={<BarChart3 className="h-5 w-5 text-violet-600" />}
               bg="bg-violet-50"
             >
-              <div className="grid grid-cols-3 gap-4 mt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
                 <Metric label="Actifs" value={data.projects.active} color="text-blue-600" />
                 <Metric label="À risque" value={data.projects.atRisk} color="text-red-600" />
                 <Metric label="Terminés" value={data.projects.completed} color="text-emerald-600" />
@@ -156,7 +156,7 @@ export default function PortalReportsPage() {
               icon={<Clock className="h-5 w-5 text-amber-600" />}
               bg="bg-amber-50"
             >
-              <div className="grid grid-cols-3 gap-4 mt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
                 <Metric label="Total" value={`${data.time.totalHours.toFixed(1)}h`} color="text-slate-800" />
                 <Metric label="Facturables" value={`${data.time.billableHours.toFixed(1)}h`} color="text-amber-600" />
                 <Metric label="Incluses" value={`${data.time.includedHours.toFixed(1)}h`} color="text-emerald-600" />

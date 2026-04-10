@@ -257,7 +257,7 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
             {visibleColumns.map((col) => (
             <div
               key={col.id}
-              className="flex w-[300px] min-w-[300px] flex-shrink-0 flex-col rounded-xl border border-slate-200/80 bg-slate-50/40 shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
+              className="flex w-[260px] sm:w-[300px] min-w-[260px] sm:min-w-[300px] flex-shrink-0 flex-col rounded-xl border border-slate-200/80 bg-slate-50/40 shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
             >
               {/* Column header */}
               <div

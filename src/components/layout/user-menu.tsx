@@ -124,7 +124,7 @@ export function UserMenu() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[320px] rounded-xl border border-slate-200/80 bg-white shadow-[0_10px_40px_-10px_rgba(15,23,42,0.2)] overflow-hidden">
+        <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[calc(100vw-2rem)] sm:w-[320px] rounded-xl border border-slate-200/80 bg-white shadow-[0_10px_40px_-10px_rgba(15,23,42,0.2)] overflow-hidden">
           {/* User card header */}
           <div className="px-4 py-4 bg-gradient-to-br from-blue-50/60 to-violet-50/40 border-b border-slate-100">
             <div className="flex items-center gap-3">

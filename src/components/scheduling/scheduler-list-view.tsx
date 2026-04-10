@@ -81,7 +81,7 @@ export function SchedulerListView({ interventions, onSelectIntervention }: Sched
                 {items.length} intervention{items.length > 1 ? "s" : ""}
               </span>
             </div>
-            <table className="w-full">
+            <div className="overflow-x-auto"><table className="w-full">
               <thead>
                 <tr className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
                   <th className="text-left px-4 py-2 w-[120px]">Heure</th>
@@ -166,7 +166,7 @@ export function SchedulerListView({ interventions, onSelectIntervention }: Sched
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           </div>
         );
       })}

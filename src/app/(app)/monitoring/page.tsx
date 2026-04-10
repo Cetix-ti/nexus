@@ -263,7 +263,7 @@ export default function MonitoringPage() {
             const cfg = STAGE_CONFIG[stage];
             const stageAlerts = filtered.filter((a) => a.stage === stage);
             return (
-              <div key={stage} className="flex-shrink-0 w-72">
+              <div key={stage} className="flex-shrink-0 w-64 sm:w-72">
                 <div className={cn("flex items-center gap-2 mb-3 px-2")}>
                   <span className={cn("h-2.5 w-2.5 rounded-full", cfg.color.replace("text-", "bg-"))} />
                   <span className="text-[13px] font-semibold text-slate-900">{cfg.label}</span>
