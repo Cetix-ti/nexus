@@ -107,6 +107,79 @@ async function getOrgsSummary(): Promise<string> {
   return orgs.map((o) => `${o.name} (${o.domain ?? ""})`).join(", ");
 }
 
+async function getAssetsSummary(): Promise<string> {
+  const stats = await prisma.asset.groupBy({
+    by: ["status"],
+    _count: true,
+  });
+  const total = await prisma.asset.count();
+  const byStatus = stats.map((s) => `${s.status}: ${typeof s._count === "number" ? s._count : (s._count as any)?._all ?? 0}`).join(", ");
+  return `${total} actifs total (${byStatus})`;
+}
+
+async function getContactsSummary(): Promise<string> {
+  const total = await prisma.contact.count();
+  const portalEnabled = await prisma.contact.count({ where: { portalEnabled: true } });
+  return `${total} contacts total, ${portalEnabled} avec accès portail`;
+}
+
+async function getTimeEntriesSummary(): Promise<string> {
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const entries = await prisma.timeEntry.findMany({
+    where: { startedAt: { gte: since } },
+    select: { durationMinutes: true, coverageStatus: true },
+  });
+  if (entries.length === 0) return "Aucune saisie de temps cette semaine.";
+  const total = entries.reduce((s, e) => s + e.durationMinutes, 0);
+  const billable = entries.filter((e) => ["billable", "hour_bank_overage", "msp_overage"].includes(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes, 0);
+  return `${entries.length} saisies cette semaine, ${Math.round(total / 60)}h total, ${Math.round(billable / 60)}h facturables`;
+}
+
+async function getKbSummary(): Promise<string> {
+  const total = await prisma.article.count();
+  const published = await prisma.article.count({ where: { status: "PUBLISHED" } });
+  return `${total} articles KB (${published} publiés)`;
+}
+
+async function getVeeamSummary(): Promise<string> {
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1000); // last 48h
+  const alerts = await prisma.veeamBackupAlert.findMany({
+    where: { receivedAt: { gte: since } },
+    orderBy: { receivedAt: "desc" },
+    take: 50,
+  });
+  if (alerts.length === 0) return "Aucune alerte Veeam dans les dernières 48h.";
+
+  // Group by org
+  const byOrg = new Map<string, { success: number; warning: number; failed: number }>();
+  for (const a of alerts) {
+    const key = a.organizationName ?? "Non associé";
+    if (!byOrg.has(key)) byOrg.set(key, { success: 0, warning: 0, failed: 0 });
+    const entry = byOrg.get(key)!;
+    if (a.status === "SUCCESS") entry.success++;
+    else if (a.status === "WARNING") entry.warning++;
+    else entry.failed++;
+  }
+
+  return Array.from(byOrg.entries())
+    .map(([org, s]) => `${org}: ${s.success} succès, ${s.warning} avert., ${s.failed} échecs`)
+    .join("\n");
+}
+
+async function getMonitoringSummary(): Promise<string> {
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const alerts = await prisma.monitoringAlert.findMany({
+    where: { receivedAt: { gte: since }, isResolved: false },
+    orderBy: { receivedAt: "desc" },
+    take: 20,
+  });
+  if (alerts.length === 0) return "Aucune alerte monitoring active.";
+
+  return alerts
+    .map((a) => `[${a.severity}/${a.stage}] ${a.subject} — ${a.organizationName ?? "?"} (${a.sourceType})`)
+    .join("\n");
+}
+
 async function getRecentFeedback(limit = 15): Promise<string> {
   const fb = await prisma.aiCategoryFeedback.findMany({
     orderBy: { createdAt: "desc" },
@@ -179,11 +252,17 @@ export async function listMemories(scope?: string) {
 // ---------------------------------------------------------------------------
 
 export async function buildSystemPrompt(userId?: string): Promise<string> {
-  const [ticketsSummary, categories, orgs, memories] = await Promise.all([
+  const [ticketsSummary, categories, orgs, memories, veeam, monitoring, assets, contacts, timeEntries, kb] = await Promise.all([
     getRecentTicketsSummary(),
     getCategoriesList(),
     getOrgsSummary(),
     userId ? getMemories(userId) : Promise.resolve(""),
+    getVeeamSummary(),
+    getMonitoringSummary(),
+    getAssetsSummary(),
+    getContactsSummary(),
+    getTimeEntriesSummary(),
+    getKbSummary(),
   ]);
 
   return `Tu es l'assistant IA intégré à Nexus, une plateforme ITSM pour MSP (fournisseurs de services gérés).
@@ -199,6 +278,24 @@ ${categories}
 
 Tickets récents:
 ${ticketsSummary}
+
+État des sauvegardes Veeam (dernières 48h):
+${veeam}
+
+Alertes monitoring actives:
+${monitoring}
+
+Actifs:
+${assets}
+
+Contacts:
+${contacts}
+
+Temps saisi (7 derniers jours):
+${timeEntries}
+
+Base de connaissances:
+${kb}
 
 ${memories ? `\n${memories}\n` : ""}
 RÈGLES:
