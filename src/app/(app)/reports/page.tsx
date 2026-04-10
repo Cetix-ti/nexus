@@ -88,7 +88,7 @@ export default function ReportsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
           <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">Rapports</h1>
           <p className="mt-1 text-[13px] text-slate-500">

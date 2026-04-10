@@ -245,7 +245,7 @@ export default function MyDayPage() {
       {/* ================================================================ */}
       {/* Header + billing total                                           */}
       {/* ================================================================ */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
           <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
             Ma journée

@@ -173,14 +173,14 @@ export function Topbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-30 h-[76px] shrink-0 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between gap-4 px-8">
+      <header className="sticky top-0 z-30 h-16 lg:h-[76px] shrink-0 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between gap-2 lg:gap-4 px-4 lg:px-8">
         {/* Left: Breadcrumbs */}
-        <div className="flex items-center min-w-0 flex-1">
+        <div className="hidden lg:flex items-center min-w-0 flex-1">
           <Breadcrumbs />
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 lg:gap-2 flex-1 lg:flex-none justify-end">
           {/* Quick create ticket */}
           <button
             onClick={() => setNewTicketOpen(true)}
@@ -202,7 +202,7 @@ export function Topbar() {
                 onFocus={() => setFocused(true)}
                 onKeyDown={handleKeyDown}
                 placeholder="Rechercher..."
-                className="h-10 w-[280px] pl-10 pr-12 bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200/80 focus:border-blue-300 rounded-lg text-[13px] text-slate-900 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="h-10 w-40 lg:w-[280px] focus:w-60 lg:focus:w-[320px] pl-10 pr-8 lg:pr-12 bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200/80 focus:border-blue-300 rounded-lg text-[13px] text-slate-900 placeholder:text-slate-400 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
               {searching ? (
                 <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-slate-400" />
@@ -217,7 +217,7 @@ export function Topbar() {
             {showDropdown && (
               <div
                 ref={dropdownRef}
-                className="absolute right-0 top-full mt-1.5 w-[400px] max-h-[400px] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl z-50"
+                className="absolute right-0 top-full mt-1.5 w-[calc(100vw-2rem)] sm:w-[400px] max-h-[400px] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl z-50"
               >
                 {results.length > 0 ? (
                   <div className="py-1">

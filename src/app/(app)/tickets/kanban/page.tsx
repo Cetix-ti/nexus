@@ -178,7 +178,7 @@ export default function KanbanPage() {
       </nav>
 
       {/* Page header */}
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
@@ -193,7 +193,7 @@ export default function KanbanPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Board switcher */}
           <KanbanBoardSwitcher />
 
@@ -253,9 +253,9 @@ export default function KanbanPage() {
 
       {/* Filters bar */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="w-72">
+        <div className="w-full sm:w-72">
           <Input
-            placeholder="Rechercher dans les tickets..."
+            placeholder="Rechercher..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             iconLeft={<Search className="h-3.5 w-3.5" />}
@@ -312,7 +312,7 @@ export default function KanbanPage() {
       </div>
 
       {/* Mini stats strip */}
-      <div className="flex items-center gap-3 text-[11.5px]">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11.5px]">
         <StatPill label="Nouveau" count={counts.new || 0} dotClass="bg-blue-500" />
         <StatPill label="Ouvert" count={counts.open || 0} dotClass="bg-sky-500" />
         <StatPill label="En cours" count={counts.in_progress || 0} dotClass="bg-amber-500" />

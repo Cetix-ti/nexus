@@ -188,12 +188,12 @@ export default function MonitoringPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">Alertes monitoring</h1>
-          <p className="mt-1 text-[13px] text-slate-500">Triage et suivi des alertes de surveillance — {days} derniers jours</p>
+          <h1 className="text-xl sm:text-[22px] font-semibold tracking-[-0.02em] text-slate-900">Alertes monitoring</h1>
+          <p className="mt-1 text-[12px] sm:text-[13px] text-slate-500">Triage et suivi — {days} derniers jours</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
             <button onClick={() => setViewMode("kanban")} className={cn("px-2.5 py-1.5", viewMode === "kanban" ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:bg-slate-50")}>
               <LayoutGrid className="h-4 w-4" />
@@ -221,7 +221,7 @@ export default function MonitoringPage() {
 
       {/* Filters */}
       <div className="flex items-center gap-2">
-        <Input placeholder="Rechercher..." value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(0); }} iconLeft={<Search className="h-3.5 w-3.5" />} className="w-56" />
+        <Input placeholder="Rechercher..." value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(0); }} iconLeft={<Search className="h-3.5 w-3.5" />} className="w-full sm:w-56" />
         <Select value={stageFilter} onValueChange={(v) => { setStageFilter(v); setCurrentPage(0); }}>
           <SelectTrigger className="w-40"><SelectValue placeholder="Étape" /></SelectTrigger>
           <SelectContent>

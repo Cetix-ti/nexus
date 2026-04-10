@@ -343,7 +343,7 @@ function TemplateCard({
   return (
     <Card className={cn("card-hover", !template.isActive && "opacity-70")}>
       <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0 flex-1">
             <div
               className={cn(
