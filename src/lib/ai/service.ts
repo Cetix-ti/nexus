@@ -56,9 +56,88 @@ export async function chatCompletion(
 // then injects the results into the prompt.
 // ---------------------------------------------------------------------------
 
+// Intent categories for smarter routing
+type QueryIntent = "tickets" | "backups" | "monitoring" | "contacts" | "assets" | "kb" | "time" | "general";
+
+/** Detect what the user is asking about */
+function detectIntents(message: string): QueryIntent[] {
+  const m = message.toLowerCase();
+  const intents: QueryIntent[] = [];
+
+  if (/ticket|billet|incident|demande|problème|bug|erreur|panne/.test(m)) intents.push("tickets");
+  if (/sauvegarde|backup|veeam|bkp|restaur/.test(m)) intents.push("backups");
+  if (/monitoring|alerte|zabbix|surveillance|atera|fortigate|wazuh/.test(m)) intents.push("monitoring");
+  if (/contact|utilisateur|client|employé|personne|qui est/.test(m)) intents.push("contacts");
+  if (/actif|serveur|poste|équipement|matériel|asset|ordinateur|laptop|imprimante/.test(m)) intents.push("assets");
+  if (/article|documentation|procédure|base de connaissance|kb|wiki|comment faire/.test(m)) intents.push("kb");
+  if (/temps|heure|facturable|saisie|timesheet/.test(m)) intents.push("time");
+
+  // If no specific intent, search everything
+  if (intents.length === 0) intents.push("general");
+  return intents;
+}
+
+/** Detect date range from natural language */
+function detectDateRange(message: string): { since: Date; label: string } | null {
+  const m = message.toLowerCase();
+  const now = new Date();
+
+  if (/aujourd'hui|today|ce jour/.test(m)) {
+    const since = new Date(now); since.setHours(0, 0, 0, 0);
+    return { since, label: "aujourd'hui" };
+  }
+  if (/hier|yesterday/.test(m)) {
+    const since = new Date(now); since.setDate(since.getDate() - 1); since.setHours(0, 0, 0, 0);
+    return { since, label: "hier" };
+  }
+  if (/cette semaine|this week/.test(m)) {
+    const since = new Date(now); since.setDate(since.getDate() - since.getDay());
+    since.setHours(0, 0, 0, 0);
+    return { since, label: "cette semaine" };
+  }
+  if (/semaine dernière|last week/.test(m)) {
+    const since = new Date(now); since.setDate(since.getDate() - 7 - since.getDay());
+    since.setHours(0, 0, 0, 0);
+    return { since, label: "la semaine dernière" };
+  }
+  if (/ce mois|this month/.test(m)) {
+    const since = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { since, label: "ce mois-ci" };
+  }
+  if (/mois dernier|le mois passé|last month/.test(m)) {
+    const since = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return { since, label: "le mois dernier" };
+  }
+  if (/dernier(?:s|es)?\s*(\d+)\s*jours?|last\s*(\d+)\s*days?/.test(m)) {
+    const match = m.match(/(\d+)\s*jours?/);
+    const days = match ? parseInt(match[1]) : 7;
+    const since = new Date(now); since.setDate(since.getDate() - days);
+    return { since, label: `les ${days} derniers jours` };
+  }
+  if (/24\s*h|24\s*heures/.test(m)) {
+    return { since: new Date(now.getTime() - 24 * 60 * 60 * 1000), label: "les dernières 24h" };
+  }
+  if (/48\s*h|48\s*heures/.test(m)) {
+    return { since: new Date(now.getTime() - 48 * 60 * 60 * 1000), label: "les dernières 48h" };
+  }
+
+  return null;
+}
+
+/** Detect organization names mentioned in the query */
+async function detectOrgNames(message: string): Promise<string[]> {
+  const orgs = await prisma.organization.findMany({
+    where: { isActive: true },
+    select: { name: true },
+  });
+  const m = message.toLowerCase();
+  return orgs
+    .filter((o) => m.includes(o.name.toLowerCase()))
+    .map((o) => o.name);
+}
+
 /** Extract search terms from a natural language question */
 function extractSearchTerms(message: string): string[] {
-  // Remove common French stop words and punctuation
   const stopWords = new Set([
     "le", "la", "les", "de", "du", "des", "un", "une", "et", "ou", "en",
     "est", "ce", "que", "qui", "quoi", "dans", "pour", "sur", "avec",
@@ -70,6 +149,8 @@ function extractSearchTerms(message: string): string[] {
     "moi", "toi", "lui", "eux", "se", "ne", "si", "mais", "donc",
     "car", "ni", "the", "and", "is", "are", "was", "has", "have",
     "can", "could", "would", "should", "will", "does", "did",
+    "chez", "nos", "entre", "comme", "après", "avant", "depuis",
+    "encore", "même", "autre", "chaque", "sans", "sous", "vers",
   ]);
 
   return message
@@ -80,18 +161,38 @@ function extractSearchTerms(message: string): string[] {
 }
 
 /** Search tickets, comments, and descriptions matching the query */
-async function searchTickets(query: string, limit = 15): Promise<string> {
+async function searchTickets(
+  query: string,
+  dateRange: { since: Date } | null,
+  orgNames: string[],
+  limit = 15,
+): Promise<string> {
   const terms = extractSearchTerms(query);
-  if (terms.length === 0) return "";
 
-  // Build OR conditions for each term
-  const orConditions = terms.flatMap((term) => [
-    { subject: { contains: term, mode: "insensitive" as const } },
-    { description: { contains: term, mode: "insensitive" as const } },
-  ]);
+  const where: any = {};
+
+  // Date filter
+  if (dateRange) where.createdAt = { gte: dateRange.since };
+
+  // Org filter
+  if (orgNames.length > 0) {
+    where.organization = { name: { in: orgNames } };
+  }
+
+  // Text search — if terms exist
+  if (terms.length > 0) {
+    where.OR = terms.flatMap((term) => [
+      { subject: { contains: term, mode: "insensitive" as const } },
+      { description: { contains: term, mode: "insensitive" as const } },
+      { comments: { some: { body: { contains: term, mode: "insensitive" as const } } } },
+    ]);
+  }
+
+  // If no filters at all, don't search
+  if (!where.OR && !where.createdAt && !where.organization) return "";
 
   const tickets = await prisma.ticket.findMany({
-    where: { OR: orConditions },
+    where,
     include: {
       organization: { select: { name: true } },
       requester: { select: { firstName: true, lastName: true } },
@@ -113,19 +214,31 @@ async function searchTickets(query: string, limit = 15): Promise<string> {
 }
 
 /** Search Veeam alerts matching the query */
-async function searchVeeamAlerts(query: string, limit = 10): Promise<string> {
+async function searchVeeamAlerts(
+  query: string,
+  dateRange: { since: Date } | null,
+  orgNames: string[],
+  limit = 10,
+): Promise<string> {
   const terms = extractSearchTerms(query);
-  if (terms.length === 0) return "";
+  const where: any = {};
 
-  const orConditions = terms.flatMap((term) => [
-    { subject: { contains: term, mode: "insensitive" as const } },
-    { jobName: { contains: term, mode: "insensitive" as const } },
-    { organizationName: { contains: term, mode: "insensitive" as const } },
-    { senderEmail: { contains: term, mode: "insensitive" as const } },
-  ]);
+  if (dateRange) where.receivedAt = { gte: dateRange.since };
+  if (orgNames.length > 0) where.organizationName = { in: orgNames };
+
+  if (terms.length > 0) {
+    where.OR = terms.flatMap((term) => [
+      { subject: { contains: term, mode: "insensitive" as const } },
+      { jobName: { contains: term, mode: "insensitive" as const } },
+      { organizationName: { contains: term, mode: "insensitive" as const } },
+      { senderEmail: { contains: term, mode: "insensitive" as const } },
+    ]);
+  }
+
+  if (!where.OR && !where.receivedAt && !where.organizationName) return "";
 
   const alerts = await prisma.veeamBackupAlert.findMany({
-    where: { OR: orConditions },
+    where,
     orderBy: { receivedAt: "desc" },
     take: limit,
   });
@@ -137,18 +250,30 @@ async function searchVeeamAlerts(query: string, limit = 10): Promise<string> {
 }
 
 /** Search monitoring alerts matching the query */
-async function searchMonitoringAlerts(query: string, limit = 10): Promise<string> {
+async function searchMonitoringAlerts(
+  query: string,
+  dateRange: { since: Date } | null,
+  orgNames: string[],
+  limit = 10,
+): Promise<string> {
   const terms = extractSearchTerms(query);
-  if (terms.length === 0) return "";
+  const where: any = {};
 
-  const orConditions = terms.flatMap((term) => [
-    { subject: { contains: term, mode: "insensitive" as const } },
-    { organizationName: { contains: term, mode: "insensitive" as const } },
-    { body: { contains: term, mode: "insensitive" as const } },
-  ]);
+  if (dateRange) where.receivedAt = { gte: dateRange.since };
+  if (orgNames.length > 0) where.organizationName = { in: orgNames };
+
+  if (terms.length > 0) {
+    where.OR = terms.flatMap((term) => [
+      { subject: { contains: term, mode: "insensitive" as const } },
+      { organizationName: { contains: term, mode: "insensitive" as const } },
+      { body: { contains: term, mode: "insensitive" as const } },
+    ]);
+  }
+
+  if (!where.OR && !where.receivedAt && !where.organizationName) return "";
 
   const alerts = await prisma.monitoringAlert.findMany({
-    where: { OR: orConditions },
+    where,
     orderBy: { receivedAt: "desc" },
     take: limit,
   });
@@ -205,25 +330,130 @@ async function searchContacts(query: string, limit = 10): Promise<string> {
   ).join("\n");
 }
 
-/** Master RAG function — searches all data sources */
-export async function ragSearch(userMessage: string): Promise<string> {
-  const [tickets, veeam, monitoring, kb, contacts] = await Promise.all([
-    searchTickets(userMessage),
-    searchVeeamAlerts(userMessage),
-    searchMonitoringAlerts(userMessage),
-    searchKbArticles(userMessage),
-    searchContacts(userMessage),
-  ]);
+/** Search assets matching the query */
+async function searchAssets(
+  query: string,
+  orgNames: string[],
+  limit = 10,
+): Promise<string> {
+  const terms = extractSearchTerms(query);
+  const where: any = {};
 
-  const sections: string[] = [];
-  if (tickets) sections.push(`TICKETS TROUVÉS:\n${tickets}`);
-  if (veeam) sections.push(`ALERTES VEEAM TROUVÉES:\n${veeam}`);
-  if (monitoring) sections.push(`ALERTES MONITORING TROUVÉES:\n${monitoring}`);
-  if (kb) sections.push(`ARTICLES KB TROUVÉS:\n${kb}`);
-  if (contacts) sections.push(`CONTACTS TROUVÉS:\n${contacts}`);
+  if (orgNames.length > 0) {
+    const orgs = await prisma.organization.findMany({
+      where: { name: { in: orgNames } },
+      select: { id: true },
+    });
+    if (orgs.length > 0) where.organizationId = { in: orgs.map((o) => o.id) };
+  }
+
+  if (terms.length > 0) {
+    where.OR = terms.flatMap((term) => [
+      { name: { contains: term, mode: "insensitive" as const } },
+      { manufacturer: { contains: term, mode: "insensitive" as const } },
+      { model: { contains: term, mode: "insensitive" as const } },
+      { serialNumber: { contains: term, mode: "insensitive" as const } },
+      { ipAddress: { contains: term, mode: "insensitive" as const } },
+      { notes: { contains: term, mode: "insensitive" as const } },
+    ]);
+  }
+
+  if (!where.OR && !where.organizationId) return "";
+
+  const assets = await prisma.asset.findMany({
+    where,
+    include: {
+      organization: { select: { name: true } },
+      site: { select: { name: true } },
+      assignedContact: { select: { firstName: true, lastName: true } },
+    },
+    orderBy: { name: "asc" },
+    take: limit,
+  });
+
+  if (assets.length === 0) return "";
+  return assets.map((a) =>
+    `${a.name} [${a.type}/${a.status}] — ${a.organization?.name ?? "?"} — ${a.manufacturer ?? ""} ${a.model ?? ""} — IP: ${a.ipAddress ?? "?"} — Site: ${a.site?.name ?? "?"} — Assigné: ${a.assignedContact ? `${a.assignedContact.firstName} ${a.assignedContact.lastName}` : "—"}`,
+  ).join("\n");
+}
+
+/** Search time entries for stats */
+async function searchTimeEntries(
+  dateRange: { since: Date } | null,
+  orgNames: string[],
+): Promise<string> {
+  const where: any = {};
+  if (dateRange) where.startedAt = { gte: dateRange.since };
+  if (orgNames.length > 0) {
+    const orgs = await prisma.organization.findMany({
+      where: { name: { in: orgNames } },
+      select: { id: true },
+    });
+    if (orgs.length > 0) where.organizationId = { in: orgs.map((o) => o.id) };
+  }
+
+  if (!where.startedAt && !where.organizationId) return "";
+
+  const entries = await prisma.timeEntry.findMany({
+    where,
+    orderBy: { startedAt: "desc" },
+    take: 20,
+  });
+
+  if (entries.length === 0) return "";
+  const total = entries.reduce((s, e) => s + e.durationMinutes, 0);
+  const header = `${entries.length} saisies, ${Math.round(total / 60)}h total`;
+  const details = entries.slice(0, 10).map((e) =>
+    `${e.durationMinutes}min [${e.coverageStatus}] — ${e.description.slice(0, 100)}`,
+  ).join("\n");
+  return `${header}\n${details}`;
+}
+
+/** Master RAG function — smart routing based on intent + date + org detection */
+export async function ragSearch(userMessage: string): Promise<string> {
+  const intents = detectIntents(userMessage);
+  const dateRange = detectDateRange(userMessage);
+  const orgNames = await detectOrgNames(userMessage);
+  const isGeneral = intents.includes("general");
+
+  const searches: Promise<[string, string]>[] = [];
+
+  // Route searches based on detected intents
+  if (isGeneral || intents.includes("tickets")) {
+    searches.push(searchTickets(userMessage, dateRange, orgNames).then((r) => ["TICKETS TROUVÉS", r]));
+  }
+  if (isGeneral || intents.includes("backups")) {
+    searches.push(searchVeeamAlerts(userMessage, dateRange, orgNames).then((r) => ["ALERTES VEEAM", r]));
+  }
+  if (isGeneral || intents.includes("monitoring")) {
+    searches.push(searchMonitoringAlerts(userMessage, dateRange, orgNames).then((r) => ["ALERTES MONITORING", r]));
+  }
+  if (isGeneral || intents.includes("kb")) {
+    searches.push(searchKbArticles(userMessage).then((r) => ["ARTICLES KB", r]));
+  }
+  if (isGeneral || intents.includes("contacts")) {
+    searches.push(searchContacts(userMessage).then((r) => ["CONTACTS", r]));
+  }
+  if (intents.includes("assets")) {
+    searches.push(searchAssets(userMessage, orgNames).then((r) => ["ACTIFS", r]));
+  }
+  if (intents.includes("time")) {
+    searches.push(searchTimeEntries(dateRange, orgNames).then((r) => ["SAISIES DE TEMPS", r]));
+  }
+
+  const results = await Promise.all(searches);
+  const sections = results
+    .filter(([, data]) => data.length > 0)
+    .map(([label, data]) => `${label}:\n${data}`);
 
   if (sections.length === 0) return "";
-  return "\n\nRÉSULTATS DE RECHERCHE PERTINENTS:\n" + sections.join("\n\n");
+
+  const contextInfo: string[] = [];
+  if (dateRange) contextInfo.push(`Période: ${dateRange.label}`);
+  if (orgNames.length > 0) contextInfo.push(`Client(s): ${orgNames.join(", ")}`);
+  const contextHeader = contextInfo.length > 0 ? `\n[Filtres détectés: ${contextInfo.join(" | ")}]\n` : "";
+
+  return `\n\nRÉSULTATS DE RECHERCHE PERTINENTS:${contextHeader}\n${sections.join("\n\n")}`;
 }
 
 // ---------------------------------------------------------------------------
