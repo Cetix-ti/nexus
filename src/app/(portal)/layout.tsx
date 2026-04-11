@@ -18,6 +18,7 @@ import {
   BarChart3,
   Monitor,
   Users,
+  DollarSign,
 } from "lucide-react";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { PortalImpersonationBanner } from "@/components/portal/impersonation-banner";
@@ -35,6 +36,7 @@ const navItems: NavItem[] = [
   { label: "Projets", href: "/portal/projects", icon: FolderKanban },
   { label: "Actifs", href: "/portal/assets", icon: Monitor },
   { label: "Rapports", href: "/portal/reports", icon: BarChart3 },
+  { label: "Finances", href: "/portal/finances", icon: DollarSign },
   { label: "Contacts", href: "/portal/contacts", icon: Users, adminOnly: true },
   { label: "Nouveau billet", href: "/portal/tickets/new", icon: PlusCircle },
 ];

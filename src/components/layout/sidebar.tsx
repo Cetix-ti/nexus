@@ -18,6 +18,7 @@ import {
   Zap,
   Bell,
   HardDrive,
+  DollarSign,
   Settings,
   ChevronsLeft,
   ChevronsRight,
@@ -66,6 +67,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Projets", href: "/projects", icon: FolderKanban },
       { label: "Planificateur", href: "/scheduling", icon: CalendarDays },
       { label: "Préfacturation", href: "/billing", icon: Receipt },
+      { label: "Finances", href: "/finances", icon: DollarSign },
     ],
   },
   {
