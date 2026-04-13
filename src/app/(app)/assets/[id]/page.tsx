@@ -15,10 +15,13 @@ import {
   FileText,
   Pencil,
   Loader2,
+  Package,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 
 interface RelatedTicket {
   id: string;
@@ -49,6 +52,13 @@ interface AssetDetail {
   createdAt: string;
   updatedAt: string;
   relatedTickets: RelatedTicket[];
+}
+
+interface InstalledSoftware {
+  name: string;
+  version: string | null;
+  publisher: string | null;
+  installedDate: string | null;
 }
 
 const TICKET_STATUS_MAP: Record<
@@ -82,6 +92,9 @@ export default function AssetDetailPage() {
   const [asset, setAsset] = useState<AssetDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [software, setSoftware] = useState<InstalledSoftware[]>([]);
+  const [softwareLoading, setSoftwareLoading] = useState(false);
+  const [softwareSearch, setSoftwareSearch] = useState("");
 
   useEffect(() => {
     if (!id) return;
@@ -92,7 +105,16 @@ export default function AssetDetailPage() {
         return r.json();
       })
       .then((data) => {
-        if (!cancelled) setAsset(data);
+        if (!cancelled) {
+          setAsset(data);
+          // Load software list
+          setSoftwareLoading(true);
+          fetch(`/api/v1/assets/${id}/software`)
+            .then((r) => (r.ok ? r.json() : []))
+            .then((s) => { if (!cancelled && Array.isArray(s)) setSoftware(s); })
+            .catch(() => {})
+            .finally(() => { if (!cancelled) setSoftwareLoading(false); });
+        }
       })
       .catch((e) => {
         if (!cancelled) setError(e.message || "Erreur de chargement");
@@ -283,6 +305,76 @@ export default function AssetDetailPage() {
               </CardContent>
             </Card>
           ) : null}
+
+          {/* Installed Software */}
+          {(software.length > 0 || softwareLoading) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="h-5 w-5 text-neutral-400" />
+                  Logiciels installés
+                  {!softwareLoading && (
+                    <span className="text-sm font-normal text-neutral-400">
+                      ({software.length})
+                    </span>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {softwareLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
+                  </div>
+                ) : (
+                  <>
+                    {software.length > 10 && (
+                      <Input
+                        placeholder="Rechercher un logiciel..."
+                        value={softwareSearch}
+                        onChange={(e) => setSoftwareSearch(e.target.value)}
+                        iconLeft={<Search className="h-4 w-4" />}
+                        className="mb-3"
+                      />
+                    )}
+                    <div className="rounded-lg border border-neutral-200 overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-neutral-50 text-left text-xs font-medium uppercase text-neutral-400">
+                            <th className="px-4 py-2.5">Nom</th>
+                            <th className="px-4 py-2.5 hidden sm:table-cell">Version</th>
+                            <th className="px-4 py-2.5 hidden md:table-cell">Éditeur</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-100">
+                          {software
+                            .filter((s) => {
+                              if (!softwareSearch) return true;
+                              const q = softwareSearch.toLowerCase();
+                              return [s.name, s.version, s.publisher]
+                                .filter(Boolean)
+                                .join(" ")
+                                .toLowerCase()
+                                .includes(q);
+                            })
+                            .map((s, i) => (
+                              <tr key={i} className="hover:bg-neutral-50/60">
+                                <td className="px-4 py-2 text-neutral-900">{s.name}</td>
+                                <td className="px-4 py-2 text-neutral-500 font-mono hidden sm:table-cell">
+                                  {s.version ?? "—"}
+                                </td>
+                                <td className="px-4 py-2 text-neutral-500 hidden md:table-cell">
+                                  {s.publisher ?? "—"}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right column */}

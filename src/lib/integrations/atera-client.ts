@@ -153,6 +153,33 @@ export async function testAteraConnection(): Promise<{
   }
 }
 
+export interface AteraSoftware {
+  AppName: string;
+  Version?: string;
+  Publisher?: string;
+  InstalledDate?: string;
+}
+
+/**
+ * List installed software for a specific Atera agent.
+ */
+export async function listAteraAgentSoftware(
+  agentId: number
+): Promise<AteraSoftware[]> {
+  const all: AteraSoftware[] = [];
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const res = await ateraFetch<AteraResponse<AteraSoftware>>(
+      `/agents/${agentId}/software?page=${page}&itemsInPage=50`
+    );
+    all.push(...res.items);
+    totalPages = res.totalPages;
+    page++;
+  } while (page <= totalPages && page <= 20);
+  return all;
+}
+
 /**
  * Map an Atera Agent to our internal OrgAsset shape.
  * Used by the asset sync logic.

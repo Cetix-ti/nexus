@@ -33,6 +33,7 @@ interface PortalAsset {
   externalSource: string | null;
   cpuModel: string | null;
   ramGb: number | null;
+  lastLoggedUser: string | null;
 }
 
 const TYPE_ICONS: Record<string, any> = {
@@ -70,7 +71,7 @@ export default function PortalAssetsPage() {
   const filtered = assets.filter((a) => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return [a.name, a.manufacturer, a.model, a.ipAddress, a.serialNumber, a.assignedContact?.name]
+    return [a.name, a.manufacturer, a.model, a.ipAddress, a.serialNumber, a.assignedContact?.name, a.lastLoggedUser]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
@@ -161,6 +162,14 @@ export default function PortalAssetsPage() {
                             {a.ramGb} Go
                           </span>
                         )}
+                      </div>
+                    )}
+                    {a.lastLoggedUser && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <User className="h-3 w-3" />
+                        <span className="truncate" title={a.lastLoggedUser}>
+                          {a.lastLoggedUser}
+                        </span>
                       </div>
                     )}
                     {a.assignedContact && (

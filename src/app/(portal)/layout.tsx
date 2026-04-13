@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -19,6 +19,7 @@ import {
   Monitor,
   Users,
   DollarSign,
+  MoreHorizontal,
 } from "lucide-react";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { PortalImpersonationBanner } from "@/components/portal/impersonation-banner";
@@ -48,6 +49,139 @@ function getInitials(name: string): string {
     .join("")
     .toUpperCase()
     .slice(0, 2);
+}
+
+/** Measures how many nav items fit, puts the rest in a "Plus" dropdown */
+function OverflowNav({
+  items,
+  pathname,
+}: {
+  items: NavItem[];
+  pathname: string;
+}) {
+  const navRef = useRef<HTMLElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = useState(items.length);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const measure = useCallback(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const children = Array.from(nav.children) as HTMLElement[];
+    if (children.length === 0) return;
+
+    // Temporarily show all items to measure
+    children.forEach((c) => c.style.removeProperty("display"));
+    const navRight = nav.getBoundingClientRect().right;
+    // Reserve space for the "More" button (~44px)
+    const moreWidth = 48;
+    let count = items.length;
+
+    for (let i = children.length - 1; i >= 0; i--) {
+      // Skip the "more" button itself (last child when rendered)
+      if (children[i].dataset.more === "true") continue;
+      const rect = children[i].getBoundingClientRect();
+      if (rect.right + moreWidth > navRight && count > 1) {
+        count = i;
+      }
+    }
+    setVisibleCount(count);
+  }, [items.length]);
+
+  useEffect(() => {
+    measure();
+    const nav = navRef.current;
+    if (!nav) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(nav);
+    return () => ro.disconnect();
+  }, [measure, items.length]);
+
+  const shown = items.slice(0, visibleCount);
+  const overflowed = items.slice(visibleCount);
+  const hasOverflow = overflowed.length > 0;
+  const overflowActive = overflowed.some((item) =>
+    item.href === "/portal"
+      ? pathname === "/portal"
+      : pathname.startsWith(item.href)
+  );
+
+  return (
+    <nav
+      ref={navRef}
+      className="hidden md:flex items-center gap-1 min-w-0 flex-1 overflow-hidden"
+    >
+      {shown.map((item) => {
+        const isActive =
+          item.href === "/portal"
+            ? pathname === "/portal"
+            : pathname.startsWith(item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={cn(
+              "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap shrink-0 transition-colors",
+              isActive
+                ? "bg-blue-50 text-[#2563EB]"
+                : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+            )}
+          >
+            <item.icon className="h-4 w-4 shrink-0" />
+            {item.label}
+          </Link>
+        );
+      })}
+      {hasOverflow && (
+        <div className="relative shrink-0" ref={moreRef} data-more="true">
+          <button
+            onClick={() => setMoreOpen(!moreOpen)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors",
+              overflowActive
+                ? "bg-blue-50 text-[#2563EB]"
+                : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+            )}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+            <span className="hidden lg:inline">Plus</span>
+          </button>
+          {moreOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-30"
+                onClick={() => setMoreOpen(false)}
+              />
+              <div className="absolute left-0 top-full mt-1 z-40 w-48 rounded-xl border border-neutral-200 bg-white py-1.5 shadow-lg">
+                {overflowed.map((item) => {
+                  const isActive =
+                    item.href === "/portal"
+                      ? pathname === "/portal"
+                      : pathname.startsWith(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMoreOpen(false)}
+                      className={cn(
+                        "flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium transition-colors",
+                        isActive
+                          ? "bg-blue-50 text-[#2563EB]"
+                          : "text-neutral-700 hover:bg-neutral-50"
+                      )}
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </nav>
+  );
 }
 
 export default function PortalLayout({
@@ -170,30 +304,8 @@ export default function PortalLayout({
                 </div>
               </Link>
 
-              {/* Desktop Navigation */}
-              <nav className="hidden md:flex items-center gap-1">
-                {visibleNav.map((item) => {
-                  const isActive =
-                    item.href === "/portal"
-                      ? pathname === "/portal"
-                      : pathname.startsWith(item.href);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap shrink-0 transition-colors",
-                        isActive
-                          ? "bg-blue-50 text-[#2563EB]"
-                          : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
-                      )}
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </nav>
+              {/* Desktop Navigation — overflow-aware */}
+              <OverflowNav items={visibleNav} pathname={pathname} />
             </div>
 
             {/* User Menu */}
