@@ -3,9 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { WidgetSidebar } from "@/components/widgets/widget-sidebar";
 import { DashboardGrid, type DashboardItem } from "@/components/widgets/dashboard-grid";
-import { useWidgetStore } from "@/stores/widget-store";
 import {
   TrendingUp,
   TrendingDown,
@@ -21,7 +19,6 @@ import {
   List,
   Eye,
   EyeOff,
-  Settings,
   ChevronRight,
   ArrowLeft,
   DollarSign,
@@ -37,6 +34,10 @@ import {
   Printer,
   X,
   Plus,
+  GitBranch,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -163,6 +164,7 @@ interface ReportDef {
   icon: React.ReactNode;
   category: "tickets" | "facturation" | "performance" | "contrats" | "complet";
   widgets: WidgetId[];
+  parentId?: string | null;
 }
 
 const REPORT_CATALOG: ReportDef[] = [
@@ -307,16 +309,31 @@ export default function ReportsPage() {
   const [visibleWidgets, setVisibleWidgets] = useState<WidgetId[]>(() => loadVisible());
   const [favorites, setFavorites] = useState<string[]>(() => loadFavorites());
   const [primaryId, setPrimaryId] = useState<string>(() => loadPrimary());
-  const [showAllReports, setShowAllReports] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [customReports, setCustomReports] = useState<ReportDef[]>(() => loadCustomReports());
   const [showCreateReport, setShowCreateReport] = useState(false);
   const [newReportName, setNewReportName] = useState("");
   const [newReportDesc, setNewReportDesc] = useState("");
   const [newReportWidgets, setNewReportWidgets] = useState<WidgetId[]>([]);
+  const [newReportParentId, setNewReportParentId] = useState<string>("");
+  const [showParentPanel, setShowParentPanel] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Merged catalog: built-in + custom
   const allReports = [...REPORT_CATALOG, ...customReports];
+
+  // Resolve widgets through parent chain (child inherits parent's widgets)
+  function resolveWidgets(report: ReportDef): WidgetId[] {
+    if (!report.parentId) return report.widgets;
+    const parent = allReports.find((r) => r.id === report.parentId);
+    if (!parent) return report.widgets;
+    return resolveWidgets(parent);
+  }
+
+  // Get children of a report
+  function getChildren(reportId: string): ReportDef[] {
+    return allReports.filter((r) => r.parentId === reportId);
+  }
 
   // Dashboard items layout per report — persisted in localStorage
   const layoutKey = `nexus:report-layout:${view}`;
@@ -324,8 +341,9 @@ export default function ReportsPage() {
 
   // Build dashboard items from report widgets when view changes
   useEffect(() => {
-    const report = REPORT_CATALOG.find((r) => r.id === view);
+    const report = allReports.find((r) => r.id === view);
     if (!report) return;
+    const widgets = resolveWidgets(report);
     // Try to load saved layout
     try {
       const saved = localStorage.getItem(layoutKey);
@@ -337,13 +355,13 @@ export default function ReportsPage() {
     // Default: build from report widget list with sensible grid sizes
     const defaultW = (wId: string) => wId.includes("kpis") || wId.includes("trend") || wId.includes("org") || wId.includes("top_") || wId.includes("contract") || wId.includes("projection") ? 10 : 5;
     const defaultH = (wId: string) => wId.includes("kpis") ? 2 : wId.includes("trend") ? 5 : wId.includes("top_") ? 4 : 3;
-    setDashItems(report.widgets.map((wId, i) => ({
+    setDashItems(widgets.map((wId, i) => ({
       id: `di_${wId}_${i}`,
       widgetId: wId,
       w: defaultW(wId),
       h: defaultH(wId),
     })));
-  }, [view]);
+  }, [view, customReports]);
 
   function saveDashLayout(items: DashboardItem[]) {
     setDashItems(items);
@@ -385,13 +403,15 @@ export default function ReportsPage() {
   function createReport() {
     if (!newReportName.trim()) return;
     const id = `custom_${Date.now()}`;
+    const parentReport = newReportParentId ? allReports.find((r) => r.id === newReportParentId) : null;
     const report: ReportDef = {
       id,
       label: newReportName.trim(),
       description: newReportDesc.trim() || "Rapport personnalisé",
       icon: <BarChart3 className="h-5 w-5 text-blue-600" />,
       category: "complet",
-      widgets: newReportWidgets.length > 0 ? newReportWidgets : ["ticket_kpis", "finance_kpis"],
+      widgets: parentReport ? [] : (newReportWidgets.length > 0 ? newReportWidgets : ["ticket_kpis", "finance_kpis"]),
+      parentId: newReportParentId || null,
     };
     const updated = [...customReports, report];
     setCustomReports(updated);
@@ -400,14 +420,30 @@ export default function ReportsPage() {
     setNewReportName("");
     setNewReportDesc("");
     setNewReportWidgets([]);
+    setNewReportParentId("");
     setView(id);
     setFavorites((prev) => { const next = [...prev, id]; saveFavorites(next); return next; });
+  }
+
+  function setReportParent(reportId: string, parentId: string | null) {
+    const updated = customReports.map((r) =>
+      r.id === reportId ? { ...r, parentId } : r
+    );
+    setCustomReports(updated);
+    saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
+    // Clear saved layout so it rebuilds from the new parent's widgets
+    if (parentId) {
+      try { localStorage.removeItem(`nexus:report-layout:${reportId}`); } catch {}
+    }
   }
 
   function deleteReport(id: string) {
     if (!id.startsWith("custom_")) return;
     if (!confirm("Supprimer ce rapport personnalisé ?")) return;
-    const updated = customReports.filter((r) => r.id !== id);
+    // Detach children: remove parentId reference
+    const updated = customReports
+      .filter((r) => r.id !== id)
+      .map((r) => r.parentId === id ? { ...r, parentId: null } : r);
     setCustomReports(updated);
     saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
     setFavorites((prev) => { const next = prev.filter((f) => f !== id); saveFavorites(next); return next; });
@@ -448,149 +484,316 @@ export default function ReportsPage() {
   } : null;
 
   const activeReport = allReports.find((r) => r.id === view);
-  const displayWidgets = activeReport ? activeReport.widgets : visibleWidgets;
+  const displayWidgets = activeReport ? resolveWidgets(activeReport) : visibleWidgets;
   const isVis = (id: WidgetId) => displayWidgets.includes(id);
 
   const tk = data?.ticketKpis;
   const fk = data?.financeKpis;
   const fd = filteredData; // Use filtered data for widgets
 
+  // Group reports by category for sidebar
+  const reportsByCategory = Object.entries(CAT_LABELS).map(([key, label]) => ({
+    key,
+    label,
+    reports: allReports.filter((r) => r.category === key),
+  })).filter((g) => g.reports.length > 0);
+
   return (
-    <div className="space-y-5">
+    <div className="flex gap-5 min-h-0">
       {/* ============================================================ */}
-      {/* Header */}
+      {/* Left sidebar — dashboard list */}
       {/* ============================================================ */}
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">Dashboards</h1>
-          <p className="mt-0.5 text-[13px] text-slate-500">
-            {activeReport ? activeReport.description : "Tableaux de bord interactifs"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Select value={days} onValueChange={setDays}>
-            <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7">7 jours</SelectItem>
-              <SelectItem value="30">30 jours</SelectItem>
-              <SelectItem value="90">3 mois</SelectItem>
-              <SelectItem value="180">6 mois</SelectItem>
-              <SelectItem value="365">12 mois</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant={showFilters ? "primary" : "outline"} size="sm" onClick={() => setShowFilters(!showFilters)}>
-            <Filter className="h-3.5 w-3.5" />
-            Filtres
-            {(filterOrg !== "all" || filterAgent !== "all") && (
-              <span className="ml-1 h-4 min-w-[16px] rounded-full bg-blue-600 text-white text-[9px] flex items-center justify-center px-1">
-                {(filterOrg !== "all" ? 1 : 0) + (filterAgent !== "all" ? 1 : 0)}
-              </span>
-            )}
-          </Button>
-          <Button variant={editMode ? "primary" : "outline"} size="sm" onClick={() => setEditMode(!editMode)}>
-            <LayoutDashboard className="h-3.5 w-3.5" />
-            {editMode ? "Terminer" : "Éditer"}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => window.print()} title="Imprimer">
-            <Printer className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="primary" size="sm" onClick={() => setShowCreateReport(true)}>
-            <Plus className="h-3.5 w-3.5" />
-            Nouveau dashboard
-          </Button>
-        </div>
-      </div>
-
-      {/* Favorites bar + report dropdown */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {/* Favorite tabs */}
-        {favorites.map((fId) => {
-          const r = allReports.find((rep) => rep.id === fId);
-          if (!r) return null;
-          const isActive = view === fId;
-          const isPrimary = primaryId === fId;
-          return (
+      <div className={cn(
+        "hidden md:flex shrink-0 flex-col gap-3 print:hidden transition-all duration-200",
+        sidebarCollapsed ? "w-10" : "md:w-64 lg:w-72"
+      )}>
+        {sidebarCollapsed ? (
+          /* Collapsed sidebar — just a thin bar with expand button */
+          <Card className="py-2 flex flex-col items-center gap-1">
             <button
-              key={fId}
-              onClick={() => setView(fId)}
-              className={cn(
-                "flex items-center gap-2 px-3 py-2 rounded-lg text-[12.5px] font-medium whitespace-nowrap transition-all ring-1 ring-inset shrink-0",
-                isActive
-                  ? "bg-blue-50 text-blue-700 ring-blue-200 shadow-sm"
-                  : "bg-white text-slate-600 ring-slate-200/60 hover:ring-blue-200 hover:bg-blue-50/30"
-              )}
+              onClick={() => setSidebarCollapsed(false)}
+              className="h-8 w-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+              title="Ouvrir le panneau"
             >
-              {isPrimary && <span className="text-[10px]">★</span>}
-              {r.label}
+              <PanelLeftOpen className="h-4 w-4" />
             </button>
-          );
-        })}
-
-        {/* Separator */}
-        <div className="h-6 w-px bg-slate-200 shrink-0 mx-1" />
-
-        {/* Dropdown for all reports */}
-        <div className="relative shrink-0">
-          <Select value={view} onValueChange={(v) => { setView(v); setShowAllReports(false); }}>
-            <SelectTrigger className="w-52 h-9 text-[12px]">
-              <SelectValue placeholder="Autres rapports..." />
-            </SelectTrigger>
-            <SelectContent>
-              {allReports.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
-                  <span className="flex items-center gap-2">
-                    {favorites.includes(r.id) && <span className="text-amber-500 text-[10px]">★</span>}
-                    {r.id.startsWith("custom_") && <span className="text-blue-400 text-[10px]">●</span>}
-                    {r.label}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Manage favorites */}
-        <div className="relative shrink-0">
-          <Button variant="ghost" size="sm" className="h-9 text-[11px] text-slate-400" onClick={() => setShowAllReports(!showAllReports)}>
-            <Settings className="h-3 w-3" />
-          </Button>
-          {showAllReports && (
-            <>
-              <div className="fixed inset-0 z-30" onClick={() => setShowAllReports(false)} />
-              <div className="absolute right-0 top-full mt-1 z-40 w-72 rounded-xl border border-slate-200 bg-white py-2 shadow-xl">
-                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Gérer les favoris</p>
-                {allReports.map((r) => {
-                  const isFav = favorites.includes(r.id);
-                  const isPrim = primaryId === r.id;
-                  const isCustom = r.id.startsWith("custom_");
-                  return (
-                    <div key={r.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50">
-                      <button onClick={() => toggleFavorite(r.id)} className={cn("text-[14px]", isFav ? "text-amber-500" : "text-slate-300 hover:text-amber-400")}>
-                        {isFav ? "★" : "☆"}
-                      </button>
-                      <span className="text-[12px] text-slate-700 flex-1 truncate">{r.label}</span>
+            <div className="w-5 h-px bg-slate-200 my-1" />
+            {/* Mini icons for active report hint */}
+            {favorites.slice(0, 6).map((fId) => {
+              const r = allReports.find((rep) => rep.id === fId);
+              if (!r) return null;
+              const isActive = view === fId;
+              return (
+                <button
+                  key={fId}
+                  onClick={() => setView(fId)}
+                  className={cn(
+                    "h-7 w-7 rounded-md flex items-center justify-center text-[10px] font-bold transition-all",
+                    isActive
+                      ? "bg-blue-100 text-blue-700"
+                      : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  )}
+                  title={r.label}
+                >
+                  {r.label.charAt(0)}
+                </button>
+              );
+            })}
+          </Card>
+        ) : (
+          /* Expanded sidebar */
+          <Card className="overflow-hidden">
+            <div className="px-3 pt-3 pb-2 flex items-center justify-between">
+              <h2 className="text-[13px] font-semibold text-slate-900">Dashboards</h2>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setShowCreateReport(true)}
+                  className="h-6 w-6 rounded-md flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors"
+                  title="Nouveau dashboard"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setSidebarCollapsed(true)}
+                  className="h-6 w-6 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                  title="Réduire le panneau"
+                >
+                  <PanelLeftClose className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-y-auto max-h-[calc(100vh-180px)] px-1.5 pb-2 space-y-3">
+              {/* Favorites section */}
+              {favorites.length > 0 && (
+                <div>
+                  <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-500">Favoris</p>
+                  {favorites.map((fId) => {
+                    const r = allReports.find((rep) => rep.id === fId);
+                    if (!r) return null;
+                    const isActive = view === fId;
+                    const isPrimary = primaryId === fId;
+                    return (
                       <button
-                        onClick={() => setPrimary(r.id)}
-                        className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium transition-all",
-                          isPrim ? "bg-blue-100 text-blue-700" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                        key={fId}
+                        onClick={() => setView(fId)}
+                        className={cn(
+                          "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-left transition-all group",
+                          isActive
+                            ? "bg-blue-50 text-blue-700 font-medium"
+                            : "text-slate-600 hover:bg-slate-50"
                         )}
                       >
-                        {isPrim ? "Principal" : "Définir"}
+                        <span className="text-[10px] text-amber-400 shrink-0">★</span>
+                        <span className="flex-1 truncate">{r.label}</span>
+                        {isPrimary && <span className="text-[8px] bg-blue-100 text-blue-600 rounded px-1 font-semibold uppercase shrink-0">Défaut</span>}
+                        {r.parentId && <span className="text-[9px] text-violet-500 shrink-0">↳</span>}
                       </button>
-                      {isCustom && (
-                        <button onClick={() => { deleteReport(r.id); setShowAllReports(false); }} className="text-[10px] px-1.5 py-0.5 rounded text-red-400 hover:bg-red-50 hover:text-red-600 transition-all">
-                          ✕
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* All reports grouped by category */}
+              {reportsByCategory.map((group) => (
+                <div key={group.key}>
+                  <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{group.label}</p>
+                  {group.reports.map((r) => {
+                    const isActive = view === r.id;
+                    const isFav = favorites.includes(r.id);
+                    return (
+                      <button
+                        key={r.id}
+                        onClick={() => setView(r.id)}
+                        className={cn(
+                          "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-left transition-all group",
+                          isActive
+                            ? "bg-blue-50 text-blue-700 font-medium"
+                            : "text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        <span className="flex-1 truncate">{r.label}</span>
+                        {r.parentId && <span className="text-[9px] text-violet-500 shrink-0">↳</span>}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleFavorite(r.id); }}
+                          className={cn(
+                            "h-5 w-5 rounded flex items-center justify-center text-[12px] shrink-0 transition-all",
+                            isFav
+                              ? "text-amber-400 hover:text-amber-600"
+                              : "text-slate-300 opacity-0 group-hover:opacity-100 hover:text-amber-400"
+                          )}
+                          title={isFav ? "Retirer des favoris" : "Ajouter aux favoris"}
+                        >
+                          {isFav ? "★" : "☆"}
                         </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
       </div>
+
+      {/* ============================================================ */}
+      {/* Main content */}
+      {/* ============================================================ */}
+      <div className="flex-1 min-w-0 space-y-5">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div>
+              <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
+                {activeReport ? activeReport.label : "Dashboards"}
+              </h1>
+              <p className="mt-0.5 text-[13px] text-slate-500">
+                {activeReport ? activeReport.description : "Tableaux de bord interactifs"}
+                {activeReport?.parentId && (() => {
+                  const parent = allReports.find((r) => r.id === activeReport.parentId);
+                  return parent ? (
+                    <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-violet-600 bg-violet-50 rounded px-1.5 py-0.5 font-medium">
+                      Hérite de : {parent.label}
+                    </span>
+                  ) : null;
+                })()}
+                {activeReport && getChildren(activeReport.id).length > 0 && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-blue-600 bg-blue-50 rounded px-1.5 py-0.5 font-medium">
+                    {getChildren(activeReport.id).length} enfant{getChildren(activeReport.id).length > 1 ? "s" : ""}
+                  </span>
+                )}
+              </p>
+            </div>
+            {activeReport && (
+              <button
+                onClick={() => toggleFavorite(activeReport.id)}
+                className={cn(
+                  "mt-0.5 h-9 w-9 rounded-lg flex items-center justify-center text-[20px] transition-all ring-1 ring-inset",
+                  favorites.includes(activeReport.id)
+                    ? "text-amber-500 ring-amber-200 bg-amber-50 hover:bg-amber-100"
+                    : "text-slate-300 ring-slate-200 bg-white hover:text-amber-400 hover:ring-amber-200 hover:bg-amber-50"
+                )}
+                title={favorites.includes(activeReport.id) ? "Retirer des favoris" : "Ajouter aux favoris"}
+              >
+                {favorites.includes(activeReport.id) ? "★" : "☆"}
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant={showFilters ? "primary" : "outline"} size="sm" onClick={() => setShowFilters(!showFilters)}>
+              <Filter className="h-3.5 w-3.5" />
+              Filtres
+              {(filterOrg !== "all" || filterAgent !== "all" || days !== "30") && (
+                <span className="ml-1 h-4 min-w-[16px] rounded-full bg-blue-600 text-white text-[9px] flex items-center justify-center px-1">
+                  {(filterOrg !== "all" ? 1 : 0) + (filterAgent !== "all" ? 1 : 0) + (days !== "30" ? 1 : 0)}
+                </span>
+              )}
+            </Button>
+            <Button variant={editMode ? "primary" : "outline"} size="sm" onClick={() => setEditMode(!editMode)}>
+              <LayoutDashboard className="h-3.5 w-3.5" />
+              {editMode ? "Terminer" : "Éditer"}
+            </Button>
+            <Button
+              variant={showParentPanel ? "primary" : "outline"}
+              size="sm"
+              onClick={() => setShowParentPanel(!showParentPanel)}
+              title="Gérer les relations parent/enfant"
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              Parenté
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => window.print()} title="Imprimer">
+              <Printer className="h-3.5 w-3.5" />
+            </Button>
+            {/* Mobile-only: dashboard selector */}
+            <div className="md:hidden">
+              <Select value={view} onValueChange={(v) => { setView(v); }}>
+                <SelectTrigger className="w-52 h-9 text-[12px]">
+                  <SelectValue placeholder="Choisir un dashboard..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {allReports.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      <span className="flex items-center gap-2">
+                        {favorites.includes(r.id) && <span className="text-amber-500 text-[10px]">★</span>}
+                        {r.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button variant="primary" size="sm" onClick={() => setShowCreateReport(true)} className="hidden md:inline-flex">
+              <Plus className="h-3.5 w-3.5" />
+              Nouveau
+            </Button>
+          </div>
+        </div>
+
+      {/* ============================================================ */}
+      {/* Parent/child management panel */}
+      {/* ============================================================ */}
+      {showParentPanel && (
+        <Card className="border-violet-200 bg-violet-50/20">
+          <CardContent className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <GitBranch className="h-4 w-4 text-violet-600" />
+                <h3 className="text-[15px] font-semibold text-slate-900">Relations parent / enfant</h3>
+              </div>
+              <button onClick={() => setShowParentPanel(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-[12px] text-slate-500">
+              Un dashboard enfant hérite automatiquement des widgets de son parent. Modifiez les relations ci-dessous.
+            </p>
+            <div className="space-y-1">
+              {allReports.map((r) => {
+                const parentReport = r.parentId ? allReports.find((p) => p.id === r.parentId) : null;
+                const children = getChildren(r.id);
+                const isCustom = r.id.startsWith("custom_");
+                return (
+                  <div key={r.id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/60 transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-[12.5px] font-medium truncate", view === r.id ? "text-blue-700" : "text-slate-800")}>{r.label}</span>
+                        {parentReport && (
+                          <span className="text-[10px] bg-violet-100 text-violet-600 rounded px-1.5 py-0.5 shrink-0">
+                            ↳ {parentReport.label}
+                          </span>
+                        )}
+                        {children.length > 0 && (
+                          <span className="text-[10px] bg-blue-100 text-blue-600 rounded px-1.5 py-0.5 shrink-0">
+                            {children.length} enfant{children.length > 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {isCustom ? (
+                      <Select
+                        value={r.parentId || "_none"}
+                        onValueChange={(v) => setReportParent(r.id, v === "_none" ? null : v)}
+                      >
+                        <SelectTrigger className="w-48 h-8 text-[11px]"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">Aucun parent</SelectItem>
+                          {allReports
+                            .filter((p) => p.id !== r.id && p.parentId !== r.id)
+                            .map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 italic">Prédéfini</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ============================================================ */}
       {/* Create report modal */}
@@ -604,7 +807,7 @@ export default function ReportsPage() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-[12px] font-medium text-slate-700 mb-1">Nom du rapport *</label>
                 <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none" placeholder="Ex: Rapport hebdomadaire" value={newReportName} onChange={(e) => setNewReportName(e.target.value)} />
@@ -613,25 +816,51 @@ export default function ReportsPage() {
                 <label className="block text-[12px] font-medium text-slate-700 mb-1">Description</label>
                 <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none" placeholder="Description du rapport" value={newReportDesc} onChange={(e) => setNewReportDesc(e.target.value)} />
               </div>
-            </div>
-            <div>
-              <label className="block text-[12px] font-medium text-slate-700 mb-2">Widgets à inclure</label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
-                {WIDGETS.map((w) => {
-                  const selected = newReportWidgets.includes(w.id);
-                  return (
-                    <button key={w.id} onClick={() => setNewReportWidgets((prev) => selected ? prev.filter((id) => id !== w.id) : [...prev, w.id])}
-                      className={cn("flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-all ring-1 ring-inset text-[11px]",
-                        selected ? "bg-blue-50 ring-blue-200 text-blue-700 font-medium" : "bg-white ring-slate-200 text-slate-600 hover:ring-blue-200"
-                      )}>
-                      {w.icon}
-                      <span className="truncate">{w.label}</span>
-                    </button>
-                  );
-                })}
+              <div>
+                <label className="block text-[12px] font-medium text-slate-700 mb-1">Dashboard parent</label>
+                <Select value={newReportParentId || "_none"} onValueChange={(v) => setNewReportParentId(v === "_none" ? "" : v)}>
+                  <SelectTrigger className="text-[13px]"><SelectValue placeholder="Aucun (indépendant)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Aucun (indépendant)</SelectItem>
+                    {allReports.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Un enfant hérite des widgets de son parent automatiquement.
+                </p>
               </div>
-              <p className="mt-2 text-[11px] text-slate-400">{newReportWidgets.length} widgets sélectionnés — vous pourrez les modifier après la création</p>
             </div>
+
+            {newReportParentId ? (
+              <div className="rounded-lg bg-violet-50 border border-violet-200 px-4 py-3 text-[12px] text-violet-800">
+                <p className="font-medium">Héritage activé</p>
+                <p className="mt-0.5 text-violet-600">
+                  Ce dashboard héritera automatiquement des widgets de « {allReports.find((r) => r.id === newReportParentId)?.label} ».
+                  Toute modification du parent sera reflétée ici.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-[12px] font-medium text-slate-700 mb-2">Widgets à inclure</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
+                  {WIDGETS.map((w) => {
+                    const selected = newReportWidgets.includes(w.id);
+                    return (
+                      <button key={w.id} onClick={() => setNewReportWidgets((prev) => selected ? prev.filter((id) => id !== w.id) : [...prev, w.id])}
+                        className={cn("flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-all ring-1 ring-inset text-[11px]",
+                          selected ? "bg-blue-50 ring-blue-200 text-blue-700 font-medium" : "bg-white ring-slate-200 text-slate-600 hover:ring-blue-200"
+                        )}>
+                        {w.icon}
+                        <span className="truncate">{w.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-[11px] text-slate-400">{newReportWidgets.length} widgets sélectionnés — vous pourrez les modifier après la création</p>
+              </div>
+            )}
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
               <Button variant="outline" size="sm" onClick={() => setShowCreateReport(false)}>Annuler</Button>
               <Button variant="primary" size="sm" onClick={createReport} disabled={!newReportName.trim()}>
@@ -644,61 +873,122 @@ export default function ReportsPage() {
       )}
 
       {/* ============================================================ */}
-      {/* Filter panel */}
+      {/* Filter slide-over (right side) */}
       {/* ============================================================ */}
       {showFilters && (
-        <Card className="border-blue-200 bg-blue-50/20">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-[13px] font-semibold text-slate-900 flex items-center gap-2">
-                <Filter className="h-3.5 w-3.5 text-blue-600" /> Filtrer les données
-              </h4>
-              {(filterOrg !== "all" || filterAgent !== "all") && (
-                <button onClick={() => { setFilterOrg("all"); setFilterAgent("all"); }} className="text-[11px] text-blue-600 hover:text-blue-700 font-medium">
-                  Réinitialiser les filtres
-                </button>
-              )}
+        <div className="fixed inset-y-0 right-0 z-50 flex print:hidden">
+          <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-[2px]" onClick={() => setShowFilters(false)} />
+          <div className="relative ml-auto w-[340px] max-w-[90vw] h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="h-9 w-9 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                  <Filter className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-semibold text-slate-900">Filtres</h2>
+                  <p className="text-[11px] text-slate-500">Affiner les données du dashboard</p>
+                </div>
+              </div>
+              <button onClick={() => setShowFilters(false)} className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+                <X className="h-5 w-5" />
+              </button>
             </div>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-              <div className="w-full sm:w-56">
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">Organisation</label>
+
+            {/* Filters */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+              {/* Active filter badges */}
+              {(filterOrg !== "all" || filterAgent !== "all") && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Filtres actifs</p>
+                    <button onClick={() => { setFilterOrg("all"); setFilterAgent("all"); }} className="text-[11px] text-red-500 hover:text-red-600 font-medium">
+                      Tout effacer
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {filterOrg !== "all" && (
+                      <Badge variant="primary" className="text-[11px] flex items-center gap-1">
+                        {orgList.find((o) => o.id === filterOrg)?.name}
+                        <button onClick={() => setFilterOrg("all")} className="ml-0.5 hover:text-red-200"><X className="h-3 w-3" /></button>
+                      </Badge>
+                    )}
+                    {filterAgent !== "all" && (
+                      <Badge variant="primary" className="text-[11px] flex items-center gap-1">
+                        {filterAgent}
+                        <button onClick={() => setFilterAgent("all")} className="ml-0.5 hover:text-red-200"><X className="h-3 w-3" /></button>
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Period */}
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Période</label>
+                <div className="grid grid-cols-5 gap-1">
+                  {[
+                    { value: "7", label: "7j" },
+                    { value: "30", label: "30j" },
+                    { value: "90", label: "3m" },
+                    { value: "180", label: "6m" },
+                    { value: "365", label: "12m" },
+                  ].map((p) => (
+                    <button
+                      key={p.value}
+                      onClick={() => setDays(p.value)}
+                      className={cn(
+                        "rounded-lg py-2 text-[12px] font-medium transition-all",
+                        days === p.value
+                          ? "bg-blue-100 text-blue-700 ring-1 ring-blue-200"
+                          : "bg-slate-50 text-slate-600 hover:bg-slate-100 ring-1 ring-slate-200"
+                      )}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Organization */}
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Organisation</label>
                 <Select value={filterOrg} onValueChange={setFilterOrg}>
-                  <SelectTrigger><SelectValue placeholder="Toutes" /></SelectTrigger>
+                  <SelectTrigger className="text-[12px]"><SelectValue placeholder="Toutes les organisations" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Toutes les organisations</SelectItem>
                     {orgList.map((o) => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="w-full sm:w-56">
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">Technicien</label>
+
+              {/* Technician */}
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Technicien</label>
                 <Select value={filterAgent} onValueChange={setFilterAgent}>
-                  <SelectTrigger><SelectValue placeholder="Tous" /></SelectTrigger>
+                  <SelectTrigger className="text-[12px]"><SelectValue placeholder="Tous les techniciens" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Tous les techniciens</SelectItem>
                     {agentList.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              {(filterOrg !== "all" || filterAgent !== "all") && (
-                <div className="flex items-center gap-2 mt-4 sm:mt-5">
-                  {filterOrg !== "all" && (
-                    <Badge variant="primary" className="text-[11px] flex items-center gap-1">
-                      {orgList.find((o) => o.id === filterOrg)?.name}
-                      <button onClick={() => setFilterOrg("all")}><X className="h-3 w-3" /></button>
-                    </Badge>
-                  )}
-                  {filterAgent !== "all" && (
-                    <Badge variant="primary" className="text-[11px] flex items-center gap-1">
-                      {filterAgent}
-                      <button onClick={() => setFilterAgent("all")}><X className="h-3 w-3" /></button>
-                    </Badge>
-                  )}
-                </div>
-              )}
             </div>
-          </CardContent>
-        </Card>
+
+            {/* Footer */}
+            <div className="border-t border-slate-200 px-5 py-3 shrink-0 flex items-center justify-between">
+              <button
+                onClick={() => { setFilterOrg("all"); setFilterAgent("all"); setDays("30"); }}
+                className="text-[12px] text-slate-500 hover:text-slate-700 font-medium"
+              >
+                Réinitialiser tout
+              </button>
+              <Button variant="primary" size="sm" onClick={() => setShowFilters(false)}>
+                Appliquer
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* (Widget config removed — use sidebar editor instead) */}
@@ -820,9 +1110,7 @@ export default function ReportsPage() {
                   case "top_tickets":
                     return fd ? <TopTicketsWidget data={fd} /> : null;
                   default:
-                    return (
-                      <Card><CardContent className="p-5 text-center text-slate-400 text-[13px]">Widget « {widgetId} »</CardContent></Card>
-                    );
+                    return <QueryWidgetRenderer widgetId={widgetId} />;
                 }
               }}
             />
@@ -830,8 +1118,229 @@ export default function ReportsPage() {
         </>
       )}
 
-      {/* Widget sidebar */}
-      <WidgetSidebar page="reports" open={showWidgetSidebar} onClose={() => setShowWidgetSidebar(false)} />
+      {/* Widget sidebar — built-in + custom widgets */}
+      {showWidgetSidebar && (
+        <WidgetAddPanel
+          dashItems={dashItems}
+          onAdd={handleGridAdd}
+          onClose={() => setShowWidgetSidebar(false)}
+        />
+      )}
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// Query widget renderer — loads & executes a custom widget's query
+// ===========================================================================
+function QueryWidgetRenderer({ widgetId }: { widgetId: string }) {
+  const [result, setResult] = useState<{ label: string; value: number }[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [widget, setWidget] = useState<QueryWidget | null>(null);
+
+  useEffect(() => {
+    const widgets = loadQueryWidgets();
+    const w = widgets.find((x) => x.id === widgetId);
+    if (!w) { setLoading(false); return; }
+    setWidget(w);
+    fetch("/api/v1/analytics/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(w.query),
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.results) setResult(d.results); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [widgetId]);
+
+  if (loading) return <Card><CardContent className="p-5 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-slate-400" /></CardContent></Card>;
+  if (!widget) return <Card><CardContent className="p-5 text-center text-slate-400 text-[13px]">Widget « {widgetId} » introuvable</CardContent></Card>;
+  if (!result) return <Card><CardContent className="p-5 text-center text-slate-400 text-[13px]">Aucune donnée</CardContent></Card>;
+
+  const color = widget.color || "#2563eb";
+  const maxVal = Math.max(...result.map((r) => r.value), 1);
+  const isSingle = result.length === 1 && result[0].label === "Total";
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <p className="text-[11px] font-semibold text-slate-500 mb-2">{widget.name}</p>
+        {(widget.chartType === "number" || isSingle) ? (
+          <div className="text-center py-2">
+            <p className="text-3xl font-bold tabular-nums" style={{ color }}>{result[0]?.value?.toLocaleString("fr-CA") ?? "—"}</p>
+          </div>
+        ) : widget.chartType === "bar" ? (
+          <div className="flex items-end gap-1 h-24">
+            {result.map((r, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                <div className="w-full relative" style={{ height: "80px" }}>
+                  <div className="absolute bottom-0 left-0 right-0 rounded-t" style={{ height: `${Math.max((r.value / maxVal) * 100, 4)}%`, backgroundColor: color }} />
+                </div>
+                <span className="text-[8px] text-slate-400 truncate max-w-full text-center">{r.label}</span>
+              </div>
+            ))}
+          </div>
+        ) : widget.chartType === "horizontal_bar" ? (
+          <div className="space-y-1.5">
+            {result.map((r, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-600 w-24 truncate">{r.label}</span>
+                <div className="flex-1 h-4 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${(r.value / maxVal) * 100}%`, backgroundColor: color }} />
+                </div>
+                <span className="text-[10px] font-bold tabular-nums w-14 text-right">{r.value.toLocaleString("fr-CA")}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {result.map((r, i) => (
+              <div key={i} className="flex justify-between py-1 border-b border-slate-100 last:border-0">
+                <span className="text-[11px] text-slate-700">{r.label}</span>
+                <span className="text-[11px] font-bold tabular-nums" style={{ color }}>{r.value.toLocaleString("fr-CA")}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ===========================================================================
+// Widget add panel — shows built-in WIDGETS + user query-builder widgets
+// ===========================================================================
+const QUERY_WIDGETS_KEY = "nexus:custom-widgets-v2";
+
+interface QueryWidget {
+  id: string;
+  name: string;
+  description: string;
+  chartType: string;
+  color: string;
+  query: Record<string, unknown>;
+  createdAt: string;
+}
+
+function loadQueryWidgets(): QueryWidget[] {
+  try { const r = localStorage.getItem(QUERY_WIDGETS_KEY); if (r) return JSON.parse(r); } catch {}
+  return [];
+}
+
+function WidgetAddPanel({ dashItems, onAdd, onClose }: {
+  dashItems: DashboardItem[];
+  onAdd: (widgetId: string) => void;
+  onClose: () => void;
+}) {
+  const [queryWidgets] = useState<QueryWidget[]>(() => loadQueryWidgets());
+
+  return (
+    <div className="fixed inset-y-0 right-0 z-50 flex print:hidden">
+      <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative ml-auto w-[380px] max-w-[90vw] h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="h-9 w-9 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+              <LayoutDashboard className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-[15px] font-semibold text-slate-900">Ajouter des widgets</h2>
+              <p className="text-[11px] text-slate-500">{dashItems.length} widgets actuellement</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+          {/* Built-in widgets */}
+          <div>
+            <p className="px-1 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Widgets prédéfinis</p>
+            <div className="space-y-1.5">
+              {WIDGETS.map((w) => {
+                const alreadyUsed = dashItems.some((di) => di.widgetId === w.id);
+                return (
+                  <div key={w.id} className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all ring-1 ring-inset",
+                    alreadyUsed ? "bg-emerald-50/30 ring-emerald-200/60" : "bg-white ring-slate-200/60 hover:ring-blue-200 hover:bg-blue-50/20"
+                  )}>
+                    <div className={cn(
+                      "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
+                      alreadyUsed ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"
+                    )}>
+                      {w.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-medium text-slate-800 truncate">{w.label}</p>
+                      <p className="text-[10px] text-slate-500 truncate">{w.description}</p>
+                    </div>
+                    {alreadyUsed ? (
+                      <span className="text-[10px] text-emerald-600 font-medium shrink-0">Actif</span>
+                    ) : (
+                      <button onClick={() => onAdd(w.id)}
+                        className="shrink-0 h-7 w-7 rounded-md bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition-colors">
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* User query-builder widgets */}
+          {queryWidgets.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between px-1 mb-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mes widgets ({queryWidgets.length})</p>
+                <Link href="/analytics/widgets" className="text-[11px] text-blue-600 hover:text-blue-700 font-medium">
+                  Gérer
+                </Link>
+              </div>
+              <div className="space-y-1.5">
+                {queryWidgets.map((w) => {
+                  const alreadyUsed = dashItems.some((di) => di.widgetId === w.id);
+                  return (
+                    <div key={w.id} className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all ring-1 ring-inset",
+                      alreadyUsed ? "bg-emerald-50/30 ring-emerald-200/60" : "bg-white ring-slate-200/60 hover:ring-blue-200 hover:bg-blue-50/20"
+                    )}>
+                      <div className={cn(
+                        "h-8 w-8 rounded-lg flex items-center justify-center shrink-0"
+                      )} style={{ backgroundColor: (alreadyUsed ? "#05966920" : w.color + "20") }}>
+                        <BarChart3 className="h-4 w-4" style={{ color: alreadyUsed ? "#059669" : w.color }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-medium text-slate-800 truncate">{w.name}</p>
+                        <p className="text-[10px] text-slate-500 truncate">{w.description}</p>
+                      </div>
+                      {alreadyUsed ? (
+                        <span className="text-[10px] text-emerald-600 font-medium shrink-0">Actif</span>
+                      ) : (
+                        <button onClick={() => onAdd(w.id)}
+                          className="shrink-0 h-7 w-7 rounded-md bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition-colors">
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {queryWidgets.length === 0 && (
+            <div className="text-center py-4">
+              <p className="text-[12px] text-slate-400 mb-2">Aucun widget personnalisé</p>
+              <Link href="/analytics/widgets" className="text-[11px] text-blue-600 hover:text-blue-700 font-medium">
+                Créer dans l&apos;éditeur de widgets
+              </Link>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

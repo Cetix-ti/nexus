@@ -204,7 +204,7 @@ function SortableWidget({
 
   if (!editMode) {
     return (
-      <div style={{ gridColumn: colSpan, minHeight: isMobile ? "auto" : `${item.h * ROW_PX}px` }} className="overflow-hidden w-full">
+      <div style={{ gridColumn: colSpan }} className="w-full">
         {children}
       </div>
     );
