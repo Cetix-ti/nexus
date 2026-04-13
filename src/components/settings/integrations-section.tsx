@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 import {
   Plug,
   CheckCircle2,
@@ -11,7 +12,6 @@ import {
   Settings as SettingsIcon,
   ExternalLink,
   Search,
-  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,11 @@ import {
 const PROVIDER_COLORS: Record<string, string> = {
   atera: "from-emerald-500 to-teal-600",
   quickbooks_online: "from-green-600 to-emerald-700",
+};
+
+const PROVIDER_LOGOS: Record<string, string> = {
+  atera: "/images/atera-logo.png",
+  quickbooks_online: "/images/quickbooks-logo.svg",
 };
 
 function getProviderInitials(name: string): string {
@@ -357,14 +362,20 @@ export function IntegrationsSection() {
                 <Card key={integ.id} className="card-hover">
                   <CardContent className="p-5">
                     <div className="flex items-start gap-3">
-                      <div
-                        className={cn(
-                          "flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br text-white text-[13px] font-bold shadow-sm shrink-0",
-                          gradient
-                        )}
-                      >
-                        {getProviderInitials(integ.name)}
-                      </div>
+                      {PROVIDER_LOGOS[integ.provider] ? (
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white ring-1 ring-inset ring-slate-200 overflow-hidden shrink-0">
+                          <Image src={PROVIDER_LOGOS[integ.provider]} alt={integ.name} width={32} height={32} className="object-contain" />
+                        </div>
+                      ) : (
+                        <div
+                          className={cn(
+                            "flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br text-white text-[13px] font-bold shadow-sm shrink-0",
+                            gradient
+                          )}
+                        >
+                          {getProviderInitials(integ.name)}
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <h4 className="text-[14px] font-semibold text-slate-900 truncate">
@@ -526,7 +537,9 @@ export function IntegrationsSection() {
           <CardContent className="p-5 space-y-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-600 to-emerald-700 flex items-center justify-center text-white text-[10px] font-bold">QB</div>
+                <div className="h-8 w-8 rounded-lg bg-white ring-1 ring-inset ring-slate-200 flex items-center justify-center overflow-hidden">
+                  <Image src="/images/quickbooks-logo.svg" alt="QuickBooks" width={24} height={24} className="object-contain" />
+                </div>
                 <div>
                   <h3 className="text-[15px] font-semibold text-slate-900">Configuration QuickBooks Online</h3>
                   <p className="text-[11px] text-slate-500">Remplissez les champs puis cliquez Enregistrer</p>
@@ -613,28 +626,6 @@ export function IntegrationsSection() {
         </Card>
       )}
 
-      {/* Add custom integration */}
-      <Card className="border-dashed">
-        <CardContent className="p-5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500">
-              <Plus className="h-5 w-5" />
-            </div>
-            <div>
-              <h4 className="text-[13px] font-semibold text-slate-900">
-                Suggérer une intégration
-              </h4>
-              <p className="text-[11.5px] text-slate-500">
-                Vous utilisez un outil qui n&apos;est pas listé ? Contactez le
-                support.
-              </p>
-            </div>
-          </div>
-          <Button variant="outline" size="sm">
-            Demander
-          </Button>
-        </CardContent>
-      </Card>
     </div>
   );
 }

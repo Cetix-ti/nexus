@@ -1,11 +1,16 @@
 "use client";
 
+import Image from "next/image";
 import { RefreshCw, Plug, Settings, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ASSET_SOURCE_LABELS, type RmmIntegration } from "@/lib/assets/types";
 import { cn } from "@/lib/utils";
+
+const PROVIDER_LOGOS: Record<string, string> = {
+  atera: "/images/atera-logo.png",
+};
 
 interface RmmIntegrationCardProps {
   integration: RmmIntegration;
@@ -38,19 +43,26 @@ export function RmmIntegrationCard({ integration, onSync, onConnect }: RmmIntegr
   const label = ASSET_SOURCE_LABELS[integration.provider];
   const initial = label.charAt(0);
   const gradient = PROVIDER_COLORS[integration.provider] ?? PROVIDER_COLORS.manual;
+  const logo = PROVIDER_LOGOS[integration.provider];
 
   return (
     <Card className="p-4 flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div
-            className={cn(
-              "h-11 w-11 rounded-xl bg-gradient-to-br text-white flex items-center justify-center text-base font-semibold shadow-sm",
-              gradient
-            )}
-          >
-            {initial}
-          </div>
+          {logo ? (
+            <div className="h-11 w-11 rounded-xl bg-white ring-1 ring-inset ring-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+              <Image src={logo} alt={label} width={32} height={32} className="object-contain" />
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "h-11 w-11 rounded-xl bg-gradient-to-br text-white flex items-center justify-center text-base font-semibold shadow-sm",
+                gradient
+              )}
+            >
+              {initial}
+            </div>
+          )}
           <div>
             <div className="text-[14px] font-semibold text-slate-900 leading-tight">{label}</div>
             <div className="mt-0.5">
