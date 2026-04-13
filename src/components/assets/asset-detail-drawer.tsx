@@ -130,7 +130,7 @@ export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl bg-white shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-200"
+        className="w-full max-w-4xl bg-white shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
