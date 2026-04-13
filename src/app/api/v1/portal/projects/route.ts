@@ -77,7 +77,7 @@ export async function GET(_request: NextRequest) {
     type: p.type,
     status: p.status,
     priority: p.priority,
-    managerName: `${p.manager.firstName} ${p.manager.lastName}`,
+    managerName: p.manager ? `${p.manager.firstName} ${p.manager.lastName}` : "—",
     startDate: p.startDate?.toISOString() ?? "",
     targetEndDate: p.targetEndDate?.toISOString() ?? "",
     progressPercent: p.progressPercent,

@@ -15,30 +15,32 @@ export async function GET(_request: NextRequest) {
 
   const OPEN = ["NEW", "OPEN", "IN_PROGRESS", "ON_SITE", "WAITING_CLIENT"];
 
+  // Fetch data in parallel — each section is independently guarded so one failure
+  // doesn't take down the entire reports page.
   const [ticketStats, projects, timeEntries, contracts] = await Promise.all([
     prisma.ticket.groupBy({
       by: ["status"],
       where: { organizationId: orgId },
       _count: true,
-    }),
+    }).catch(() => []),
     perms.canSeeProjects
       ? prisma.project.findMany({
           where: { organizationId: orgId, isVisibleToClient: true, isArchived: false },
           select: { id: true, status: true, progressPercent: true, isAtRisk: true },
-        })
+        }).catch(() => [])
       : [],
     (perms.canSeeTimeReports || perms.canSeeBillingReports)
       ? prisma.timeEntry.findMany({
           where: { organizationId: orgId },
           select: { durationMinutes: true, coverageStatus: true, amount: true, approvalStatus: true },
           take: 1000,
-        })
+        }).catch(() => [])
       : [],
     perms.canSeeHourBankBalance
       ? prisma.contract.findMany({
           where: { organizationId: orgId, status: "ACTIVE", type: { in: ["RETAINER", "HOURLY"] } },
           select: { id: true, name: true, monthlyHours: true },
-        })
+        }).catch(() => [])
       : [],
   ]);
 
@@ -59,7 +61,7 @@ export async function GET(_request: NextRequest) {
       active: projects.filter((p) => p.status === "active").length,
       atRisk: projects.filter((p) => p.isAtRisk).length,
       completed: projects.filter((p) => p.status === "completed").length,
-      averageProgress: Math.round(projects.reduce((s, p) => s + p.progressPercent, 0) / projects.length),
+      averageProgress: projects.length > 0 ? Math.round(projects.reduce((s, p) => s + p.progressPercent, 0) / projects.length) : 0,
     };
   }
 

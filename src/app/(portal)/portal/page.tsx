@@ -11,13 +11,10 @@ import {
   AlertCircle,
   ArrowRight,
   Loader2,
-  BarChart3,
   ShieldCheck,
   ThumbsUp,
   ThumbsDown,
-  Users,
 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { cn } from "@/lib/utils";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 
@@ -67,8 +64,6 @@ export default function PortalHomePage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
-  const [ticketsByContact, setTicketsByContact] = useState<{ name: string; count: number }[]>([]);
-  const [chartRows, setChartRows] = useState(10);
 
   useEffect(() => {
     fetch("/api/v1/portal/dashboard")
@@ -76,23 +71,6 @@ export default function PortalHomePage() {
       .then((d) => setData(d))
       .catch(() => {})
       .finally(() => setLoading(false));
-
-    // Fetch tickets grouped by contact (admin only)
-    fetch("/api/v1/portal/tickets")
-      .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((d) => {
-        const tickets = d.data || [];
-        const countMap = new Map<string, number>();
-        for (const t of tickets) {
-          const name = t.requesterName || t.requesterEmail || "Inconnu";
-          countMap.set(name, (countMap.get(name) || 0) + 1);
-        }
-        const sorted = Array.from(countMap.entries())
-          .map(([name, count]) => ({ name, count }))
-          .sort((a, b) => b.count - a.count);
-        setTicketsByContact(sorted);
-      })
-      .catch(() => {});
 
     // Fetch pending approvals
     fetch("/api/v1/portal/approvals")
@@ -279,60 +257,6 @@ export default function PortalHomePage() {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tickets par contact (admin only) */}
-      {ticketsByContact.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-blue-600" />
-              <h2 className="text-[16px] font-semibold text-slate-900">
-                Billets par contact
-              </h2>
-            </div>
-            <select
-              value={chartRows}
-              onChange={(e) => setChartRows(Number(e.target.value))}
-              className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[12px] text-slate-600"
-            >
-              <option value={5}>Top 5</option>
-              <option value={10}>Top 10</option>
-              <option value={20}>Top 20</option>
-              <option value={50}>Tous</option>
-            </select>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div style={{ height: Math.max(200, Math.min(ticketsByContact.slice(0, chartRows).length * 36, 600)) }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={ticketsByContact.slice(0, chartRows)}
-                  layout="vertical"
-                  margin={{ top: 0, right: 20, left: 0, bottom: 0 }}
-                >
-                  <XAxis type="number" tick={{ fontSize: 11, fill: "#94A3B8" }} allowDecimals={false} />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    width={140}
-                    tick={{ fontSize: 11, fill: "#475569" }}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#fff", border: "1px solid #E2E8F0", borderRadius: "8px", fontSize: "13px" }}
-                    formatter={(value) => [`${value} billets`, ""]}
-                  />
-                  <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={24}>
-                    {ticketsByContact.slice(0, chartRows).map((_, i) => (
-                      <Cell key={i} fill={i === 0 ? "#2563EB" : i < 3 ? "#3B82F6" : "#93C5FD"} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
           </div>
         </div>
       )}
