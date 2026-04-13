@@ -75,8 +75,8 @@ export function proxy(request: NextRequest) {
     pathname === "/portal/login"
   ) {
     if (!checkRateLimit(`auth:${ip}`, MAX_AUTH_REQUESTS)) {
-      return new NextResponse(
-        "Trop de tentatives. Réessayez dans une minute.",
+      return NextResponse.json(
+        { error: "Trop de tentatives. Réessayez dans une minute." },
         { status: 429 },
       );
     }
