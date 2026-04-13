@@ -69,6 +69,7 @@ async function getToken(): Promise<string> {
     },
   );
 
+  console.log("[wazuh] Auth response:", res.status);
   if (res.status !== 200) {
     throw new Error(`Wazuh auth failed (${res.status}): ${res.body}`);
   }
@@ -88,6 +89,7 @@ async function wazuhFetch<T>(endpoint: string): Promise<T> {
     },
   });
 
+  console.log("[wazuh]", endpoint.slice(0, 80), "->", res.status, res.status !== 200 ? res.body.slice(0, 300) : "");
   if (res.status !== 200) {
     throw new Error(
       `Wazuh API error ${res.status}: ${res.body.slice(0, 200)}`,
@@ -192,7 +194,7 @@ export async function getWazuhAgentPackages(
   return all;
 }
 
-const AGENT_SELECT = "id,name,ip,status,os,group,lastKeepAlive";
+const AGENT_SELECT = "id,name,ip,status,os.name,os.platform,os.version,group,lastKeepAlive";
 
 /**
  * Get network interfaces (MAC addresses) for a Wazuh agent.
