@@ -76,13 +76,22 @@ export default function PortalAssetDetailPage() {
         setAsset(a);
         if (Array.isArray(n)) setNotes(n);
         // Load software if asset has an external source
+        console.log("[asset-detail] externalSource:", a?.externalSource, "externalId:", a?.externalId);
         if (a?.externalSource) {
           setSoftwareLoading(true);
           fetch(`/api/v1/portal/assets/${assetId}/software`)
-            .then((r) => (r.ok ? r.json() : []))
-            .then((s) => { if (Array.isArray(s)) setSoftware(s); })
-            .catch(() => {})
+            .then((r) => {
+              console.log("[asset-detail] software response:", r.status);
+              return r.ok ? r.json() : [];
+            })
+            .then((s) => {
+              console.log("[asset-detail] software count:", Array.isArray(s) ? s.length : "not array");
+              if (Array.isArray(s)) setSoftware(s);
+            })
+            .catch((e) => console.error("[asset-detail] software error:", e))
             .finally(() => setSoftwareLoading(false));
+        } else {
+          console.log("[asset-detail] no externalSource, skipping software fetch");
         }
       })
       .catch(() => {})

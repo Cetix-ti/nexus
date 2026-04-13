@@ -25,19 +25,24 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  console.log("[portal-software] asset:", { id, externalSource: asset.externalSource, externalId: asset.externalId });
+
   if (asset.externalSource !== "atera" || !asset.externalId) {
+    console.log("[portal-software] skipped: no atera source");
     return NextResponse.json([]);
   }
 
   // externalId may be stored as "atera_123" or just "123"
   const rawId = asset.externalId.replace(/^atera_/, "");
   const agentId = parseInt(rawId, 10);
+  console.log("[portal-software] agentId:", agentId, "from rawId:", rawId);
   if (Number.isNaN(agentId)) {
     return NextResponse.json([]);
   }
 
   try {
     const software = await listAteraAgentSoftware(agentId);
+    console.log("[portal-software] fetched:", software.length, "items");
     return NextResponse.json(
       software.map((s) => ({
         name: s.AppName,
@@ -46,7 +51,8 @@ export async function GET(
         installedDate: s.InstalledDate ?? null,
       })),
     );
-  } catch {
+  } catch (err) {
+    console.error("[portal-software] error:", err instanceof Error ? err.message : err);
     return NextResponse.json([]);
   }
 }
