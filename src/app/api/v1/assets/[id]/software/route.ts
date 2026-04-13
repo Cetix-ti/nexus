@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { listAteraAgentSoftware } from "@/lib/integrations/atera-client";
+import { listAteraAvailablePatches } from "@/lib/integrations/atera-client";
 
 export async function GET(
   _req: Request,
@@ -13,30 +13,28 @@ export async function GET(
   const { id } = await params;
   const asset = await prisma.asset.findUnique({
     where: { id },
-    select: { externalSource: true, externalId: true },
+    select: { externalSource: true, metadata: true },
   });
 
   if (!asset) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  if (asset.externalSource !== "atera" || !asset.externalId) {
+  if (asset.externalSource !== "atera") {
     return NextResponse.json([]);
   }
 
-  // externalId may be stored as "atera_123" or just "123"
-  const rawId = asset.externalId.replace(/^atera_/, "");
-  const agentId = parseInt(rawId, 10);
-  if (Number.isNaN(agentId)) {
+  const deviceGuid = (asset.metadata as any)?.deviceGuid;
+  if (!deviceGuid) {
     return NextResponse.json([]);
   }
 
   try {
-    const software = await listAteraAgentSoftware(agentId);
+    const patches = await listAteraAvailablePatches(deviceGuid);
     return NextResponse.json(
-      software.map((s) => ({
-        name: s.AppName,
-        version: s.Version ?? null,
-        publisher: s.Publisher ?? null,
-        installedDate: s.InstalledDate ?? null,
+      patches.map((p) => ({
+        name: p.name,
+        category: p.class ?? null,
+        kbId: p.kbId ?? null,
+        status: p.status ?? null,
       })),
     );
   } catch {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
-import { listAteraAgentSoftware } from "@/lib/integrations/atera-client";
+import { listAteraAvailablePatches } from "@/lib/integrations/atera-client";
 
 export async function GET(
   _req: Request,
@@ -13,7 +13,7 @@ export async function GET(
   const { id } = await params;
   const asset = await prisma.asset.findFirst({
     where: { id, organizationId: user.organizationId },
-    select: { externalSource: true, externalId: true, assignedContactId: true },
+    select: { externalSource: true, metadata: true, assignedContactId: true },
   });
 
   if (!asset) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -25,34 +25,26 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  console.log("[portal-software] asset:", { id, externalSource: asset.externalSource, externalId: asset.externalId });
-
-  if (asset.externalSource !== "atera" || !asset.externalId) {
-    console.log("[portal-software] skipped: no atera source");
+  if (asset.externalSource !== "atera") {
     return NextResponse.json([]);
   }
 
-  // externalId may be stored as "atera_123" or just "123"
-  const rawId = asset.externalId.replace(/^atera_/, "");
-  const agentId = parseInt(rawId, 10);
-  console.log("[portal-software] agentId:", agentId, "from rawId:", rawId);
-  if (Number.isNaN(agentId)) {
+  const deviceGuid = (asset.metadata as any)?.deviceGuid;
+  if (!deviceGuid) {
     return NextResponse.json([]);
   }
 
   try {
-    const software = await listAteraAgentSoftware(agentId);
-    console.log("[portal-software] fetched:", software.length, "items");
+    const patches = await listAteraAvailablePatches(deviceGuid);
     return NextResponse.json(
-      software.map((s) => ({
-        name: s.AppName,
-        version: s.Version ?? null,
-        publisher: s.Publisher ?? null,
-        installedDate: s.InstalledDate ?? null,
+      patches.map((p) => ({
+        name: p.name,
+        category: p.class ?? null,
+        kbId: p.kbId ?? null,
+        status: p.status ?? null,
       })),
     );
-  } catch (err) {
-    console.error("[portal-software] error:", err instanceof Error ? err.message : err);
+  } catch {
     return NextResponse.json([]);
   }
 }

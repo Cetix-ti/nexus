@@ -22,6 +22,7 @@ export interface AteraCustomer {
 
 export interface AteraAgent {
   AgentID: number;
+  DeviceGuid?: string;
   MachineName: string;
   AgentName?: string;
   CustomerID: number;
@@ -153,31 +154,30 @@ export async function testAteraConnection(): Promise<{
   }
 }
 
-export interface AteraSoftware {
-  AppName: string;
-  Version?: string;
-  Publisher?: string;
-  InstalledDate?: string;
+export interface AteraAvailablePatch {
+  name: string;
+  class: string;
+  kbId?: string;
+  status: string;
+}
+
+interface AteraAvailablePatchesResponse {
+  deviceGuid: string;
+  timestamp: string;
+  availableUpdates: AteraAvailablePatch[];
 }
 
 /**
- * List installed software for a specific Atera agent.
+ * List available patches / updates for a specific Atera agent.
+ * Uses the deviceGuid (not agentId).
  */
-export async function listAteraAgentSoftware(
-  agentId: number
-): Promise<AteraSoftware[]> {
-  const all: AteraSoftware[] = [];
-  let page = 1;
-  let totalPages = 1;
-  do {
-    const res = await ateraFetch<AteraResponse<AteraSoftware>>(
-      `/agents/${agentId}/software?page=${page}&itemsInPage=50`
-    );
-    all.push(...res.items);
-    totalPages = res.totalPages;
-    page++;
-  } while (page <= totalPages && page <= 20);
-  return all;
+export async function listAteraAvailablePatches(
+  deviceGuid: string
+): Promise<AteraAvailablePatch[]> {
+  const res = await ateraFetch<AteraAvailablePatchesResponse>(
+    `/agents/${deviceGuid}/available-patches`
+  );
+  return res.availableUpdates ?? [];
 }
 
 /**
@@ -212,6 +212,7 @@ export function mapAteraAgentToOrgAsset(
     status: agent.Online ? "active" : "inactive",
     source: "atera" as const,
     externalId: String(agent.AgentID),
+    deviceGuid: agent.DeviceGuid || undefined,
     manufacturer: agent.Vendor || undefined,
     model: agent.VendorBrandModel || undefined,
     serialNumber: agent.SystemSerialNumber || agent.WindowsSerialNumber || undefined,

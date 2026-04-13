@@ -50,6 +50,7 @@ import {
 } from "@/lib/assets/types";
 import { Loader2 } from "lucide-react";
 import { AssetModal } from "./asset-modal";
+import { AssetDetailDrawer } from "./asset-detail-drawer";
 import { RmmIntegrationCard } from "./rmm-integration-card";
 import { AteraMappingModal } from "./atera-mapping-modal";
 import { cn } from "@/lib/utils";
@@ -155,8 +156,16 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
         if (!Array.isArray(items)) return;
         setIntegrations((prev) =>
           PROVIDERS_TO_SHOW.map((provider) => {
-            const fromApi = items.find((i: RmmIntegration) => i.provider === provider);
-            return fromApi ?? prev.find((i) => i.provider === provider)!;
+            const fromApi = items.find((i: any) => i.provider === provider);
+            if (!fromApi) return prev.find((i) => i.provider === provider)!;
+            // Map API fields to RmmIntegration shape
+            return {
+              ...prev.find((i) => i.provider === provider)!,
+              ...fromApi,
+              isConnected: !!fromApi.isActive,
+              syncedAssetCount: fromApi.recordCount ?? fromApi.syncedAssetCount ?? 0,
+              lastSyncAt: fromApi.lastSyncAt ?? undefined,
+            } as RmmIntegration;
           })
         );
       })
@@ -169,6 +178,7 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<OrgAsset | null>(null);
+  const [detailAsset, setDetailAsset] = useState<OrgAsset | null>(null);
   const [mappingOpen, setMappingOpen] = useState(false);
   const [mapping, setMapping] = useState<AteraMapping | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -409,7 +419,7 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
         open={mappingOpen}
         organizationName={organizationName || organizationId}
         onClose={() => setMappingOpen(false)}
-        onPick={(externalId, externalName) => {
+        onPick={async (externalId, externalName) => {
           const m = { externalId, externalName };
           fetch("/api/v1/integrations/mappings", {
             method: "POST",
@@ -423,8 +433,41 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
           });
           setMapping(m);
           setMappingOpen(false);
-          // Trigger sync immediately after mapping is set
-          setTimeout(() => handleSync("atera"), 50);
+
+          // Sync directly — do NOT go through handleSync to avoid stale closure
+          setSyncMessage(`Synchronisation avec Atera (${m.externalName})…`);
+          try {
+            const res = await fetch(
+              `/api/v1/integrations/atera/customers/${encodeURIComponent(
+                m.externalId
+              )}/agents?orgId=${encodeURIComponent(organizationId)}`
+            );
+            const json = await res.json();
+            if (!res.ok || !json.success) {
+              throw new Error(json.error || `HTTP ${res.status}`);
+            }
+            const fetched = (json.data || []) as OrgAsset[];
+            const now = new Date().toISOString();
+            setAssets((prev) => {
+              const withoutAtera = prev.filter((a) => a.source !== "atera");
+              return [...fetched, ...withoutAtera];
+            });
+            setIntegrations((prev) =>
+              prev.map((i) =>
+                i.provider === "atera"
+                  ? { ...i, isConnected: true, lastSyncAt: now, syncedAssetCount: fetched.length }
+                  : i
+              )
+            );
+            setSyncMessage(
+              `Atera : ${fetched.length} actif${fetched.length > 1 ? "s" : ""} synchronisé${fetched.length > 1 ? "s" : ""} (${m.externalName})`
+            );
+            setTimeout(() => setSyncMessage(null), 5000);
+          } catch (err) {
+            setSyncMessage(
+              `Erreur Atera : ${err instanceof Error ? err.message : String(err)}`
+            );
+          }
         }}
       />
 
@@ -515,12 +558,16 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
                 return (
                   <tr key={a.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-4 py-3">
-                      <div className="flex flex-col">
-                        <span className="font-medium text-slate-900 font-mono text-[12px]">{a.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setDetailAsset(a)}
+                        className="flex flex-col text-left hover:underline"
+                      >
+                        <span className="font-medium text-blue-700 font-mono text-[12px]">{a.name}</span>
                         {a.manufacturer && (
                           <span className="text-[11px] text-slate-500">{a.manufacturer} {a.model}</span>
                         )}
-                      </div>
+                      </button>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 text-slate-700">
@@ -543,6 +590,13 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
                     <td className="px-4 py-3 text-[12px] text-slate-500">{timeAgo(a.lastSeenAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setDetailAsset(a)}
+                          className="h-8 w-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition-colors"
+                          title="Voir les details"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
                         <button
                           onClick={() => openEdit(a)}
                           className="h-8 w-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
@@ -584,6 +638,11 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
         asset={editing}
         organizationId={organizationId}
         onSave={handleSave}
+      />
+
+      <AssetDetailDrawer
+        asset={detailAsset}
+        onClose={() => setDetailAsset(null)}
       />
     </div>
   );

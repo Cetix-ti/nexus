@@ -27,24 +27,25 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   try {
     const agents = await listAteraAgentsForCustomer(customerId);
-    const assets = agents.map((a) => mapAteraAgentToOrgAsset(a, orgId));
+    const mapped = agents.map((a) => mapAteraAgentToOrgAsset(a, orgId));
+
+    // Map Atera type to Prisma AssetType enum
+    const typeMap: Record<string, string> = {
+      windows_server: "SERVER",
+      linux_server: "SERVER",
+      workstation: "WORKSTATION",
+      laptop: "LAPTOP",
+      printer: "PRINTER",
+      network: "NETWORK_DEVICE",
+      switch: "NETWORK_DEVICE",
+      router: "NETWORK_DEVICE",
+      firewall: "NETWORK_DEVICE",
+    };
 
     // Persist assets to DB via upsert (so they survive page reload)
     let persisted = 0;
-    for (const asset of assets) {
+    for (const asset of mapped) {
       try {
-        // Map Atera type to Prisma AssetType enum
-        const typeMap: Record<string, string> = {
-          windows_server: "SERVER",
-          linux_server: "SERVER",
-          workstation: "WORKSTATION",
-          laptop: "LAPTOP",
-          printer: "PRINTER",
-          network: "NETWORK_DEVICE",
-          switch: "NETWORK_DEVICE",
-          router: "NETWORK_DEVICE",
-          firewall: "NETWORK_DEVICE",
-        };
         const assetType = typeMap[asset.type?.toLowerCase()] || "OTHER";
         const assetStatus = asset.status?.toLowerCase() === "active" ? "ACTIVE"
           : asset.status?.toLowerCase() === "inactive" ? "INACTIVE" : "ACTIVE";
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           lastSeenAt: asset.lastSeenAt,
           lastLoggedUser: asset.lastLoggedUser,
           ateraCustomerId: customerId,
+          deviceGuid: asset.deviceGuid,
           source: "atera",
         };
 
@@ -99,6 +101,57 @@ export async function GET(request: NextRequest, context: RouteContext) {
       where: { organizationId: orgId, provider: "atera" },
       data: { lastSyncAt: new Date(), syncedRecordCount: persisted },
     });
+
+    // DB enum → frontend type mapping
+    const DB_TYPE_TO_UI: Record<string, string> = {
+      WORKSTATION: "workstation",
+      LAPTOP: "laptop",
+      SERVER: "windows_server",
+      VIRTUAL_MACHINE: "server_virtual",
+      NETWORK_DEVICE: "network_switch",
+      PRINTER: "printer",
+      MOBILE: "laptop",
+      OTHER: "workstation",
+    };
+
+    // Re-read persisted assets from DB so the frontend gets correct IDs
+    const dbAssets = await prisma.asset.findMany({
+      where: { organizationId: orgId, externalSource: "atera" },
+      include: {
+        site: { select: { name: true } },
+        assignedContact: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { name: "asc" },
+    });
+
+    const assets = dbAssets.map((a) => ({
+      id: a.id,
+      organizationId: a.organizationId,
+      name: a.name,
+      type: DB_TYPE_TO_UI[a.type] ?? a.type.toLowerCase(),
+      status: a.status.toLowerCase(),
+      source: a.externalSource ?? "atera",
+      externalId: a.externalId,
+      manufacturer: a.manufacturer,
+      model: a.model,
+      serialNumber: a.serialNumber,
+      ipAddress: a.ipAddress,
+      macAddress: a.macAddress,
+      siteName: a.site?.name ?? null,
+      assignedToContactName: a.assignedContact
+        ? `${a.assignedContact.firstName} ${a.assignedContact.lastName}`
+        : null,
+      os: (a.metadata as any)?.os ?? null,
+      osVersion: (a.metadata as any)?.osVersion ?? null,
+      cpuModel: (a.metadata as any)?.cpuModel ?? null,
+      ramGb: (a.metadata as any)?.ramGb ?? null,
+      lastLoggedUser: (a.metadata as any)?.lastLoggedUser ?? null,
+      isMonitored: true,
+      lastSeenAt: (a.metadata as any)?.lastSeenAt ?? a.updatedAt.toISOString(),
+      tags: ["atera-sync"],
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    }));
 
     return NextResponse.json({
       success: true,
