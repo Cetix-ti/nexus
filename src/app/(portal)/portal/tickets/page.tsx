@@ -8,12 +8,10 @@ import {
   Loader2,
   Ticket,
   Clock,
-  AlertTriangle,
   CircleDot,
   Hourglass,
   Wrench,
   CheckCircle2,
-  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -161,15 +159,6 @@ export default function PortalTicketsPage() {
       c[tab.key] = tickets.filter((t) => statusMatchesTab(t.status, tab.key)).length;
     }
     return c;
-  }, [tickets]);
-
-  // Urgent tickets (SLA breached or overdue, still active)
-  const urgentTickets = useMemo(() => {
-    return tickets.filter(
-      (t) =>
-        (t.isOverdue || t.slaBreached) &&
-        !["resolved", "closed", "cancelled"].includes(t.status),
-    );
   }, [tickets]);
 
   // Active total (everything except resolved group)
@@ -323,56 +312,6 @@ export default function PortalTicketsPage() {
         </div>
       )}
 
-      {/* Attention required — SLA / Overdue */}
-      {urgentTickets.length > 0 && (
-        <div className="rounded-xl border border-red-200 bg-red-50/50 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="h-4 w-4 text-red-500" />
-            <h2 className="text-[13px] font-semibold text-red-700">
-              Attention requise ({urgentTickets.length})
-            </h2>
-          </div>
-          <div className="space-y-2">
-            {urgentTickets.slice(0, 5).map((t) => {
-              const st = STATUS_MAP[t.status];
-              return (
-                <Link
-                  key={t.id}
-                  href={`/portal/tickets/${t.id}`}
-                  className="flex items-center gap-3 rounded-lg bg-white border border-red-100 px-4 py-2.5 hover:shadow-sm transition-shadow"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-[11px] font-mono text-slate-400">
-                        {t.number}
-                      </span>
-                      {t.slaBreached && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
-                          SLA dépassé
-                        </span>
-                      )}
-                      {t.isOverdue && !t.slaBreached && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700">
-                          En retard
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[13px] font-medium text-slate-900 truncate">
-                      {t.subject}
-                    </p>
-                  </div>
-                  <ArrowRight className="h-3.5 w-3.5 text-slate-300 shrink-0" />
-                </Link>
-              );
-            })}
-            {urgentTickets.length > 5 && (
-              <p className="text-[11px] text-red-500 text-center pt-1">
-                + {urgentTickets.length - 5} autre{urgentTickets.length - 5 > 1 ? "s" : ""}
-              </p>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Priority breakdown (inline, subtle) */}
       {stats && stats.byPriority.length > 0 && (
@@ -487,12 +426,6 @@ export default function PortalTicketsPage() {
                         )}
                       >
                         {pr.label}
-                      </span>
-                    )}
-                    {t.slaBreached && (
-                      <span className="inline-flex items-center gap-0.5 rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
-                        <AlertTriangle className="h-2.5 w-2.5" />
-                        SLA
                       </span>
                     )}
                     {t.assigneeName && (
