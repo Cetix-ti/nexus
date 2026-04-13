@@ -316,7 +316,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
   callbacks: {
     async signIn({ user, account, profile }) {
-      // OAuth providers (Microsoft, Google) — resolve org from email domain
+      // OAuth providers (Microsoft, Google)
       if (
         account?.provider === "microsoft-entra-id" ||
         account?.provider === "google"
@@ -327,17 +327,37 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         ) as string | undefined;
         if (!email) return false;
 
-        // Extract names from OAuth profile for auto-provisioning
         const p = profile as any;
         const oauthFirstName = p?.given_name || user.name?.split(" ")[0];
         const oauthLastName = p?.family_name || user.name?.split(" ").slice(1).join(" ");
 
+        // 1) Check if this email belongs to an AGENT (User table)
+        const agentUser = await prisma.user.findUnique({
+          where: { email: email.toLowerCase() },
+        });
+
+        if (agentUser) {
+          if (!agentUser.isActive) return false;
+          // Authenticate as agent — populate user object like credentials provider
+          (user as any).id = agentUser.id;
+          (user as any).email = agentUser.email;
+          (user as any).firstName = agentUser.firstName;
+          (user as any).lastName = agentUser.lastName;
+          (user as any).role = agentUser.role;
+          // Update last login
+          await prisma.user.update({
+            where: { id: agentUser.id },
+            data: { lastLoginAt: new Date() },
+          }).catch(() => {});
+          return true;
+        }
+
+        // 2) Not an agent — try to resolve as portal client contact
         const portal = await resolvePortalContact(email, {
           firstName: oauthFirstName,
           lastName: oauthLastName,
         });
         if (!portal) {
-          // Email domain doesn't match any org with portal enabled
           return false;
         }
 
