@@ -252,7 +252,7 @@ export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredSoftware.map((s, i) => (
+                        {[...filteredSoftware].sort((a, b) => a.name.localeCompare(b.name)).map((s, i) => (
                           <tr key={i} className="hover:bg-slate-50/60">
                             <td className="px-4 py-2 text-slate-700">{s.name}</td>
                             <td className="px-4 py-2 text-slate-500 font-mono text-[12px]">
