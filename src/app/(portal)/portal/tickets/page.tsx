@@ -8,8 +8,24 @@ import {
   Loader2,
   Ticket,
   Clock,
+  AlertTriangle,
+  CircleDot,
+  Hourglass,
+  Wrench,
+  CheckCircle2,
+  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  STATUS_MAP,
+  PORTAL_STATUS_GROUPS,
+  PORTAL_PRIORITIES,
+  PRIORITY_MAP,
+  getGroupForStatus,
+  type PortalStatusGroup,
+} from "@/lib/portal/ticket-status-config";
+
+// ── Types ──────────────────────────────────────────────────────────────────
 
 interface PortalTicket {
   id: string;
@@ -22,28 +38,49 @@ interface PortalTicket {
   assigneeName: string | null;
   createdAt: string;
   updatedAt: string;
+  dueAt: string | null;
+  isOverdue: boolean;
+  slaBreached: boolean;
 }
 
-const STATUS_STYLES: Record<string, { label: string; bg: string; text: string }> = {
-  new: { label: "Nouveau", bg: "bg-blue-50", text: "text-blue-700" },
-  open: { label: "Ouvert", bg: "bg-sky-50", text: "text-sky-700" },
-  in_progress: { label: "En cours", bg: "bg-amber-50", text: "text-amber-700" },
-  waiting_client: { label: "En attente", bg: "bg-violet-50", text: "text-violet-700" },
-  on_site: { label: "Sur place", bg: "bg-cyan-50", text: "text-cyan-700" },
-  scheduled: { label: "Planifié", bg: "bg-indigo-50", text: "text-indigo-700" },
-  resolved: { label: "Résolu", bg: "bg-emerald-50", text: "text-emerald-700" },
-  closed: { label: "Fermé", bg: "bg-slate-100", text: "text-slate-600" },
+interface TicketStats {
+  total: number;
+  byStatus: { status: string; count: number }[];
+  byPriority: { priority: string; count: number }[];
+  slaBreached: number;
+  overdue: number;
+}
+
+type TabKey = "active" | "open" | "in_progress" | "waiting" | "resolved";
+
+// ── Tab config (derived from status groups) ────────────────────────────────
+
+const TABS: { key: TabKey; label: string; groupKeys: string[] }[] = [
+  { key: "active",      label: "Actifs",         groupKeys: ["open", "in_progress", "waiting"] },
+  { key: "open",        label: "Ouverts",        groupKeys: ["open"] },
+  { key: "in_progress", label: "En traitement",  groupKeys: ["in_progress"] },
+  { key: "waiting",     label: "En attente",     groupKeys: ["waiting"] },
+  { key: "resolved",    label: "Résolus / Fermés", groupKeys: ["resolved"] },
+];
+
+function statusMatchesTab(status: string, tabKey: TabKey): boolean {
+  const tab = TABS.find((t) => t.key === tabKey)!;
+  const groupStatuses = tab.groupKeys.flatMap(
+    (k) => PORTAL_STATUS_GROUPS.find((g) => g.key === k)?.statuses ?? [],
+  );
+  return groupStatuses.includes(status);
+}
+
+// ── Group icons ────────────────────────────────────────────────────────────
+
+const GROUP_ICONS: Record<string, any> = {
+  open: CircleDot,
+  in_progress: Wrench,
+  waiting: Hourglass,
+  resolved: CheckCircle2,
 };
 
-type TabKey = "all" | "open" | "in_progress" | "waiting" | "resolved";
-
-const TABS: { key: TabKey; label: string; filter: (t: PortalTicket) => boolean }[] = [
-  { key: "all", label: "Tous", filter: () => true },
-  { key: "open", label: "Ouverts", filter: (t) => ["new", "open"].includes(t.status) },
-  { key: "in_progress", label: "En cours", filter: (t) => ["in_progress", "on_site", "scheduled"].includes(t.status) },
-  { key: "waiting", label: "En attente", filter: (t) => t.status === "waiting_client" },
-  { key: "resolved", label: "Résolus", filter: (t) => ["resolved", "closed"].includes(t.status) },
-];
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -55,24 +92,55 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hours / 24)}j`;
 }
 
+function countForGroup(
+  stats: TicketStats | null,
+  group: PortalStatusGroup,
+): number {
+  if (!stats) return 0;
+  return group.statuses.reduce((sum, s) => {
+    const found = stats.byStatus.find((b) => b.status === s);
+    return sum + (found?.count ?? 0);
+  }, 0);
+}
+
+// ── Component ──────────────────────────────────────────────────────────────
+
 export default function PortalTicketsPage() {
   const [tickets, setTickets] = useState<PortalTicket[]>([]);
+  const [stats, setStats] = useState<TicketStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<TabKey>("all");
+  const [activeTab, setActiveTab] = useState<TabKey>("active");
 
   useEffect(() => {
-    fetch("/api/v1/portal/tickets")
-      .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((d) => setTickets(d.data ?? []))
+    Promise.all([
+      fetch("/api/v1/portal/tickets").then((r) =>
+        r.ok ? r.json() : { data: [] },
+      ),
+      fetch("/api/v1/portal/tickets/stats").then((r) =>
+        r.ok ? r.json() : null,
+      ),
+    ])
+      .then(([ticketRes, statsRes]) => {
+        setTickets(ticketRes.data ?? []);
+        setStats(statsRes);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
+  // Active ticket groups (excluding resolved/closed/cancelled)
+  const activeGroups = PORTAL_STATUS_GROUPS.filter(
+    (g) => g.key !== "resolved",
+  );
+  const resolvedGroup = PORTAL_STATUS_GROUPS.find(
+    (g) => g.key === "resolved",
+  )!;
+
+  // Filtered tickets
   const filtered = useMemo(() => {
-    const tabFilter = TABS.find((t) => t.key === activeTab)!.filter;
     return tickets.filter((t) => {
-      if (!tabFilter(t)) return false;
+      if (!statusMatchesTab(t.status, activeTab)) return false;
       if (search) {
         const q = search.toLowerCase();
         if (
@@ -86,13 +154,39 @@ export default function PortalTicketsPage() {
     });
   }, [tickets, activeTab, search]);
 
+  // Tab counts
   const tabCounts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const tab of TABS) {
-      c[tab.key] = tickets.filter(tab.filter).length;
+      c[tab.key] = tickets.filter((t) => statusMatchesTab(t.status, tab.key)).length;
     }
     return c;
   }, [tickets]);
+
+  // Urgent tickets (SLA breached or overdue, still active)
+  const urgentTickets = useMemo(() => {
+    return tickets.filter(
+      (t) =>
+        (t.isOverdue || t.slaBreached) &&
+        !["resolved", "closed", "cancelled"].includes(t.status),
+    );
+  }, [tickets]);
+
+  // Active total (everything except resolved group)
+  const activeTotal = activeGroups.reduce(
+    (sum, g) => sum + countForGroup(stats, g),
+    0,
+  );
+
+  // Status bar segments (active only)
+  const statusBarSegments = useMemo(() => {
+    if (!stats || activeTotal === 0) return [];
+    return activeGroups.map((g) => ({
+      group: g,
+      count: countForGroup(stats, g),
+      pct: (countForGroup(stats, g) / activeTotal) * 100,
+    })).filter((s) => s.count > 0);
+  }, [stats, activeGroups, activeTotal]);
 
   if (loading) {
     return (
@@ -104,11 +198,12 @@ export default function PortalTicketsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Mes billets</h1>
           <p className="text-[13px] text-slate-500 mt-0.5">
-            {tickets.length} billet{tickets.length > 1 ? "s" : ""}
+            Vue d&apos;ensemble de vos demandes de support
           </p>
         </div>
         <Link
@@ -120,16 +215,208 @@ export default function PortalTicketsPage() {
         </Link>
       </div>
 
+      {/* KPI Cards — active groups prominent, resolved subtle */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {activeGroups.map((group) => {
+          const Icon = GROUP_ICONS[group.key] ?? CircleDot;
+          const count = countForGroup(stats, group);
+          return (
+            <button
+              key={group.key}
+              onClick={() => {
+                setActiveTab(group.key as TabKey);
+                setSearch("");
+              }}
+              className={cn(
+                "rounded-xl border p-4 text-left transition-all hover:shadow-md",
+                activeTab === group.key
+                  ? "border-2 shadow-md"
+                  : "border-slate-200 bg-white hover:border-slate-300",
+              )}
+              style={
+                activeTab === group.key
+                  ? { borderColor: group.color, backgroundColor: `${group.color}08` }
+                  : undefined
+              }
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div
+                  className={cn(
+                    "h-8 w-8 rounded-lg flex items-center justify-center",
+                    group.iconBgClass,
+                  )}
+                >
+                  <Icon className={cn("h-4 w-4", group.textClass)} />
+                </div>
+                <span className="text-2xl font-bold text-slate-900">
+                  {count}
+                </span>
+              </div>
+              <p className={cn("text-[12px] font-medium", group.textClass)}>
+                {group.label}
+              </p>
+            </button>
+          );
+        })}
+        {/* Resolved — muted card */}
+        <button
+          onClick={() => {
+            setActiveTab("resolved");
+            setSearch("");
+          }}
+          className={cn(
+            "rounded-xl border p-4 text-left transition-all",
+            activeTab === "resolved"
+              ? "border-2 border-slate-300 bg-slate-50 shadow-sm"
+              : "border-dashed border-slate-200 bg-slate-50/50 hover:border-slate-300",
+          )}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="h-8 w-8 rounded-lg flex items-center justify-center bg-slate-100">
+              <CheckCircle2 className="h-4 w-4 text-slate-400" />
+            </div>
+            <span className="text-2xl font-bold text-slate-400">
+              {countForGroup(stats, resolvedGroup)}
+            </span>
+          </div>
+          <p className="text-[12px] font-medium text-slate-400">
+            Résolus / Fermés
+          </p>
+        </button>
+      </div>
+
+      {/* Status distribution bar */}
+      {statusBarSegments.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-slate-400">
+            <span>Distribution des billets actifs</span>
+            <span>{activeTotal} billet{activeTotal > 1 ? "s" : ""} actif{activeTotal > 1 ? "s" : ""}</span>
+          </div>
+          <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100">
+            {statusBarSegments.map((seg) => (
+              <div
+                key={seg.group.key}
+                className="transition-all duration-500"
+                style={{
+                  width: `${seg.pct}%`,
+                  backgroundColor: seg.group.color,
+                  minWidth: seg.count > 0 ? "8px" : 0,
+                }}
+                title={`${seg.group.label}: ${seg.count}`}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-4 flex-wrap">
+            {statusBarSegments.map((seg) => (
+              <div
+                key={seg.group.key}
+                className="flex items-center gap-1.5 text-[11px] text-slate-500"
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: seg.group.color }}
+                />
+                {seg.group.label}: {seg.count}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Attention required — SLA / Overdue */}
+      {urgentTickets.length > 0 && (
+        <div className="rounded-xl border border-red-200 bg-red-50/50 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="h-4 w-4 text-red-500" />
+            <h2 className="text-[13px] font-semibold text-red-700">
+              Attention requise ({urgentTickets.length})
+            </h2>
+          </div>
+          <div className="space-y-2">
+            {urgentTickets.slice(0, 5).map((t) => {
+              const st = STATUS_MAP[t.status];
+              return (
+                <Link
+                  key={t.id}
+                  href={`/portal/tickets/${t.id}`}
+                  className="flex items-center gap-3 rounded-lg bg-white border border-red-100 px-4 py-2.5 hover:shadow-sm transition-shadow"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[11px] font-mono text-slate-400">
+                        {t.number}
+                      </span>
+                      {t.slaBreached && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+                          SLA dépassé
+                        </span>
+                      )}
+                      {t.isOverdue && !t.slaBreached && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700">
+                          En retard
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[13px] font-medium text-slate-900 truncate">
+                      {t.subject}
+                    </p>
+                  </div>
+                  <ArrowRight className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+                </Link>
+              );
+            })}
+            {urgentTickets.length > 5 && (
+              <p className="text-[11px] text-red-500 text-center pt-1">
+                + {urgentTickets.length - 5} autre{urgentTickets.length - 5 > 1 ? "s" : ""}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Priority breakdown (inline, subtle) */}
+      {stats && stats.byPriority.length > 0 && (
+        <div className="flex items-center gap-4 flex-wrap">
+          <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+            Par priorité
+          </span>
+          {PORTAL_PRIORITIES.map((p) => {
+            const count =
+              stats.byPriority.find((b) => b.priority === p.value)?.count ?? 0;
+            if (count === 0) return null;
+            return (
+              <span
+                key={p.value}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium",
+                  p.bgClass,
+                  p.textClass,
+                )}
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ backgroundColor: p.color }}
+                />
+                {p.label}: {count}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Ticket list with tabs */}
       <div className="space-y-3">
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Rechercher un billet..."
-            className="h-10 w-full pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-[13px] placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          />
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher un billet..."
+              className="h-10 w-full pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-[13px] placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
         </div>
         <div className="flex items-center gap-1 border-b border-slate-200">
           {TABS.map((tab) => (
@@ -141,6 +428,7 @@ export default function PortalTicketsPage() {
                 activeTab === tab.key
                   ? "border-blue-600 text-blue-700"
                   : "border-transparent text-slate-500 hover:text-slate-700",
+                tab.key === "resolved" && activeTab !== "resolved" && "text-slate-400",
               )}
             >
               {tab.label}
@@ -152,18 +440,32 @@ export default function PortalTicketsPage() {
         </div>
       </div>
 
+      {/* Ticket rows */}
       {filtered.length > 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm divide-y divide-slate-100">
           {filtered.map((t) => {
-            const st = STATUS_STYLES[t.status] ?? STATUS_STYLES.open;
+            const st = STATUS_MAP[t.status] ?? {
+              label: t.status,
+              bg: "bg-slate-50",
+              text: "text-slate-600",
+            };
+            const pr = PRIORITY_MAP[t.priority];
+            const isResolved = ["resolved", "closed", "cancelled"].includes(
+              t.status,
+            );
             return (
               <Link
                 key={t.id}
                 href={`/portal/tickets/${t.id}`}
-                className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/80 transition-colors"
+                className={cn(
+                  "flex items-center gap-4 px-5 py-4 transition-colors",
+                  isResolved
+                    ? "hover:bg-slate-50/60 opacity-60"
+                    : "hover:bg-slate-50/80",
+                )}
               >
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="text-[11px] font-mono text-slate-400">
                       {t.number}
                     </span>
@@ -176,6 +478,23 @@ export default function PortalTicketsPage() {
                     >
                       {st.label}
                     </span>
+                    {pr && (
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+                          pr.bgClass,
+                          pr.textClass,
+                        )}
+                      >
+                        {pr.label}
+                      </span>
+                    )}
+                    {t.slaBreached && (
+                      <span className="inline-flex items-center gap-0.5 rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                        SLA
+                      </span>
+                    )}
                     {t.assigneeName && (
                       <span className="text-[11px] text-slate-400">
                         → {t.assigneeName}
@@ -196,7 +515,10 @@ export default function PortalTicketsPage() {
         </div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm">
-          <Ticket className="h-10 w-10 mx-auto mb-3 text-slate-300" strokeWidth={1.5} />
+          <Ticket
+            className="h-10 w-10 mx-auto mb-3 text-slate-300"
+            strokeWidth={1.5}
+          />
           <p className="text-[14px] text-slate-500">
             {tickets.length === 0
               ? "Aucun billet pour le moment."
