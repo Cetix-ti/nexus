@@ -21,12 +21,24 @@ export async function GET(
     orderBy: { name: "asc" },
   });
 
+  // DB enum → frontend AssetType mapping
+  const DB_TYPE_TO_UI: Record<string, string> = {
+    WORKSTATION: "workstation",
+    LAPTOP: "laptop",
+    SERVER: "windows_server",
+    VIRTUAL_MACHINE: "server_virtual",
+    NETWORK_DEVICE: "network_switch",
+    PRINTER: "printer",
+    MOBILE: "laptop",
+    OTHER: "workstation",
+  };
+
   // Map to OrgAsset shape expected by the frontend
   const assets = dbAssets.map((a) => ({
     id: a.id,
     organizationId: a.organizationId,
     name: a.name,
-    type: a.type.toLowerCase(),
+    type: DB_TYPE_TO_UI[a.type] ?? a.type.toLowerCase(),
     status: a.status.toLowerCase(),
     source: a.externalSource ?? "manual",
     externalId: a.externalId,
@@ -39,13 +51,17 @@ export async function GET(
     assignedToContactName: a.assignedContact
       ? `${a.assignedContact.firstName} ${a.assignedContact.lastName}`
       : null,
+    os: (a.metadata as any)?.os ?? null,
+    osVersion: (a.metadata as any)?.osVersion ?? null,
+    cpuModel: (a.metadata as any)?.cpuModel ?? null,
+    ramGb: (a.metadata as any)?.ramGb ?? null,
+    lastLoggedUser: (a.metadata as any)?.lastLoggedUser ?? null,
     isMonitored: !!a.externalSource,
-    lastSeenAt: a.updatedAt.toISOString(),
+    lastSeenAt: (a.metadata as any)?.lastSeenAt ?? a.updatedAt.toISOString(),
     tags: [],
     notes: a.notes,
     createdAt: a.createdAt.toISOString(),
     updatedAt: a.updatedAt.toISOString(),
-    metadata: a.metadata,
   }));
 
   return NextResponse.json(assets);

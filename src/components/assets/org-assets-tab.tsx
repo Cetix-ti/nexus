@@ -511,7 +511,7 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
             </thead>
             <tbody className="divide-y divide-slate-100">
               {sortedAssets.map((a) => {
-                const Icon = TYPE_ICONS[a.type];
+                const Icon = TYPE_ICONS[a.type] ?? Monitor;
                 return (
                   <tr key={a.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-4 py-3">
