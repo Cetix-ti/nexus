@@ -1,55 +1,14 @@
 // ============================================================================
 // WAZUH SIEM API CLIENT
 // Authenticates via JWT (auto-renewed), fetches agents and software inventory
-// Uses Node https module to handle self-signed certificates properly
-// (Next.js fetch/undici may ignore NODE_TLS_REJECT_UNAUTHORIZED)
 // ============================================================================
-
-import https from "https";
 
 const WAZUH_URL = process.env.WAZUH_API_URL;
 const WAZUH_USER = process.env.WAZUH_API_USER;
 const WAZUH_PASSWORD = process.env.WAZUH_API_PASSWORD;
 
-// Agent that skips TLS verification for self-signed Wazuh certs
-const tlsAgent = new https.Agent({ rejectUnauthorized: false });
-
 let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
-
-/**
- * Low-level HTTPS request that properly ignores self-signed certs.
- */
-function httpsRequest(
-  url: string,
-  options: { method?: string; headers?: Record<string, string> },
-): Promise<{ status: number; body: string }> {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const req = https.request(
-      {
-        hostname: parsed.hostname,
-        port: parsed.port || 443,
-        path: parsed.pathname + parsed.search,
-        method: options.method || "GET",
-        headers: options.headers,
-        agent: tlsAgent,
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () =>
-          resolve({
-            status: res.statusCode ?? 0,
-            body: Buffer.concat(chunks).toString("utf8"),
-          }),
-        );
-      },
-    );
-    req.on("error", reject);
-    req.end();
-  });
-}
 
 /**
  * Authenticate and return a valid JWT token.
@@ -62,11 +21,11 @@ async function getToken(): Promise<string> {
 
   if (!WAZUH_URL || !WAZUH_USER || !WAZUH_PASSWORD) {
     throw new Error(
-      "WAZUH_API_URL, WAZUH_API_USER et WAZUH_API_PASSWORD doivent être configurés dans .env",
+      "WAZUH_API_URL, WAZUH_API_USER et WAZUH_API_PASSWORD doivent être configurés dans .env"
     );
   }
 
-  const res = await httpsRequest(
+  const res = await fetch(
     `${WAZUH_URL}/security/user/authenticate?raw=true`,
     {
       method: "POST",
@@ -75,14 +34,18 @@ async function getToken(): Promise<string> {
           "Basic " +
           Buffer.from(`${WAZUH_USER}:${WAZUH_PASSWORD}`).toString("base64"),
       },
+      // Self-signed certs are common for Wazuh
+      ...(process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0" ? {} : {}),
     },
   );
 
-  if (res.status !== 200) {
-    throw new Error(`Wazuh auth failed (${res.status}): ${res.body}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Wazuh auth failed (${res.status}): ${text}`);
   }
 
-  cachedToken = res.body.trim();
+  const token = await res.text();
+  cachedToken = token.trim();
   // Renew 60s before expiry (default TTL = 900s)
   tokenExpiresAt = Date.now() + 840_000;
   return cachedToken;
@@ -93,21 +56,22 @@ async function getToken(): Promise<string> {
  */
 async function wazuhFetch<T>(endpoint: string): Promise<T> {
   const token = await getToken();
+  const url = `${WAZUH_URL}${endpoint}`;
 
-  const res = await httpsRequest(`${WAZUH_URL}${endpoint}`, {
+  const res = await fetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
     },
+    cache: "no-store",
   });
 
-  if (res.status !== 200) {
-    throw new Error(
-      `Wazuh API error ${res.status}: ${res.body.slice(0, 200)}`,
-    );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Wazuh API error ${res.status}: ${text || res.statusText}`);
   }
 
-  return JSON.parse(res.body) as T;
+  return (await res.json()) as T;
 }
 
 // ---------------------------------------------------------------------------
