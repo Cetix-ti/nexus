@@ -34,6 +34,7 @@ export interface AteraAgent {
   Processor?: string;
   Memory?: string;
   IpAddresses?: string[];
+  MacAddresses?: string[];
   WindowsSerialNumber?: string;
   OSType?: string;
   OSBuild?: string;
@@ -221,6 +222,7 @@ export function mapAteraAgentToOrgAsset(
     cpuModel: agent.Processor || undefined,
     ramGb: agent.Memory ? Math.round(parseFloat(agent.Memory) / 1024) : undefined,
     ipAddress: Array.isArray(agent.IpAddresses) ? agent.IpAddresses[0] : undefined,
+    macAddress: Array.isArray(agent.MacAddresses) ? agent.MacAddresses[0]?.toUpperCase() : undefined,
     lastLoggedUser: agent.LastLoginUser || undefined,
     fqdn: agent.Domain
       ? `${agent.MachineName}.${agent.Domain}`

@@ -13,7 +13,7 @@ export async function GET(
   const { id } = await params;
   const asset = await prisma.asset.findFirst({
     where: { id, organizationId: user.organizationId },
-    select: { name: true, ipAddress: true, assignedContactId: true },
+    select: { name: true, ipAddress: true, macAddress: true, assignedContactId: true },
   });
 
   if (!asset) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -26,7 +26,7 @@ export async function GET(
   }
 
   try {
-    const match = await findWazuhAgent(asset.name, asset.ipAddress);
+    const match = await findWazuhAgent(asset.name, asset.ipAddress, asset.macAddress);
     if (!match) {
       return NextResponse.json({ agentFound: false, packages: [] });
     }

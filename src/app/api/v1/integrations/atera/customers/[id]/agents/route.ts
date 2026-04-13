@@ -73,6 +73,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             model: asset.model || null,
             serialNumber: asset.serialNumber || null,
             ipAddress: asset.ipAddress || null,
+            macAddress: asset.macAddress || null,
             metadata: meta,
           },
           create: {
@@ -86,6 +87,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             model: asset.model || null,
             serialNumber: asset.serialNumber || null,
             ipAddress: asset.ipAddress || null,
+            macAddress: asset.macAddress || null,
             metadata: meta,
           },
         });
