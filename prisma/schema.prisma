@@ -7,6 +7,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ============================================================================
@@ -130,6 +131,8 @@ model User {
   purchaseOrders  PurchaseOrder[] @relation("PurchaseOrderRequester")
   managedProjects Project[]       @relation("ProjectManager")
   sharedResources SharedResource[] @relation("SharedByUser")
+  ticketReminders TicketReminder[]
+  notifications   Notification[]
 
   @@map("users")
 }
@@ -265,6 +268,7 @@ model Ticket {
   relatedAssets  TicketAsset[]
   approvals      TicketApproval[]
   collaborators  TicketCollaborator[]
+  reminders      TicketReminder[]
 
   @@index([organizationId, status])
   @@index([assigneeId])
@@ -1572,4 +1576,46 @@ model PurchaseOrderItem {
 
   @@index([orderId])
   @@map("purchase_order_items")
+}
+
+// ============================================================================
+// TICKET REMINDERS ("SNOOZE")
+// ============================================================================
+
+model TicketReminder {
+  id         String    @id @default(cuid())
+  ticketId   String    @map("ticket_id")
+  userId     String    @map("user_id")
+  remindAt   DateTime  @map("remind_at")
+  note       String?   @db.Text
+  notifiedAt DateTime? @map("notified_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  ticket     Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, userId])
+  @@index([remindAt, notifiedAt])
+  @@map("ticket_reminders")
+}
+
+// ============================================================================
+// IN-APP NOTIFICATIONS
+// ============================================================================
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  type      String    // "reminder", "ticket_assigned", "ticket_updated", etc.
+  title     String
+  body      String?   @db.Text
+  link      String?   // URL to navigate to on click
+  isRead    Boolean   @default(false) @map("is_read")
+  metadata  Json?     @db.JsonB
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
 }
