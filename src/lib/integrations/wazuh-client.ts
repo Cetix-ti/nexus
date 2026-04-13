@@ -188,29 +188,62 @@ async function getAgentMacs(agentId: string): Promise<string[]> {
 }
 
 /**
- * Verify a candidate Wazuh agent against an asset's MAC address.
- * Returns true if any MAC matches.
+ * Pick the best agent from a list of candidates.
+ * Prefers active agents, then most recently seen.
  */
-async function verifyByMac(
-  agentId: string,
-  assetMac: string,
-): Promise<boolean> {
-  const macs = await getAgentMacs(agentId);
-  return macs.includes(assetMac.toUpperCase());
+function pickBestAgent(agents: WazuhAgent[]): WazuhAgent {
+  const active = agents.filter((a) => a.status === "active");
+  if (active.length > 0) {
+    return active.sort((a, b) =>
+      (b.lastKeepAlive ?? "").localeCompare(a.lastKeepAlive ?? "")
+    )[0];
+  }
+  return agents.sort((a, b) =>
+    (b.lastKeepAlive ?? "").localeCompare(a.lastKeepAlive ?? "")
+  )[0];
 }
 
-type MatchMethod = "mac+hostname" | "mac+partial" | "hostname" | "partial";
+/**
+ * Generate search terms from a hostname, from most specific to broadest.
+ * E.g. "HVAC-CLIMATER-W11" → ["HVAC-CLIMATER-W11", "HVAC-CLIMATER-W", "HVAC-CLIMATER", "CLIMATER"]
+ */
+function buildSearchTerms(hostname: string): string[] {
+  const terms: string[] = [hostname];
+
+  // Progressive shortening: remove last 1, 2, 3 characters
+  for (let chop = 1; chop <= 3; chop++) {
+    if (hostname.length - chop >= 5) {
+      terms.push(hostname.slice(0, -chop));
+    }
+  }
+
+  // Split on delimiters and use the longest "unique" segment
+  const segments = hostname.split(/[-_]/);
+  if (segments.length >= 2) {
+    // Remove first segment (often a client prefix like "HVAC")
+    // and last segment (often a short suffix like "W11")
+    const middle = segments.slice(1, -1);
+    if (middle.length > 0) {
+      terms.push(middle.join("-"));
+    }
+    // Also try without just the first segment
+    terms.push(segments.slice(1).join("-"));
+  }
+
+  // Deduplicate while preserving order
+  return [...new Set(terms)].filter((t) => t.length >= 4);
+}
+
+type MatchMethod = "mac" | "hostname" | "search";
 
 /**
- * Find a Wazuh agent matching an asset using multiple strategies:
+ * Find a Wazuh agent matching an asset.
  *
- *  1. Exact hostname → verify by MAC (strongest match)
- *  2. Partial hostname search → verify by MAC (handles client-prefix naming)
- *  3. Exact hostname without MAC verification (fallback if no MAC available)
- *  4. Partial hostname without MAC verification (last resort)
- *
- * MAC verification prevents false positives when different clients
- * have the same internal IP ranges or similar hostnames.
+ * Strategy:
+ *  1. Search Wazuh using progressive hostname terms (handles truncation & prefixes)
+ *  2. Among candidates, verify by MAC if available (handles duplicate IPs across clients)
+ *  3. If no MAC, pick the active (or most recently active) agent
+ *  4. If hostname searches fail, try IP-based search as fallback
  */
 export async function findWazuhAgent(
   hostname: string,
@@ -218,62 +251,77 @@ export async function findWazuhAgent(
   macAddress?: string | null,
 ): Promise<{ agent: WazuhAgent; matchedBy: MatchMethod } | null> {
   const hasMac = !!macAddress;
+  const normalizedMac = macAddress?.toUpperCase();
 
-  // Strategy 1: exact hostname → verify by MAC
-  try {
-    const res = await wazuhFetch<WazuhResponse<WazuhAgent>>(
-      `/agents?name=${encodeURIComponent(hostname)}&select=${AGENT_SELECT}&limit=1`,
-    );
-    if (res.data.affected_items.length > 0) {
-      const agent = res.data.affected_items[0];
-      if (hasMac) {
-        if (await verifyByMac(agent.id, macAddress!)) {
-          return { agent, matchedBy: "mac+hostname" };
-        }
-        // MAC mismatch — wrong agent, continue
-      } else {
-        return { agent, matchedBy: "hostname" };
+  // Collect all unique candidates from hostname-based searches
+  const candidates = new Map<string, WazuhAgent>();
+  const searchTerms = buildSearchTerms(hostname);
+
+  for (const term of searchTerms) {
+    try {
+      // Try exact name match first for each term
+      const exactRes = await wazuhFetch<WazuhResponse<WazuhAgent>>(
+        `/agents?name=${encodeURIComponent(term)}&select=${AGENT_SELECT}&limit=5`,
+      );
+      for (const a of exactRes.data.affected_items) {
+        candidates.set(a.id, a);
       }
+    } catch {
+      // Continue
     }
-  } catch {
-    // Continue
+
+    try {
+      // Then partial search
+      const searchRes = await wazuhFetch<WazuhResponse<WazuhAgent>>(
+        `/agents?search=${encodeURIComponent(term)}&select=${AGENT_SELECT}&limit=10`,
+      );
+      for (const a of searchRes.data.affected_items) {
+        candidates.set(a.id, a);
+      }
+    } catch {
+      // Continue
+    }
+
+    // If we found candidates, stop searching broader terms
+    if (candidates.size > 0) break;
   }
 
-  // Strategy 2: partial hostname search → verify by MAC
-  try {
-    const res = await wazuhFetch<WazuhResponse<WazuhAgent>>(
-      `/agents?search=${encodeURIComponent(hostname)}&select=${AGENT_SELECT}&limit=10`,
-    );
-    for (const agent of res.data.affected_items) {
-      if (hasMac) {
-        if (await verifyByMac(agent.id, macAddress!)) {
-          return { agent, matchedBy: "mac+partial" };
-        }
-      } else {
-        // Without MAC, prefer active agents
-        const active = res.data.affected_items.find((a) => a.status === "active");
-        return { agent: active ?? agent, matchedBy: "partial" };
-      }
-    }
-  } catch {
-    // Continue
-  }
-
-  // Strategy 3: if MAC available but no hostname matched,
-  // try by IP (could have multiple matches) and verify each by MAC
-  if (hasMac && ipAddress) {
+  // Fallback: search by IP if no hostname candidates found
+  if (candidates.size === 0 && ipAddress) {
     try {
       const res = await wazuhFetch<WazuhResponse<WazuhAgent>>(
         `/agents?ip=${encodeURIComponent(ipAddress)}&select=${AGENT_SELECT}&limit=10`,
       );
-      for (const agent of res.data.affected_items) {
-        if (await verifyByMac(agent.id, macAddress!)) {
-          return { agent, matchedBy: "mac+hostname" };
-        }
+      for (const a of res.data.affected_items) {
+        candidates.set(a.id, a);
       }
     } catch {
-      // No match
+      // No candidates
     }
+  }
+
+  if (candidates.size === 0) return null;
+
+  const allCandidates = Array.from(candidates.values());
+
+  // If MAC is available, verify each candidate and pick the best verified match
+  if (hasMac) {
+    const verified: WazuhAgent[] = [];
+    for (const agent of allCandidates) {
+      const macs = await getAgentMacs(agent.id);
+      if (macs.includes(normalizedMac!)) {
+        verified.push(agent);
+      }
+    }
+    if (verified.length > 0) {
+      return { agent: pickBestAgent(verified), matchedBy: "mac" };
+    }
+  }
+
+  // No MAC or no MAC-verified match — pick best candidate by status/recency
+  // Only if we had hostname-based candidates (not just IP, to avoid cross-client false positives)
+  if (candidates.size > 0) {
+    return { agent: pickBestAgent(allCandidates), matchedBy: hasMac ? "search" : "search" };
   }
 
   return null;
