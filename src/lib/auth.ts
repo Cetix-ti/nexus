@@ -325,7 +325,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           user.email ||
           (profile as any)?.email
         ) as string | undefined;
-        if (!email) return false;
+        console.log("[auth] OAuth signIn — provider:", account?.provider, "email:", email);
+        if (!email) { console.log("[auth] No email, rejecting"); return false; }
 
         const p = profile as any;
         const oauthFirstName = p?.given_name || user.name?.split(" ")[0];
@@ -335,9 +336,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const agentUser = await prisma.user.findUnique({
           where: { email: email.toLowerCase() },
         });
+        console.log("[auth] Agent lookup:", agentUser ? `found id=${agentUser.id} active=${agentUser.isActive}` : "not found");
 
         if (agentUser) {
-          if (!agentUser.isActive) return false;
+          if (!agentUser.isActive) { console.log("[auth] Agent inactive, rejecting"); return false; }
           // Authenticate as agent — populate user object like credentials provider
           (user as any).id = agentUser.id;
           (user as any).email = agentUser.email;
@@ -353,10 +355,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         // 2) Not an agent — try to resolve as portal client contact
+        console.log("[auth] Trying portal contact resolution for:", email);
         const portal = await resolvePortalContact(email, {
           firstName: oauthFirstName,
           lastName: oauthLastName,
         });
+        console.log("[auth] Portal result:", portal ? `contactId=${portal.contactId}` : "null — REJECTING");
         if (!portal) {
           return false;
         }

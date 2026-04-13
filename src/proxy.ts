@@ -22,7 +22,7 @@ const PUBLIC_PATHS = [
 const rateLimitMap = new Map<string, { tokens: number; lastRefill: number }>();
 const RATE_WINDOW = 60_000; // 1 minute
 const MAX_API_REQUESTS = 120; // per minute per IP
-const MAX_AUTH_REQUESTS = 10; // login attempts per minute per IP
+const MAX_AUTH_REQUESTS = 30; // auth requests per minute per IP (OAuth uses multiple roundtrips)
 
 function checkRateLimit(key: string, max: number): boolean {
   const now = Date.now();
