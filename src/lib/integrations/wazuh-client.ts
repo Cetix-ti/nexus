@@ -282,8 +282,9 @@ export async function findWazuhAgent(
       // Continue
     }
 
-    // If we found candidates, stop searching broader terms
-    if (candidates.size > 0) break;
+    // Stop only if we found an active candidate
+    const hasActive = Array.from(candidates.values()).some((a) => a.status === "active");
+    if (hasActive) break;
   }
 
   // Fallback: search by IP if no hostname candidates found
