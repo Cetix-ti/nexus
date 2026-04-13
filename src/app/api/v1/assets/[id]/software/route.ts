@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { listAteraAvailablePatches } from "@/lib/integrations/atera-client";
+import { findWazuhAgentByHostname, getWazuhAgentPackages } from "@/lib/integrations/wazuh-client";
 
 export async function GET(
   _req: Request,
@@ -13,28 +13,23 @@ export async function GET(
   const { id } = await params;
   const asset = await prisma.asset.findUnique({
     where: { id },
-    select: { externalSource: true, metadata: true },
+    select: { name: true },
   });
 
   if (!asset) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  if (asset.externalSource !== "atera") {
-    return NextResponse.json([]);
-  }
-
-  const deviceGuid = (asset.metadata as any)?.deviceGuid;
-  if (!deviceGuid) {
-    return NextResponse.json([]);
-  }
-
   try {
-    const patches = await listAteraAvailablePatches(deviceGuid);
+    const agent = await findWazuhAgentByHostname(asset.name);
+    if (!agent) return NextResponse.json([]);
+
+    const packages = await getWazuhAgentPackages(agent.id);
     return NextResponse.json(
-      patches.map((p) => ({
+      packages.map((p) => ({
         name: p.name,
-        category: p.class ?? null,
-        kbId: p.kbId ?? null,
-        status: p.status ?? null,
+        version: p.version ?? null,
+        vendor: p.vendor ?? null,
+        architecture: p.architecture ?? null,
+        installedDate: p.install_time ?? null,
       })),
     );
   } catch {

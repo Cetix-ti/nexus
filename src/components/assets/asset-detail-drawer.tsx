@@ -31,11 +31,12 @@ import {
   type AssetType,
 } from "@/lib/assets/types";
 
-interface AvailablePatch {
+interface InstalledSoftware {
   name: string;
-  category: string | null;
-  kbId: string | null;
-  status: string | null;
+  version: string | null;
+  vendor: string | null;
+  architecture: string | null;
+  installedDate: string | null;
 }
 
 interface AssetDetailDrawerProps {
@@ -66,30 +67,29 @@ const TYPE_ICONS: Record<AssetType, React.ComponentType<{ className?: string }>>
 };
 
 export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
-  const [patches, setPatches] = useState<AvailablePatch[]>([]);
-  const [patchesLoading, setPatchesLoading] = useState(false);
-  const [patchesError, setPatchesError] = useState<string | null>(null);
-  const [patchesSearch, setPatchesSearch] = useState("");
+  const [software, setSoftware] = useState<InstalledSoftware[]>([]);
+  const [softwareLoading, setSoftwareLoading] = useState(false);
+  const [softwareError, setSoftwareError] = useState<string | null>(null);
+  const [softwareSearch, setSoftwareSearch] = useState("");
 
   useEffect(() => {
     if (!asset) return;
-    setPatches([]);
-    setPatchesError(null);
-    setPatchesSearch("");
+    setSoftware([]);
+    setSoftwareError(null);
+    setSoftwareSearch("");
 
-    if (asset.source === "atera") {
-      setPatchesLoading(true);
-      fetch(`/api/v1/assets/${encodeURIComponent(asset.id)}/software`)
-        .then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
-        })
-        .then((s) => {
-          if (Array.isArray(s)) setPatches(s);
-        })
-        .catch((e) => setPatchesError(e instanceof Error ? e.message : String(e)))
-        .finally(() => setPatchesLoading(false));
-    }
+    // Fetch software inventory from Wazuh (matched by hostname)
+    setSoftwareLoading(true);
+    fetch(`/api/v1/assets/${encodeURIComponent(asset.id)}/software`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((s) => {
+        if (Array.isArray(s)) setSoftware(s);
+      })
+      .catch((e) => setSoftwareError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setSoftwareLoading(false));
   }, [asset]);
 
   useEffect(() => {
@@ -104,10 +104,10 @@ export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
 
   const Icon = TYPE_ICONS[asset.type] ?? Monitor;
 
-  const filteredPatches = patches.filter((p) => {
-    if (!patchesSearch) return true;
-    const q = patchesSearch.toLowerCase();
-    return [p.name, p.category, p.kbId]
+  const filteredSoftware = software.filter((s) => {
+    if (!softwareSearch) return true;
+    const q = softwareSearch.toLowerCase();
+    return [s.name, s.version, s.vendor]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
@@ -186,82 +186,71 @@ export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
             </CardContent>
           </Card>
 
-          {/* Available patches from Atera */}
-          {asset.source === "atera" && (
-            <Card>
-              <CardContent className="p-5">
-                <h3 className="text-[15px] font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                  <Package className="h-4 w-4 text-slate-500" />
-                  Mises à jour disponibles
-                  {!patchesLoading && patches.length > 0 && (
-                    <span className="text-[12px] font-normal text-slate-400">
-                      ({patches.length})
-                    </span>
-                  )}
-                </h3>
+          {/* Logiciels installés (via Wazuh) */}
+          <Card>
+            <CardContent className="p-5">
+              <h3 className="text-[15px] font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <Package className="h-4 w-4 text-slate-500" />
+                Logiciels installés
+                {!softwareLoading && software.length > 0 && (
+                  <span className="text-[12px] font-normal text-slate-400">
+                    ({software.length})
+                  </span>
+                )}
+              </h3>
 
-                {patchesLoading ? (
-                  <div className="flex items-center justify-center py-8 gap-2 text-[13px] text-slate-500">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Chargement depuis Atera...
-                  </div>
-                ) : patchesError ? (
-                  <div className="text-[13px] text-red-600 bg-red-50 rounded-lg px-4 py-3">
-                    Erreur : {patchesError}
-                  </div>
-                ) : patches.length === 0 ? (
-                  <p className="text-[13px] text-slate-400 text-center py-6">
-                    Aucune mise à jour disponible pour cet actif.
-                  </p>
-                ) : (
-                  <>
-                    {patches.length > 10 && (
-                      <Input
-                        placeholder="Rechercher une mise à jour..."
-                        value={patchesSearch}
-                        onChange={(e) => setPatchesSearch(e.target.value)}
-                        iconLeft={<Search className="h-4 w-4" />}
-                        className="mb-3"
-                      />
-                    )}
-                    <div className="rounded-lg border border-slate-200 overflow-hidden max-h-[400px] overflow-y-auto">
-                      <table className="w-full text-[13px]">
-                        <thead className="sticky top-0">
-                          <tr className="bg-slate-50 text-left text-[11px] font-medium uppercase text-slate-400">
-                            <th className="px-4 py-2">Nom</th>
-                            <th className="px-4 py-2">Catégorie</th>
-                            <th className="px-4 py-2">Statut</th>
+              {softwareLoading ? (
+                <div className="flex items-center justify-center py-8 gap-2 text-[13px] text-slate-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Chargement de l&apos;inventaire logiciel...
+                </div>
+              ) : softwareError ? (
+                <div className="text-[13px] text-red-600 bg-red-50 rounded-lg px-4 py-3">
+                  Erreur : {softwareError}
+                </div>
+              ) : software.length === 0 ? (
+                <p className="text-[13px] text-slate-400 text-center py-6">
+                  Aucun logiciel trouvé pour cet actif.
+                </p>
+              ) : (
+                <>
+                  {software.length > 10 && (
+                    <Input
+                      placeholder="Rechercher un logiciel..."
+                      value={softwareSearch}
+                      onChange={(e) => setSoftwareSearch(e.target.value)}
+                      iconLeft={<Search className="h-4 w-4" />}
+                      className="mb-3"
+                    />
+                  )}
+                  <div className="rounded-lg border border-slate-200 overflow-hidden max-h-[400px] overflow-y-auto">
+                    <table className="w-full text-[13px]">
+                      <thead className="sticky top-0">
+                        <tr className="bg-slate-50 text-left text-[11px] font-medium uppercase text-slate-400">
+                          <th className="px-4 py-2">Nom</th>
+                          <th className="px-4 py-2">Version</th>
+                          <th className="px-4 py-2">Éditeur</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredSoftware.map((s, i) => (
+                          <tr key={i} className="hover:bg-slate-50/60">
+                            <td className="px-4 py-2 text-slate-700">{s.name}</td>
+                            <td className="px-4 py-2 text-slate-500 font-mono text-[12px]">
+                              {s.version ?? "\u2014"}
+                            </td>
+                            <td className="px-4 py-2 text-slate-500 text-[12px]">
+                              {s.vendor ?? "\u2014"}
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {filteredPatches.map((p, i) => (
-                            <tr key={i} className="hover:bg-slate-50/60">
-                              <td className="px-4 py-2 text-slate-700">
-                                {p.name}
-                                {p.kbId && (
-                                  <span className="ml-1.5 text-[11px] font-mono text-slate-400">
-                                    {p.kbId}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-2 text-slate-500 text-[12px]">
-                                {p.category ?? "\u2014"}
-                              </td>
-                              <td className="px-4 py-2 text-[12px]">
-                                <span className={p.status === "Failed" ? "text-red-600" : "text-emerald-600"}>
-                                  {p.status ?? "\u2014"}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                   </>
                 )}
               </CardContent>
             </Card>
-          )}
         </div>
       </div>
     </div>
