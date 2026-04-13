@@ -22,8 +22,15 @@ export async function GET(
     return NextResponse.json([]);
   }
 
+  // externalId may be stored as "atera_123" or just "123"
+  const rawId = asset.externalId.replace(/^atera_/, "");
+  const agentId = parseInt(rawId, 10);
+  if (Number.isNaN(agentId)) {
+    return NextResponse.json([]);
+  }
+
   try {
-    const software = await listAteraAgentSoftware(parseInt(asset.externalId, 10));
+    const software = await listAteraAgentSoftware(agentId);
     return NextResponse.json(
       software.map((s) => ({
         name: s.AppName,
