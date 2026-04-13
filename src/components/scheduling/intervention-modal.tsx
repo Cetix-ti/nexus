@@ -22,15 +22,6 @@ import {
 } from "@/lib/scheduling/types";
 import { mockSchedulerTechnicians } from "@/lib/scheduling/mock-data";
 
-const ORGANIZATIONS = [
-  "Cetix",
-  "Acme Corp",
-  "TechStart Inc",
-  "Global Finance",
-  "HealthCare Plus",
-  "MédiaCentre QC",
-];
-
 interface InterventionModalProps {
   open: boolean;
   onClose: () => void;
@@ -91,6 +82,17 @@ export function InterventionModal({ open, onClose, intervention, onSave }: Inter
   const [travelTime, setTravelTime] = useState("");
   const [isRecurring, setIsRecurring] = useState(false);
   const [clientNotes, setClientNotes] = useState("");
+
+  // Fetch organizations from API
+  const [organizations, setOrganizations] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/v1/organizations")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: { id: string; name: string }[]) => {
+        if (Array.isArray(data)) setOrganizations(data.map((o) => o.name));
+      })
+      .catch(() => setOrganizations([]));
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -332,7 +334,7 @@ export function InterventionModal({ open, onClose, intervention, onSave }: Inter
                   <SelectValue placeholder="Sélectionner..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {ORGANIZATIONS.map((o) => (
+                  {organizations.map((o) => (
                     <SelectItem key={o} value={o}>
                       {o}
                     </SelectItem>

@@ -123,26 +123,37 @@ export const useKbStore = create<KbState>()((set, get) => ({
   },
 
   addCategory: async (name, parentId, color, icon) => {
-    const res = await fetch("/api/v1/kb/categories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, parentId, color, icon }),
-    });
-    const created = normalizeCategory(await res.json());
-    set((s) => ({ categories: [...s.categories, created] }));
-    return created.id;
+    try {
+      const res = await fetch("/api/v1/kb/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, parentId, color, icon }),
+      });
+      if (!res.ok) throw new Error("Erreur lors de la création de la catégorie");
+      const created = normalizeCategory(await res.json());
+      set((s) => ({ categories: [...s.categories, created] }));
+      return created.id;
+    } catch (err) {
+      console.error("addCategory failed", err);
+      throw err;
+    }
   },
 
   updateCategory: async (id, patch) => {
-    const res = await fetch(`/api/v1/kb/categories/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-    const updated = normalizeCategory(await res.json());
-    set((s) => ({
-      categories: s.categories.map((c) => (c.id === id ? updated : c)),
-    }));
+    try {
+      const res = await fetch(`/api/v1/kb/categories/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error("Erreur lors de la mise à jour de la catégorie");
+      const updated = normalizeCategory(await res.json());
+      set((s) => ({
+        categories: s.categories.map((c) => (c.id === id ? updated : c)),
+      }));
+    } catch (err) {
+      console.error("updateCategory failed", err);
+    }
   },
 
   deleteCategory: async (id) => {
@@ -191,41 +202,57 @@ export const useKbStore = create<KbState>()((set, get) => ({
   },
 
   addArticle: async (a) => {
-    const res = await fetch("/api/v1/kb/articles", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: a.title,
-        summary: a.summary,
-        body: a.body,
-        categoryId: a.categoryId,
-        status: a.status.toUpperCase(),
-        isPublic: a.isPublic,
-        tags: a.tags,
-      }),
-    });
-    const created = normalizeArticle(await res.json());
-    set((s) => ({ articles: [created, ...s.articles] }));
-    return created;
+    try {
+      const res = await fetch("/api/v1/kb/articles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: a.title,
+          summary: a.summary,
+          body: a.body,
+          categoryId: a.categoryId,
+          status: a.status.toUpperCase(),
+          isPublic: a.isPublic,
+          tags: a.tags,
+        }),
+      });
+      if (!res.ok) throw new Error("Erreur lors de la création de l'article");
+      const created = normalizeArticle(await res.json());
+      set((s) => ({ articles: [created, ...s.articles] }));
+      return created;
+    } catch (err) {
+      console.error("addArticle failed", err);
+      throw err;
+    }
   },
 
   updateArticle: async (id, patch) => {
-    const payload: any = { ...patch };
-    if (patch.status) payload.status = patch.status.toUpperCase();
-    const res = await fetch(`/api/v1/kb/articles/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const updated = normalizeArticle(await res.json());
-    set((s) => ({
-      articles: s.articles.map((a) => (a.id === id ? updated : a)),
-    }));
+    try {
+      const payload: any = { ...patch };
+      if (patch.status) payload.status = patch.status.toUpperCase();
+      const res = await fetch(`/api/v1/kb/articles/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Erreur lors de la mise à jour de l'article");
+      const updated = normalizeArticle(await res.json());
+      set((s) => ({
+        articles: s.articles.map((a) => (a.id === id ? updated : a)),
+      }));
+    } catch (err) {
+      console.error("updateArticle failed", err);
+    }
   },
 
   deleteArticle: async (id) => {
-    await fetch(`/api/v1/kb/articles/${id}`, { method: "DELETE" });
-    set((s) => ({ articles: s.articles.filter((a) => a.id !== id) }));
+    try {
+      const res = await fetch(`/api/v1/kb/articles/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Erreur lors de la suppression de l'article");
+      set((s) => ({ articles: s.articles.filter((a) => a.id !== id) }));
+    } catch (err) {
+      console.error("deleteArticle failed", err);
+    }
   },
 
   getArticleBySlug: (slug) => get().articles.find((a) => a.slug === slug),

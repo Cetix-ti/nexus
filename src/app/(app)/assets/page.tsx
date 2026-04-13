@@ -15,6 +15,7 @@ import {
   Cloud,
   Box,
   Cpu,
+  MemoryStick,
   MoreHorizontal,
   Eye,
   Pencil,
@@ -64,6 +65,8 @@ interface Asset {
   warranty: string;
   manufacturer: string;
   model: string;
+  cpuModel: string | null;
+  ramGb: number | null;
 }
 
 const TYPE_CONFIG: Record<
@@ -71,7 +74,7 @@ const TYPE_CONFIG: Record<
   { label: string; icon: React.ElementType; color: string }
 > = {
   workstation: { label: "Poste de travail", icon: Monitor, color: "text-blue-600" },
-  laptop: { label: "Laptop", icon: Laptop, color: "text-indigo-600" },
+  laptop: { label: "Ordinateur portable", icon: Laptop, color: "text-indigo-600" },
   server: { label: "Serveur", icon: Server, color: "text-purple-600" },
   network: { label: "Réseau", icon: Network, color: "text-teal-600" },
   printer: { label: "Imprimante", icon: Printer, color: "text-orange-600" },
@@ -90,37 +93,6 @@ const STATUS_CONFIG: Record<
   maintenance: { label: "Maintenance", variant: "warning" },
   retired: { label: "Retiré", variant: "danger" },
 };
-
-const ORGANIZATIONS = [
-  "Cetix",
-  "Acme Corp",
-  "TechStart Inc",
-  "Global Finance",
-  "HealthCare Plus",
-];
-
-const mockAssets: Asset[] = [
-  { id: "1", name: "SRV-DC01", type: "server", organization: "Cetix", site: "Siège - Montréal", serial: "SRV-2023-DC01", ip: "10.0.1.10", status: "active", warranty: "2026-08-15", manufacturer: "Dell", model: "PowerEdge R750" },
-  { id: "2", name: "SRV-DC02", type: "server", organization: "Cetix", site: "Siège - Montréal", serial: "SRV-2023-DC02", ip: "10.0.1.11", status: "active", warranty: "2026-08-15", manufacturer: "Dell", model: "PowerEdge R750" },
-  { id: "3", name: "SRV-MAIL01", type: "server", organization: "Global Finance", site: "Bureau - Toronto", serial: "SRV-2022-ML01", ip: "10.10.1.20", status: "active", warranty: "2025-03-20", manufacturer: "HP", model: "ProLiant DL380 Gen10" },
-  { id: "4", name: "LAPTOP-JPC01", type: "laptop", organization: "Cetix", site: "Siège - Montréal", serial: "LPT-2024-001", ip: "DHCP", status: "active", warranty: "2027-01-10", manufacturer: "Lenovo", model: "ThinkPad X1 Carbon Gen 11" },
-  { id: "5", name: "LAPTOP-MBR02", type: "laptop", organization: "TechStart Inc", site: "Bureau - Québec", serial: "LPT-2023-042", ip: "DHCP", status: "active", warranty: "2026-05-22", manufacturer: "Apple", model: "MacBook Pro 14\" M3" },
-  { id: "6", name: "LAPTOP-ADM03", type: "laptop", organization: "Acme Corp", site: "Bureau - Ottawa", serial: "LPT-2022-018", ip: "DHCP", status: "maintenance", warranty: "2025-09-01", manufacturer: "Dell", model: "Latitude 5540" },
-  { id: "7", name: "WS-COMPTA01", type: "workstation", organization: "Global Finance", site: "Bureau - Toronto", serial: "WS-2023-C01", ip: "10.10.2.50", status: "active", warranty: "2026-11-30", manufacturer: "HP", model: "EliteDesk 800 G9" },
-  { id: "8", name: "WS-RECEP01", type: "workstation", organization: "HealthCare Plus", site: "Clinique - Laval", serial: "WS-2021-R01", ip: "10.20.1.15", status: "active", warranty: "2024-12-15", manufacturer: "Dell", model: "OptiPlex 7090" },
-  { id: "9", name: "PRN-FLOOR2", type: "printer", organization: "Cetix", site: "Siège - Montréal", serial: "PRN-2023-F2A", ip: "10.0.3.100", status: "active", warranty: "2026-06-01", manufacturer: "HP", model: "LaserJet Enterprise M611" },
-  { id: "10", name: "PRN-ADMIN01", type: "printer", organization: "Acme Corp", site: "Bureau - Ottawa", serial: "PRN-2022-A01", ip: "10.5.3.50", status: "maintenance", warranty: "2025-02-28", manufacturer: "Canon", model: "imageRUNNER ADVANCE C5560i" },
-  { id: "11", name: "SW-CORE-01", type: "network", organization: "Cetix", site: "Siège - Montréal", serial: "NET-2023-SW01", ip: "10.0.0.1", status: "active", warranty: "2028-01-15", manufacturer: "Cisco", model: "Catalyst 9300" },
-  { id: "12", name: "FW-EDGE-01", type: "network", organization: "Cetix", site: "Siège - Montréal", serial: "NET-2023-FW01", ip: "10.0.0.254", status: "active", warranty: "2027-06-30", manufacturer: "Fortinet", model: "FortiGate 200F" },
-  { id: "13", name: "AP-WIFI-3F", type: "network", organization: "Global Finance", site: "Bureau - Toronto", serial: "NET-2024-AP03", ip: "10.10.0.30", status: "active", warranty: "2027-11-20", manufacturer: "Ubiquiti", model: "UniFi U6 Pro" },
-  { id: "14", name: "VM-WEB01", type: "vm", organization: "TechStart Inc", site: "Cloud - Azure", serial: "VM-AZ-2024-W01", ip: "10.100.1.10", status: "active", warranty: "—", manufacturer: "Microsoft", model: "Azure VM Standard D4s v5" },
-  { id: "15", name: "VM-DB01", type: "vm", organization: "TechStart Inc", site: "Cloud - Azure", serial: "VM-AZ-2024-D01", ip: "10.100.1.20", status: "active", warranty: "—", manufacturer: "Microsoft", model: "Azure VM Standard E8s v5" },
-  { id: "16", name: "MOB-DIR01", type: "mobile", organization: "Cetix", site: "Siège - Montréal", serial: "MOB-2024-001", ip: "—", status: "active", warranty: "2026-09-15", manufacturer: "Apple", model: "iPhone 15 Pro" },
-  { id: "17", name: "SRV-BKP01", type: "server", organization: "Cetix", site: "DR - Québec", serial: "SRV-2021-BK01", ip: "10.50.1.10", status: "retired", warranty: "2024-06-30", manufacturer: "Dell", model: "PowerEdge R640" },
-  { id: "18", name: "CLOUD-S3-PROD", type: "cloud", organization: "TechStart Inc", site: "AWS - ca-central-1", serial: "AWS-2024-S3P", ip: "—", status: "active", warranty: "—", manufacturer: "AWS", model: "S3 Bucket - Production" },
-  { id: "19", name: "WS-DEV02", type: "workstation", organization: "Cetix", site: "Siège - Montréal", serial: "WS-2020-D02", ip: "10.0.2.22", status: "retired", warranty: "2023-11-01", manufacturer: "HP", model: "Z4 G4 Workstation" },
-  { id: "20", name: "LAPTOP-STG05", type: "laptop", organization: "HealthCare Plus", site: "Clinique - Laval", serial: "LPT-2024-055", ip: "DHCP", status: "inactive", warranty: "2027-04-10", manufacturer: "Lenovo", model: "ThinkPad T14s Gen 4" },
-];
 
 function isWarrantyExpired(date: string): boolean {
   if (date === "—") return false;
@@ -154,7 +126,7 @@ export default function AssetsPage() {
         if (cancelled || !Array.isArray(data)) return;
         setAssets(data as Asset[]);
       })
-      .catch((e) => console.error("Failed to load assets", e))
+      .catch((e) => console.error("Erreur de chargement des actifs", e))
       .finally(() => {
         if (!cancelled) setLoaded(true);
       });
@@ -162,7 +134,6 @@ export default function AssetsPage() {
       cancelled = true;
     };
   }, []);
-  void mockAssets;
 
   const orgOptions = useMemo(
     () => Array.from(new Set(assets.map((a) => a.organization))).sort(),
@@ -305,7 +276,7 @@ export default function AssetsPage() {
           <SelectContent>
             <SelectItem value="all">Tous les types</SelectItem>
             <SelectItem value="workstation">Poste de travail</SelectItem>
-            <SelectItem value="laptop">Laptop</SelectItem>
+            <SelectItem value="laptop">Ordinateur portable</SelectItem>
             <SelectItem value="server">Serveur</SelectItem>
             <SelectItem value="network">Réseau</SelectItem>
             <SelectItem value="printer">Imprimante</SelectItem>
@@ -370,6 +341,12 @@ export default function AssetsPage() {
                   Adresse IP
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">
+                  CPU
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">
+                  RAM
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">
                   Statut
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">
@@ -429,6 +406,28 @@ export default function AssetsPage() {
                       <code className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">
                         {asset.ip}
                       </code>
+                    </td>
+                    <td className="px-4 py-3">
+                      {asset.cpuModel ? (
+                        <div className="flex items-center gap-1.5">
+                          <Cpu className="h-3.5 w-3.5 text-neutral-400" />
+                          <span className="text-xs text-neutral-700 max-w-[180px] truncate" title={asset.cpuModel}>
+                            {asset.cpuModel}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-neutral-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {asset.ramGb ? (
+                        <div className="flex items-center gap-1.5">
+                          <MemoryStick className="h-3.5 w-3.5 text-neutral-400" />
+                          <span className="text-xs font-medium text-neutral-700">{asset.ramGb} Go</span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-neutral-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={statusConf.variant}>

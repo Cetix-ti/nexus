@@ -245,6 +245,80 @@ async function resolveContact(
 }
 
 // ---------------------------------------------------------------------------
+// Forwarded email detection — extract original sender
+// When an agent forwards an email (e.g., from bruno.robert@cetix.ca)
+// that was originally from a client (stephane.robert@hvac.ca),
+// we want to attribute the ticket to the original sender.
+// ---------------------------------------------------------------------------
+
+interface ParsedForward {
+  originalSenderEmail: string;
+  originalSenderName: string;
+  isForward: boolean;
+}
+
+function detectForwardedEmail(
+  subject: string,
+  body: string,
+  senderEmail: string,
+  senderName: string,
+): ParsedForward {
+  const notForward: ParsedForward = {
+    originalSenderEmail: senderEmail,
+    originalSenderName: senderName,
+    isForward: false,
+  };
+
+  // Check if subject indicates a forward
+  const fwdPatterns = /^(fw|fwd|tr|transfert|transféré)\s*:/i;
+  const isSubjectForward = fwdPatterns.test(subject.trim());
+
+  if (!isSubjectForward) return notForward;
+
+  // Try to extract original sender from body
+  // Common patterns in forwarded emails:
+  // "De : Stéphane Robert <stephane.robert@hvac.ca>"
+  // "From: Stephane Robert <stephane.robert@hvac.ca>"
+  // "De : stephane.robert@hvac.ca"
+  const fromPatterns = [
+    // "De : Name <email>" or "From: Name <email>"
+    /(?:^|\n)\s*(?:de|from)\s*:\s*(.+?)\s*<([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>/im,
+    // "De : email" (no angle brackets)
+    /(?:^|\n)\s*(?:de|from)\s*:\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/im,
+    // Outlook-style "-----Original Message-----\nFrom: ..."
+    /(?:message\s+(?:original|d'origine)|original\s+message)[\s\S]{0,200}?(?:de|from)\s*:\s*(.+?)\s*<([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>/im,
+    // Outlook: "De : Name [mailto:email]"
+    /(?:de|from)\s*:\s*(.+?)\s*\[mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\]/im,
+  ];
+
+  for (const pattern of fromPatterns) {
+    const match = body.match(pattern);
+    if (match) {
+      // Pattern with name + email in groups
+      if (match[2]) {
+        return {
+          originalSenderEmail: match[2].toLowerCase().trim(),
+          originalSenderName: match[1].replace(/['"]/g, "").trim(),
+          isForward: true,
+        };
+      }
+      // Pattern with email only
+      if (match[1] && match[1].includes("@")) {
+        const email = match[1].toLowerCase().trim();
+        return {
+          originalSenderEmail: email,
+          originalSenderName: email.split("@")[0].replace(/[._-]/g, " "),
+          isForward: true,
+        };
+      }
+    }
+  }
+
+  // Subject says it's a forward but we couldn't extract the original sender
+  return notForward;
+}
+
+// ---------------------------------------------------------------------------
 // Strip HTML from email body
 // ---------------------------------------------------------------------------
 
@@ -320,8 +394,10 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
           const senderEmail = msg.from?.emailAddress?.address?.toLowerCase();
           if (!senderEmail) { skipped++; continue; }
           const senderName = msg.from?.emailAddress?.name || senderEmail;
-          const subject = msg.subject?.trim();
+          let subject = msg.subject?.trim();
           if (!subject) { skipped++; continue; }
+          // Strip forwarding prefixes from subject
+          subject = subject.replace(/^(?:fw|fwd|tr|transfert|transféré)\s*:\s*/i, "").trim();
 
           // Check if ticket already exists for this email (dedup by internetMessageId)
           const messageId = msg.internetMessageId || `graph-${msg.id}`;
@@ -331,21 +407,33 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
           });
           if (existingTicket) { skipped++; continue; }
 
-          // Match sender domain to org
-          const domain = senderEmail.split("@")[1] || "";
-          const org = domainMap.get(domain);
+          // Extract body text early for forward detection
+          const bodyText = msg.body?.contentType === "html"
+            ? stripHtml(msg.body.content)
+            : (msg.body?.content || msg.bodyPreview || "");
+
+          // Detect forwarded emails and extract original sender
+          const forward = detectForwardedEmail(subject, bodyText, senderEmail, senderName);
+          const actualSenderEmail = forward.originalSenderEmail;
+          const actualSenderName = forward.originalSenderName;
+
+          // Match sender domain to org (use actual sender, not forwarder)
+          const domain = actualSenderEmail.split("@")[1] || "";
+          let org = domainMap.get(domain);
+
+          // If forwarded and original domain not found, try the forwarder's domain
+          if (!org && forward.isForward) {
+            const forwarderDomain = senderEmail.split("@")[1] || "";
+            org = domainMap.get(forwarderDomain);
+          }
+
           if (!org) {
             skipped++;
             continue; // Can't create ticket without an org
           }
 
-          // Find or create contact
-          const contactId = await resolveContact(senderEmail, senderName, org.id);
-
-          // Extract body text
-          const bodyText = msg.body?.contentType === "html"
-            ? stripHtml(msg.body.content)
-            : (msg.body?.content || msg.bodyPreview || "");
+          // Find or create contact (use actual sender)
+          const contactId = await resolveContact(actualSenderEmail, actualSenderName, org.id);
 
           // Find the first admin/tech user to use as creator
           const creator = await prisma.user.findFirst({

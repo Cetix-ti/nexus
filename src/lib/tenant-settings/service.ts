@@ -6,11 +6,39 @@ export interface PortalBranding {
   companyName: string;
 }
 
-const DEFAULTS: { "portal.branding": PortalBranding } = {
+export interface RegionalSettings {
+  timezone: string;
+  language: string;
+  dateFormat: string;
+}
+
+export interface TicketSettings {
+  numberingPrefix: string;
+  defaultPriority: string;
+  defaultQueue: string;
+  autoCloseDays: number;
+}
+
+const DEFAULTS: {
+  "portal.branding": PortalBranding;
+  "regional": RegionalSettings;
+  "tickets": TicketSettings;
+} = {
   "portal.branding": {
     logo: null,
     primaryColor: "#2563EB",
     companyName: "Nexus",
+  },
+  "regional": {
+    timezone: "america_montreal",
+    language: "fr",
+    dateFormat: "dd_mm_yyyy",
+  },
+  "tickets": {
+    numberingPrefix: "TK-",
+    defaultPriority: "medium",
+    defaultQueue: "general",
+    autoCloseDays: 7,
   },
 };
 

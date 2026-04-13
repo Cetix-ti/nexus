@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -19,8 +19,6 @@ import {
   Monitor,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { mockTickets } from "@/lib/mock-data";
-import { mockProjects } from "@/lib/projects/mock-data";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -37,14 +35,18 @@ interface SearchResult {
   shortcut?: string;
 }
 
-const ORGANIZATIONS = [
-  { id: "org-1", name: "Cetix", slug: "cetix" },
-  { id: "org-2", name: "Acme Corp", slug: "acme-corp" },
-  { id: "org-3", name: "TechStart Inc", slug: "techstart-inc" },
-  { id: "org-4", name: "Global Finance", slug: "global-finance" },
-  { id: "org-5", name: "HealthCare Plus", slug: "healthcare-plus" },
-  { id: "org-6", name: "MédiaCentre QC", slug: "mediacentre-qc" },
-];
+interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  code: string;
+  organizationName?: string;
+}
 
 const PAGES: SearchResult[] = [
   { id: "p-dash", category: "Page", icon: LayoutDashboard, title: "Tableau de bord", href: "/dashboard" },
@@ -65,17 +67,89 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<NodeJS.Timeout>(undefined);
+
+  // Data loaded once on mount
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  // API search results for tickets
+  const [ticketResults, setTicketResults] = useState<SearchResult[]>([]);
+
+  // Load organizations and projects once on mount
+  useEffect(() => {
+    fetch("/api/v1/organizations")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        const orgs = Array.isArray(data) ? data : data.data ?? [];
+        setOrganizations(orgs);
+      })
+      .catch(() => setOrganizations([]));
+
+    fetch("/api/v1/projects")
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((data) => {
+        setProjects(data.data ?? []);
+      })
+      .catch(() => setProjects([]));
+  }, []);
 
   // Reset on open
   useEffect(() => {
     if (open) {
       setQuery("");
       setSelectedIdx(0);
+      setTicketResults([]);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [open]);
 
-  // Compute results
+  // Debounced ticket search
+  const searchTickets = useCallback(async (q: string) => {
+    if (q.length < 2) {
+      setTicketResults([]);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/v1/tickets?search=${encodeURIComponent(q)}&limit=5`
+      );
+      if (!res.ok) {
+        setTicketResults([]);
+        return;
+      }
+      const json = await res.json();
+      const tickets = json.data ?? json ?? [];
+      const items: SearchResult[] = (
+        Array.isArray(tickets) ? tickets : []
+      )
+        .slice(0, 5)
+        .map((t: Record<string, string>) => ({
+          id: `t-${t.id}`,
+          category: "Ticket" as const,
+          icon: TicketIcon,
+          title: t.subject ?? t.title ?? "",
+          subtitle: `${t.number ? `#${t.number}` : ""} • ${t.organizationName ?? ""}`.trim(),
+          href: `/tickets/${t.id}`,
+        }));
+      setTicketResults(items);
+    } catch {
+      setTicketResults([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    const q = query.trim();
+    if (q.length < 2) {
+      setTicketResults([]);
+      return;
+    }
+    debounceRef.current = setTimeout(() => searchTickets(q), 200);
+    return () => clearTimeout(debounceRef.current);
+  }, [query, searchTickets]);
+
+  // Compute results: pages (static), orgs & projects (client-side filter), tickets (API)
   const results: SearchResult[] = useMemo(() => {
     const q = query.toLowerCase().trim();
     const all: SearchResult[] = [];
@@ -85,59 +159,48 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       if (!q || p.title.toLowerCase().includes(q)) all.push(p);
     }
 
-    // Tickets
-    for (const t of mockTickets) {
-      if (
-        q &&
-        (t.subject.toLowerCase().includes(q) ||
-          t.number.toLowerCase().includes(q) ||
-          t.requesterName.toLowerCase().includes(q))
-      ) {
-        all.push({
-          id: `t-${t.id}`,
-          category: "Ticket",
-          icon: TicketIcon,
-          title: t.subject,
-          subtitle: `${t.number} • ${t.organizationName}`,
-          href: `/tickets/${t.id}`,
-        });
+    // Tickets (from API)
+    if (q) {
+      all.push(...ticketResults);
+    }
+
+    // Organizations (client-side filter)
+    if (q) {
+      for (const o of organizations) {
+        if (o.name.toLowerCase().includes(q)) {
+          all.push({
+            id: `o-${o.id}`,
+            category: "Organisation",
+            icon: Building2,
+            title: o.name,
+            subtitle: `/${o.slug}`,
+            href: `/organizations/${o.id}`,
+          });
+        }
       }
     }
 
-    // Organizations
-    for (const o of ORGANIZATIONS) {
-      if (q && o.name.toLowerCase().includes(q)) {
-        all.push({
-          id: `o-${o.id}`,
-          category: "Organisation",
-          icon: Building2,
-          title: o.name,
-          subtitle: `/${o.slug}`,
-          href: `/organizations/${o.id}`,
-        });
-      }
-    }
-
-    // Projects
-    for (const p of mockProjects) {
-      if (
-        q &&
-        (p.name.toLowerCase().includes(q) ||
-          p.code.toLowerCase().includes(q))
-      ) {
-        all.push({
-          id: `pr-${p.id}`,
-          category: "Projet",
-          icon: FolderKanban,
-          title: p.name,
-          subtitle: `${p.code} • ${p.organizationName}`,
-          href: `/projects/${p.id}`,
-        });
+    // Projects (client-side filter)
+    if (q) {
+      for (const p of projects) {
+        if (
+          p.name.toLowerCase().includes(q) ||
+          p.code.toLowerCase().includes(q)
+        ) {
+          all.push({
+            id: `pr-${p.id}`,
+            category: "Projet",
+            icon: FolderKanban,
+            title: p.name,
+            subtitle: `${p.code}${p.organizationName ? ` • ${p.organizationName}` : ""}`,
+            href: `/projects/${p.id}`,
+          });
+        }
       }
     }
 
     return all.slice(0, 30);
-  }, [query]);
+  }, [query, ticketResults, organizations, projects]);
 
   // Group by category
   const grouped = useMemo(() => {

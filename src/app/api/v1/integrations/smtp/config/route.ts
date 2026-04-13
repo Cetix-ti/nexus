@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { loadSmtpConfig, saveSmtpConfig, isConfigured } from "@/lib/smtp/storage";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function GET() {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const cfg = await loadSmtpConfig();
   // Don't leak the password to the client
   return NextResponse.json({
@@ -12,6 +15,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
   const current = await loadSmtpConfig();
   // Don't overwrite password if client sends the masked placeholder

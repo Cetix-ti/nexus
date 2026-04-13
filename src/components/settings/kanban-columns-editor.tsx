@@ -25,12 +25,15 @@ const COLUMN_COLORS = [
 // Sensible default column sets per groupBy
 export const DEFAULT_COLUMNS_BY_GROUP: Record<BoardGroupBy, BoardColumn[]> = {
   status: [
-    { id: "c_new", label: "Non assigné", value: "new", color: "#64748B", order: 0, visible: true },
+    { id: "c_new", label: "Nouveau", value: "new", color: "#3B82F6", order: 0, visible: true },
     { id: "c_open", label: "Ouvert", value: "open", color: "#0EA5E9", order: 1, visible: true },
     { id: "c_in_progress", label: "En cours", value: "in_progress", color: "#F59E0B", order: 2, visible: true },
     { id: "c_on_site", label: "Sur place", value: "on_site", color: "#06B6D4", order: 3, visible: true },
-    { id: "c_waiting", label: "Attente client", value: "waiting_client", color: "#8B5CF6", order: 4, visible: true },
-    { id: "c_resolved", label: "Résolu", value: "resolved", color: "#10B981", order: 5, visible: true },
+    { id: "c_pending", label: "En attente", value: "pending", color: "#A855F7", order: 4, visible: true },
+    { id: "c_waiting", label: "Attente client", value: "waiting_client", color: "#8B5CF6", order: 5, visible: true },
+    { id: "c_waiting_vendor", label: "Attente fournisseur", value: "waiting_vendor", color: "#EC4899", order: 6, visible: true },
+    { id: "c_scheduled", label: "Planifié", value: "scheduled", color: "#14B8A6", order: 7, visible: true },
+    { id: "c_resolved", label: "Résolu", value: "resolved", color: "#10B981", order: 8, visible: true },
   ],
   priority: [
     { id: "c_low", label: "Faible", value: "low", color: "#10B981", order: 0, visible: true },
@@ -48,9 +51,10 @@ export const DEFAULT_COLUMNS_BY_GROUP: Record<BoardGroupBy, BoardColumn[]> = {
   category: [],
   ticket_type: [
     { id: "c_incident", label: "Incident", value: "incident", color: "#EF4444", order: 0, visible: true },
-    { id: "c_request", label: "Demande", value: "request", color: "#3B82F6", order: 1, visible: true },
+    { id: "c_request", label: "Demande de service", value: "service_request", color: "#3B82F6", order: 1, visible: true },
     { id: "c_problem", label: "Problème", value: "problem", color: "#F59E0B", order: 2, visible: true },
     { id: "c_change", label: "Changement", value: "change", color: "#8B5CF6", order: 3, visible: true },
+    { id: "c_alert", label: "Alerte", value: "alert", color: "#F97316", order: 4, visible: true },
   ],
 };
 

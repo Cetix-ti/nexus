@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { loadSmtpConfig, saveSmtpConfig, isConfigured } from "@/lib/smtp/storage";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function POST() {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const cfg = await loadSmtpConfig();
   if (!isConfigured(cfg)) {
     return NextResponse.json(

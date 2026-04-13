@@ -5,8 +5,11 @@ import {
   testGraphConnection,
   getSecretExpiryInfo,
 } from "@/lib/veeam/graph-sync";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function GET() {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const config = await getVeeamGraphConfig();
   const expiry = getSecretExpiryInfo();
   return NextResponse.json({
@@ -21,6 +24,8 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
   const { mailbox, folderPath } = body;
   if (!mailbox) {
@@ -37,6 +42,8 @@ export async function PUT(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   // Test connection + list folders
   const body = await req.json();
   const { mailbox } = body;

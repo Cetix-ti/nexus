@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { listAteraCustomers } from "@/lib/integrations/atera-client";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 /**
  * GET /api/v1/integrations/atera/customers
@@ -7,6 +8,9 @@ import { listAteraCustomers } from "@/lib/integrations/atera-client";
  * external entity to map an internal organization to.
  */
 export async function GET() {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   try {
     const customers = await listAteraCustomers();
     return NextResponse.json({

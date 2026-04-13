@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { chatCompletion, buildSystemPrompt, saveMemory, ragSearch } from "@/lib/ai/service";
+import { chatCompletion, buildSystemPrompt, saveMemory, ragSearch, deleteMemory } from "@/lib/ai/service";
+import { createAnonymizer, anonymizeText, deanonymize, seedFromDatabase } from "@/lib/ai/anonymizer";
 
 export async function POST(req: Request) {
   try {
@@ -48,23 +49,36 @@ export async function POST(req: Request) {
       ? `${systemPrompt}\n${ragResults}`
       : systemPrompt;
 
+    // Anonymize PII before sending to external AI API (opt-out via AI_ANONYMIZE=false)
+    const shouldAnonymize = process.env.AI_ANONYMIZE !== "false";
+    let anonMap: Awaited<ReturnType<typeof createAnonymizer>> | null = null;
+
+    if (shouldAnonymize) {
+      anonMap = createAnonymizer();
+      // Pre-seed with all known entities from the DB so every name/email in the prompt gets caught
+      await seedFromDatabase(anonMap);
+    }
+
     const messages = [
-      { role: "system" as const, content: fullSystemPrompt },
+      { role: "system" as const, content: anonMap ? anonymizeText(anonMap, fullSystemPrompt) : fullSystemPrompt },
       ...history.map((m) => ({
         role: m.role as "user" | "assistant",
-        content: m.content,
+        content: anonMap ? anonymizeText(anonMap, m.content) : m.content,
       })),
     ];
 
-    // Call AI
-    const reply = await chatCompletion(messages);
+    // Call AI (with anonymized data if enabled)
+    const rawReply = await chatCompletion(messages);
+
+    // De-anonymize the AI response back to real values
+    const reply = anonMap ? deanonymize(anonMap, rawReply) : rawReply;
 
     // Detect and process memory commands in the reply
     let cleanReply = reply;
-    const memorySaveMatch = reply.match(/\[MEMORY_SAVE:(\w+):(.+?)\]/g);
+    const memorySaveMatch = reply.match(/\[MEMORY_SAVE:([^:\]]+):(.+?)\]/g);
     if (memorySaveMatch) {
       for (const match of memorySaveMatch) {
-        const parts = match.match(/\[MEMORY_SAVE:(\w+):(.+?)\]/);
+        const parts = match.match(/\[MEMORY_SAVE:([^:\]]+):(.+?)\]/);
         if (parts) {
           await saveMemory(parts[2], parts[1], "global", `agent:${me.id}`);
         }
@@ -72,6 +86,30 @@ export async function POST(req: Request) {
       }
       if (cleanReply) cleanReply += "\n\n✅ Mémorisé.";
       else cleanReply = "✅ Mémorisé.";
+    }
+
+    // Handle MEMORY_DELETE commands
+    const memoryDeleteMatch = cleanReply.match(/\[MEMORY_DELETE:(.+?)\]/g);
+    if (memoryDeleteMatch) {
+      for (const match of memoryDeleteMatch) {
+        const parts = match.match(/\[MEMORY_DELETE:(.+?)\]/);
+        if (parts) {
+          const contentToDelete = parts[1].trim();
+          const memories = await prisma.aiMemory.findMany({
+            where: {
+              OR: [
+                { content: { contains: contentToDelete, mode: "insensitive" } },
+              ],
+            },
+          });
+          for (const mem of memories) {
+            await deleteMemory(mem.id);
+          }
+        }
+        cleanReply = cleanReply.replace(match, "").trim();
+      }
+      if (cleanReply) cleanReply += "\n\n🗑️ Mémoire supprimée.";
+      else cleanReply = "🗑️ Mémoire supprimée.";
     }
 
     // Save assistant reply

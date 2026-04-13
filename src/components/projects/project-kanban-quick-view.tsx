@@ -37,7 +37,6 @@ import {
   type TimeEntry,
   type TimeType,
 } from "@/lib/billing/types";
-import { mockTimeEntries } from "@/lib/billing/mock-data";
 
 interface ProjectKanbanQuickViewProps {
   ticket: Ticket | null;
@@ -51,9 +50,13 @@ const STATUS_LABELS_FR: Record<TicketStatus, string> = {
   open: "Ouvert",
   in_progress: "En cours",
   on_site: "Sur place",
+  pending: "En attente",
   waiting_client: "Attente client",
+  waiting_vendor: "Attente fournisseur",
+  scheduled: "Planifié",
   resolved: "Résolu",
   closed: "Fermé",
+  cancelled: "Annulé",
 };
 
 function getInitials(name: string): string {
@@ -93,6 +96,13 @@ export function ProjectKanbanQuickView({
     ticket?.status
   );
   const [localEntries, setLocalEntries] = useState<TimeEntry[]>([]);
+  const [apiEntries, setApiEntries] = useState<TimeEntry[]>([]);
+  const [currentUserName, setCurrentUserName] = useState("—");
+  useEffect(() => {
+    fetch("/api/v1/me").then((r) => r.ok ? r.json() : null).then((d) => {
+      if (d?.firstName) setCurrentUserName(`${d.firstName} ${d.lastName}`);
+    }).catch(() => {});
+  }, []);
   const [timeType, setTimeType] = useState<TimeType>("remote_work");
   const [duration, setDuration] = useState<string>("30");
   const [description, setDescription] = useState<string>("");
@@ -101,9 +111,17 @@ export function ProjectKanbanQuickView({
   useEffect(() => {
     setLocalStatus(ticket?.status);
     setLocalEntries([]);
+    setApiEntries([]);
     setTimeType("remote_work");
     setDuration("30");
     setDescription("");
+    // Fetch time entries for this ticket
+    if (ticket?.id) {
+      fetch(`/api/v1/time-entries?ticketId=${ticket.id}`)
+        .then((r) => r.ok ? r.json() : [])
+        .then((d) => setApiEntries(Array.isArray(d) ? d : []))
+        .catch(() => setApiEntries([]));
+    }
   }, [ticket?.id, ticket?.status]);
 
   useEffect(() => {
@@ -116,12 +134,11 @@ export function ProjectKanbanQuickView({
 
   const ticketEntries = useMemo(() => {
     if (!ticket) return [];
-    const base = mockTimeEntries.filter((e) => e.ticketId === ticket.id);
-    return [...base, ...localEntries].sort(
+    return [...apiEntries, ...localEntries].sort(
       (a, b) =>
         new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
     );
-  }, [ticket, localEntries]);
+  }, [ticket, apiEntries, localEntries]);
 
   const totals = useMemo(() => {
     const total = ticketEntries.reduce((s, e) => s + e.durationMinutes, 0);
@@ -164,7 +181,7 @@ export function ProjectKanbanQuickView({
         organizationId: "",
         organizationName: ticket.organizationName,
         agentId: "usr_current",
-        agentName: "Jean-Philippe Côté",
+        agentName: currentUserName,
         timeType,
         startedAt: now,
         endedAt: now,

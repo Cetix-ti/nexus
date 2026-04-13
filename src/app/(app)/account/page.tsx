@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { LanguageSelector } from "@/components/layout/language-selector";
 
 type Tab = "profile" | "security" | "notifications" | "preferences";
 
@@ -425,12 +426,7 @@ function SecurityTab() {
           </div>
         </form>
       </Card>
-      <Card title="Authentification à deux facteurs">
-        <p className="text-[13px] text-slate-500">
-          La 2FA n&apos;est pas encore activable depuis cette interface. Cette
-          fonctionnalité est en cours de développement.
-        </p>
-      </Card>
+      <MfaSection />
     </div>
   );
 }
@@ -438,6 +434,142 @@ function SecurityTab() {
 // ----------------------------------------------------------------------------
 // Notifications & Preferences (placeholders honnêtes)
 // ----------------------------------------------------------------------------
+
+function MfaSection() {
+  const [mfaEnabled, setMfaEnabled] = useState(false);
+  const [setupData, setSetupData] = useState<{ qrCode: string; secretBase32: string } | null>(null);
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [verifying, setVerifying] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/v1/me/mfa")
+      .then((r) => r.ok ? r.json() : { data: {} })
+      .then((d) => { setMfaEnabled(d.data?.mfaEnabled ?? false); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  async function startSetup() {
+    setMessage(null);
+    const res = await fetch("/api/v1/me/mfa?action=setup");
+    if (res.ok) {
+      const d = await res.json();
+      setSetupData(d.data);
+    }
+  }
+
+  async function verifyAndEnable() {
+    if (!code || code.length !== 6) { setMessage({ tone: "err", text: "Entrez un code à 6 chiffres" }); return; }
+    setVerifying(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/v1/me/mfa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, action: "enable" }),
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        setMfaEnabled(true);
+        setSetupData(null);
+        setCode("");
+        setMessage({ tone: "ok", text: "MFA activé avec succès !" });
+      } else {
+        setMessage({ tone: "err", text: d.error || "Code invalide" });
+      }
+    } catch { setMessage({ tone: "err", text: "Erreur de vérification" }); }
+    finally { setVerifying(false); }
+  }
+
+  async function disableMfa() {
+    const userCode = prompt("Entrez votre code MFA pour désactiver :");
+    if (!userCode) return;
+    const res = await fetch("/api/v1/me/mfa", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: userCode, action: "disable" }),
+    });
+    if (res.ok) {
+      setMfaEnabled(false);
+      setSetupData(null);
+      setMessage({ tone: "ok", text: "MFA désactivé" });
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setMessage({ tone: "err", text: d.error || "Code invalide" });
+    }
+  }
+
+  if (loading) return <Card title="Authentification à deux facteurs (MFA)"><p className="text-sm text-slate-400">Chargement...</p></Card>;
+
+  return (
+    <Card title="Authentification à deux facteurs (MFA)">
+      {message && (
+        <div className={cn("rounded-lg border px-3 py-2 text-[13px] mb-4",
+          message.tone === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"
+        )}>{message.text}</div>
+      )}
+
+      {mfaEnabled ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[12px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              MFA activé
+            </span>
+          </div>
+          <p className="text-[13px] text-slate-500">
+            Votre compte est protégé par l&apos;authentification à deux facteurs.
+          </p>
+          <Button variant="outline" size="sm" onClick={disableMfa}>
+            Désactiver le MFA
+          </Button>
+        </div>
+      ) : setupData ? (
+        <div className="space-y-4">
+          <p className="text-[13px] text-slate-600">
+            Scannez ce QR code avec votre application d&apos;authentification (Google Authenticator, Microsoft Authenticator, Authy, etc.)
+          </p>
+          <div className="flex justify-center">
+            <img src={setupData.qrCode} alt="QR Code MFA" className="w-48 h-48 rounded-lg border border-slate-200" />
+          </div>
+          <div className="text-center">
+            <p className="text-[11px] text-slate-400 mb-1">Clé manuelle :</p>
+            <code className="text-[12px] font-mono bg-slate-100 px-3 py-1.5 rounded-lg text-slate-700 select-all">
+              {setupData.secretBase32}
+            </code>
+          </div>
+          <div className="flex items-center gap-3">
+            <Input
+              label="Code de vérification"
+              placeholder="123456"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              className="font-mono text-center text-lg tracking-widest"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button variant="primary" onClick={verifyAndEnable} loading={verifying} disabled={code.length !== 6}>
+              Activer le MFA
+            </Button>
+            <Button variant="outline" onClick={() => setSetupData(null)}>
+              Annuler
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-[13px] text-slate-500">
+            Protégez votre compte avec un deuxième facteur d&apos;authentification. Vous aurez besoin d&apos;une application comme Google Authenticator ou Microsoft Authenticator.
+          </p>
+          <Button variant="primary" onClick={startSetup}>
+            Configurer le MFA
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function NotificationsTab() {
   return (
@@ -453,13 +585,19 @@ function NotificationsTab() {
 
 function PreferencesTab() {
   return (
-    <Card title="Préférences du compte">
-      <p className="text-[13px] text-slate-500">
-        Langue, fuseau horaire et format de date sont actuellement fixés à
-        Français (Canada) / America/Toronto. Une interface de personnalisation
-        sera ajoutée prochainement.
-      </p>
-    </Card>
+    <div className="space-y-5">
+      <Card title="Langue d'affichage">
+        <p className="text-[13px] text-slate-500 mb-4">
+          Sélectionnez la langue dans laquelle vous souhaitez utiliser Nexus.
+        </p>
+        <LanguageSelector />
+      </Card>
+      <Card title="Fuseau horaire">
+        <p className="text-[13px] text-slate-500">
+          Fuseau horaire : America/Toronto (EST/EDT). La personnalisation sera disponible prochainement.
+        </p>
+      </Card>
+    </div>
   );
 }
 

@@ -7,9 +7,13 @@ import {
   getProfitAndLoss,
   getBalanceSheet,
 } from "@/lib/quickbooks/client";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 /** GET — fetch all QBO data for the finances dashboard */
 export async function GET(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   try {
     const { searchParams } = new URL(req.url);
     const section = searchParams.get("section"); // invoices, customers, payments, reports, all

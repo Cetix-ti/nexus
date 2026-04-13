@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
 import {
@@ -37,9 +38,11 @@ import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-edito
 import {
   STATUS_CONFIG,
   PRIORITY_CONFIG,
+  TYPE_CONFIG,
   type Ticket,
   type TicketStatus,
   type TicketPriority,
+  type TicketType,
 } from "@/lib/mock-data";
 
 interface TicketQuickViewModalProps {
@@ -54,9 +57,13 @@ const STATUS_LABELS_FR: Record<TicketStatus, string> = {
   open: "Ouvert",
   in_progress: "En cours",
   on_site: "Sur place",
+  pending: "En attente",
   waiting_client: "Attente client",
+  waiting_vendor: "Attente fournisseur",
+  scheduled: "Planifié",
   resolved: "Résolu",
   closed: "Fermé",
+  cancelled: "Annulé",
 };
 
 const PRIORITY_LABELS_FR: Record<TicketPriority, string> = {
@@ -84,9 +91,13 @@ const statusBadgeVariant: Record<
   open: "primary",
   in_progress: "warning",
   on_site: "primary",
+  pending: "warning",
   waiting_client: "default",
+  waiting_vendor: "default",
+  scheduled: "primary",
   resolved: "success",
   closed: "default",
+  cancelled: "default",
 };
 
 const priorityBadgeVariant: Record<
@@ -137,10 +148,21 @@ export function TicketQuickViewModal({
   onClose,
   onStatusChange,
 }: TicketQuickViewModalProps) {
+  const { data: session } = useSession();
+  const sessUser = session?.user as
+    | { firstName?: string; lastName?: string; email?: string }
+    | undefined;
+  const currentUserName = sessUser
+    ? `${sessUser.firstName ?? ""} ${sessUser.lastName ?? ""}`.trim() ||
+      sessUser.email?.split("@")[0] ||
+      "Utilisateur"
+    : "Utilisateur";
+
   const [replyText, setReplyText] = useState("");
   const [isInternal, setIsInternal] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [localComments, setLocalComments] = useState<LocalComment[]>([]);
   const [localStatus, setLocalStatus] = useState<TicketStatus | undefined>(
     ticket?.status
@@ -154,6 +176,7 @@ export function TicketQuickViewModal({
     setReplyText("");
     setIsInternal(false);
     setAttachments([]);
+    setSendError(null);
     setLocalComments([]);
     setLocalStatus(ticket?.status);
     setLocalPriority(ticket?.priority);
@@ -183,29 +206,77 @@ export function TicketQuickViewModal({
     return tmp.textContent?.trim() || "";
   }
 
-  function handleSendReply() {
-    if (!stripHtml(replyText) || sending) return;
+  async function handleSendReply() {
+    if (!stripHtml(replyText) || sending || !ticket) return;
     setSending(true);
-    setTimeout(() => {
+    setSendError(null);
+    try {
+      const res = await fetch(`/api/v1/tickets/${ticket.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: replyText, isInternal }),
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(errBody || `Erreur ${res.status}`);
+      }
+      const created = await res.json();
       setLocalComments((prev) => [
         ...prev,
         {
-          id: `local-${Date.now()}`,
-          authorName: "Jean-Philippe Côté",
-          content: replyText,
-          isInternal,
-          createdAt: new Date().toISOString(),
+          id: created.id ?? `local-${Date.now()}`,
+          authorName: created.authorName ?? currentUserName,
+          content: created.content ?? replyText,
+          isInternal: created.isInternal ?? isInternal,
+          createdAt: created.createdAt ?? new Date().toISOString(),
         },
       ]);
       setReplyText("");
       setAttachments([]);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erreur lors de l\u2019envoi";
+      setSendError(message);
+    } finally {
       setSending(false);
-    }, 350);
+    }
   }
 
-  function handleStatusChange(newStatus: TicketStatus) {
+  async function handleStatusChange(newStatus: TicketStatus) {
+    const previousStatus = localStatus;
     setLocalStatus(newStatus);
     onStatusChange?.(ticket!.id, newStatus);
+    try {
+      const res = await fetch(`/api/v1/tickets/${ticket!.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        throw new Error(`Erreur ${res.status}`);
+      }
+    } catch {
+      // Revert on failure
+      setLocalStatus(previousStatus);
+    }
+  }
+
+  async function handlePriorityChange(newPriority: TicketPriority) {
+    const previousPriority = localPriority;
+    setLocalPriority(newPriority);
+    try {
+      const res = await fetch(`/api/v1/tickets/${ticket!.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: newPriority }),
+      });
+      if (!res.ok) {
+        throw new Error(`Erreur ${res.status}`);
+      }
+    } catch {
+      // Revert on failure
+      setLocalPriority(previousPriority);
+    }
   }
 
   // Combine existing + local comments
@@ -264,6 +335,9 @@ export function TicketQuickViewModal({
                 />
                 {PRIORITY_LABELS_FR[priority]}
               </Badge>
+              <Badge variant="default">
+                {TYPE_CONFIG[ticket.type as TicketType]?.label ?? ticket.type}
+              </Badge>
               {ticket.slaBreached && (
                 <Badge variant="danger">
                   <AlertTriangle className="h-2.5 w-2.5" strokeWidth={2.5} />
@@ -306,9 +380,16 @@ export function TicketQuickViewModal({
                 <h3 className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500 mb-2">
                   Description
                 </h3>
-                <p className="text-[13px] text-slate-700 leading-relaxed whitespace-pre-wrap">
-                  {ticket.description}
-                </p>
+                {ticket.description.includes("<") ? (
+                  <div
+                    className="text-[13px] text-slate-700 leading-relaxed prose prose-sm prose-slate max-w-none [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_strong]:font-semibold [&_img]:max-w-full [&_img]:rounded-lg"
+                    dangerouslySetInnerHTML={{ __html: ticket.description }}
+                  />
+                ) : (
+                  <p className="text-[13px] text-slate-700 leading-relaxed whitespace-pre-wrap">
+                    {ticket.description}
+                  </p>
+                )}
               </div>
 
               {/* Conversation */}
@@ -411,6 +492,11 @@ export function TicketQuickViewModal({
                   onAttachmentsChange={setAttachments}
                   minHeight="120px"
                 />
+                {sendError && (
+                  <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+                    {sendError}
+                  </div>
+                )}
                 <div className="mt-2 flex items-center justify-between">
                   <p className="text-[10.5px] text-slate-400">
                     <kbd className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[9px]">
@@ -462,7 +548,7 @@ export function TicketQuickViewModal({
                 </h3>
                 <Select
                   value={priority}
-                  onValueChange={(v) => setLocalPriority(v as TicketPriority)}
+                  onValueChange={(v) => handlePriorityChange(v as TicketPriority)}
                 >
                   <SelectTrigger>
                     <SelectValue />

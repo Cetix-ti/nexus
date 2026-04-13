@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, Clock, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,14 +70,44 @@ export function AddTimeModal({
   const [isUrgent, setIsUrgent] = useState(false);
   const [forceNonBillable, setForceNonBillable] = useState(false);
 
+  // Load current user name
+  const [currentUserName, setCurrentUserName] = useState("—");
+  useEffect(() => {
+    fetch("/api/v1/me").then((r) => r.ok ? r.json() : null).then((d) => {
+      if (d?.firstName) setCurrentUserName(`${d.firstName} ${d.lastName}`);
+    }).catch(() => {});
+  }, []);
+
+  // Load billing profile for this org from API
+  const [billingData, setBillingData] = useState<{ baseProfile: any; override: any; resolved: any } | null>(null);
+  useEffect(() => {
+    if (organizationId) {
+      fetch(`/api/v1/organizations/${organizationId}/billing`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((d) => { if (d?.data) setBillingData(d.data); })
+        .catch(() => {});
+    }
+  }, [organizationId]);
+
+  // Load contracts for this org
+  const [orgContracts, setOrgContracts] = useState<any[]>([]);
+  useEffect(() => {
+    if (organizationId) {
+      fetch(`/api/v1/contracts?organizationId=${organizationId}`)
+        .then((r) => r.ok ? r.json() : [])
+        .then((d) => setOrgContracts(Array.isArray(d) ? d : []))
+        .catch(() => setOrgContracts([]));
+    }
+  }, [organizationId]);
+
   const durationMinutes = manualMode
     ? manualMinutes
     : diffMinutes(date, startTime, endTime);
 
-  const billingProfile = mockBillingProfiles[0];
+  const billingProfile = billingData?.resolved ?? billingData?.baseProfile ?? mockBillingProfiles[0];
   const contract = useMemo(
-    () => mockContracts.find((c) => c.organizationId === organizationId),
-    [organizationId]
+    () => orgContracts.length > 0 ? orgContracts[0] : mockContracts.find((c) => c.organizationId === organizationId),
+    [organizationId, orgContracts]
   );
 
   const decision = useMemo(() => {
@@ -130,7 +160,7 @@ export function AddTimeModal({
     setForceNonBillable(false);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!decision || durationMinutes <= 0) return;
     const now = new Date().toISOString();
@@ -146,7 +176,7 @@ export function AddTimeModal({
       organizationName,
       contractId: contract?.id,
       agentId: "usr_current",
-      agentName: "Jean-Philippe Côté",
+      agentName: currentUserName,
       timeType,
       startedAt,
       endedAt,
@@ -164,6 +194,18 @@ export function AddTimeModal({
       createdAt: now,
       updatedAt: now,
     };
+    try {
+      const res = await fetch("/api/v1/time-entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      if (!res.ok) {
+        throw new Error(`Erreur ${res.status}`);
+      }
+    } catch {
+      // Allow onSave to proceed even if API fails, so UI stays responsive
+    }
     onSave(entry);
     reset();
     onClose();

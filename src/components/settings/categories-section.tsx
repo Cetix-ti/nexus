@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Pencil, Trash2, ChevronRight, ChevronDown, FolderTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -108,6 +108,41 @@ const initialCategories: Category[] = [
 
 export function CategoriesSection() {
   const [categories, setCategories] = useState<Category[]>(initialCategories);
+
+  // Load from API
+  useEffect(() => {
+    fetch("/api/v1/categories")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#06B6D4"];
+          // Build tree: roots → subcategories
+          const roots = data.filter((c: any) => !c.parentId);
+          const mapped: Category[] = roots.map((r: any, i: number) => {
+            const subs = data
+              .filter((c: any) => c.parentId === r.id)
+              .map((s: any) => ({
+                id: s.id,
+                name: s.name,
+                ticketCount: 0,
+                itemCategories: data
+                  .filter((c: any) => c.parentId === s.id)
+                  .map((ic: any) => ({ id: ic.id, name: ic.name, ticketCount: 0 })),
+              }));
+            return {
+              id: r.id,
+              name: r.name,
+              description: r.description || "",
+              color: COLORS[i % COLORS.length],
+              ticketCount: 0,
+              subcategories: subs,
+            };
+          });
+          if (mapped.length > 0) setCategories(mapped);
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["c1"]));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creatingFor, setCreatingFor] = useState<string | null>(null);

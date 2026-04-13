@@ -202,7 +202,7 @@ const DEFAULT_BOARDS: KanbanBoard[] = [
     filterCategories: ["Matériel", "Logiciels", "Email"],
     filterTags: [],
     filterPriorities: [],
-    filterTicketTypes: ["incident", "request"],
+    filterTicketTypes: ["incident", "service_request"],
     columns: DEFAULT_COLUMNS,
     ownerId: "system",
     ownerName: "Système",
@@ -279,35 +279,50 @@ export const useKanbanBoardsStore = create<KanbanBoardsState>()(
       },
       setActiveBoard: (id) => set({ activeBoardId: id }),
       addBoard: async (b) => {
-        const res = await fetch("/api/v1/kanban-boards", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(b),
-        });
-        const created = (await res.json()) as KanbanBoard;
-        set({ boards: [...get().boards, created], activeBoardId: created.id });
+        try {
+          const res = await fetch("/api/v1/kanban-boards", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(b),
+          });
+          if (!res.ok) throw new Error("Erreur lors de la création du board");
+          const created = (await res.json()) as KanbanBoard;
+          set({ boards: [...get().boards, created], activeBoardId: created.id });
+        } catch (err) {
+          console.error("addBoard failed", err);
+        }
       },
       updateBoard: async (id, patch) => {
-        const res = await fetch(`/api/v1/kanban-boards/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(patch),
-        });
-        const updated = (await res.json()) as KanbanBoard;
-        set({
-          boards: get().boards.map((b) => (b.id === id ? updated : b)),
-        });
+        try {
+          const res = await fetch(`/api/v1/kanban-boards/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          });
+          if (!res.ok) throw new Error("Erreur lors de la mise à jour du board");
+          const updated = (await res.json()) as KanbanBoard;
+          set({
+            boards: get().boards.map((b) => (b.id === id ? updated : b)),
+          });
+        } catch (err) {
+          console.error("updateBoard failed", err);
+        }
       },
       deleteBoard: async (id) => {
-        await fetch(`/api/v1/kanban-boards/${id}`, { method: "DELETE" });
-        const next = get().boards.filter((b) => b.id !== id);
-        set({
-          boards: next,
-          activeBoardId:
-            get().activeBoardId === id
-              ? next[0]?.id || "board_default"
-              : get().activeBoardId,
-        });
+        try {
+          const res = await fetch(`/api/v1/kanban-boards/${id}`, { method: "DELETE" });
+          if (!res.ok) throw new Error("Erreur lors de la suppression du board");
+          const next = get().boards.filter((b) => b.id !== id);
+          set({
+            boards: next,
+            activeBoardId:
+              get().activeBoardId === id
+                ? next[0]?.id || "board_default"
+                : get().activeBoardId,
+          });
+        } catch (err) {
+          console.error("deleteBoard failed", err);
+        }
       },
       duplicateBoard: async (id) => {
         const src = get().boards.find((b) => b.id === id);

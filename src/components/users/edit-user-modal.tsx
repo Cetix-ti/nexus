@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, UserCog, Upload, KeyRound, Save, Loader2 } from "lucide-react";
+import { X, UserCog, Upload, KeyRound, Save, Loader2, Mail, Link2, Copy, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -232,20 +232,7 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
           </div>
 
           {/* Password reset */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 flex items-center justify-between">
-            <div>
-              <p className="text-[13px] font-medium text-slate-900">
-                Mot de passe
-              </p>
-              <p className="text-[12.5px] text-slate-500">
-                Réinitialisation par lien — à venir
-              </p>
-            </div>
-            <Button type="button" variant="outline" size="sm" disabled>
-              <KeyRound className="h-4 w-4" />
-              Réinitialiser
-            </Button>
-          </div>
+          <PasswordResetSection userId={user?.id || ""} />
 
           {error ? (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">
@@ -274,6 +261,161 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Password Reset Section
+// ---------------------------------------------------------------------------
+function PasswordResetSection({ userId }: { userId: string }) {
+  const [mode, setMode] = useState<null | "direct" | "email" | "link">(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [resetLink, setResetLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function handleDirect() {
+    if (newPassword.length < 8) { setResult({ ok: false, message: "Minimum 8 caractères" }); return; }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/v1/users/reset-password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, newPassword }),
+      });
+      const d = await res.json();
+      setResult(d.success ? { ok: true, message: "Mot de passe défini avec succès" } : { ok: false, message: d.error || "Erreur" });
+      if (d.success) setNewPassword("");
+    } catch { setResult({ ok: false, message: "Erreur réseau" }); }
+    finally { setLoading(false); }
+  }
+
+  async function handleSendEmail() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/v1/users/reset-password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, sendEmail: true }),
+      });
+      const d = await res.json();
+      setResult(d.success ? { ok: true, message: "Courriel de réinitialisation envoyé" } : { ok: false, message: d.error || "Erreur" });
+    } catch { setResult({ ok: false, message: "Erreur réseau" }); }
+    finally { setLoading(false); }
+  }
+
+  async function handleGenerateLink() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/v1/users/reset-password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, generateLink: true }),
+      });
+      const d = await res.json();
+      if (d.success && d.resetUrl) {
+        setResetLink(d.resetUrl);
+        setResult({ ok: true, message: "Lien généré — copiez-le et partagez-le à l'utilisateur" });
+      } else {
+        setResult({ ok: false, message: d.error || "Erreur" });
+      }
+    } catch { setResult({ ok: false, message: "Erreur réseau" }); }
+    finally { setLoading(false); }
+  }
+
+  function copyLink() {
+    if (resetLink) {
+      navigator.clipboard.writeText(resetLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[13px] font-medium text-slate-900">Mot de passe</p>
+          <p className="text-[12px] text-slate-500">Réinitialiser le mot de passe de l&apos;utilisateur</p>
+        </div>
+        <KeyRound className="h-4 w-4 text-slate-400" />
+      </div>
+
+      {/* Mode selector */}
+      {!mode && (
+        <div className="grid grid-cols-3 gap-2">
+          <button onClick={() => { setMode("direct"); setResult(null); }} className="rounded-lg border border-slate-200 bg-white p-3 text-center hover:border-blue-300 hover:bg-blue-50/30 transition-all">
+            <KeyRound className="h-4 w-4 text-slate-500 mx-auto mb-1" />
+            <p className="text-[11px] font-medium text-slate-700">Définir directement</p>
+          </button>
+          <button onClick={() => { setMode("email"); setResult(null); }} className="rounded-lg border border-slate-200 bg-white p-3 text-center hover:border-blue-300 hover:bg-blue-50/30 transition-all">
+            <Mail className="h-4 w-4 text-slate-500 mx-auto mb-1" />
+            <p className="text-[11px] font-medium text-slate-700">Envoyer par courriel</p>
+          </button>
+          <button onClick={() => { setMode("link"); setResult(null); }} className="rounded-lg border border-slate-200 bg-white p-3 text-center hover:border-blue-300 hover:bg-blue-50/30 transition-all">
+            <Link2 className="h-4 w-4 text-slate-500 mx-auto mb-1" />
+            <p className="text-[11px] font-medium text-slate-700">Générer un lien</p>
+          </button>
+        </div>
+      )}
+
+      {/* Direct password set */}
+      {mode === "direct" && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Input type="password" placeholder="Nouveau mot de passe (min. 8 car.)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="flex-1" />
+            <Button type="button" variant="primary" size="sm" loading={loading} onClick={handleDirect} disabled={newPassword.length < 8}>
+              Définir
+            </Button>
+          </div>
+          <button onClick={() => setMode(null)} className="text-[11px] text-slate-400 hover:text-slate-600">← Retour</button>
+        </div>
+      )}
+
+      {/* Send email */}
+      {mode === "email" && !result?.ok && (
+        <div className="space-y-2">
+          <p className="text-[12px] text-slate-600">Un courriel sera envoyé à l&apos;utilisateur avec un lien de réinitialisation valide 24h.</p>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="primary" size="sm" loading={loading} onClick={handleSendEmail}>
+              <Mail className="h-3.5 w-3.5" /> Envoyer le courriel
+            </Button>
+            <button onClick={() => setMode(null)} className="text-[11px] text-slate-400 hover:text-slate-600">← Retour</button>
+          </div>
+        </div>
+      )}
+
+      {/* Generate link */}
+      {mode === "link" && (
+        <div className="space-y-2">
+          {!resetLink ? (
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="primary" size="sm" loading={loading} onClick={handleGenerateLink}>
+                <Link2 className="h-3.5 w-3.5" /> Générer le lien
+              </Button>
+              <button onClick={() => setMode(null)} className="text-[11px] text-slate-400 hover:text-slate-600">← Retour</button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input readOnly value={resetLink} className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-mono text-slate-700 select-all" onClick={(e) => (e.target as HTMLInputElement).select()} />
+                <Button type="button" variant="outline" size="sm" onClick={copyLink}>
+                  {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? "Copié" : "Copier"}
+                </Button>
+              </div>
+              <p className="text-[10px] text-slate-400">Ce lien expire dans 24 heures</p>
+              <button onClick={() => { setMode(null); setResetLink(null); }} className="text-[11px] text-slate-400 hover:text-slate-600">← Retour</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Result message */}
+      {result && (
+        <div className={`rounded-lg px-3 py-2 text-[12px] ${result.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+          {result.message}
+        </div>
+      )}
     </div>
   );
 }

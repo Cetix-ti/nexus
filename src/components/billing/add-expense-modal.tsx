@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, Receipt, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,12 @@ export function AddExpenseModal({
   const [isRebillable, setRebill] = useState(true);
   const [hasReceipt, setReceipt] = useState(false);
   const [notes, setNotes] = useState("");
+  const [currentUserName, setCurrentUserName] = useState("—");
+  useEffect(() => {
+    fetch("/api/v1/me").then((r) => r.ok ? r.json() : null).then((d) => {
+      if (d?.firstName) setCurrentUserName(`${d.firstName} ${d.lastName}`);
+    }).catch(() => {});
+  }, []);
 
   if (!open) return null;
 
@@ -72,7 +78,7 @@ export function AddExpenseModal({
       organizationId,
       organizationName,
       agentId: "usr_current",
-      agentName: "Jean-Philippe Côté",
+      agentName: currentUserName,
       date: new Date(`${date}T00:00:00`).toISOString(),
       expenseType,
       description,

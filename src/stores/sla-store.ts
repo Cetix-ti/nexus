@@ -64,33 +64,48 @@ export const useSlaStore = create<SlaState>()((set, get) => ({
   setGlobalPolicy: async (priority, policy) => {
     const next = { ...get().globalProfile, [priority]: policy };
     set({ globalProfile: next });
-    await fetch("/api/v1/sla/global", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(next),
-    });
+    try {
+      const res = await fetch("/api/v1/sla/global", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      if (!res.ok) throw new Error("Erreur lors de la mise à jour de la politique SLA globale");
+    } catch (err) {
+      console.error("setGlobalPolicy failed", err);
+    }
   },
 
   setOrgPolicy: async (orgId, priority, policy) => {
     const current = get().orgOverrides[orgId] || get().globalProfile;
     const next = { ...current, [priority]: policy };
     set((s) => ({ orgOverrides: { ...s.orgOverrides, [orgId]: next } }));
-    await fetch(`/api/v1/sla/orgs/${orgId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(next),
-    });
+    try {
+      const res = await fetch(`/api/v1/sla/orgs/${orgId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      if (!res.ok) throw new Error("Erreur lors de la mise à jour de la politique SLA org");
+    } catch (err) {
+      console.error("setOrgPolicy failed", err);
+    }
   },
 
   enableOrgOverride: async (orgId) => {
     if (get().orgOverrides[orgId]) return;
     const profile = { ...get().globalProfile };
     set((s) => ({ orgOverrides: { ...s.orgOverrides, [orgId]: profile } }));
-    await fetch(`/api/v1/sla/orgs/${orgId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(profile),
-    });
+    try {
+      const res = await fetch(`/api/v1/sla/orgs/${orgId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(profile),
+      });
+      if (!res.ok) throw new Error("Erreur lors de l'activation de l'override org");
+    } catch (err) {
+      console.error("enableOrgOverride failed", err);
+    }
   },
 
   removeOrgOverride: async (orgId) => {
@@ -99,7 +114,12 @@ export const useSlaStore = create<SlaState>()((set, get) => ({
       delete next[orgId];
       return { orgOverrides: next };
     });
-    await fetch(`/api/v1/sla/orgs/${orgId}`, { method: "DELETE" });
+    try {
+      const res = await fetch(`/api/v1/sla/orgs/${orgId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Erreur lors de la suppression de l'override org");
+    } catch (err) {
+      console.error("removeOrgOverride failed", err);
+    }
   },
 
   getEffectiveProfile: (orgId) => {

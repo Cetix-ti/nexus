@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { loadSmtpConfig, isConfigured } from "@/lib/smtp/storage";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function POST(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { to } = (await req.json()) as { to?: string };
   if (!to || !to.includes("@")) {
     return NextResponse.json({ ok: false, error: "Adresse destinataire invalide." }, { status: 400 });

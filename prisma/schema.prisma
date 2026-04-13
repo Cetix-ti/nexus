@@ -59,6 +59,10 @@ model Organization {
   articleCategories ArticleCategory[]
   automations AutomationRule[]
   announcements Announcement[]
+  expenseEntries ExpenseEntry[]
+  purchaseOrders PurchaseOrder[]
+  projects       Project[]
+  sharedResources SharedResource[] @relation("SharedWithOrg")
 
   @@map("organizations")
 }
@@ -102,6 +106,13 @@ model User {
   phone          String?
   role           UserRole  @default(TECHNICIAN)
   isActive       Boolean   @default(true) @map("is_active")
+  locale         String    @default("fr") // fr | en
+  preferences    Json?     @db.JsonB
+
+  // MFA (TOTP)
+  mfaEnabled     Boolean   @default(false) @map("mfa_enabled")
+  mfaSecret      String?   @map("mfa_secret") // encrypted TOTP secret
+  mfaVerifiedAt  DateTime? @map("mfa_verified_at") // last successful MFA verification
   lastLoginAt    DateTime? @map("last_login_at")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
@@ -109,11 +120,16 @@ model User {
   organizations  UserOrganization[]
   assignedTickets Ticket[]  @relation("AssignedTechnician")
   createdTickets  Ticket[]  @relation("TicketCreator")
+  ticketCollaborations TicketCollaborator[] @relation("TicketCollaborator")
   comments       Comment[]
   activities     Activity[]
   articles       Article[] @relation("ArticleAuthor")
   assetNotes     AssetNote[]
   aiConversations AiConversation[]
+  expenseReports  ExpenseReport[] @relation("ExpenseReportSubmitter")
+  purchaseOrders  PurchaseOrder[] @relation("PurchaseOrderRequester")
+  managedProjects Project[]       @relation("ProjectManager")
+  sharedResources SharedResource[] @relation("SharedByUser")
 
   @@map("users")
 }
@@ -157,7 +173,8 @@ model Contact {
   isVIP          Boolean      @default(false) @map("is_vip")
   isActive       Boolean      @default(true) @map("is_active")
 
-  // Portal auth
+  // Portal auth & preferences
+  locale         String       @default("fr") // fr | en
   passwordHash   String?      @map("password_hash")
   portalEnabled  Boolean      @default(true) @map("portal_enabled")
   lastPortalLoginAt DateTime? @map("last_portal_login_at")
@@ -234,11 +251,20 @@ model Ticket {
   monitoringStage    MonitoringAlertStage? @map("monitoring_stage")
   monitoringNotes    String? @map("monitoring_notes") @db.Text
 
+  projectId      String?       @map("project_id")
+  project        Project?      @relation(fields: [projectId], references: [id])
+
+  // Approval workflow
+  requiresApproval Boolean       @default(false) @map("requires_approval")
+  approvalStatus   ApprovalStatus @default(NOT_REQUIRED) @map("approval_status")
+
   comments       Comment[]
   attachments    Attachment[]
   activities     Activity[]
   ticketTags     TicketTag[]
   relatedAssets  TicketAsset[]
+  approvals      TicketApproval[]
+  collaborators  TicketCollaborator[]
 
   @@index([organizationId, status])
   @@index([assigneeId])
@@ -300,6 +326,47 @@ enum TicketSource {
   API
   MONITORING
   AUTOMATION
+}
+
+enum ApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model TicketCollaborator {
+  id          String   @id @default(cuid())
+  ticketId    String   @map("ticket_id")
+  userId      String   @map("user_id")
+  role        String   @default("collaborator") // collaborator | observer
+  addedAt     DateTime @default(now()) @map("added_at")
+
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user        User     @relation("TicketCollaborator", fields: [userId], references: [id])
+
+  @@unique([ticketId, userId])
+  @@index([userId])
+  @@map("ticket_collaborators")
+}
+
+model TicketApproval {
+  id            String          @id @default(cuid())
+  ticketId      String          @map("ticket_id")
+  approverId    String          @map("approver_id")
+  approverName  String          @map("approver_name")
+  approverEmail String          @map("approver_email")
+  role          String          @default("primary") // primary | secondary
+  status        ApprovalStatus  @default(PENDING)
+  comment       String?         @db.Text
+  decidedAt     DateTime?       @map("decided_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  ticket        Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([approverEmail, status])
+  @@map("ticket_approvals")
 }
 
 model Comment {
@@ -1289,4 +1356,220 @@ enum VeeamJobStatus {
   SUCCESS
   WARNING
   FAILED
+}
+
+// ===========================================================================
+// Expense Reports & Entries
+// ===========================================================================
+model ExpenseReport {
+  id             String         @id @default(cuid())
+  title          String
+  submitterId    String         @map("submitter_id")
+  submitter      User           @relation("ExpenseReportSubmitter", fields: [submitterId], references: [id])
+  status         ExpenseReportStatus @default(DRAFT)
+  periodStart    DateTime?      @map("period_start")
+  periodEnd      DateTime?      @map("period_end")
+  totalAmount    Float          @default(0) @map("total_amount")
+  notes          String?        @db.Text
+  approvedById   String?        @map("approved_by_id")
+  approvedAt     DateTime?      @map("approved_at")
+  submittedAt    DateTime?      @map("submitted_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  entries        ExpenseEntry[]
+
+  @@index([submitterId, status])
+  @@map("expense_reports")
+}
+
+enum ExpenseReportStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  REIMBURSED
+}
+
+model ExpenseEntry {
+  id              String        @id @default(cuid())
+  reportId        String        @map("report_id")
+  report          ExpenseReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  date            DateTime
+  category        String
+  description     String
+  amount          Float
+  currency        String        @default("CAD")
+  vendor          String?
+  receiptUrl      String?       @map("receipt_url")
+  isBillable      Boolean       @default(false) @map("is_billable")
+  organizationId  String?       @map("organization_id")
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+  ticketId        String?       @map("ticket_id")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@index([reportId])
+  @@map("expense_entries")
+}
+
+// ===========================================================================
+// Purchase Orders
+// ===========================================================================
+model PurchaseOrder {
+  id              String           @id @default(cuid())
+  poNumber        String           @unique @map("po_number")
+  title           String
+  status          PurchaseOrderStatus @default(DRAFT)
+  vendorName      String           @map("vendor_name")
+  vendorContact   String?          @map("vendor_contact")
+  organizationId  String?          @map("organization_id")
+  organization    Organization?    @relation(fields: [organizationId], references: [id])
+  requestedById   String           @map("requested_by_id")
+  requestedBy     User             @relation("PurchaseOrderRequester", fields: [requestedById], references: [id])
+  approvedById    String?          @map("approved_by_id")
+  approvedAt      DateTime?        @map("approved_at")
+  subtotal        Float            @default(0)
+  taxAmount       Float            @default(0) @map("tax_amount")
+  totalAmount     Float            @default(0) @map("total_amount")
+  currency        String           @default("CAD")
+  notes           String?          @db.Text
+  expectedDate    DateTime?        @map("expected_date")
+  receivedDate    DateTime?        @map("received_date")
+  ticketId        String?          @map("ticket_id")
+  submittedAt     DateTime?        @map("submitted_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  items           PurchaseOrderItem[]
+
+  @@index([status])
+  @@index([requestedById])
+  @@map("purchase_orders")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  ORDERED
+  PARTIAL
+  RECEIVED
+  CANCELLED
+}
+
+// ===========================================================================
+// Projects
+// ===========================================================================
+model Project {
+  id                String        @id @default(cuid())
+  code              String        @unique
+  name              String
+  description       String?       @db.Text
+  organizationId    String        @map("organization_id")
+  organization      Organization  @relation(fields: [organizationId], references: [id])
+  type              String        @default("implementation")
+  status            String        @default("draft")
+  priority          String        @default("medium")
+  managerId         String        @map("manager_id")
+  manager           User          @relation("ProjectManager", fields: [managerId], references: [id])
+  startDate         DateTime?     @map("start_date")
+  targetEndDate     DateTime?     @map("target_end_date")
+  actualEndDate     DateTime?     @map("actual_end_date")
+  progressPercent   Int           @default(0) @map("progress_percent")
+  budgetHours       Float?        @map("budget_hours")
+  consumedHours     Float         @default(0) @map("consumed_hours")
+  budgetAmount      Float?        @map("budget_amount")
+  consumedAmount    Float         @default(0) @map("consumed_amount")
+  isVisibleToClient Boolean       @default(false) @map("is_visible_to_client")
+  tags              String[]      @default([])
+  isAtRisk          Boolean       @default(false) @map("is_at_risk")
+  riskNotes         String?       @map("risk_notes") @db.Text
+  isArchived        Boolean       @default(false) @map("is_archived")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  tasks             ProjectTask[]
+  tickets           Ticket[]
+  shares            SharedResource[] @relation("SharedProject")
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("projects")
+}
+
+model ProjectTask {
+  id                String    @id @default(cuid())
+  projectId         String    @map("project_id")
+  project           Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?   @db.Text
+  status            String    @default("todo")
+  priority          String    @default("medium")
+  assigneeId        String?   @map("assignee_id")
+  startDate         DateTime? @map("start_date")
+  dueDate           DateTime? @map("due_date")
+  completedAt       DateTime? @map("completed_at")
+  estimatedHours    Float?    @map("estimated_hours")
+  actualHours       Float?    @map("actual_hours")
+  progressPercent   Int       @default(0) @map("progress_percent")
+  isVisibleToClient Boolean   @default(false) @map("is_visible_to_client")
+  sortOrder         Int       @default(0) @map("sort_order")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([projectId, status])
+  @@map("project_tasks")
+}
+
+// ============================================================================
+// SHARED RESOURCES — Secure sharing of projects/reports with portal orgs
+// Only portal ADMIN users of the target org can see shared resources.
+// Multi-tenant isolation: each share is scoped to a specific target org.
+// ============================================================================
+
+model SharedResource {
+  id               String       @id @default(cuid())
+  resourceType     String       @map("resource_type") // "project" | "report"
+  // Only one of these is set (polymorphic)
+  projectId        String?      @map("project_id")
+  reportId         String?      @map("report_id")
+
+  // Target: which org can see this resource
+  targetOrgId      String       @map("target_org_id")
+  targetOrg        Organization @relation("SharedWithOrg", fields: [targetOrgId], references: [id], onDelete: Cascade)
+
+  // Access control
+  portalAdminOnly  Boolean      @default(true) @map("portal_admin_only") // true = only admin portal users
+
+  // Who shared it and when
+  sharedByUserId   String       @map("shared_by_user_id")
+  sharedBy         User         @relation("SharedByUser", fields: [sharedByUserId], references: [id])
+  notes            String?      @db.Text
+  createdAt        DateTime     @default(now()) @map("created_at")
+
+  // Relations
+  project          Project?     @relation("SharedProject", fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceType, projectId, targetOrgId])
+  @@unique([resourceType, reportId, targetOrgId])
+  @@index([targetOrgId, resourceType])
+  @@index([projectId])
+  @@index([reportId])
+  @@map("shared_resources")
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(cuid())
+  orderId         String        @map("order_id")
+  order           PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  description     String
+  partNumber      String?       @map("part_number")
+  quantity        Int           @default(1)
+  unitPrice       Float         @map("unit_price")
+  totalPrice      Float         @map("total_price")
+  receivedQty     Int           @default(0) @map("received_qty")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@map("purchase_order_items")
 }

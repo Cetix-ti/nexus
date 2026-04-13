@@ -37,23 +37,33 @@ const statusVariant: Record<string, "default" | "primary" | "success" | "warning
   closed: "default",
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  new: "Nouveau",
+  open: "Ouvert",
+  in_progress: "En cours",
+  pending: "En attente",
+  waiting_client: "Attente client",
+  resolved: "Résolu",
+  closed: "Fermé",
+};
+
 function timeAgo(dateStr: string): string {
   const now = new Date();
   const date = new Date(dateStr);
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffMins < 1) return "à l'instant";
+  if (diffMins < 60) return `il y a ${diffMins}m`;
   const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffHours < 24) return `il y a ${diffHours}h`;
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays === 1) return "yesterday";
-  return `${diffDays}d ago`;
+  if (diffDays === 1) return "hier";
+  return `il y a ${diffDays}j`;
 }
 
 export function RecentTickets({
   tickets,
-  title = "Recent Tickets",
+  title = "Tickets récents",
   showAssignee = false,
 }: RecentTicketsProps) {
   return (
@@ -64,14 +74,15 @@ export function RecentTickets({
           href="/tickets"
           className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
         >
-          View all
+          Voir tout
           <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>
       <div className="divide-y divide-neutral-100">
         {tickets.map((ticket) => (
-          <div
+          <Link
             key={ticket.id}
+            href={`/tickets/${ticket.id}`}
             className="flex items-center gap-3 px-5 py-3 hover:bg-neutral-50 transition-colors cursor-pointer"
           >
             <span
@@ -94,13 +105,13 @@ export function RecentTickets({
             <Badge variant="outline" className="shrink-0 hidden sm:inline-flex text-[11px]">
               {ticket.organization}
             </Badge>
-            <Badge variant={statusVariant[ticket.status]} className="shrink-0 capitalize text-[11px]">
-              {ticket.status}
+            <Badge variant={statusVariant[ticket.status]} className="shrink-0 text-[11px]">
+              {STATUS_LABELS[ticket.status] ?? ticket.status}
             </Badge>
             <span className="text-xs text-neutral-400 shrink-0 w-16 text-right">
               {timeAgo(ticket.createdAt)}
             </span>
-          </div>
+          </Link>
         ))}
       </div>
     </div>

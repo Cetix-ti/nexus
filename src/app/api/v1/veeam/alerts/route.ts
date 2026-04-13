@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 function extractCount(row: any): number {
   if (typeof row._count === "number") return row._count;
@@ -8,6 +9,9 @@ function extractCount(row: any): number {
 }
 
 export async function GET(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   try {
   const { searchParams } = new URL(req.url);
   const days = Number(searchParams.get("days")) || 7;

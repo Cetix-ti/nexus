@@ -117,7 +117,7 @@ function mapType(fsType: string): TicketType {
   if (t.includes("incident")) return "incident";
   if (t.includes("problem")) return "problem";
   if (t.includes("change") || t.includes("changement")) return "change";
-  if (t.includes("request") || t.includes("demande")) return "request";
+  if (t.includes("request") || t.includes("demande")) return "service_request";
   return "incident";
 }
 

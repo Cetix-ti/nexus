@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { ROLES_HIERARCHY } from "@/lib/constants";
+import prisma from "@/lib/prisma";
 
 export type UserRole =
   | "SUPER_ADMIN"
@@ -18,15 +19,39 @@ export interface AuthUser {
   role: UserRole;
 }
 
+// Cache active status checks for 60 seconds to avoid hitting DB on every API call
+const activeCache = new Map<string, { active: boolean; checkedAt: number }>();
+const CACHE_TTL = 60_000; // 60 seconds
+
 /**
  * Get the current authenticated user from the session.
- * Returns null if not authenticated.
+ * Returns null if not authenticated OR if the user has been deactivated.
  */
 export async function getCurrentUser(): Promise<AuthUser | null> {
   const session = await auth();
 
   if (!session?.user) {
     return null;
+  }
+
+  const userId = session.user.id;
+
+  // SECURITY: Verify user is still active in DB (cached for 60s)
+  const cached = activeCache.get(userId);
+  if (cached && Date.now() - cached.checkedAt < CACHE_TTL) {
+    if (!cached.active) return null;
+  } else {
+    try {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { isActive: true },
+      });
+      const isActive = dbUser?.isActive ?? false;
+      activeCache.set(userId, { active: isActive, checkedAt: Date.now() });
+      if (!isActive) return null;
+    } catch {
+      // If DB is unreachable, allow access based on session (graceful degradation)
+    }
   }
 
   return {

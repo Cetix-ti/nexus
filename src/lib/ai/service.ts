@@ -37,7 +37,7 @@ export async function chatCompletion(
       model: MODEL(),
       messages,
       temperature: options?.temperature ?? 0.3,
-      max_tokens: options?.maxTokens ?? 2000,
+      max_tokens: options?.maxTokens ?? 4096,
     }),
   });
 
@@ -57,20 +57,65 @@ export async function chatCompletion(
 // ---------------------------------------------------------------------------
 
 // Intent categories for smarter routing
-type QueryIntent = "tickets" | "backups" | "monitoring" | "contacts" | "assets" | "kb" | "time" | "general";
+type QueryIntent = "tickets" | "backups" | "monitoring" | "contacts" | "assets" | "kb" | "time" | "finance" | "general";
 
-/** Detect what the user is asking about */
+/** Detect what the user is asking about — scored intent detection */
 function detectIntents(message: string): QueryIntent[] {
   const m = message.toLowerCase();
-  const intents: QueryIntent[] = [];
+  const scores: Record<QueryIntent, number> = {
+    tickets: 0, backups: 0, monitoring: 0, contacts: 0,
+    assets: 0, kb: 0, time: 0, finance: 0, general: 0,
+  };
 
-  if (/ticket|billet|incident|demande|problème|bug|erreur|panne/.test(m)) intents.push("tickets");
-  if (/sauvegarde|backup|veeam|bkp|restaur/.test(m)) intents.push("backups");
-  if (/monitoring|alerte|zabbix|surveillance|atera|fortigate|wazuh/.test(m)) intents.push("monitoring");
-  if (/contact|utilisateur|client|employé|personne|qui est/.test(m)) intents.push("contacts");
-  if (/actif|serveur|poste|équipement|matériel|asset|ordinateur|laptop|imprimante/.test(m)) intents.push("assets");
-  if (/article|documentation|procédure|base de connaissance|kb|wiki|comment faire/.test(m)) intents.push("kb");
-  if (/temps|heure|facturable|saisie|timesheet/.test(m)) intents.push("time");
+  // Ticket patterns (high confidence)
+  if (/ticket|billet/.test(m)) scores.tickets += 3;
+  if (/incident|demande de service|problème|requête/.test(m)) scores.tickets += 2;
+  if (/bug|erreur|panne|dysfonction|ne fonctionne|planté|crashe|lent/.test(m)) scores.tickets += 2;
+  if (/créé|ouvert|fermé|résolu|assigné|en cours|en attente/.test(m)) scores.tickets += 1;
+  if (/sla|dépassé|retard|urgent|priorité|critique/.test(m)) scores.tickets += 1;
+
+  // Backup patterns
+  if (/sauvegarde|backup|veeam/.test(m)) scores.backups += 3;
+  if (/bkp|restaur|récupér|disaster|reprise/.test(m)) scores.backups += 2;
+  if (/réplicat|snapshot|rétention/.test(m)) scores.backups += 1;
+
+  // Monitoring patterns
+  if (/monitoring|alerte|zabbix|atera|fortigate|wazuh|bitdefender/.test(m)) scores.monitoring += 3;
+  if (/surveillance|notification|capteur|sonde|triage/.test(m)) scores.monitoring += 2;
+  if (/cpu|mémoire|disque|espace|threshold|seuil|ping|down/.test(m)) scores.monitoring += 1;
+
+  // Contact patterns
+  if (/contact|qui est|coordonnées/.test(m)) scores.contacts += 3;
+  if (/utilisateur|client|employé|personne|responsable/.test(m)) scores.contacts += 2;
+  if (/email|courriel|téléphone|poste|adresse/.test(m)) scores.contacts += 1;
+
+  // Asset patterns
+  if (/actif|asset|inventaire/.test(m)) scores.assets += 3;
+  if (/serveur|poste|équipement|matériel|ordinateur|laptop|imprimante/.test(m)) scores.assets += 2;
+  if (/switch|routeur|firewall|ups|nas|san|vm|machine virtuelle/.test(m)) scores.assets += 2;
+  if (/ip|adresse ip|sériee|modèle|fabricant|garantie|fin de vie|eol/.test(m)) scores.assets += 1;
+
+  // KB patterns
+  if (/article|documentation|procédure|base de connaissance|kb|wiki/.test(m)) scores.kb += 3;
+  if (/comment faire|guide|tutoriel|aide|instruction/.test(m)) scores.kb += 2;
+  if (/étapes|configurer|installer|dépanner/.test(m)) scores.kb += 1;
+
+  // Time entry patterns
+  if (/temps|heure|facturable|saisie|timesheet/.test(m)) scores.time += 3;
+  if (/heures travaillées|banque d'heures|overtime/.test(m)) scores.time += 2;
+
+  // Finance patterns
+  if (/factur|dépense|expense|contrat/.test(m)) scores.finance += 3;
+  if (/coût|revenu|financ|argent|dollar|budget|montant|tarif/.test(m)) scores.finance += 2;
+  if (/bon de commande|purchase order|po|devis/.test(m)) scores.finance += 1;
+
+  // Build intent list from scores (threshold: 1+)
+  const intents: QueryIntent[] = [];
+  for (const [intent, score] of Object.entries(scores)) {
+    if (score >= 1 && intent !== "general") {
+      intents.push(intent as QueryIntent);
+    }
+  }
 
   // If no specific intent, search everything
   if (intents.length === 0) intents.push("general");
@@ -121,6 +166,32 @@ function detectDateRange(message: string): { since: Date; label: string } | null
     return { since: new Date(now.getTime() - 48 * 60 * 60 * 1000), label: "les dernières 48h" };
   }
 
+  // "depuis janvier", "depuis février", etc.
+  const monthNames: Record<string, number> = {
+    janvier: 0, février: 1, fevrier: 1, mars: 2, avril: 3, mai: 4, juin: 5,
+    juillet: 6, août: 7, aout: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11, decembre: 11,
+  };
+
+  const depuisMatch = m.match(/depuis\s+(janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)/);
+  if (depuisMatch) {
+    const monthNum = monthNames[depuisMatch[1]];
+    const year = monthNum <= now.getMonth() ? now.getFullYear() : now.getFullYear() - 1;
+    return { since: new Date(year, monthNum, 1), label: `depuis ${depuisMatch[1]}` };
+  }
+
+  // "en mars", "en janvier", etc. — treat as a specific month range
+  const enMoisMatch = m.match(/en\s+(janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)/);
+  if (enMoisMatch) {
+    const monthNum = monthNames[enMoisMatch[1]];
+    const year = monthNum <= now.getMonth() ? now.getFullYear() : now.getFullYear() - 1;
+    return { since: new Date(year, monthNum, 1), label: `en ${enMoisMatch[1]}` };
+  }
+
+  // "cette année" / "this year"
+  if (/cette année|this year/.test(m)) {
+    return { since: new Date(now.getFullYear(), 0, 1), label: "cette année" };
+  }
+
   return null;
 }
 
@@ -129,6 +200,7 @@ async function detectOrgNames(message: string): Promise<string[]> {
   const orgs = await prisma.organization.findMany({
     where: { isActive: true },
     select: { name: true },
+    take: 500,
   });
   const m = message.toLowerCase();
   return orgs
@@ -205,11 +277,48 @@ async function searchTickets(
 
   if (tickets.length === 0) return "";
 
-  return tickets.map((t) => {
-    const comments = t.comments.length > 0
-      ? `\n  Commentaires: ${t.comments.map((c) => c.body.slice(0, 150)).join(" | ")}`
+  // Deduplicate tickets by id (can appear multiple times when matching multiple OR conditions)
+  const seen = new Set<string>();
+  const uniqueTickets = tickets.filter((t) => {
+    if (seen.has(t.id)) return false;
+    seen.add(t.id);
+    return true;
+  });
+
+  // Relevance scoring: exact match in subject > partial in subject > description > comments
+  const scored = uniqueTickets.map((t) => {
+    let score = 0;
+    const subjectLower = t.subject.toLowerCase();
+    const descLower = t.description.toLowerCase();
+    const commentsText = t.comments.map((c) => c.body.toLowerCase()).join(" ");
+    for (const term of terms) {
+      const tl = term.toLowerCase();
+      if (subjectLower === tl) score += 100;            // exact match in subject
+      else if (subjectLower.includes(tl)) score += 50;  // partial match in subject
+      if (descLower.includes(tl)) score += 20;          // match in description
+      if (commentsText.includes(tl)) score += 10;       // match in comments
+    }
+    return { ticket: t, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+
+  // Structured formatting for better AI comprehension
+  return scored.map(({ ticket: t, score }) => {
+    const commentSnippets = t.comments
+      .map((c) => c.body.slice(0, 150).replace(/\n/g, " "))
+      .filter(Boolean);
+    const commentSection = commentSnippets.length > 0
+      ? `\n    Derniers commentaires: ${commentSnippets.join(" | ")}`
       : "";
-    return `INC-${1000 + t.number}: ${t.subject} [${t.status}/${t.priority}] — ${t.organization?.name ?? "?"} — Demandeur: ${t.requester ? `${t.requester.firstName} ${t.requester.lastName}` : "?"} — Assigné: ${t.assignee ? `${t.assignee.firstName} ${t.assignee.lastName}` : "Non assigné"} — ${t.createdAt.toLocaleDateString("fr-CA")}\n  Description: ${t.description.slice(0, 200)}${comments}`;
+    const descSnippet = t.description.slice(0, 250).replace(/\n/g, " ");
+    return [
+      `• INC-${1000 + t.number} [score:${score}] — ${t.subject}`,
+      `    Statut: ${t.status} | Priorité: ${t.priority} | Client: ${t.organization?.name ?? "?"}`,
+      `    Demandeur: ${t.requester ? `${t.requester.firstName} ${t.requester.lastName}` : "?"} | Assigné: ${t.assignee ? `${t.assignee.firstName} ${t.assignee.lastName}` : "Non assigné"}`,
+      `    Date: ${t.createdAt.toLocaleDateString("fr-CA")}`,
+      `    Description: ${descSnippet}`,
+      commentSection,
+    ].filter(Boolean).join("\n");
   }).join("\n\n");
 }
 
@@ -292,6 +401,7 @@ async function searchKbArticles(query: string, limit = 5): Promise<string> {
   const orConditions = terms.flatMap((term) => [
     { title: { contains: term, mode: "insensitive" as const } },
     { body: { contains: term, mode: "insensitive" as const } },
+    { tags: { has: term } },
   ]);
 
   const articles = await prisma.article.findMany({
@@ -302,8 +412,17 @@ async function searchKbArticles(query: string, limit = 5): Promise<string> {
   });
 
   if (articles.length === 0) return "";
-  return articles.map((a) =>
-    `📄 ${a.title}\n  ${(a.summary || a.body).slice(0, 200)}`,
+
+  // Deduplicate articles by title (in case multiple terms match the same article)
+  const seen = new Set<string>();
+  const uniqueArticles = articles.filter((a) => {
+    if (seen.has(a.title)) return false;
+    seen.add(a.title);
+    return true;
+  });
+
+  return uniqueArticles.map((a) =>
+    `• ${a.title}\n    ${(a.summary || a.body).slice(0, 250).replace(/\n/g, " ")}`,
   ).join("\n\n");
 }
 
@@ -325,8 +444,17 @@ async function searchContacts(query: string, limit = 10): Promise<string> {
   });
 
   if (contacts.length === 0) return "";
-  return contacts.map((c) =>
-    `${c.firstName} ${c.lastName} (${c.email}) — ${c.organization?.name ?? "?"} — ${c.jobTitle ?? ""} — ${c.isActive ? "Actif" : "Inactif"}`,
+
+  // Deduplicate contacts by id
+  const seen = new Set<string>();
+  const uniqueContacts = contacts.filter((c) => {
+    if (seen.has(c.id)) return false;
+    seen.add(c.id);
+    return true;
+  });
+
+  return uniqueContacts.map((c) =>
+    `• ${c.firstName} ${c.lastName} (${c.email}) — ${c.organization?.name ?? "?"} — ${c.jobTitle ?? ""} — ${c.isActive ? "Actif" : "Inactif"}`,
   ).join("\n");
 }
 
@@ -418,42 +546,51 @@ export async function ragSearch(userMessage: string): Promise<string> {
 
   const searches: Promise<[string, string]>[] = [];
 
+  /** Wrap a search so that individual failures are caught and don't break everything */
+  function safeSearch(label: string, fn: () => Promise<string>): Promise<[string, string]> {
+    return fn().then((r) => [label, r] as [string, string]).catch((err) => {
+      console.error(`RAG search failed for ${label}:`, err);
+      return [label, ""] as [string, string];
+    });
+  }
+
   // Route searches based on detected intents
   if (isGeneral || intents.includes("tickets")) {
-    searches.push(searchTickets(userMessage, dateRange, orgNames).then((r) => ["TICKETS TROUVÉS", r]));
+    searches.push(safeSearch("TICKETS TROUVÉS", () => searchTickets(userMessage, dateRange, orgNames)));
   }
   if (isGeneral || intents.includes("backups")) {
-    searches.push(searchVeeamAlerts(userMessage, dateRange, orgNames).then((r) => ["ALERTES VEEAM", r]));
+    searches.push(safeSearch("ALERTES VEEAM", () => searchVeeamAlerts(userMessage, dateRange, orgNames)));
   }
   if (isGeneral || intents.includes("monitoring")) {
-    searches.push(searchMonitoringAlerts(userMessage, dateRange, orgNames).then((r) => ["ALERTES MONITORING", r]));
+    searches.push(safeSearch("ALERTES MONITORING", () => searchMonitoringAlerts(userMessage, dateRange, orgNames)));
   }
   if (isGeneral || intents.includes("kb")) {
-    searches.push(searchKbArticles(userMessage).then((r) => ["ARTICLES KB", r]));
+    searches.push(safeSearch("ARTICLES KB", () => searchKbArticles(userMessage)));
   }
   if (isGeneral || intents.includes("contacts")) {
-    searches.push(searchContacts(userMessage).then((r) => ["CONTACTS", r]));
+    searches.push(safeSearch("CONTACTS", () => searchContacts(userMessage)));
   }
-  if (intents.includes("assets")) {
-    searches.push(searchAssets(userMessage, orgNames).then((r) => ["ACTIFS", r]));
+  if (isGeneral || intents.includes("assets")) {
+    searches.push(safeSearch("ACTIFS", () => searchAssets(userMessage, orgNames)));
   }
   if (intents.includes("time")) {
-    searches.push(searchTimeEntries(dateRange, orgNames).then((r) => ["SAISIES DE TEMPS", r]));
+    searches.push(safeSearch("SAISIES DE TEMPS", () => searchTimeEntries(dateRange, orgNames)));
   }
 
   const results = await Promise.all(searches);
-  const sections = results
-    .filter(([, data]) => data.length > 0)
-    .map(([label, data]) => `${label}:\n${data}`);
+  const populated = results.filter(([, data]) => data.length > 0);
 
-  if (sections.length === 0) return "";
+  if (populated.length === 0) return "";
+
+  const sections = populated.map(([label, data]) => `── ${label} ──\n${data}`);
 
   const contextInfo: string[] = [];
   if (dateRange) contextInfo.push(`Période: ${dateRange.label}`);
   if (orgNames.length > 0) contextInfo.push(`Client(s): ${orgNames.join(", ")}`);
-  const contextHeader = contextInfo.length > 0 ? `\n[Filtres détectés: ${contextInfo.join(" | ")}]\n` : "";
+  const contextHeader = contextInfo.length > 0 ? `[Filtres: ${contextInfo.join(" | ")}]\n` : "";
+  const summary = `${populated.length} source(s) consultée(s): ${populated.map(([l]) => l).join(", ")}`;
 
-  return `\n\nRÉSULTATS DE RECHERCHE PERTINENTS:${contextHeader}\n${sections.join("\n\n")}`;
+  return `\n\nRÉSULTATS DE RECHERCHE:\n${contextHeader}${summary}\n\n${sections.join("\n\n")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -484,23 +621,47 @@ async function getRecentTicketsSummary(limit = 10): Promise<string> {
 }
 
 async function getCategoriesList(): Promise<string> {
-  const cats = await prisma.category.findMany({
+  // Get top 20 most-used categories by ticket count, then fill with remaining active ones
+  const topCats = await prisma.category.findMany({
     where: { isActive: true },
-    include: { children: { where: { isActive: true }, include: { children: { where: { isActive: true } } } } },
+    include: {
+      _count: { select: { tickets: true } },
+      children: {
+        where: { isActive: true },
+        include: {
+          _count: { select: { tickets: true } },
+          children: { where: { isActive: true }, include: { _count: { select: { tickets: true } } } },
+        },
+        take: 10,
+      },
+    },
     orderBy: { sortOrder: "asc" },
+    take: 50,
   });
-  const roots = cats.filter((c) => !c.parentId);
-  const lines: string[] = [];
+
+  const roots = topCats.filter((c) => !c.parentId);
+
+  // Flatten all categories with their full paths and ticket counts
+  const allPaths: { path: string; count: number }[] = [];
   for (const r of roots) {
-    lines.push(`- ${r.name}`);
+    const rCount = (r._count as any)?.tickets ?? 0;
+    allPaths.push({ path: r.name, count: rCount });
     for (const c of r.children ?? []) {
-      lines.push(`  - ${r.name} > ${c.name}`);
+      const cCount = (c._count as any)?.tickets ?? 0;
+      allPaths.push({ path: `${r.name} > ${c.name}`, count: cCount });
       for (const gc of (c as any).children ?? []) {
-        lines.push(`    - ${r.name} > ${c.name} > ${gc.name}`);
+        const gcCount = (gc._count as any)?.tickets ?? 0;
+        allPaths.push({ path: `${r.name} > ${c.name} > ${gc.name}`, count: gcCount });
       }
     }
   }
-  return lines.length > 0 ? lines.join("\n") : "Matériel, Logiciels, Réseau & VPN, Compte & Accès, Email, Sécurité";
+
+  // Sort by usage count descending and take top 20
+  allPaths.sort((a, b) => b.count - a.count);
+  const top = allPaths.slice(0, 20);
+
+  if (top.length === 0) return "Matériel, Logiciels, Réseau & VPN, Compte & Accès, Email, Sécurité";
+  return top.map((c) => `- ${c.path}`).join("\n");
 }
 
 async function getOrgsSummary(): Promise<string> {
@@ -508,9 +669,11 @@ async function getOrgsSummary(): Promise<string> {
     where: { isActive: true },
     select: { name: true, domain: true },
     orderBy: { name: "asc" },
-    take: 30,
+    take: 20,
   });
-  return orgs.map((o) => `${o.name} (${o.domain ?? ""})`).join(", ");
+  const names = orgs.map((o) => o.name).join(", ");
+  const total = await prisma.organization.count({ where: { isActive: true } });
+  return total > 20 ? `${names} (+${total - 20} autres)` : names;
 }
 
 async function getAssetsSummary(): Promise<string> {
@@ -534,6 +697,7 @@ async function getTimeEntriesSummary(): Promise<string> {
   const entries = await prisma.timeEntry.findMany({
     where: { startedAt: { gte: since } },
     select: { durationMinutes: true, coverageStatus: true },
+    take: 500,
   });
   if (entries.length === 0) return "Aucune saisie de temps cette semaine.";
   const total = entries.reduce((s, e) => s + e.durationMinutes, 0);
@@ -636,6 +800,22 @@ export async function saveMemory(
   scope: string, // "global" or userId
   source: string,
 ) {
+  // Deduplicate: check if a very similar memory already exists
+  const existing = await prisma.aiMemory.findFirst({
+    where: {
+      scope,
+      category,
+      content: { contains: content.slice(0, 50), mode: "insensitive" },
+    },
+  });
+  if (existing) {
+    // Update existing memory instead of creating a duplicate
+    await prisma.aiMemory.update({
+      where: { id: existing.id },
+      data: { content, source, updatedAt: new Date() },
+    });
+    return;
+  }
   await prisma.aiMemory.create({
     data: { scope, category, content, source },
   });
@@ -671,47 +851,47 @@ export async function buildSystemPrompt(userId?: string): Promise<string> {
     getKbSummary(),
   ]);
 
-  return `Tu es l'assistant IA intégré à Nexus, une plateforme ITSM pour MSP (fournisseurs de services gérés).
-Tu aides les techniciens et agents à gérer les tickets, actifs, contacts et alertes.
+  // Build concise context sections — only include non-empty ones
+  const sections: string[] = [];
 
-CONTEXTE NEXUS:
+  sections.push(`Clients: ${orgs}`);
+  sections.push(`Catégories (top 20): \n${categories}`);
+  sections.push(`Tickets récents:\n${ticketsSummary}`);
+  if (veeam && !veeam.startsWith("Aucune")) sections.push(`Sauvegardes Veeam (48h):\n${veeam}`);
+  if (monitoring && !monitoring.startsWith("Aucune")) sections.push(`Alertes monitoring:\n${monitoring}`);
+  sections.push(`Actifs: ${assets}`);
+  sections.push(`Contacts: ${contacts}`);
+  sections.push(`Temps (7j): ${timeEntries}`);
+  sections.push(`KB: ${kb}`);
 
-Organisations clientes:
-${orgs}
+  const contextBlock = sections.join("\n\n");
 
-Catégories de tickets disponibles:
-${categories}
+  return `Tu es l'assistant IA de Nexus, une plateforme ITSM conçue pour les MSP (fournisseurs de services gérés). Tu assistes les techniciens et gestionnaires dans la gestion des tickets, actifs, contacts, alertes monitoring, sauvegardes, temps et facturation.
 
-Tickets récents:
-${ticketsSummary}
-
-État des sauvegardes Veeam (dernières 48h):
-${veeam}
-
-Alertes monitoring actives:
-${monitoring}
-
-Actifs:
-${assets}
-
-Contacts:
-${contacts}
-
-Temps saisi (7 derniers jours):
-${timeEntries}
-
-Base de connaissances:
-${kb}
-
+CONTEXTE TEMPS RÉEL:
+${contextBlock}
 ${memories ? `\n${memories}\n` : ""}
+CAPACITÉS:
+- Rechercher et résumer des tickets, contacts, actifs, alertes monitoring, sauvegardes Veeam, saisies de temps
+- Catégoriser des tickets automatiquement et suggérer des actions
+- Analyser des tendances (volume, SLA, performance des techniciens)
+- Répondre à des questions sur les procédures internes (base de connaissances)
+- Calculer des statistiques de facturation et de banque d'heures
+- Identifier les problèmes récurrents et les clients à risque
+
 RÈGLES:
-- Réponds toujours en français
-- Sois concis et direct
-- Si on te demande des données spécifiques que tu n'as pas, dis-le clairement
-- Tu peux aider à: catégoriser des tickets, résumer des situations, chercher des infos, suggérer des actions
-- Format: utilise du markdown pour la lisibilité
-- MÉMOIRE: Si l'utilisateur dit "retiens que...", "souviens-toi que...", "note que...", ou toute instruction similaire, réponds avec [MEMORY_SAVE:catégorie:contenu] pour que le système sauvegarde automatiquement. Catégories possibles: client, procedure, pattern, preference, note
-- Si l'utilisateur dit "oublie..." ou "supprime la mémoire...", réponds avec [MEMORY_DELETE:le contenu à supprimer]`;
+1. Réponds TOUJOURS en français (sauf si l'utilisateur parle en anglais)
+2. Sois concis et structuré — utilise du markdown (titres, listes, gras)
+3. Quand tu cites des tickets, utilise le format **INC-XXXX** avec le sujet
+4. Quand tu cites des dates, utilise le format "12 avril 2026" (pas ISO)
+5. Si tu ne trouves pas l'info, dis-le clairement plutôt que d'inventer
+6. Pour les statistiques, donne des chiffres précis tirés des données fournies
+7. Priorise les informations les plus récentes et pertinentes
+
+MÉMOIRE PERSISTANTE:
+- Pour sauvegarder: [MEMORY_SAVE:catégorie:contenu] (catégories: client, procedure, pattern, preference, note)
+- Pour supprimer: [MEMORY_DELETE:contenu]
+- Déclenché par: "retiens", "souviens-toi", "note que", "oublie", "supprime de ta mémoire"`;
 }
 
 // ---------------------------------------------------------------------------

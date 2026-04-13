@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { X, Building2, Upload, Save, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -64,33 +65,10 @@ const SECONDARY_SWATCHES = [
   "#475569",
 ];
 
-const MOCK_CONTRACTS = [
-  {
-    id: "k1",
-    name: "Contrat de support 24/7",
-    start: "2024-01-01",
-    end: "2025-12-31",
-    status: "Actif" as const,
-  },
-  {
-    id: "k2",
-    name: "Maintenance infrastructure",
-    start: "2023-06-01",
-    end: "2024-05-31",
-    status: "Expiré" as const,
-  },
-  {
-    id: "k3",
-    name: "Projet migration cloud",
-    start: "2025-02-01",
-    end: "2025-08-31",
-    status: "Brouillon" as const,
-  },
-];
-
 type Tab = "general" | "branding" | "contracts";
 
 export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("general");
   const [name, setName] = useState("");
   const [clientCode, setClientCode] = useState("");
@@ -114,6 +92,7 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
   const [emailFooter, setEmailFooter] = useState("");
   const [enrichOpen, setEnrichOpen] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [orgContracts, setOrgContracts] = useState<{ id: string; name: string; startDate: string | null; endDate: string | null; status: string }[]>([]);
 
   useEffect(() => {
     if (org) {
@@ -147,6 +126,16 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
       setEmailFooter("");
     }
   }, [org]);
+
+  // Fetch contracts when tab changes
+  useEffect(() => {
+    if (tab === "contracts" && org?.id) {
+      fetch(`/api/v1/contracts?organizationId=${org.id}`)
+        .then((r) => r.ok ? r.json() : [])
+        .then((d) => setOrgContracts(Array.isArray(d) ? d : []))
+        .catch(() => setOrgContracts([]));
+    }
+  }, [tab, org?.id]);
 
   if (!open || !org) return null;
 
@@ -197,7 +186,7 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
       alert("Erreur : " + (err instanceof Error ? err.message : String(err)));
     }
     handleClose();
-    if (typeof window !== "undefined") window.location.reload();
+    router.refresh();
   }
 
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -420,14 +409,30 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
                       domains.map((d, idx) => (
                         <span
                           key={d}
-                          className="inline-flex items-center gap-1 rounded-md bg-blue-50 pl-2 pr-1 py-0.5 text-[12px] font-medium text-blue-700 ring-1 ring-inset ring-blue-200"
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-md pl-2 pr-1 py-0.5 text-[12px] font-medium ring-1 ring-inset",
+                            idx === 0
+                              ? "bg-blue-50 text-blue-700 ring-blue-200"
+                              : "bg-slate-50 text-slate-600 ring-slate-200"
+                          )}
                         >
-                          {d}
                           {idx === 0 ? (
-                            <span className="ml-0.5 rounded bg-blue-100 px-1 text-[9px] uppercase tracking-wider">
+                            <span className="mr-0.5 rounded bg-blue-100 px-1 text-[9px] uppercase tracking-wider text-blue-700">
                               Principal
                             </span>
-                          ) : null}
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDomains((prev) => [d, ...prev.filter((x) => x !== d)])
+                              }
+                              className="mr-0.5 rounded bg-slate-100 px-1 text-[9px] uppercase tracking-wider text-slate-500 hover:bg-blue-100 hover:text-blue-700 transition-colors"
+                              title="Définir comme domaine principal"
+                            >
+                              Promouvoir
+                            </button>
+                          )}
+                          {d}
                           <button
                             type="button"
                             onClick={() =>
@@ -435,7 +440,7 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
                                 prev.filter((x) => x !== d)
                               )
                             }
-                            className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded text-blue-500 hover:bg-blue-100 hover:text-blue-700"
+                            className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded text-slate-400 hover:bg-red-100 hover:text-red-600"
                             aria-label={`Retirer ${d}`}
                           >
                             ×
@@ -646,28 +651,25 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
 
           {tab === "contracts" && (
             <div className="space-y-3">
-              {MOCK_CONTRACTS.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 hover:border-slate-300 transition-colors"
-                >
+              {orgContracts.length > 0 ? orgContracts.map((c) => (
+                <div key={c.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 hover:border-slate-300 transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="h-9 w-9 shrink-0 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center ring-1 ring-inset ring-blue-200/60">
                       <FileText className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[13.5px] font-medium text-slate-900 truncate">
-                        {c.name}
-                      </p>
+                      <p className="text-[13.5px] font-medium text-slate-900 truncate">{c.name}</p>
                       <p className="text-[12px] text-slate-500">
-                        {new Date(c.start).toLocaleDateString("fr-CA")} —{" "}
-                        {new Date(c.end).toLocaleDateString("fr-CA")}
+                        {c.startDate ? new Date(c.startDate).toLocaleDateString("fr-CA") : "—"} —{" "}
+                        {c.endDate ? new Date(c.endDate).toLocaleDateString("fr-CA") : "—"}
                       </p>
                     </div>
                   </div>
-                  <Badge variant={contractVariant(c.status)}>{c.status}</Badge>
+                  <Badge variant={contractVariant(c.status === "ACTIVE" ? "Actif" : c.status === "EXPIRED" ? "Expiré" : "Brouillon")}>{c.status === "ACTIVE" ? "Actif" : c.status === "EXPIRED" ? "Expiré" : c.status}</Badge>
                 </div>
-              ))}
+              )) : (
+                <p className="text-center text-[13px] text-slate-400 py-6">Aucun contrat pour cette organisation</p>
+              )}
             </div>
           )}
 
@@ -701,9 +703,18 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
           domain,
         }}
         onClose={() => setEnrichOpen(false)}
-        onApplied={() => {
-          // Force a reload to show the freshly applied values
-          if (typeof window !== "undefined") window.location.reload();
+        onApplied={(applied) => {
+          // Update local state so the edit modal reflects the enriched values
+          if (applied.logo != null) setLogo(applied.logo as string);
+          if (applied.description != null) setDescription(applied.description as string);
+          if (applied.phone != null) setPhone(applied.phone as string);
+          if (applied.address != null) setAddress(applied.address as string);
+          if (applied.city != null) setCity(applied.city as string);
+          if (applied.province != null) setProvince(applied.province as string);
+          if (applied.postalCode != null) setPostalCode(applied.postalCode as string);
+          if (applied.country != null) setCountry(applied.country as string);
+          if (applied.website != null) setWebsite(applied.website as string);
+          router.refresh();
         }}
       />
     </div>

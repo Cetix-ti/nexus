@@ -1,7 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { syncMonitoringAlerts } from "@/lib/monitoring/email-sync";
+import { getCurrentUser } from "@/lib/auth-utils";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET;
+  const authHeader = req.headers.get("authorization");
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+    // Authenticated via cron secret
+  } else {
+    const me = await getCurrentUser();
+    if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await req.json().catch(() => ({}));
     const sinceDays = typeof body?.sinceDays === "number" ? body.sinceDays : undefined;

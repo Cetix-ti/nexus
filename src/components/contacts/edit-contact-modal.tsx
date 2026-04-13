@@ -35,15 +35,6 @@ interface EditContactModalProps {
   contact: EditContactModalContact | null;
 }
 
-const ORGANIZATIONS = [
-  "Cetix",
-  "Acme Corp",
-  "TechStart Inc",
-  "Global Finance",
-  "HealthCare Plus",
-  "MédiaCentre QC",
-];
-
 function splitName(name: string): { first: string; last: string } {
   const parts = (name || "").trim().split(/\s+/);
   if (parts.length === 0) return { first: "", last: "" };
@@ -77,6 +68,18 @@ export function EditContactModal({
   const [emailPref, setEmailPref] = useState(true);
   const [smsPref, setSmsPref] = useState(false);
   const [phonePref, setPhonePref] = useState(true);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Organizations fetched from API
+  const [organizations, setOrganizations] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/v1/organizations")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: { id: string; name: string }[]) => {
+        if (Array.isArray(data)) setOrganizations(data.map((o) => o.name));
+      })
+      .catch(() => setOrganizations([]));
+  }, []);
 
   // Portal access
   type PortalPerms = Omit<ClientPortalPermissions, "contactId" | "organizationId">;
@@ -133,21 +136,33 @@ export function EditContactModal({
     onClose();
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    console.log("Update contact:", {
-      id: contact?.id,
-      firstName,
-      lastName,
-      email,
-      phone,
-      jobTitle,
-      organization,
-      site,
-      vip,
-      notes,
-      preferences: { email: emailPref, sms: smsPref, phone: phonePref },
-    });
+    setSaveError(null);
+    try {
+      const res = await fetch(`/api/v1/contacts/${contact?.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          email,
+          phone,
+          jobTitle,
+          isVIP: vip,
+          notes,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const message = err.error || `Erreur ${res.status}`;
+        setSaveError(`Échec de la mise à jour : ${message}`);
+        return;
+      }
+    } catch (err) {
+      setSaveError("Erreur réseau — impossible de contacter le serveur.");
+      return;
+    }
     handleClose();
   }
 
@@ -249,7 +264,7 @@ export function EditContactModal({
                   <SelectValue placeholder="Sélectionner..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {ORGANIZATIONS.map((o) => (
+                  {organizations.map((o) => (
                     <SelectItem key={o} value={o}>
                       {o}
                     </SelectItem>
@@ -399,6 +414,13 @@ export function EditContactModal({
               </div>
             )}
           </div>
+
+          {/* Save error */}
+          {saveError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+              {saveError}
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">

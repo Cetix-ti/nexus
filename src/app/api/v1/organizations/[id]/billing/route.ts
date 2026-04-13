@@ -6,6 +6,7 @@ import {
 } from "@/lib/billing/mock-data";
 import { resolveClientBillingProfile } from "@/lib/billing/engine";
 import type { ClientBillingOverride } from "@/lib/billing/types";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 function findBaseProfileForOrg(orgId: string) {
   const override = getClientBillingOverride(orgId);
@@ -20,6 +21,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { id } = await params;
     const { override, baseProfile } = findBaseProfileForOrg(id);
@@ -51,6 +54,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { id } = await params;
     const body = (await req.json()) as Partial<ClientBillingOverride>;

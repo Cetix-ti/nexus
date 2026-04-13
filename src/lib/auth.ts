@@ -39,36 +39,6 @@ declare module "next-auth" {
 }
 
 // ============================================================================
-// DEMO USERS — fallback when DB is empty or unreachable
-// ============================================================================
-const DEMO_USERS = [
-  {
-    id: "usr_admin",
-    email: "admin@nexus.local",
-    password: "admin123",
-    firstName: "Jean-Philippe",
-    lastName: "Côté",
-    role: "MSP_ADMIN",
-  },
-  {
-    id: "usr_tech1",
-    email: "marie@nexus.local",
-    password: "tech123",
-    firstName: "Marie",
-    lastName: "Tremblay",
-    role: "TECHNICIAN",
-  },
-  {
-    id: "usr_tech2",
-    email: "alex@nexus.local",
-    password: "tech123",
-    firstName: "Alexandre",
-    lastName: "Dubois",
-    role: "TECHNICIAN",
-  },
-];
-
-// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -204,9 +174,11 @@ const providers: any[] = [
           where: { email },
         });
         if (dbUser?.passwordHash) {
-          const match =
-            dbUser.passwordHash === password || // dev plain-text
-            (await bcrypt.compare(password, dbUser.passwordHash)); // prod bcrypt
+          // SECURITY: Block inactive users
+          if (!dbUser.isActive) return null;
+
+          // SECURITY: Only use bcrypt in production (no plain-text comparison)
+          const match = await bcrypt.compare(password, dbUser.passwordHash);
           if (match) {
             await prisma.user.update({
               where: { id: dbUser.id },
@@ -233,9 +205,14 @@ const providers: any[] = [
           include: { organization: true, portalAccess: true },
         });
         if (contact?.passwordHash) {
-          const match =
-            contact.passwordHash === password ||
-            (await bcrypt.compare(password, contact.passwordHash));
+          // SECURITY: Block inactive contacts
+          if (!contact.isActive) return null;
+          // SECURITY: Block if organization is inactive
+          if (!contact.organization.isActive) return null;
+          // SECURITY: Block if portal is not enabled for the org
+          if (!contact.organization.portalEnabled) return null;
+
+          const match = await bcrypt.compare(password, contact.passwordHash);
           if (match) {
             await prisma.contact.update({
               where: { id: contact.id },
@@ -260,19 +237,8 @@ const providers: any[] = [
         // DB not reachable — fall through
       }
 
-      // 3. Fallback: demo users
-      const demoUser = DEMO_USERS.find(
-        (u) => u.email === email && u.password === password,
-      );
-      if (!demoUser) return null;
-
-      return {
-        id: demoUser.id,
-        email: demoUser.email,
-        firstName: demoUser.firstName,
-        lastName: demoUser.lastName,
-        role: demoUser.role,
-      };
+      // No demo fallback in production
+      return null;
     },
   }),
 ];
@@ -310,6 +276,10 @@ if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
 // NextAuth config
 // ============================================================================
 
+// Detect if behind a reverse proxy (HTTPS terminated at proxy, HTTP to app)
+const isProduction = process.env.NODE_ENV === "production";
+const useSecureCookies = process.env.AUTH_URL?.startsWith("https://") ?? false;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   secret:
@@ -317,7 +287,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     process.env.NEXTAUTH_SECRET ||
     "dev-secret-please-change-in-production",
   session: { strategy: "jwt", maxAge: 24 * 60 * 60 },
-  pages: { signIn: "/login" },
+  pages: { signIn: "/login", error: "/login" },
+  // Cookie config for reverse proxy: when proxy terminates SSL,
+  // the app runs on HTTP but browser sees HTTPS. We need to set
+  // secure cookies only when the public URL is HTTPS.
+  cookies: useSecureCookies
+    ? {
+        sessionToken: {
+          name: "__Secure-authjs.session-token",
+          options: {
+            httpOnly: true,
+            sameSite: "lax",
+            path: "/",
+            secure: true,
+          },
+        },
+        csrfToken: {
+          name: "__Host-authjs.csrf-token",
+          options: {
+            httpOnly: true,
+            sameSite: "lax",
+            path: "/",
+            secure: true,
+          },
+        },
+      }
+    : undefined,
   providers,
   callbacks: {
     async signIn({ user, account, profile }) {

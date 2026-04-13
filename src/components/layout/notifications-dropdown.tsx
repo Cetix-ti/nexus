@@ -33,78 +33,58 @@ const ICON_MAP = {
   ticket_resolved: { Icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
 };
 
-const initialNotifications: Notification[] = [
-  {
-    id: "n1",
-    type: "sla_warning",
-    title: "SLA bientôt expiré",
-    message: "Le ticket #TK-2847 (Acme Corp) dépasse 80% du SLA de résolution",
-    href: "/tickets/2847",
-    createdAt: "il y a 5 min",
-    isRead: false,
-  },
-  {
-    id: "n2",
-    type: "ticket_assigned",
-    title: "Nouveau ticket assigné",
-    message: "Marie Tremblay vous a assigné le ticket #TK-2851 — VPN ne se connecte plus",
-    href: "/tickets/2851",
-    createdAt: "il y a 12 min",
-    isRead: false,
-  },
-  {
-    id: "n3",
-    type: "mention",
-    title: "Mention dans un commentaire",
-    message: "Alexandre Dubois vous a mentionné dans #TK-2839 — Erreur Outlook",
-    href: "/tickets/2839",
-    createdAt: "il y a 28 min",
-    isRead: false,
-  },
-  {
-    id: "n4",
-    type: "new_comment",
-    title: "Nouveau commentaire client",
-    message: "Robert Martin (Acme Corp) a répondu sur #TK-2843",
-    href: "/tickets/2843",
-    createdAt: "il y a 1 h",
-    isRead: true,
-  },
-  {
-    id: "n5",
-    type: "ticket_resolved",
-    title: "Ticket résolu",
-    message: "Le ticket #TK-2820 a été marqué comme résolu par Sophie Lavoie",
-    href: "/tickets/2820",
-    createdAt: "il y a 2 h",
-    isRead: true,
-  },
-  {
-    id: "n6",
-    type: "ticket_updated",
-    title: "Statut mis à jour",
-    message: "TK-2812 est passé en attente client",
-    href: "/tickets/2812",
-    createdAt: "il y a 3 h",
-    isRead: true,
-  },
-  {
-    id: "n7",
-    type: "sla_warning",
-    title: "Escalade automatique",
-    message: "Le ticket #TK-2798 a été escaladé à un superviseur",
-    href: "/tickets/2798",
-    createdAt: "il y a 4 h",
-    isRead: true,
-  },
-];
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "à l'instant";
+  if (mins < 60) return `il y a ${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `il y a ${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "hier";
+  return `il y a ${days}j`;
+}
+
+const TYPE_MAP: Record<string, Notification["type"]> = {
+  activity: "ticket_updated",
+  comment: "new_comment",
+  sla_breach: "sla_warning",
+  approval: "ticket_assigned",
+};
 
 export function NotificationsDropdown() {
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState(initialNotifications);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  // Fetch from real API
+  useEffect(() => {
+    if (loaded) return;
+    fetch("/api/v1/notifications?limit=15")
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((res) => {
+        const items: Notification[] = (res.data || []).map((n: any) => ({
+          id: n.id,
+          type: TYPE_MAP[n.type] || "ticket_updated",
+          title: n.title,
+          message: n.description,
+          href: n.ticketId ? `/tickets/${n.ticketId}` : "/tickets",
+          createdAt: timeAgo(n.createdAt),
+          isRead: n.read ?? false,
+        }));
+        setNotifications(items);
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, [loaded]);
+
+  // Refresh when dropdown opens
+  useEffect(() => {
+    if (open) setLoaded(false);
+  }, [open]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {

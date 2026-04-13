@@ -16,6 +16,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { EditContactModal, type EditContactModalContact } from "@/components/contacts/edit-contact-modal";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,16 +31,7 @@ import {
 } from "@/components/ui/select";
 import { PORTAL_ROLE_LABELS, type ClientPortalPermissions } from "@/lib/projects/types";
 
-const CONTACT_PORTAL_ROLES: Record<string, ClientPortalPermissions["portalRole"] | undefined> = {
-  c1: "admin",
-  c5: "admin",
-  c2: "manager",
-  c8: "manager",
-  c9: "manager",
-  c3: "viewer",
-  c6: "viewer",
-  c11: "viewer",
-};
+// Portal roles are determined from the portalEnabled field returned by the API
 
 function portalRoleBadgeVariant(role?: ClientPortalPermissions["portalRole"]): "danger" | "warning" | "primary" | "default" {
   if (role === "admin") return "danger";
@@ -64,34 +56,6 @@ interface Contact {
   color: string;
 }
 
-// ---------- Demo Data fallback ----------
-const FALLBACK_CONTACTS: Contact[] = [
-  { id: "c1", firstName: "Marc", lastName: "Tremblay", email: "marc.tremblay@cetix.ca", phone: "+1 514 555-1001", organization: "Cetix", organizationId: "org-1", jobTitle: "Directeur TI", vip: true, tickets: 12, status: "Actif", color: "bg-blue-600" },
-  { id: "c2", firstName: "Sophie", lastName: "Gagnon", email: "sophie.gagnon@cetix.ca", phone: "+1 514 555-1002", organization: "Cetix", organizationId: "org-1", jobTitle: "Analyste d'affaires", vip: false, tickets: 8, status: "Actif", color: "bg-emerald-600" },
-  { id: "c3", firstName: "Julien", lastName: "Lavoie", email: "julien.lavoie@cetix.ca", phone: "+1 514 555-1003", organization: "Cetix", organizationId: "org-1", jobTitle: "Développeur principal", vip: false, tickets: 5, status: "Actif", color: "bg-violet-600" },
-  { id: "c4", firstName: "Isabelle", lastName: "Roy", email: "isabelle.roy@cetix.ca", phone: "+1 418 555-1004", organization: "Cetix", organizationId: "org-1", jobTitle: "VP Opérations", vip: true, tickets: 3, status: "Actif", color: "bg-rose-600" },
-  { id: "c5", firstName: "James", lastName: "Wilson", email: "j.wilson@acmecorp.com", phone: "+1 438 555-2001", organization: "Acme Corp", organizationId: "org-2", jobTitle: "CTO", vip: true, tickets: 9, status: "Actif", color: "bg-amber-600" },
-  { id: "c6", firstName: "Sarah", lastName: "Chen", email: "s.chen@acmecorp.com", phone: "+1 438 555-2002", organization: "Acme Corp", organizationId: "org-2", jobTitle: "IT Manager", vip: false, tickets: 14, status: "Actif", color: "bg-cyan-600" },
-  { id: "c7", firstName: "David", lastName: "Kumar", email: "d.kumar@acmecorp.com", phone: "+1 438 555-2003", organization: "Acme Corp", organizationId: "org-2", jobTitle: "Sys Admin", vip: false, tickets: 22, status: "Actif", color: "bg-indigo-600" },
-  { id: "c8", firstName: "Nathalie", lastName: "Bergeron", email: "n.bergeron@globalfinance.ca", phone: "+1 514 555-4001", organization: "Global Finance", organizationId: "org-4", jobTitle: "CISO", vip: true, tickets: 7, status: "Actif", color: "bg-pink-600" },
-  { id: "c9", firstName: "Pierre", lastName: "Dufour", email: "p.dufour@globalfinance.ca", phone: "+1 514 555-4002", organization: "Global Finance", organizationId: "org-4", jobTitle: "Dir. Infrastructure", vip: true, tickets: 15, status: "Actif", color: "bg-teal-600" },
-  { id: "c10", firstName: "Amélie", lastName: "Martin", email: "a.martin@globalfinance.ca", phone: "+1 514 555-4003", organization: "Global Finance", organizationId: "org-4", jobTitle: "Analyste sécurité", vip: false, tickets: 6, status: "Actif", color: "bg-orange-600" },
-  { id: "c11", firstName: "Émile", lastName: "Bouchard", email: "e.bouchard@techstart.io", phone: "+1 450 555-3001", organization: "TechStart Inc", organizationId: "org-3", jobTitle: "CEO", vip: true, tickets: 2, status: "Actif", color: "bg-lime-600" },
-  { id: "c12", firstName: "Catherine", lastName: "Leblanc", email: "c.leblanc@healthcareplus.ca", phone: "+1 819 555-5001", organization: "HealthCare Plus", organizationId: "org-5", jobTitle: "Directrice TI", vip: true, tickets: 4, status: "Inactif", color: "bg-fuchsia-600" },
-  { id: "c13", firstName: "François", lastName: "Pelletier", email: "f.pelletier@mediacentre.qc.ca", phone: "+1 418 555-6001", organization: "MédiaCentre QC", organizationId: "org-6", jobTitle: "Technicien réseau", vip: false, tickets: 3, status: "Actif", color: "bg-sky-600" },
-  { id: "c14", firstName: "Liam", lastName: "O'Brien", email: "l.obrien@globalfinance.ca", phone: "+1 613 555-4010", organization: "Global Finance", organizationId: "org-4", jobTitle: "DBA Senior", vip: false, tickets: 11, status: "Actif", color: "bg-red-600" },
-  { id: "c15", firstName: "Anne-Marie", lastName: "Côté", email: "am.cote@cetix.ca", phone: "+1 514 555-1010", organization: "Cetix", organizationId: "org-1", jobTitle: "Chef de projet", vip: false, tickets: 6, status: "Inactif", color: "bg-purple-600" },
-];
-
-const ORGANIZATIONS = [
-  "Cetix",
-  "Acme Corp",
-  "TechStart Inc",
-  "Global Finance",
-  "HealthCare Plus",
-  "MédiaCentre QC",
-];
-
 // ---------- Sorting ----------
 type SortKey = "name" | "email" | "organization" | "jobTitle" | "tickets" | "status";
 type SortDir = "asc" | "desc";
@@ -115,7 +79,7 @@ export default function ContactsPage() {
         if (cancelled) return;
         if (Array.isArray(data)) setContacts(data as Contact[]);
       })
-      .catch((e) => console.error("Failed to load contacts", e))
+      .catch((e) => console.error("Erreur de chargement des contacts", e))
       .finally(() => {
         if (!cancelled) setLoaded(true);
       });
@@ -123,8 +87,6 @@ export default function ContactsPage() {
       cancelled = true;
     };
   }, []);
-  void FALLBACK_CONTACTS;
-
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -254,7 +216,7 @@ export default function ContactsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Toutes les organisations</SelectItem>
-            {ORGANIZATIONS.map((org) => (
+            {[...new Set(contacts.map((c) => c.organization))].sort().map((org) => (
               <SelectItem key={org} value={org}>
                 {org}
               </SelectItem>
@@ -292,7 +254,7 @@ export default function ContactsPage() {
                     Courriel <SortIcon col="email" />
                   </button>
                 </th>
-                <th className="px-4 py-3 text-left font-medium text-gray-500">Téléphone</th>
+                <th className="hidden md:table-cell px-4 py-3 text-left font-medium text-gray-500">Téléphone</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500">
                   <button className="inline-flex items-center" onClick={() => handleSort("organization")}>
                     Organisation <SortIcon col="organization" />
@@ -340,9 +302,11 @@ export default function ContactsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-gray-600">{contact.email}</td>
-                  <td className="px-4 py-3 text-gray-600">{contact.phone}</td>
+                  <td className="hidden md:table-cell px-4 py-3 text-gray-600">{contact.phone}</td>
                   <td className="px-4 py-3">
-                    <span className="text-gray-700">{contact.organization}</span>
+                    <Link href={`/organizations/${contact.organizationId}`} className="text-blue-600 hover:text-blue-800 hover:underline font-medium">
+                      {contact.organization}
+                    </Link>
                   </td>
                   <td className="px-4 py-3 text-gray-600">{contact.jobTitle}</td>
                   <td className="px-4 py-3 text-center">
@@ -361,13 +325,11 @@ export default function ContactsPage() {
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
-                    {(() => {
-                      const role = CONTACT_PORTAL_ROLES[contact.id];
-                      if (!role) {
-                        return <Badge variant="default">Pas d&apos;accès</Badge>;
-                      }
-                      return <Badge variant={portalRoleBadgeVariant(role)}>{PORTAL_ROLE_LABELS[role]}</Badge>;
-                    })()}
+                    {(contact as any).portalEnabled ? (
+                      <Badge variant="primary">Portail actif</Badge>
+                    ) : (
+                      <Badge variant="default">Pas d&apos;accès</Badge>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <Button

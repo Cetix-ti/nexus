@@ -50,9 +50,9 @@ export function PriorityChart({ data }: PriorityChartProps) {
     <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
       <div className="mb-6">
         <h3 className="text-base font-semibold text-neutral-900">
-          Tickets by Priority
+          Tickets par priorité
         </h3>
-        <p className="text-sm text-neutral-500">Current distribution</p>
+        <p className="text-sm text-neutral-500">Répartition actuelle</p>
       </div>
       <div className="h-[280px] relative">
         <ResponsiveContainer width="100%" height="100%">

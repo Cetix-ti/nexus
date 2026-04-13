@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 type Params = { params: Promise<{ id: string; contactId: string }> };
 
 /** PATCH — update a contact's portal access, role, permissions, status */
 export async function PATCH(req: Request, { params }: Params) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { id: orgId, contactId } = await params;
   const body = await req.json();
 

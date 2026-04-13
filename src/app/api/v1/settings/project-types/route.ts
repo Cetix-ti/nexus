@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 const KEY = "project.types";
 
@@ -18,12 +19,16 @@ const DEFAULTS = [
 ];
 
 export async function GET() {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const row = await prisma.tenantSetting.findUnique({ where: { key: KEY } });
   const types = row ? (row.value as any) : DEFAULTS;
   return NextResponse.json(types);
 }
 
 export async function PUT(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
   if (!Array.isArray(body) || body.some((t: any) => !t.key || !t.label)) {
     return NextResponse.json(

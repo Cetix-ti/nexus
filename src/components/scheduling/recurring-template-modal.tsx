@@ -35,23 +35,6 @@ const FREQ_OPTIONS: { value: RecurrenceFrequency; label: string }[] = [
   { value: "yearly", label: "Annuel" },
 ];
 
-const ORG_OPTIONS = [
-  { id: "org-2", name: "Acme Corp" },
-  { id: "org-3", name: "TechStart Inc" },
-  { id: "org-4", name: "Global Finance" },
-  { id: "org-5", name: "HealthCare Plus" },
-  { id: "org-6", name: "MédiaCentre QC" },
-  { id: "org-1", name: "Cetix" },
-];
-
-const TECHNICIANS = [
-  "Jean-Philippe Côté",
-  "Marie Tremblay",
-  "Alexandre Dubois",
-  "Sophie Lavoie",
-  "Lucas Bergeron",
-];
-
 const QUEUES = [
   "Support général",
   "Réseau & Infrastructure",
@@ -81,7 +64,7 @@ function emptyTemplate(): RecurringTicketTemplate {
     createdBy: "Jean-Philippe Côté",
     ticketSubject: "",
     ticketDescription: "",
-    ticketType: "request",
+    ticketType: "service_request",
     ticketPriority: "medium",
     ticketUrgency: "medium",
     ticketImpact: "medium",
@@ -112,6 +95,28 @@ export function RecurringTemplateModal({
   onSave,
 }: RecurringTemplateModalProps) {
   const [form, setForm] = useState<RecurringTicketTemplate>(emptyTemplate());
+
+  // Fetch organizations from API
+  const [orgOptions, setOrgOptions] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/v1/organizations")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: { id: string; name: string }[]) => {
+        if (Array.isArray(data)) setOrgOptions(data);
+      })
+      .catch(() => setOrgOptions([]));
+  }, []);
+
+  // Fetch technicians from API
+  const [technicians, setTechnicians] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/v1/users")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: { id: string; name: string }[]) => {
+        if (Array.isArray(data)) setTechnicians(data.map((u) => u.name));
+      })
+      .catch(() => setTechnicians([]));
+  }, []);
 
   useEffect(() => {
     if (template) {
@@ -157,7 +162,7 @@ export function RecurringTemplateModal({
   }
 
   function handleOrgChange(orgId: string) {
-    const org = ORG_OPTIONS.find((o) => o.id === orgId);
+    const org = orgOptions.find((o) => o.id === orgId);
     setForm((prev) => ({
       ...prev,
       organizationId: orgId,
@@ -238,7 +243,7 @@ export function RecurringTemplateModal({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ORG_OPTIONS.map((o) => (
+                    {orgOptions.map((o) => (
                       <SelectItem key={o.id} value={o.id}>
                         {o.name}
                       </SelectItem>
@@ -484,7 +489,7 @@ export function RecurringTemplateModal({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="incident">Incident</SelectItem>
-                      <SelectItem value="request">Demande de service</SelectItem>
+                      <SelectItem value="service_request">Demande de service</SelectItem>
                       <SelectItem value="problem">Problème</SelectItem>
                       <SelectItem value="change">Changement</SelectItem>
                     </SelectContent>
@@ -523,7 +528,7 @@ export function RecurringTemplateModal({
                       <SelectValue placeholder="Personne" />
                     </SelectTrigger>
                     <SelectContent>
-                      {TECHNICIANS.map((t) => (
+                      {technicians.map((t) => (
                         <SelectItem key={t} value={t}>
                           {t}
                         </SelectItem>

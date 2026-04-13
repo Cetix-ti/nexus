@@ -23,12 +23,32 @@ interface PortalImpersonationState {
   stopImpersonation: () => void;
 }
 
+/** Set the server-side impersonation cookie so API routes can resolve the contact */
+function setImpersonationCookie(user: ImpersonatedPortalUser | null) {
+  if (typeof document === "undefined") return;
+  if (user) {
+    const value = JSON.stringify({
+      email: user.email,
+      organizationId: user.organizationId,
+    });
+    document.cookie = `nexus-impersonate=${encodeURIComponent(value)}; path=/; max-age=86400; SameSite=Lax`;
+  } else {
+    document.cookie = "nexus-impersonate=; path=/; max-age=0";
+  }
+}
+
 export const usePortalImpersonation = create<PortalImpersonationState>()(
   persist(
     (set) => ({
       impersonating: null,
-      startImpersonation: (u) => set({ impersonating: u }),
-      stopImpersonation: () => set({ impersonating: null }),
+      startImpersonation: (u) => {
+        setImpersonationCookie(u);
+        set({ impersonating: u });
+      },
+      stopImpersonation: () => {
+        setImpersonationCookie(null);
+        set({ impersonating: null });
+      },
     }),
     {
       name: "nexus-portal-impersonation",

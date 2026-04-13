@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Zap,
   ChevronRight,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,28 +28,12 @@ import {
   type TicketPriority,
 } from "@/lib/mock-data";
 import { TicketBillingSection } from "@/components/billing/ticket-billing-section";
-import { mockProjects } from "@/lib/projects/mock-data";
-import { PROJECT_STATUS_LABELS, PROJECT_STATUS_COLORS } from "@/lib/projects/types";
 import { FolderKanban } from "lucide-react";
 
-const TICKET_PROJECT_LINKS: Record<string, string> = {
-  "t-001": "prj_001",
-  "t-002": "prj_002",
-  "t-004": "prj_001",
-  "t-005": "prj_004",
-};
-
-const ORG_ID_MAP: Record<string, string> = {
-  "Acme Corp": "org_acme",
-  "TechStart Inc": "org_techstart",
-  "Global Finance": "org_global",
-  "HealthCare Plus": "org_health",
-  "MédiaCentre QC": "org_media",
-  "Cetix": "org_cetix",
-};
-
-function getOrgId(name: string): string {
-  return ORG_ID_MAP[name] || "org_acme";
+function getOrgId(ticket: { organizationId?: string; organizationName: string }): string {
+  if (ticket.organizationId) return ticket.organizationId;
+  // Derive a slug-based ID from the name as fallback
+  return "org_" + ticket.organizationName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/_+$/, "");
 }
 
 function getInitials(name: string): string {
@@ -65,9 +50,13 @@ const statusBadgeVariant: Record<TicketStatus, "primary" | "default" | "warning"
   open: "primary",
   in_progress: "warning",
   on_site: "primary",
+  pending: "warning",
   waiting_client: "default",
+  waiting_vendor: "default",
+  scheduled: "primary",
   resolved: "success",
   closed: "default",
+  cancelled: "default",
 };
 
 const priorityBadgeVariant: Record<TicketPriority, "danger" | "warning" | "default" | "success"> = {
@@ -124,14 +113,37 @@ export default function TicketDetailPage() {
   const [localComments, setLocalComments] = useState<LocalComment[]>([]);
   const [sending, setSending] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [collaborators, setCollaborators] = useState<{ id: string; userId: string; role: string; user: { id: string; name: string; avatar: string | null } }[]>([]);
+  const [allUsers, setAllUsers] = useState<{ id: string; name: string; avatar: string | null }[]>([]);
 
   const tickets = useTicketsStore((s) => s.tickets);
   const loadAll = useTicketsStore((s) => s.loadAll);
   const loaded = useTicketsStore((s) => s.loaded);
+  const updateTicket = useTicketsStore((s) => s.updateTicket);
   useEffect(() => {
     if (!loaded) loadAll();
   }, [loaded, loadAll]);
   const ticket = tickets.find((t) => t.id === params.id);
+
+  // Load collaborators and users list
+  useEffect(() => {
+    if (!ticket) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    fetch(`/api/v1/tickets/${ticket.id}/collaborators`, { signal })
+      .then((r) => r.ok ? r.json() : { data: [] })
+      .then((d) => { if (!signal.aborted) setCollaborators(d.data || []); })
+      .catch(() => {});
+    fetch("/api/v1/users?role=TECHNICIAN,SUPERVISOR,MSP_ADMIN,SUPER_ADMIN", { signal })
+      .then((r) => r.json())
+      .then((users: any[]) => {
+        if (!signal.aborted && Array.isArray(users)) setAllUsers(users.map((u) => ({ id: u.id, name: u.name, avatar: u.avatar })));
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [ticket?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!ticket) {
     return (
@@ -194,23 +206,32 @@ export default function TicketDetailPage() {
           window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
         }, 100);
       }
-    } catch { /* ignore */ }
+    } catch (err) { console.error("Failed to post comment", err); }
     finally { setSending(false); }
   }
 
-  // SLA mock calculation
-  const slaPercent = ticket.slaBreached ? 100 : ticket.dueAt ? Math.min(85, 45) : 0;
+  // SLA calculation based on elapsed time vs due date
+  const slaPercent = (() => {
+    if (ticket.slaBreached) return 100;
+    if (!ticket.dueAt) return 0;
+    const created = new Date(ticket.createdAt).getTime();
+    const due = new Date(ticket.dueAt).getTime();
+    const now = Date.now();
+    const total = due - created;
+    if (total <= 0) return 100;
+    return Math.min(100, Math.round(((now - created) / total) * 100));
+  })();
 
   return (
     <div className="flex flex-col gap-0">
       {/* Top bar */}
       <div className="flex items-center gap-3 border-b border-gray-200 bg-white px-6 py-3">
         <button
-          onClick={() => router.push(backHref)}
+          onClick={() => router.back()}
           className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-          {backLabel}
+          Retour
         </button>
         <ChevronRight className="h-3.5 w-3.5 text-gray-300" />
         <span className="text-sm font-mono text-gray-500">{ticket.number}</span>
@@ -235,7 +256,7 @@ export default function TicketDetailPage() {
                 {ticket.slaBreached && (
                   <Badge variant="danger" className="gap-1">
                     <AlertTriangle className="h-3 w-3" />
-                    SLA Breached
+                    SLA dépassé
                   </Badge>
                 )}
               </div>
@@ -245,20 +266,29 @@ export default function TicketDetailPage() {
             {/* Description */}
             <div className="mb-8 rounded-lg border border-gray-200 bg-white p-5">
               <h2 className="mb-3 text-sm font-semibold text-gray-500 uppercase tracking-wider">Description</h2>
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{ticket.description}</p>
+              {ticket.description.includes("<") ? (
+                <div
+                  className="text-sm text-gray-700 leading-relaxed prose prose-sm prose-slate max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_em]:italic [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_pre]:bg-slate-100 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:rounded [&_img]:max-w-full [&_img]:rounded-lg"
+                  dangerouslySetInnerHTML={{ __html: ticket.description }}
+                />
+              ) : (
+                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{ticket.description}</p>
+              )}
             </div>
 
             {/* Billing */}
+            <div id="ticket-billing">
             <TicketBillingSection
               ticketId={ticket.id}
               ticketNumber={ticket.number}
-              organizationId={getOrgId(ticket.organizationName)}
+              organizationId={getOrgId(ticket)}
               organizationName={ticket.organizationName}
             />
+            </div>
 
             {/* Timeline */}
             <div className="mb-8">
-              <h2 className="mb-4 text-sm font-semibold text-gray-500 uppercase tracking-wider">Activity</h2>
+              <h2 className="mb-4 text-sm font-semibold text-gray-500 uppercase tracking-wider">Activité</h2>
               <div className="relative space-y-0">
                 {/* Vertical line */}
                 <div className="absolute left-[17px] top-2 bottom-2 w-px bg-gray-200" />
@@ -288,7 +318,7 @@ export default function TicketDetailPage() {
                               {item.isInternal && (
                                 <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
                                   <Lock className="h-2.5 w-2.5" />
-                                  Internal
+                                  Interne
                                 </span>
                               )}
                               <span className="text-xs text-gray-400">
@@ -420,12 +450,11 @@ export default function TicketDetailPage() {
                   value={ticket.status}
                   onChange={async (e) => {
                     const newStatus = e.target.value;
-                    await fetch(`/api/v1/tickets/${ticket!.id}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ status: newStatus.toUpperCase() }),
-                    });
-                    window.location.reload();
+                    try {
+                      await updateTicket(ticket!.id, { status: newStatus as TicketStatus });
+                    } catch {
+                      console.error("Erreur lors de la mise à jour du statut");
+                    }
                   }}
                   className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
                 >
@@ -433,9 +462,13 @@ export default function TicketDetailPage() {
                   <option value="open">Ouvert</option>
                   <option value="in_progress">En cours</option>
                   <option value="on_site">Sur place</option>
+                  <option value="pending">En attente</option>
                   <option value="waiting_client">En attente client</option>
+                  <option value="waiting_vendor">Attente fournisseur</option>
+                  <option value="scheduled">Planifié</option>
                   <option value="resolved">Résolu</option>
                   <option value="closed">Fermé</option>
+                  <option value="cancelled">Annulé</option>
                 </select>
               </SidebarRow>
               <SidebarRow label="Priorité">
@@ -443,12 +476,11 @@ export default function TicketDetailPage() {
                   value={ticket.priority}
                   onChange={async (e) => {
                     const newPriority = e.target.value;
-                    await fetch(`/api/v1/tickets/${ticket!.id}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ priority: newPriority.toUpperCase() }),
-                    });
-                    window.location.reload();
+                    try {
+                      await updateTicket(ticket!.id, { priority: newPriority as TicketPriority });
+                    } catch {
+                      console.error("Erreur lors de la mise à jour de la priorité");
+                    }
                   }}
                   className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
                 >
@@ -459,18 +491,64 @@ export default function TicketDetailPage() {
                 </select>
               </SidebarRow>
               <SidebarRow label="Urgence">
-                <span className="text-sm text-gray-700 capitalize">{ticket.urgency}</span>
+                <select
+                  value={ticket.urgency}
+                  onChange={async (e) => {
+                    try {
+                      await updateTicket(ticket!.id, { urgency: e.target.value as any });
+                    } catch {
+                      console.error("Erreur lors de la mise à jour de l'urgence");
+                    }
+                  }}
+                  className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="critical">Critique</option>
+                  <option value="high">Élevée</option>
+                  <option value="medium">Moyenne</option>
+                  <option value="low">Faible</option>
+                </select>
               </SidebarRow>
               <SidebarRow label="Impact">
-                <span className="text-sm text-gray-700 capitalize">{ticket.impact}</span>
+                <select
+                  value={ticket.impact}
+                  onChange={async (e) => {
+                    try {
+                      await updateTicket(ticket!.id, { impact: e.target.value as any });
+                    } catch {
+                      console.error("Erreur lors de la mise à jour de l'impact");
+                    }
+                  }}
+                  className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="critical">Critique</option>
+                  <option value="high">Élevée</option>
+                  <option value="medium">Moyenne</option>
+                  <option value="low">Faible</option>
+                </select>
               </SidebarRow>
               <SidebarRow label="Type">
-                <span className="text-sm text-gray-700 capitalize">{ticket.type}</span>
+                <select
+                  value={ticket.type}
+                  onChange={async (e) => {
+                    try {
+                      await updateTicket(ticket!.id, { type: e.target.value as any });
+                    } catch {
+                      console.error("Erreur lors de la mise à jour du type");
+                    }
+                  }}
+                  className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="incident">Incident</option>
+                  <option value="service_request">Demande de service</option>
+                  <option value="problem">Problème</option>
+                  <option value="change">Changement</option>
+                  <option value="alert">Alerte</option>
+                </select>
               </SidebarRow>
             </SidebarSection>
 
             {/* People */}
-            <SidebarSection title="People">
+            <SidebarSection title="Personnes">
               <SidebarRow label="Assigné à">
                 {ticket.assigneeName ? (
                   <div className="flex items-center gap-2">
@@ -482,10 +560,10 @@ export default function TicketDetailPage() {
                     <span className="text-sm text-gray-700">{ticket.assigneeName}</span>
                   </div>
                 ) : (
-                  <span className="text-sm text-gray-400">Unassigned</span>
+                  <span className="text-sm text-gray-400">Non assigné</span>
                 )}
               </SidebarRow>
-              <SidebarRow label="Requester">
+              <SidebarRow label="Demandeur">
                 <div>
                   <p className="text-sm text-gray-700">{ticket.requesterName}</p>
                   <p className="text-xs text-gray-400">{ticket.requesterEmail}</p>
@@ -493,53 +571,119 @@ export default function TicketDetailPage() {
               </SidebarRow>
             </SidebarSection>
 
+            {/* Collaborateurs */}
+            <SidebarSection title="Collaborateurs">
+              {collaborators.length > 0 ? (
+                <div className="space-y-2">
+                  {collaborators.map((c) => (
+                    <div key={c.id} className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Avatar className="h-5 w-5">
+                          <AvatarFallback className="text-[9px]">
+                            {getInitials(c.user.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-xs text-gray-700 truncate">{c.user.name}</span>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          await fetch(`/api/v1/tickets/${ticket.id}/collaborators?collaboratorId=${c.id}`, { method: "DELETE" });
+                          setCollaborators((prev) => prev.filter((x) => x.id !== c.id));
+                        }}
+                        className="text-gray-300 hover:text-red-500 transition-colors shrink-0"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400">Aucun collaborateur</p>
+              )}
+              <div className="mt-2">
+                <select
+                  className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-600 focus:border-blue-500 focus:outline-none"
+                  value=""
+                  onChange={async (e) => {
+                    const userId = e.target.value;
+                    if (!userId) return;
+                    try {
+                      const res = await fetch(`/api/v1/tickets/${ticket.id}/collaborators`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ userId }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        setCollaborators((prev) => [...prev, data.data]);
+                      }
+                    } catch {}
+                  }}
+                >
+                  <option value="">+ Ajouter un collaborateur</option>
+                  {allUsers
+                    .filter((u) => !collaborators.some((c) => c.userId === u.id) && u.id !== (ticket as any).assigneeId)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                </select>
+              </div>
+            </SidebarSection>
+
             {/* Projet */}
             <SidebarSection title="Projet">
-              {(() => {
-                const linkedId = TICKET_PROJECT_LINKS[ticket.id];
-                const project = linkedId ? mockProjects.find((p) => p.id === linkedId) : undefined;
-                if (!project) {
-                  return (
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-gray-400">Aucun projet</span>
-                      <Button variant="outline" size="sm">
-                        <FolderKanban className="h-3.5 w-3.5" />
-                        Lier à un projet
-                      </Button>
-                    </div>
-                  );
-                }
-                const colors = PROJECT_STATUS_COLORS[project.status];
-                return (
-                  <button
-                    onClick={() => router.push(`/projects/${project.id}`)}
-                    className="group w-full text-left rounded-lg border border-gray-200 bg-white p-2.5 hover:border-blue-300 hover:bg-blue-50/30 transition-colors"
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <FolderKanban className="h-3.5 w-3.5 text-gray-400" />
-                      <span className="font-mono text-[11px] text-gray-500">{project.code}</span>
-                    </div>
-                    <p className="text-sm font-medium text-gray-900 group-hover:text-blue-700 mb-1.5 line-clamp-2">
-                      {project.name}
-                    </p>
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium ring-1",
-                        colors.bg,
-                        colors.text,
-                        colors.ring
-                      )}
-                    >
-                      <span className={cn("h-1.5 w-1.5 rounded-full", colors.dot)} />
-                      {PROJECT_STATUS_LABELS[project.status]}
+              {ticket.projectId ? (
+                <button
+                  onClick={() => router.push(`/projects/${ticket.projectId}`)}
+                  className="group w-full text-left rounded-lg border border-gray-200 bg-white p-2.5 hover:border-blue-300 hover:bg-blue-50/30 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <FolderKanban className="h-3.5 w-3.5 text-gray-400" />
+                    <span className="text-sm font-medium text-gray-900 group-hover:text-blue-700">
+                      Voir le projet
                     </span>
-                  </button>
-                );
-              })()}
+                  </div>
+                </button>
+              ) : (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-gray-400">Aucun projet</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.push(`/projects?linkTicket=${ticket.id}`)}
+                  >
+                    <FolderKanban className="h-3.5 w-3.5" />
+                    Lier à un projet
+                  </Button>
+                </div>
+              )}
+            </SidebarSection>
+
+            {/* Quick time entry button */}
+            <SidebarSection title="Temps">
+              <Button
+                variant="primary"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  const billingEl = document.getElementById("ticket-billing");
+                  if (billingEl) {
+                    billingEl.scrollIntoView({ behavior: "smooth" });
+                    // Click the "Ajouter du temps" button after scroll
+                    setTimeout(() => {
+                      const addBtn = billingEl.querySelector<HTMLButtonElement>("button[class*='primary']");
+                      if (addBtn) addBtn.click();
+                    }, 400);
+                  }
+                }}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Saisie de temps
+              </Button>
             </SidebarSection>
 
             {/* Organization */}
-            <SidebarSection title="Organization">
+            <SidebarSection title="Organisation">
               <div className="flex items-center gap-2">
                 <Building2 className="h-4 w-4 text-gray-400" />
                 <span className="text-sm text-gray-700">{ticket.organizationName}</span>
@@ -564,7 +708,7 @@ export default function TicketDetailPage() {
               <SidebarSection title="SLA">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500">Time remaining</span>
+                    <span className="text-gray-500">Temps restant</span>
                     <span
                       className={cn(
                         "font-medium",
@@ -572,8 +716,8 @@ export default function TicketDetailPage() {
                       )}
                     >
                       {ticket.slaBreached
-                        ? "Breached"
-                        : formatDistanceToNow(new Date(ticket.dueAt), { addSuffix: false }) + " left"}
+                        ? "Dépassé"
+                        : formatDistanceToNow(new Date(ticket.dueAt), { addSuffix: false }) + " restant"}
                     </span>
                   </div>
                   <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
@@ -586,7 +730,7 @@ export default function TicketDetailPage() {
                     />
                   </div>
                   <p className="text-xs text-gray-400">
-                    Due: {format(new Date(ticket.dueAt), "MMM d, yyyy 'at' HH:mm")}
+                    Échéance : {format(new Date(ticket.dueAt), "d MMM yyyy 'à' HH:mm")}
                   </p>
                 </div>
               </SidebarSection>
@@ -623,8 +767,8 @@ export default function TicketDetailPage() {
             </SidebarSection>
 
             {/* Related assets placeholder */}
-            <SidebarSection title="Related Assets">
-              <p className="text-xs text-gray-400">No assets linked to this ticket.</p>
+            <SidebarSection title="Actifs liés">
+              <p className="text-xs text-gray-400">Aucun actif lié à ce ticket.</p>
             </SidebarSection>
           </div>
         </div>

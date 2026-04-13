@@ -22,6 +22,7 @@ import { TicketKanbanView } from "@/components/tickets/ticket-kanban-view";
 import { useSession } from "next-auth/react";
 import { KanbanBoardSwitcher } from "@/components/tickets/kanban-board-switcher";
 import { useKanbanBoardsStore } from "@/stores/kanban-boards-store";
+import { useKanbanStore } from "@/stores/kanban-store";
 import { DEFAULT_COLUMNS_BY_GROUP } from "@/components/settings/kanban-columns-editor";
 
 const PRIORITY_OPTIONS = [
@@ -50,11 +51,14 @@ export default function KanbanPage() {
   const loaded = useTicketsStore((s) => s.loaded);
   const loadOrgLogos = useOrgLogosStore((s) => s.load);
   const loadAgentAvatars = useAgentAvatarsStore((s) => s.load);
+  // Load kanban column preferences from server
+  const loadKanbanFromServer = useKanbanStore((s) => s.loadFromServer);
   useEffect(() => {
     if (!loaded) loadAll();
     loadOrgLogos();
     loadAgentAvatars();
-  }, [loaded, loadAll, loadOrgLogos, loadAgentAvatars]);
+    loadKanbanFromServer();
+  }, [loaded, loadAll, loadOrgLogos, loadAgentAvatars, loadKanbanFromServer]);
 
   // Dynamic filter options from actual ticket data
   const orgOptions = useMemo(() => {
@@ -317,7 +321,8 @@ export default function KanbanPage() {
         <StatPill label="Ouvert" count={counts.open || 0} dotClass="bg-sky-500" />
         <StatPill label="En cours" count={counts.in_progress || 0} dotClass="bg-amber-500" />
         <StatPill label="Sur place" count={counts.on_site || 0} dotClass="bg-cyan-500" />
-        <StatPill label="Attente client" count={counts.waiting_client || 0} dotClass="bg-violet-500" />
+        <StatPill label="En attente" count={(counts.pending || 0) + (counts.waiting_client || 0) + (counts.waiting_vendor || 0)} dotClass="bg-violet-500" />
+        <StatPill label="Planifié" count={counts.scheduled || 0} dotClass="bg-teal-500" />
         <StatPill label="Résolu" count={counts.resolved || 0} dotClass="bg-emerald-500" />
       </div>
 

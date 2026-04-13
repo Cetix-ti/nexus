@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -13,7 +14,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Plus, MoreHorizontal } from "lucide-react";
+import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TicketCard } from "./ticket-card";
 import { TicketQuickViewModal } from "./ticket-quick-view-modal";
@@ -101,6 +102,7 @@ function DroppableColumnBody({
 // Main Kanban view
 // ----------------------------------------------------------------------------
 export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanViewProps) {
+  const router = useRouter();
   const columnsConfig = useKanbanStore((s) => s.columns);
   const activeBoardId = useKanbanBoardsStore((s) => s.activeBoardId);
   const boards = useKanbanBoardsStore((s) => s.boards);
@@ -121,6 +123,9 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
     })
   );
 
+  // Track in-flight drag requests to prevent race conditions
+  const inFlightRef = useRef(new Map<string, AbortController>());
+
   function handleDragStart(event: DragStartEvent) {
     const ticket = localTickets.find((t) => t.id === event.active.id);
     if (ticket) setActiveTicket(ticket);
@@ -136,6 +141,15 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
 
     const ticketId = active.id as string;
     const newStatus = over.id as TicketStatus;
+    const previousStatus = localTickets.find((t) => t.id === ticketId)?.status;
+    if (previousStatus === newStatus) return;
+
+    // Cancel any in-flight request for the same ticket
+    const existing = inFlightRef.current.get(ticketId);
+    if (existing) existing.abort();
+
+    const controller = new AbortController();
+    inFlightRef.current.set(ticketId, controller);
 
     // Update local state immediately (optimistic)
     setLocalTickets((prev) =>
@@ -146,12 +160,19 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
     fetch(`/api/v1/tickets/${ticketId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus.toUpperCase() }),
-    }).catch(() => {
+      body: JSON.stringify({ status: newStatus }),
+      signal: controller.signal,
+    }).then(() => {
+      inFlightRef.current.delete(ticketId);
+    }).catch((err) => {
+      if (err?.name === "AbortError") return; // Superseded by newer drag
+      inFlightRef.current.delete(ticketId);
       // Revert on failure
-      setLocalTickets((prev) =>
-        prev.map((t) => (t.id === ticketId ? { ...t, status: active.id as TicketStatus } : t))
-      );
+      if (previousStatus) {
+        setLocalTickets((prev) =>
+          prev.map((t) => (t.id === ticketId ? { ...t, status: previousStatus } : t))
+        );
+      }
     });
   }
 
@@ -296,15 +317,9 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
                 <button
                   className="h-5 w-5 inline-flex items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-slate-700 hover:shadow-sm transition-all"
                   title="Ajouter un ticket"
+                  onClick={() => router.push("/tickets/new")}
                 >
                   <Plus className="h-3 w-3" strokeWidth={2.5} />
-                </button>
-
-                <button
-                  className="h-5 w-5 inline-flex items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-slate-700 hover:shadow-sm transition-all"
-                  title="Options"
-                >
-                  <MoreHorizontal className="h-3 w-3" strokeWidth={2.5} />
                 </button>
               </div>
 

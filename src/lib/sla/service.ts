@@ -74,3 +74,130 @@ export async function deleteOrgOverride(orgId: string): Promise<void> {
 export async function listAllOverrides() {
   return prisma.orgSlaOverride.findMany();
 }
+
+// ---------------------------------------------------------------------------
+// SLA Enforcement Engine
+// Recalculates isOverdue, slaBreached, and dueAt for all open tickets.
+// Should be called periodically (cron every 5-15 minutes) or on ticket update.
+// ---------------------------------------------------------------------------
+
+const OPEN_STATUSES = ["NEW", "OPEN", "IN_PROGRESS", "ON_SITE", "PENDING", "WAITING_CLIENT", "WAITING_VENDOR", "SCHEDULED"];
+
+/** Resolve the effective SLA profile for a given org (org override → global fallback). */
+async function resolveProfile(orgId: string, globalProfile: SlaProfile): Promise<SlaProfile> {
+  const override = await getOrgOverride(orgId);
+  return override ?? globalProfile;
+}
+
+/** Run SLA enforcement across all open tickets. Returns count of updated tickets. */
+export async function enforceSla(): Promise<{ checked: number; updated: number; breached: number }> {
+  const globalProfile = await getGlobalProfile();
+  const now = new Date();
+  let updated = 0;
+  let breached = 0;
+
+  // Fetch all open tickets with their org
+  const tickets = await prisma.ticket.findMany({
+    where: { status: { in: OPEN_STATUSES as any } },
+    select: {
+      id: true,
+      priority: true,
+      organizationId: true,
+      createdAt: true,
+      firstResponseAt: true,
+      dueAt: true,
+      isOverdue: true,
+      slaBreached: true,
+    },
+  });
+
+  // Cache org profiles to avoid repeated lookups
+  const profileCache = new Map<string, SlaProfile>();
+
+  for (const ticket of tickets) {
+    let profile = profileCache.get(ticket.organizationId);
+    if (!profile) {
+      profile = await resolveProfile(ticket.organizationId, globalProfile);
+      profileCache.set(ticket.organizationId, profile);
+    }
+
+    const priorityKey = ticket.priority.toLowerCase() as Priority;
+    const slaConfig = profile[priorityKey];
+    if (!slaConfig) continue;
+
+    // Calculate due date based on resolution hours
+    const resolutionMs = slaConfig.resolutionHours * 60 * 60 * 1000;
+    const expectedDueAt = new Date(ticket.createdAt.getTime() + resolutionMs);
+
+    // Determine status
+    const isNowOverdue = now > expectedDueAt;
+    const isNowBreached = isNowOverdue; // Breached = past due date
+
+    // Check if first response SLA was breached
+    const firstResponseMs = slaConfig.firstResponseHours * 60 * 60 * 1000;
+    const firstResponseDeadline = new Date(ticket.createdAt.getTime() + firstResponseMs);
+    const firstResponseBreached = !ticket.firstResponseAt && now > firstResponseDeadline;
+
+    const shouldBreach = isNowBreached || firstResponseBreached;
+
+    // Only update if something changed
+    if (
+      ticket.dueAt?.getTime() !== expectedDueAt.getTime() ||
+      ticket.isOverdue !== isNowOverdue ||
+      ticket.slaBreached !== shouldBreach
+    ) {
+      await prisma.ticket.update({
+        where: { id: ticket.id },
+        data: {
+          dueAt: expectedDueAt,
+          isOverdue: isNowOverdue,
+          slaBreached: shouldBreach,
+        },
+      });
+      updated++;
+      if (shouldBreach && !ticket.slaBreached) breached++;
+    }
+  }
+
+  return { checked: tickets.length, updated, breached };
+}
+
+/** Run SLA enforcement for a single ticket (called on ticket create/update). */
+export async function enforceSlaForTicket(ticketId: string): Promise<void> {
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: ticketId },
+    select: {
+      id: true,
+      priority: true,
+      organizationId: true,
+      createdAt: true,
+      firstResponseAt: true,
+      status: true,
+    },
+  });
+  if (!ticket || !OPEN_STATUSES.includes(ticket.status)) return;
+
+  const globalProfile = await getGlobalProfile();
+  const profile = await resolveProfile(ticket.organizationId, globalProfile);
+  const priorityKey = ticket.priority.toLowerCase() as Priority;
+  const slaConfig = profile[priorityKey];
+  if (!slaConfig) return;
+
+  const now = new Date();
+  const resolutionMs = slaConfig.resolutionHours * 60 * 60 * 1000;
+  const expectedDueAt = new Date(ticket.createdAt.getTime() + resolutionMs);
+  const isOverdue = now > expectedDueAt;
+
+  const firstResponseMs = slaConfig.firstResponseHours * 60 * 60 * 1000;
+  const firstResponseDeadline = new Date(ticket.createdAt.getTime() + firstResponseMs);
+  const firstResponseBreached = !ticket.firstResponseAt && now > firstResponseDeadline;
+
+  await prisma.ticket.update({
+    where: { id: ticketId },
+    data: {
+      dueAt: expectedDueAt,
+      isOverdue,
+      slaBreached: isOverdue || firstResponseBreached,
+    },
+  });
+}

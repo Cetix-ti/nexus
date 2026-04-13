@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { getOrganization, updateOrganization, deleteOrganization } from "@/lib/orgs/service";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const org = await getOrganization(id);
   if (!org) return NextResponse.json({ error: "Introuvable" }, { status: 404 });
@@ -10,6 +13,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const body = await req.json();
   try {
@@ -46,6 +51,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   await deleteOrganization(id);
   return NextResponse.json({ ok: true });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 /**
  * POST /api/v1/veeam/rematch
@@ -7,6 +8,9 @@ import prisma from "@/lib/prisma";
  * Useful after adding a domain to an organization.
  */
 export async function POST() {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   try {
     // Build domain map from all orgs
     const orgs = await prisma.organization.findMany({

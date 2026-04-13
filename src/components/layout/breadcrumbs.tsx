@@ -10,6 +10,7 @@ const labelMap: Record<string, string> = {
   tickets: "Tickets",
   kanban: "Kanban",
   new: "Nouveau",
+  "my-day": "Ma journée",
   organizations: "Organisations",
   contacts: "Contacts",
   assets: "Actifs",
@@ -20,7 +21,17 @@ const labelMap: Record<string, string> = {
   portal: "Portail",
   projects: "Projets",
   scheduling: "Planificateur",
-  billing: "Facturation",
+  billing: "Préfacturation",
+  finances: "Finances",
+  monitoring: "Alertes monitoring",
+  backups: "Sauvegardes",
+  analytics: "Analytique",
+  dashboards: "Tableaux de bord",
+  widgets: "Widgets",
+  data: "Sources & Variables",
+  "my-space": "Mon espace",
+  account: "Mon compte",
+  help: "Aide",
 };
 
 // cuid pattern (Prisma default IDs)

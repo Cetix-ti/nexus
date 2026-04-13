@@ -1,20 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { format } from "date-fns";
-import { fr } from "date-fns/locale";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Search,
   FolderKanban,
   Clock,
   Flag,
   Inbox,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { mockProjects, mockProjectMilestones } from "@/lib/projects/mock-data";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { ProjectCard } from "@/components/portal/project-card";
 import type { Project } from "@/lib/projects/types";
+
+/** Partial Project shape returned by the portal API (no visibilitySettings). */
+type PortalProject = Omit<Project, "visibilitySettings" | "managerId" | "consumedAmount" | "budgetAmount" | "actualEndDate" | "riskNotes" | "isArchived" | "linkedTicketCount" | "memberCount" | "phaseCount" | "milestoneCount"> & {
+  phaseCount?: number;
+  milestoneCount?: number;
+};
 
 type Filter = "all" | "active" | "upcoming" | "completed" | "at_risk";
 
@@ -26,7 +30,7 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "at_risk", label: "À risque" },
 ];
 
-function matchesFilter(p: Project, f: Filter): boolean {
+function matchesFilter(p: PortalProject, f: Filter): boolean {
   switch (f) {
     case "all":
       return true;
@@ -42,24 +46,35 @@ function matchesFilter(p: Project, f: Filter): boolean {
 }
 
 export default function PortalProjectsPage() {
-  const { organizationId: orgId, organizationName } = usePortalUser();
+  const { organizationName } = usePortalUser();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const [projects, setProjects] = useState<PortalProject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const visibleProjects = useMemo(
-    () =>
-      mockProjects.filter(
-        (p) =>
-          p.organizationId === orgId &&
-          p.isVisibleToClient &&
-          p.visibilitySettings.showProject
-      ),
-    [orgId]
-  );
+  const fetchProjects = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/v1/portal/projects");
+      if (!res.ok) throw new Error("Erreur lors du chargement des projets");
+      const json = await res.json();
+      setProjects(json.data ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
 
   const filtered = useMemo(
     () =>
-      visibleProjects.filter((p) => {
+      projects.filter((p) => {
         if (!matchesFilter(p, filter)) return false;
         if (search) {
           const q = search.toLowerCase();
@@ -71,30 +86,38 @@ export default function PortalProjectsPage() {
         }
         return true;
       }),
-    [visibleProjects, filter, search]
+    [projects, filter, search]
   );
 
-  const activeCount = visibleProjects.filter((p) => p.status === "active")
-    .length;
-  const totalConsumedHours = visibleProjects.reduce(
+  const activeCount = projects.filter((p) => p.status === "active").length;
+  const totalConsumedHours = projects.reduce(
     (s, p) => s + p.consumedHours,
     0
   );
-  const nextMilestone = useMemo(() => {
-    const projectIds = new Set(visibleProjects.map((p) => p.id));
-    const upcoming = mockProjectMilestones
-      .filter(
-        (m) =>
-          projectIds.has(m.projectId) &&
-          m.isVisibleToClient &&
-          (m.status === "upcoming" || m.status === "approaching")
-      )
-      .sort(
-        (a, b) =>
-          new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime()
-      );
-    return upcoming[0];
-  }, [visibleProjects]);
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-6xl flex items-center justify-center py-24">
+        <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-6xl">
+        <div className="rounded-2xl border border-dashed border-red-300 bg-white p-12 text-center">
+          <h3 className="text-base font-semibold text-red-700">{error}</h3>
+          <button
+            onClick={fetchProjects}
+            className="mt-4 rounded-xl bg-[#2563EB] px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Réessayer
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
@@ -142,18 +165,10 @@ export default function PortalProjectsPage() {
               <Flag className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-neutral-500">Prochain jalon</p>
-              {nextMilestone ? (
-                <>
-                  <p className="text-sm font-semibold text-neutral-900 truncate">
-                    {format(new Date(nextMilestone.targetDate), "d MMM yyyy", {
-                      locale: fr,
-                    })}
-                  </p>
-                </>
-              ) : (
-                <p className="text-sm font-medium text-neutral-400">Aucun</p>
-              )}
+              <p className="text-xs text-neutral-500">Total projets</p>
+              <p className="text-xl sm:text-2xl font-bold text-neutral-900">
+                {projects.length}
+              </p>
             </div>
           </div>
         </div>
@@ -205,7 +220,7 @@ export default function PortalProjectsPage() {
       ) : (
         <div className="space-y-4">
           {filtered.map((p) => (
-            <ProjectCard key={p.id} project={p} />
+            <ProjectCard key={p.id} project={p as Project} />
           ))}
         </div>
       )}

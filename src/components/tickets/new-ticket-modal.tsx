@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Plus, Check, ShieldCheck, UserPlus, Trash2, Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTicketsStore } from "@/stores/tickets-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AdvancedRichEditor } from "@/components/ui/advanced-rich-editor";
@@ -19,74 +20,13 @@ interface NewTicketModalProps {
   onClose: () => void;
 }
 
-const FALLBACK_ORGS = [
-  "Cetix",
-  "Acme Corp",
-  "TechStart Inc",
-  "Global Finance",
-  "HealthCare Plus",
-  "MédiaCentre QC",
-];
-
 interface ContactOption {
   name: string;
   email: string;
   isApprover?: boolean;
 }
 
-const FALLBACK_REQUESTERS_BY_ORG: Record<string, ContactOption[]> = {
-  Cetix: [
-    { name: "Jean-Philippe Côté", email: "jp.cote@cetix.ca", isApprover: true },
-    { name: "Marie Tremblay", email: "marie@cetix.ca" },
-    { name: "Alexandre Dubois", email: "alex.dubois@cetix.ca" },
-  ],
-  "Acme Corp": [
-    { name: "Robert Martin", email: "robert.martin@acme.com", isApprover: true },
-    { name: "Sophie Lavoie", email: "sophie.lavoie@acme.com", isApprover: true },
-    { name: "David Bergeron", email: "david.bergeron@acme.com" },
-  ],
-  "TechStart Inc": [
-    { name: "Émilie Roy", email: "emilie.roy@techstart.io", isApprover: true },
-    { name: "Pierre Tremblay", email: "pierre.t@techstart.io" },
-  ],
-  "Global Finance": [
-    { name: "Catherine Lemieux", email: "c.lemieux@globalfinance.ca", isApprover: true },
-    { name: "Marc Bouchard", email: "m.bouchard@globalfinance.ca", isApprover: true },
-  ],
-  "HealthCare Plus": [
-    { name: "Annie Desrosiers", email: "annie.d@healthcareplus.ca", isApprover: true },
-    { name: "François Gagnon", email: "f.gagnon@healthcareplus.ca" },
-  ],
-  "MédiaCentre QC": [
-    { name: "Isabelle Côté", email: "isabelle.c@mediacentre.qc.ca", isApprover: true },
-    { name: "Lucas Bergeron", email: "lucas.b@mediacentre.qc.ca" },
-  ],
-};
-
-const TECHNICIANS = [
-  "Marie Tremblay",
-  "Alexandre Dubois",
-  "Sophie Lavoie",
-  "Lucas Bergeron",
-];
-
-const CATEGORIES = [
-  "Matériel",
-  "Logiciels",
-  "Réseau & VPN",
-  "Compte & Accès",
-  "Email",
-  "Sécurité",
-];
-
-const QUEUES = [
-  "Support général",
-  "Réseau & Infrastructure",
-  "Sécurité",
-  "Infrastructure Cloud",
-  "Demandes de service",
-  "Projets",
-];
+// Queues are loaded dynamically from the API
 
 export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
   const [organization, setOrganization] = useState<string>("");
@@ -95,9 +35,10 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
   const [requestersByOrg, setRequestersByOrg] = useState<
     Record<string, ContactOption[]>
   >({});
-  // Fallbacks gardés en cas de besoin offline / dev — non affichés.
-  void FALLBACK_ORGS;
-  void FALLBACK_REQUESTERS_BY_ORG;
+  const [techniciansList, setTechniciansList] = useState<string[]>([]);
+  const [techniciansLoading, setTechniciansLoading] = useState(false);
+  const [queuesList, setQueuesList] = useState<{ id: string; name: string }[]>([]);
+  const [queuesLoading, setQueuesLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -109,21 +50,62 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
         }
       })
       .catch(() => {});
-    fetch("/api/v1/contacts")
-      .then((r) => r.json())
-      .then((contacts: { firstName: string; lastName: string; email: string; organization: string }[]) => {
-        if (!Array.isArray(contacts)) return;
-        const map: Record<string, ContactOption[]> = {};
-        for (const c of contacts) {
-          if (!map[c.organization]) map[c.organization] = [];
-          map[c.organization].push({
-            name: `${c.firstName} ${c.lastName}`,
-            email: c.email,
-          });
+    // Fetch contacts and approvers in parallel, then merge
+    Promise.all([
+      fetch("/api/v1/contacts").then((r) => r.json()).catch(() => []),
+      fetch("/api/v1/organizations").then((r) => r.json()).catch(() => []),
+    ]).then(async ([contacts, orgs]) => {
+      if (!Array.isArray(contacts)) return;
+      // Fetch approvers for each org
+      const approverEmails = new Set<string>();
+      if (Array.isArray(orgs)) {
+        const approverFetches = orgs.slice(0, 20).map((org: any) =>
+          fetch(`/api/v1/approvers?organizationId=${org.id}`)
+            .then((r) => r.ok ? r.json() : [])
+            .catch(() => [])
+        );
+        const approverResults = await Promise.all(approverFetches);
+        for (const list of approverResults) {
+          if (Array.isArray(list)) {
+            for (const a of list) {
+              if (a.contactEmail) approverEmails.add(a.contactEmail.toLowerCase());
+            }
+          }
         }
-        if (Object.keys(map).length > 0) setRequestersByOrg(map);
+      }
+      const map: Record<string, ContactOption[]> = {};
+      for (const c of contacts) {
+        const orgName = c.organization || c.organizationName;
+        if (!orgName) continue;
+        if (!map[orgName]) map[orgName] = [];
+        map[orgName].push({
+          name: `${c.firstName} ${c.lastName}`,
+          email: c.email,
+          isApprover: approverEmails.has(c.email?.toLowerCase()),
+        });
+      }
+      if (Object.keys(map).length > 0) setRequestersByOrg(map);
+    }).catch(() => {});
+
+    // Fetch technicians
+    setTechniciansLoading(true);
+    fetch("/api/v1/users?role=TECHNICIAN,SUPERVISOR,MSP_ADMIN,SUPER_ADMIN")
+      .then((r) => r.json())
+      .then((users: { name: string }[]) => {
+        if (Array.isArray(users)) setTechniciansList(users.map((u) => u.name));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setTechniciansLoading(false));
+
+    // Fetch queues
+    setQueuesLoading(true);
+    fetch("/api/v1/queues")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (Array.isArray(data)) setQueuesList(data);
+      })
+      .catch(() => {})
+      .finally(() => setQueuesLoading(false));
   }, [open]);
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -171,6 +153,13 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
           category,
           queue,
           assigneeName: assignee,
+          requireApproval,
+          approvers: requireApproval
+            ? selectedApprovers.map((name) => {
+                const contact = requesters.find((r) => r.name === name);
+                return { name, email: contact?.email ?? "", contactId: "" };
+              })
+            : undefined,
         }),
       });
 
@@ -197,7 +186,7 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
 
       reset();
       onClose();
-      window.location.reload();
+      useTicketsStore.getState().refresh();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Erreur de création");
     }
@@ -307,9 +296,10 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="incident">Incident</SelectItem>
-                  <SelectItem value="request">Demande de service</SelectItem>
+                  <SelectItem value="service_request">Demande de service</SelectItem>
                   <SelectItem value="problem">Problème</SelectItem>
                   <SelectItem value="change">Changement</SelectItem>
+                  <SelectItem value="alert">Alerte monitoring</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -381,14 +371,14 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
               <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
                 File d&apos;attente
               </label>
-              <Select value={queue} onValueChange={setQueue}>
+              <Select value={queue} onValueChange={setQueue} disabled={queuesLoading}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner..." />
+                  <SelectValue placeholder={queuesLoading ? "Chargement..." : "Sélectionner..."} />
                 </SelectTrigger>
                 <SelectContent>
-                  {QUEUES.map((q) => (
-                    <SelectItem key={q} value={q}>
-                      {q}
+                  {queuesList.map((q) => (
+                    <SelectItem key={q.id} value={q.name}>
+                      {q.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -401,13 +391,13 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
             <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
               Assigné à
             </label>
-            <Select value={assignee} onValueChange={setAssignee}>
+            <Select value={assignee} onValueChange={setAssignee} disabled={techniciansLoading}>
               <SelectTrigger>
-                <SelectValue placeholder="Non assigné" />
+                <SelectValue placeholder={techniciansLoading ? "Chargement..." : "Non assigné"} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="unassigned">Non assigné</SelectItem>
-                {TECHNICIANS.map((t) => (
+                {techniciansList.map((t) => (
                   <SelectItem key={t} value={t}>
                     {t}
                   </SelectItem>
@@ -572,34 +562,14 @@ function CategoryCascade({ value, onChange }: { value: string; onChange: (v: str
   const [level3, setLevel3] = useState("");
 
   useEffect(() => {
-    fetch("/api/v1/asset-categories")
+    fetch("/api/v1/categories")
       .then((r) => r.ok ? r.json() : [])
       .then((data) => {
-        // Try ticket categories endpoint first
-        if (!Array.isArray(data) || data.length === 0) {
-          // Fallback: use hardcoded CATEGORIES
-          setCategories([
-            { id: "1", name: "Matériel", parentId: null },
-            { id: "2", name: "Logiciels", parentId: null },
-            { id: "3", name: "Réseau & VPN", parentId: null },
-            { id: "4", name: "Compte & Accès", parentId: null },
-            { id: "5", name: "Email", parentId: null },
-            { id: "6", name: "Sécurité", parentId: null },
-          ]);
-        } else {
+        if (Array.isArray(data) && data.length > 0) {
           setCategories(data);
         }
       })
-      .catch(() => {
-        setCategories([
-          { id: "1", name: "Matériel", parentId: null },
-          { id: "2", name: "Logiciels", parentId: null },
-          { id: "3", name: "Réseau & VPN", parentId: null },
-          { id: "4", name: "Compte & Accès", parentId: null },
-          { id: "5", name: "Email", parentId: null },
-          { id: "6", name: "Sécurité", parentId: null },
-        ]);
-      });
+      .catch(() => {});
   }, []);
 
   const roots = categories.filter((c) => !c.parentId);

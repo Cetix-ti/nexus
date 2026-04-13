@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -14,17 +14,6 @@ import {
   Info,
   Send,
 } from "lucide-react";
-
-const categories = [
-  { value: "", label: "Sélectionner une catégorie..." },
-  { value: "hardware", label: "Matériel" },
-  { value: "software", label: "Logiciels" },
-  { value: "network-vpn", label: "Réseau & VPN" },
-  { value: "email", label: "Courriel & Communication" },
-  { value: "account-access", label: "Compte & Accès" },
-  { value: "security", label: "Sécurité" },
-  { value: "other", label: "Autre" },
-];
 
 const priorities = [
   { value: "low", label: "Faible", description: "Aucun impact immédiat" },
@@ -43,6 +32,23 @@ export default function PortalNewTicketPage() {
   const [files, setFiles] = useState<string[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [categories, setCategories] = useState<{ value: string; label: string }[]>([]);
+
+  // Fetch categories from database
+  useEffect(() => {
+    fetch("/api/v1/categories")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setCategories(
+            data
+              .filter((c: any) => !c.parentId)
+              .map((c: any) => ({ value: c.name, label: c.name })),
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit() {
     if (!subject.trim()) return;
@@ -58,6 +64,7 @@ export default function PortalNewTicketPage() {
           category,
           priority,
           type: "incident",
+          source: "portal",
         }),
       });
       if (res.ok) {
@@ -99,13 +106,13 @@ export default function PortalNewTicketPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <Link
-        href="/portal/tickets"
+      <button
+        onClick={() => router.back()}
         className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
-        Retour à mes billets
-      </Link>
+        Retour
+      </button>
 
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">
@@ -135,13 +142,14 @@ export default function PortalNewTicketPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                Catégorie <span className="text-red-500">*</span>
+                Catégorie
               </label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 className="w-full rounded-lg border border-neutral-200 bg-[#F9FAFB] px-3.5 py-2.5 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 appearance-none"
               >
+                <option value="">Sélectionner une catégorie...</option>
                 {categories.map((c) => (
                   <option key={c.value} value={c.value}>
                     {c.label}
@@ -261,12 +269,12 @@ export default function PortalNewTicketPage() {
             </p>
           </div>
           <div className="flex items-center justify-end gap-3">
-            <Link
-              href="/portal/tickets"
+            <button
+              onClick={() => router.back()}
               className="rounded-lg px-4 py-2.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 transition-colors"
             >
               Annuler
-            </Link>
+            </button>
             <button
               onClick={handleSubmit}
               disabled={submitting || !subject.trim()}

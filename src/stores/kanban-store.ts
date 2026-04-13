@@ -8,9 +8,9 @@ export interface KanbanColumn {
   id: string;
   status: TicketStatus;
   label: string;
-  dotClass: string;       // tailwind class e.g. "bg-blue-500"
-  headerBg: string;       // e.g. "bg-blue-50/60"
-  headerRing: string;     // e.g. "ring-blue-200/60"
+  dotClass: string;
+  headerBg: string;
+  headerRing: string;
   visible: boolean;
   order: number;
 }
@@ -57,14 +57,44 @@ const DEFAULT_COLUMNS: KanbanColumn[] = [
     order: 3,
   },
   {
-    id: "col_waiting_client",
-    status: "waiting_client",
-    label: "Attente client",
+    id: "col_pending",
+    status: "pending",
+    label: "En attente",
     dotClass: "bg-violet-500",
     headerBg: "bg-violet-50/60",
     headerRing: "ring-violet-200/60",
     visible: true,
     order: 4,
+  },
+  {
+    id: "col_waiting_client",
+    status: "waiting_client",
+    label: "Attente client",
+    dotClass: "bg-purple-500",
+    headerBg: "bg-purple-50/60",
+    headerRing: "ring-purple-200/60",
+    visible: true,
+    order: 5,
+  },
+  {
+    id: "col_waiting_vendor",
+    status: "waiting_vendor",
+    label: "Attente fournisseur",
+    dotClass: "bg-pink-500",
+    headerBg: "bg-pink-50/60",
+    headerRing: "ring-pink-200/60",
+    visible: true,
+    order: 6,
+  },
+  {
+    id: "col_scheduled",
+    status: "scheduled",
+    label: "Planifié",
+    dotClass: "bg-teal-500",
+    headerBg: "bg-teal-50/60",
+    headerRing: "ring-teal-200/60",
+    visible: true,
+    order: 7,
   },
   {
     id: "col_resolved",
@@ -74,58 +104,103 @@ const DEFAULT_COLUMNS: KanbanColumn[] = [
     headerBg: "bg-emerald-50/60",
     headerRing: "ring-emerald-200/60",
     visible: true,
-    order: 5,
+    order: 8,
   },
 ];
 
+/** Save column order to user's server-side preferences */
+function saveToServer(columns: KanbanColumn[]) {
+  const columnOrder = columns.map((c) => ({ id: c.id, order: c.order, visible: c.visible }));
+  fetch("/api/v1/me", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ preferences: { kanbanColumnOrder: columnOrder } }),
+  }).catch(() => {});
+}
+
 interface KanbanState {
   columns: KanbanColumn[];
+  loaded: boolean;
   addColumn: (col: Omit<KanbanColumn, "id" | "order">) => void;
   updateColumn: (id: string, patch: Partial<KanbanColumn>) => void;
   deleteColumn: (id: string) => void;
   reorderColumns: (ids: string[]) => void;
   resetColumns: () => void;
+  loadFromServer: () => Promise<void>;
 }
 
 export const useKanbanStore = create<KanbanState>()(
   persist(
     (set, get) => ({
       columns: DEFAULT_COLUMNS,
+      loaded: false,
+
+      loadFromServer: async () => {
+        if (get().loaded) return;
+        try {
+          const res = await fetch("/api/v1/me");
+          if (!res.ok) return;
+          const user = await res.json();
+          const prefs = user?.preferences?.kanbanColumnOrder;
+          if (Array.isArray(prefs) && prefs.length > 0) {
+            // Merge server order with current columns (in case new columns were added)
+            const currentCols = get().columns;
+            const orderMap = new Map(prefs.map((p: any) => [p.id, p]));
+            const merged = currentCols.map((col) => {
+              const saved = orderMap.get(col.id);
+              if (saved) return { ...col, order: saved.order, visible: saved.visible ?? col.visible };
+              return col;
+            });
+            merged.sort((a, b) => a.order - b.order);
+            set({ columns: merged, loaded: true });
+          } else {
+            set({ loaded: true });
+          }
+        } catch {
+          set({ loaded: true });
+        }
+      },
+
       addColumn: (col) => {
         const columns = get().columns;
-        set({
-          columns: [
-            ...columns,
-            { ...col, id: `col_${Date.now()}`, order: columns.length },
-          ],
-        });
+        const updated = [
+          ...columns,
+          { ...col, id: `col_${Date.now()}`, order: columns.length },
+        ];
+        set({ columns: updated });
+        saveToServer(updated);
       },
       updateColumn: (id, patch) => {
-        set({
-          columns: get().columns.map((c) =>
-            c.id === id ? { ...c, ...patch } : c
-          ),
-        });
+        const updated = get().columns.map((c) =>
+          c.id === id ? { ...c, ...patch } : c
+        );
+        set({ columns: updated });
+        saveToServer(updated);
       },
       deleteColumn: (id) => {
-        set({ columns: get().columns.filter((c) => c.id !== id) });
+        const updated = get().columns.filter((c) => c.id !== id);
+        set({ columns: updated });
+        saveToServer(updated);
       },
       reorderColumns: (ids) => {
         const map = new Map(get().columns.map((c) => [c.id, c]));
-        set({
-          columns: ids
-            .map((id, i) => {
-              const c = map.get(id);
-              return c ? { ...c, order: i } : null;
-            })
-            .filter((c): c is KanbanColumn => c !== null),
-        });
+        const updated = ids
+          .map((id, i) => {
+            const c = map.get(id);
+            return c ? { ...c, order: i } : null;
+          })
+          .filter((c): c is KanbanColumn => c !== null);
+        set({ columns: updated });
+        saveToServer(updated);
       },
-      resetColumns: () => set({ columns: DEFAULT_COLUMNS }),
+      resetColumns: () => {
+        set({ columns: DEFAULT_COLUMNS });
+        saveToServer(DEFAULT_COLUMNS);
+      },
     }),
     {
       name: "nexus-kanban-columns",
-      version: 1,
+      version: 2,
     }
   )
 );
@@ -151,7 +226,11 @@ export const STATUS_OPTIONS: { value: TicketStatus; label: string }[] = [
   { value: "open", label: "Ouvert" },
   { value: "in_progress", label: "En cours" },
   { value: "on_site", label: "Sur place" },
+  { value: "pending", label: "En attente" },
   { value: "waiting_client", label: "Attente client" },
+  { value: "waiting_vendor", label: "Attente fournisseur" },
+  { value: "scheduled", label: "Planifié" },
   { value: "resolved", label: "Résolu" },
   { value: "closed", label: "Fermé" },
+  { value: "cancelled", label: "Annulé" },
 ];

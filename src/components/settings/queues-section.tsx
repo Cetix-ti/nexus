@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Pencil, Trash2, Inbox, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -89,6 +89,30 @@ const initialQueues: Queue[] = [
 
 export function QueuesSection() {
   const [queues, setQueues] = useState<Queue[]>(initialQueues);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load queues from API, fallback to initialQueues
+  useEffect(() => {
+    fetch("/api/v1/queues")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setQueues(data.map((q: any, i: number) => ({
+            id: q.id,
+            name: q.name,
+            description: q.description || "",
+            color: ["#3B82F6", "#10B981", "#DC2626", "#8B5CF6", "#F59E0B", "#06B6D4"][i % 6],
+            icon: ["📨", "🌐", "🛡️", "☁️", "📋", "🎯"][i % 6],
+            assignedAgents: 0,
+            openTickets: 0,
+            isDefault: q.isDefault || false,
+            isActive: true,
+          })));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
 
   function toggleActive(id: string) {
     setQueues((prev) =>

@@ -38,7 +38,7 @@ export function AteraMappingModal({ open, organizationName, onClose, onPick }: P
         if (json.success && Array.isArray(json.data)) {
           setCompanies(json.data);
         } else {
-          setError(json.error || "Échec du chargement des companies Atera");
+          setError(json.error || "Échec du chargement des entreprises Atera");
         }
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
@@ -84,10 +84,10 @@ export function AteraMappingModal({ open, organizationName, onClose, onPick }: P
             </div>
             <div className="min-w-0">
               <h2 className="text-[17px] font-semibold tracking-tight text-slate-900">
-                Mapper avec une company Atera
+                Mapper avec une entreprise Atera
               </h2>
               <p className="text-[12.5px] text-slate-500 truncate">
-                Sélectionnez la company Atera qui correspond à{" "}
+                Sélectionnez la entreprise Atera qui correspond à{" "}
                 <strong>{organizationName}</strong> pour permettre la
                 synchronisation des actifs.
               </p>
@@ -109,7 +109,7 @@ export function AteraMappingModal({ open, organizationName, onClose, onPick }: P
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Rechercher une company Atera..."
+              placeholder="Rechercher une entreprise Atera..."
               className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-[13px] text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
@@ -119,7 +119,7 @@ export function AteraMappingModal({ open, organizationName, onClose, onPick }: P
           {loading ? (
             <div className="flex flex-col items-center py-12 text-[13px] text-slate-500 gap-2">
               <Loader2 className="h-5 w-5 animate-spin" />
-              Chargement des companies Atera...
+              Chargement des entreprises Atera...
             </div>
           ) : error ? (
             <div className="text-center py-12 text-[13px] text-red-600">
@@ -128,8 +128,8 @@ export function AteraMappingModal({ open, organizationName, onClose, onPick }: P
           ) : filtered.length === 0 ? (
             <div className="text-center py-12 text-[13px] text-slate-500">
               {companies.length === 0
-                ? "Aucune company trouvée dans Atera"
-                : `Aucune company trouvée pour « ${search} »`}
+                ? "Aucune entreprise trouvée dans Atera"
+                : `Aucune entreprise trouvée pour « ${search} »`}
             </div>
           ) : (
             <ul className="space-y-1.5">

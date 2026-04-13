@@ -61,7 +61,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               className="absolute inset-0 bg-slate-900/50"
               onClick={() => setMobileMenuOpen(false)}
             />
-            <div className="relative w-[280px] h-full">
+            <div className="relative w-[min(280px,85vw)] h-full">
               <Sidebar />
               <button
                 onClick={() => setMobileMenuOpen(false)}

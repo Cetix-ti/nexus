@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { suggestCategory, saveCategoryFeedback } from "@/lib/ai/service";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 /** POST — suggest category for a ticket */
 export async function POST(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { subject, description, action, suggestedCategory, confirmedCategory } =
       await req.json();

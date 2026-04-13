@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { PageLoader } from "@/components/ui/page-loader";
 import {
   Receipt,
@@ -409,7 +410,9 @@ export default function BillingPage() {
                 {timeByOrg.map((o) => (
                   <tr key={o.organizationId} className="hover:bg-slate-50/50">
                     <td className="px-4 py-3 text-[13px] font-medium text-slate-900">
-                      {o.organizationName}
+                      <Link href={`/organizations/${o.organizationId}`} className="text-blue-600 hover:underline">
+                        {o.organizationName}
+                      </Link>
                     </td>
                     <td className="px-4 py-3 text-[12.5px] text-slate-600">
                       {o.contractType}
@@ -457,10 +460,11 @@ export default function BillingPage() {
               >
                 <div>
                   <div className="font-medium text-slate-900">
-                    {t.organizationName} · {t.ticketNumber}
+                    <Link href={`/organizations/${t.organizationId}`} className="text-blue-600 hover:underline">{t.organizationName}</Link>{" · "}
+                    <Link href={`/tickets/${t.ticketId}`} className="text-blue-600 hover:underline">{t.ticketNumber}</Link>
                   </div>
                   <div className="text-[12.5px] text-slate-500">
-                    {t.fromLocation} → {t.toLocation} · {t.distanceKm} km
+                    <span className="text-blue-600">{t.agentName}</span> · {t.fromLocation} → {t.toLocation} · {t.distanceKm} km
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -487,10 +491,11 @@ export default function BillingPage() {
               >
                 <div>
                   <div className="font-medium text-slate-900">
-                    {e.organizationName} · {e.ticketNumber}
+                    <Link href={`/organizations/${e.organizationId}`} className="text-blue-600 hover:underline">{e.organizationName}</Link>{" · "}
+                    <Link href={`/tickets/${e.ticketId}`} className="text-blue-600 hover:underline">{e.ticketNumber}</Link>
                   </div>
                   <div className="text-[12.5px] text-slate-500">
-                    {e.description}
+                    <span className="text-blue-600">{e.agentName}</span> · {e.description}
                   </div>
                 </div>
                 <div className="flex items-center gap-3">

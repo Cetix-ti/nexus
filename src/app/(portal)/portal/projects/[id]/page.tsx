@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -11,45 +11,57 @@ import {
   CalendarCheck,
   CheckCircle2,
   Clock,
-  Flag,
   Layers,
   ListChecks,
+  Loader2,
   Lock,
   Ticket as TicketIcon,
   Users,
-  Activity as ActivityIcon,
   Circle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProjectKanbanView } from "@/components/projects/project-kanban-view";
 import {
-  mockProjects,
-  mockProjectPhases,
-  mockProjectMilestones,
-  mockProjectTasks,
-  mockProjectActivities,
-  mockProjectMembers,
-} from "@/lib/projects/mock-data";
-import {
   PROJECT_STATUS_LABELS,
   PROJECT_STATUS_COLORS,
   PROJECT_TYPE_LABELS,
-  PHASE_STATUS_LABELS,
   TASK_STATUS_LABELS,
   TASK_STATUS_COLORS,
-  MILESTONE_STATUS_LABELS,
-  PROJECT_ROLE_LABELS,
 } from "@/lib/projects/types";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 
-type Tab =
-  | "overview"
-  | "milestones"
-  | "phases"
-  | "tasks"
-  | "kanban"
-  | "tickets"
-  | "activity";
+/** Shape returned by GET /api/v1/portal/projects/:id */
+interface PortalProjectDetail {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  status: string;
+  priority: string;
+  type: string;
+  managerName: string;
+  organizationName: string;
+  startDate: string;
+  targetEndDate: string;
+  progressPercent: number;
+  consumedHours: number;
+  budgetHours: number | null;
+  isAtRisk: boolean;
+  tags: string[];
+  taskCount: number;
+  completedTaskCount: number;
+  tasks: {
+    id: string;
+    name: string;
+    description: string | null;
+    status: string;
+    priority: string;
+    dueDate: string | null;
+    progressPercent: number;
+  }[];
+}
+
+type Tab = "overview" | "tasks" | "kanban" | "tickets";
 
 export default function PortalProjectDetailPage({
   params,
@@ -57,18 +69,45 @@ export default function PortalProjectDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { organizationId: orgId, permissions: portalPerms } = usePortalUser();
+  const { permissions: portalPerms } = usePortalUser();
   const [tab, setTab] = useState<Tab>("overview");
+  const [project, setProject] = useState<PortalProjectDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
 
-  const project = mockProjects.find((p) => p.id === id);
+  const fetchProject = useCallback(async () => {
+    try {
+      setLoading(true);
+      setNotFound(false);
+      const res = await fetch(`/api/v1/portal/projects/${id}`);
+      if (res.status === 404 || res.status === 403 || res.status === 401) {
+        setNotFound(true);
+        return;
+      }
+      if (!res.ok) throw new Error("Erreur serveur");
+      const json = await res.json();
+      setProject(json.data ?? null);
+      if (!json.data) setNotFound(true);
+    } catch {
+      setNotFound(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
-  // Strict access control
-  if (
-    !project ||
-    project.organizationId !== orgId ||
-    !project.isVisibleToClient ||
-    !project.visibilitySettings.showProject
-  ) {
+  useEffect(() => {
+    fetchProject();
+  }, [fetchProject]);
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-6xl flex items-center justify-center py-24">
+        <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
+      </div>
+    );
+  }
+
+  if (notFound || !project) {
     return (
       <div className="mx-auto max-w-6xl">
         <Link
@@ -117,78 +156,16 @@ export default function PortalProjectDetailPage({
     );
   }
 
-  const v = project.visibilitySettings;
-  const colors = PROJECT_STATUS_COLORS[project.status];
-
-  const phases = useMemo(
-    () =>
-      mockProjectPhases.filter(
-        (p) => p.projectId === project.id && p.isVisibleToClient
-      ),
-    [project.id]
-  );
-  const milestones = useMemo(
-    () =>
-      mockProjectMilestones.filter(
-        (m) => m.projectId === project.id && m.isVisibleToClient
-      ),
-    [project.id]
-  );
-  const tasks = useMemo(
-    () =>
-      mockProjectTasks.filter(
-        (t) => t.projectId === project.id && t.isVisibleToClient
-      ),
-    [project.id]
-  );
-  const activities = useMemo(
-    () =>
-      mockProjectActivities.filter(
-        (a) => a.projectId === project.id && a.isVisibleToClient
-      ),
-    [project.id]
-  );
-  const members = useMemo(
-    () => mockProjectMembers.filter((m) => m.projectId === project.id),
-    [project.id]
-  );
-
-  // Mock linked tickets
-  const linkedTickets = [
-    {
-      id: "INC-1042",
-      subject: "Problème de synchronisation Outlook",
-      status: "En cours",
-    },
-    {
-      id: "INC-1039",
-      subject: "Demande de migration boîte partagée",
-      status: "Résolu",
-    },
-  ];
+  const colors = PROJECT_STATUS_COLORS[project.status as keyof typeof PROJECT_STATUS_COLORS];
+  const tasks = project.tasks ?? [];
 
   const tabs: { key: Tab; label: string; icon: typeof Layers; show: boolean }[] = [
     { key: "overview", label: "Vue d'ensemble", icon: Layers, show: true },
     {
-      key: "milestones",
-      label: "Jalons",
-      icon: Flag,
-      show: v.showMilestones && milestones.length > 0,
-    },
-    {
-      key: "phases",
-      label: "Phases",
-      icon: Layers,
-      show: v.showPhases && phases.length > 0,
-    },
-    {
       key: "tasks",
       label: "Tâches",
       icon: ListChecks,
-      show:
-        v.showTasks &&
-        portalPerms.canSeeProjectTasks &&
-        tasks.length > 0,
+      show: portalPerms.canSeeProjectTasks && tasks.length > 0,
     },
     {
       key: "kanban",
@@ -200,25 +177,9 @@ export default function PortalProjectDetailPage({
       key: "tickets",
       label: "Tickets",
       icon: TicketIcon,
-      show:
-        v.showLinkedTickets &&
-        portalPerms.canSeeProjectLinkedTickets,
-    },
-    {
-      key: "activity",
-      label: "Activité",
-      icon: ActivityIcon,
-      show: v.showActivity && activities.length > 0,
+      show: portalPerms.canSeeProjectLinkedTickets,
     },
   ];
-
-  const upcomingMilestones = milestones
-    .filter((m) => m.status === "upcoming" || m.status === "approaching")
-    .sort(
-      (a, b) =>
-        new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime()
-    )
-    .slice(0, 3);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -241,10 +202,10 @@ export default function PortalProjectDetailPage({
             )}
           >
             <span className={cn("h-1.5 w-1.5 rounded-full", colors.dot)} />
-            {PROJECT_STATUS_LABELS[project.status]}
+            {PROJECT_STATUS_LABELS[project.status as keyof typeof PROJECT_STATUS_LABELS]}
           </span>
           <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">
-            {PROJECT_TYPE_LABELS[project.type]}
+            {PROJECT_TYPE_LABELS[project.type as keyof typeof PROJECT_TYPE_LABELS]}
           </span>
           {project.isAtRisk && (
             <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-200">
@@ -353,25 +314,19 @@ export default function PortalProjectDetailPage({
               <div className="flex justify-between">
                 <dt className="text-neutral-500">Type</dt>
                 <dd className="font-medium text-neutral-800">
-                  {PROJECT_TYPE_LABELS[project.type]}
+                  {PROJECT_TYPE_LABELS[project.type as keyof typeof PROJECT_TYPE_LABELS]}
                 </dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-neutral-500">Statut</dt>
                 <dd className="font-medium text-neutral-800">
-                  {PROJECT_STATUS_LABELS[project.status]}
+                  {PROJECT_STATUS_LABELS[project.status as keyof typeof PROJECT_STATUS_LABELS]}
                 </dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-neutral-500">Phases</dt>
+                <dt className="text-neutral-500">Tâches</dt>
                 <dd className="font-medium text-neutral-800">
-                  {project.phaseCount}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-neutral-500">Jalons</dt>
-                <dd className="font-medium text-neutral-800">
-                  {project.milestoneCount}
+                  {project.completedTaskCount} / {project.taskCount}
                 </dd>
               </div>
             </dl>
@@ -379,249 +334,88 @@ export default function PortalProjectDetailPage({
 
           <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
             <h3 className="text-sm font-semibold text-neutral-900">
-              Prochaines étapes
+              Statistiques
             </h3>
-            {upcomingMilestones.length === 0 ? (
-              <p className="mt-4 text-sm text-neutral-400">
-                Aucun jalon à venir.
+            <div className="mt-4">
+              <div className="flex items-center gap-2 text-neutral-500">
+                <Clock className="h-4 w-4" />
+                <span className="text-sm">Heures consommées</span>
+              </div>
+              <p className="mt-2 text-3xl font-bold text-neutral-900">
+                {project.consumedHours.toFixed(1)}{" "}
+                <span className="text-base font-medium text-neutral-400">
+                  h
+                </span>
               </p>
-            ) : (
-              <ul className="mt-4 space-y-3">
-                {upcomingMilestones.map((m) => (
-                  <li key={m.id} className="flex items-start gap-3">
-                    <Flag className="h-4 w-4 text-violet-500 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-neutral-800">
-                        {m.name}
-                      </p>
-                      <p className="text-xs text-neutral-500">
-                        {format(new Date(m.targetDate), "d MMM yyyy", {
-                          locale: fr,
-                        })}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+              {project.budgetHours && (
+                <p className="mt-1 text-xs text-neutral-500">
+                  sur {project.budgetHours} h budgétées
+                </p>
+              )}
+            </div>
           </div>
 
-          {v.showTimeConsumed && (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-neutral-900">
-                Statistiques
-              </h3>
-              <div className="mt-4">
-                <div className="flex items-center gap-2 text-neutral-500">
-                  <Clock className="h-4 w-4" />
-                  <span className="text-sm">Heures consommées</span>
-                </div>
-                <p className="mt-2 text-3xl font-bold text-neutral-900">
-                  {project.consumedHours.toFixed(1)}{" "}
-                  <span className="text-base font-medium text-neutral-400">
-                    h
-                  </span>
-                </p>
-                {v.showBudgetVsActual && project.budgetHours && (
-                  <p className="mt-1 text-xs text-neutral-500">
-                    sur {project.budgetHours} h budgétées
-                  </p>
-                )}
+          <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+            <h3 className="text-sm font-semibold text-neutral-900">
+              Responsable
+            </h3>
+            <div className="mt-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-[#2563EB] font-semibold text-sm">
+                {project.managerName
+                  .split(" ")
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join("")}
               </div>
+              <p className="text-sm font-medium text-neutral-800">
+                {project.managerName}
+              </p>
             </div>
-          )}
-
-          {v.showTeamMembers && portalPerms.canSeeTeamMembers && (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm lg:col-span-3">
-              <h3 className="text-sm font-semibold text-neutral-900">
-                Équipe Cetix
-              </h3>
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {members.map((m) => (
-                  <div
-                    key={m.id}
-                    className="flex items-center gap-3 rounded-xl border border-neutral-100 bg-neutral-50 p-3"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-[#2563EB] font-semibold text-sm">
-                      {m.agentName
-                        .split(" ")
-                        .map((n) => n[0])
-                        .slice(0, 2)
-                        .join("")}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-neutral-800 truncate">
-                        {m.agentName}
-                      </p>
-                      <p className="text-xs text-neutral-500">
-                        {PROJECT_ROLE_LABELS[m.role]}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === "milestones" && (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-          <ol className="relative space-y-6 border-l-2 border-neutral-100 pl-6">
-            {milestones.map((m) => {
-              const achieved = m.status === "achieved";
-              return (
-                <li key={m.id} className="relative">
-                  <span
-                    className={cn(
-                      "absolute -left-[33px] flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white",
-                      achieved
-                        ? "bg-emerald-500"
-                        : m.status === "missed"
-                        ? "bg-red-500"
-                        : "bg-violet-500"
-                    )}
-                  >
-                    {achieved ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-white" />
-                    ) : (
-                      <Flag className="h-3 w-3 text-white" />
-                    )}
-                  </span>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold text-neutral-900">
-                      {m.name}
-                    </h4>
-                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
-                      {MILESTONE_STATUS_LABELS[m.status]}
-                    </span>
-                    {m.isCriticalPath && (
-                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                        Chemin critique
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-sm text-neutral-500">{m.description}</p>
-                  <p className="mt-1 text-xs text-neutral-400">
-                    Cible :{" "}
-                    {format(new Date(m.targetDate), "d MMM yyyy", {
-                      locale: fr,
-                    })}
-                    {m.achievedDate && (
-                      <>
-                        {" • "}Atteint :{" "}
-                        {format(new Date(m.achievedDate), "d MMM yyyy", {
-                          locale: fr,
-                        })}
-                      </>
-                    )}
-                  </p>
-                </li>
-              );
-            })}
-          </ol>
-        </div>
-      )}
-
-      {tab === "phases" && (
-        <div className="space-y-4">
-          {phases.map((p) => (
-            <div
-              key={p.id}
-              className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs text-neutral-400">
-                    Phase {p.order}
-                  </p>
-                  <h4 className="mt-0.5 text-base font-semibold text-neutral-900">
-                    {p.name}
-                  </h4>
-                  <p className="mt-1 text-sm text-neutral-500">
-                    {p.description}
-                  </p>
-                </div>
-                <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600 shrink-0">
-                  {PHASE_STATUS_LABELS[p.status]}
-                </span>
-              </div>
-              <div className="mt-4">
-                <div className="flex items-center justify-between text-xs text-neutral-500 mb-1.5">
-                  <span>Avancement</span>
-                  <span className="font-semibold text-neutral-700">
-                    {p.progressPercent}%
-                  </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-100">
-                  <div
-                    className="h-full rounded-full bg-[#2563EB]"
-                    style={{ width: `${p.progressPercent}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
+          </div>
         </div>
       )}
 
       {tab === "tasks" && (
-        <div className="space-y-6">
-          {phases.map((phase) => {
-            const phaseTasks = tasks.filter((t) => t.phaseId === phase.id);
-            if (phaseTasks.length === 0) return null;
-            return (
-              <div
-                key={phase.id}
-                className="rounded-2xl border border-neutral-200 bg-white shadow-sm"
-              >
-                <div className="border-b border-neutral-100 px-6 py-4">
-                  <h4 className="text-sm font-semibold text-neutral-900">
-                    {phase.name}
-                  </h4>
-                </div>
-                <ul className="divide-y divide-neutral-100">
-                  {phaseTasks.map((t) => {
-                    const tc = TASK_STATUS_COLORS[t.status];
-                    return (
-                      <li
-                        key={t.id}
-                        className="flex items-center gap-4 px-6 py-4"
-                      >
-                        {t.status === "completed" ? (
-                          <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-                        ) : (
-                          <Circle className="h-5 w-5 text-neutral-300 shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-neutral-800">
-                            {t.name}
-                          </p>
-                          {t.dueDate && (
-                            <p className="text-xs text-neutral-400">
-                              Échéance :{" "}
-                              {format(new Date(t.dueDate), "d MMM yyyy", {
-                                locale: fr,
-                              })}
-                            </p>
-                          )}
-                        </div>
-                        <span
-                          className={cn(
-                            "rounded-full px-2.5 py-0.5 text-[11px] font-medium",
-                            tc.bg,
-                            tc.text
-                          )}
-                        >
-                          {TASK_STATUS_LABELS[t.status]}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })}
+        <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm">
+          <ul className="divide-y divide-neutral-100">
+            {tasks.map((t) => {
+              const tc = TASK_STATUS_COLORS[t.status as keyof typeof TASK_STATUS_COLORS];
+              return (
+                <li
+                  key={t.id}
+                  className="flex items-center gap-4 px-6 py-4"
+                >
+                  {t.status === "completed" ? (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                  ) : (
+                    <Circle className="h-5 w-5 text-neutral-300 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-neutral-800">
+                      {t.name}
+                    </p>
+                    {t.dueDate && (
+                      <p className="text-xs text-neutral-400">
+                        Échéance :{" "}
+                        {format(new Date(t.dueDate), "d MMM yyyy", {
+                          locale: fr,
+                        })}
+                      </p>
+                    )}
+                  </div>
+                  <span
+                    className={cn(
+                      "rounded-full px-2.5 py-0.5 text-[11px] font-medium",
+                      tc.bg,
+                      tc.text
+                    )}
+                  >
+                    {TASK_STATUS_LABELS[t.status as keyof typeof TASK_STATUS_LABELS]}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 
@@ -632,52 +426,18 @@ export default function PortalProjectDetailPage({
       )}
 
       {tab === "tickets" && (
-        <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm">
-          <ul className="divide-y divide-neutral-100">
-            {linkedTickets.map((t) => (
-              <li
-                key={t.id}
-                className="flex items-center gap-4 px-6 py-4 hover:bg-neutral-50"
-              >
-                <TicketIcon className="h-4 w-4 text-[#2563EB]" />
-                <span className="font-mono text-xs text-neutral-400">
-                  {t.id}
-                </span>
-                <span className="flex-1 text-sm font-medium text-neutral-800">
-                  {t.subject}
-                </span>
-                <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-medium text-blue-700">
-                  {t.status}
-                </span>
-              </li>
-            ))}
-          </ul>
+        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-[#2563EB]">
+            <TicketIcon className="h-7 w-7" />
+          </div>
+          <h3 className="mt-4 text-base font-semibold text-neutral-900">
+            Tickets liés
+          </h3>
+          <p className="mt-1.5 text-sm text-neutral-500">
+            Les tickets liés à ce projet seront affichés ici prochainement.
+          </p>
         </div>
       )}
-
-      {tab === "activity" && (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-          <ol className="relative space-y-5 border-l-2 border-neutral-100 pl-6">
-            {activities.map((a) => (
-              <li key={a.id} className="relative">
-                <span className="absolute -left-[29px] flex h-4 w-4 items-center justify-center rounded-full bg-[#2563EB] ring-4 ring-white" />
-                <p className="text-sm text-neutral-800">
-                  <span className="font-semibold">{a.authorName}</span>{" "}
-                  {a.content}
-                </p>
-                <p className="mt-0.5 text-xs text-neutral-400">
-                  {format(new Date(a.createdAt), "d MMM yyyy 'à' HH:mm", {
-                    locale: fr,
-                  })}
-                </p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-
-      {/* Hidden value to satisfy unused lint */}
-      <span className="hidden">{""}</span>
     </div>
   );
 }

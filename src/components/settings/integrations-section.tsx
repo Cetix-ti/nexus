@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Plug,
   CheckCircle2,
@@ -30,13 +31,7 @@ import {
 
 const PROVIDER_COLORS: Record<string, string> = {
   atera: "from-emerald-500 to-teal-600",
-  ninja_one: "from-red-500 to-rose-600",
   quickbooks_online: "from-green-600 to-emerald-700",
-  slack: "from-fuchsia-500 to-purple-600",
-  microsoft_teams: "from-violet-500 to-indigo-600",
-  pagerduty: "from-emerald-600 to-green-700",
-  it_glue: "from-blue-500 to-indigo-600",
-  veeam: "from-emerald-500 to-green-600",
 };
 
 function getProviderInitials(name: string): string {
@@ -60,6 +55,7 @@ function relativeTime(iso?: string): string {
 }
 
 export function IntegrationsSection() {
+  const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<
     IntegrationCategory | "all"
@@ -73,6 +69,87 @@ export function IntegrationsSection() {
     ok: boolean;
     message: string;
   } | null>(null);
+  const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
+  const [showQboConfig, setShowQboConfig] = useState(false);
+  const [qboSaving, setQboSaving] = useState(false);
+  const [qboForm, setQboForm] = useState({
+    clientId: "", clientSecret: "", redirectUri: "", sandbox: true,
+    realmId: "", accessToken: "", refreshToken: "", companyName: "",
+  });
+
+  // Load QBO config when panel opens
+  useEffect(() => {
+    if (showQboConfig) {
+      fetch("/api/v1/integrations/quickbooks/config")
+        .then((r) => r.ok ? r.json() : null)
+        .then((d) => {
+          if (d) setQboForm({
+            clientId: d.clientId || "",
+            clientSecret: d.clientSecret || "",
+            redirectUri: d.redirectUri || "",
+            sandbox: d.sandbox ?? true,
+            realmId: d.realmId || "",
+            accessToken: d.accessToken || "",
+            refreshToken: d.refreshToken || "",
+            companyName: d.companyName || "",
+          });
+        })
+        .catch(() => {});
+    }
+  }, [showQboConfig]);
+
+  async function saveQboConfig() {
+    setQboSaving(true);
+    try {
+      const res = await fetch("/api/v1/integrations/quickbooks/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(qboForm),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTestResult({ id: "int_quickbooks", ok: true, message: "Configuration QuickBooks sauvegardée avec succès" + (data.isConnected ? ` — Connecté à ${data.companyName || "QuickBooks"}` : "") });
+        setShowQboConfig(false);
+        // Refresh status
+        fetch("/api/v1/integrations/quickbooks")
+          .then((r) => r.ok ? r.json() : null)
+          .then((s) => {
+            if (s?.isConnected) {
+              setIntegrations((prev) =>
+                prev.map((i) => i.provider === "quickbooks_online" ? { ...i, status: "connected", connectedAt: s.connectedAt } : i)
+              );
+            }
+          });
+      } else {
+        setTestResult({ id: "int_quickbooks", ok: false, message: data.error || "Erreur de sauvegarde" });
+      }
+    } catch {
+      setTestResult({ id: "int_quickbooks", ok: false, message: "Erreur réseau" });
+    } finally {
+      setQboSaving(false);
+    }
+  }
+
+  async function disconnectQbo() {
+    if (!confirm("Déconnecter QuickBooks ? Les tokens seront supprimés.")) return;
+    try {
+      await fetch("/api/v1/integrations/quickbooks/config", { method: "DELETE" });
+      setIntegrations((prev) =>
+        prev.map((i) => i.provider === "quickbooks_online" ? { ...i, status: "not_connected", connectedAt: undefined, lastSyncAt: undefined, totalRecordsSynced: 0 } : i)
+      );
+      setTestResult({ id: "int_quickbooks", ok: true, message: "QuickBooks déconnecté" });
+    } catch {}
+  }
+
+  // Show QBO OAuth result from callback redirect
+  useEffect(() => {
+    const qbo = searchParams.get("qbo");
+    if (qbo === "success") {
+      setTestResult({ id: "int_quickbooks", ok: true, message: "Connexion QuickBooks réussie !" });
+    } else if (qbo === "error" || qbo === "missing") {
+      setTestResult({ id: "int_quickbooks", ok: false, message: "Erreur lors de la connexion à QuickBooks. Veuillez réessayer." });
+    }
+  }, [searchParams]);
 
   // Auto-test Atera at mount to reflect real state instead of hardcoded mock
   useEffect(() => {
@@ -93,9 +170,32 @@ export function IntegrationsSection() {
           )
         );
       })
-      .catch(() => {
-        /* leave as not_connected */
-      });
+      .catch(() => {});
+  }, []);
+
+  // Auto-check QuickBooks connection status at mount
+  useEffect(() => {
+    fetch("/api/v1/integrations/quickbooks")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data) return;
+        if (data.isConnected) {
+          setIntegrations((prev) =>
+            prev.map((i) =>
+              i.provider === "quickbooks_online"
+                ? {
+                    ...i,
+                    status: "connected",
+                    connectedAt: data.connectedAt,
+                    lastSyncAt: data.connectedAt,
+                    totalRecordsSynced: 0,
+                  }
+                : i
+            )
+          );
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const filtered = useMemo(() => {
@@ -123,6 +223,27 @@ export function IntegrationsSection() {
     }
     return Array.from(map.entries());
   }, [filtered]);
+
+  async function handleConnectQuickBooks(integ: TenantIntegration) {
+    setConnectingProvider(integ.provider);
+    try {
+      const res = await fetch("/api/v1/integrations/quickbooks");
+      const data = await res.json();
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      } else if (data.isConnected) {
+        setTestResult({ id: integ.id, ok: true, message: "QuickBooks est déjà connecté." });
+      } else if (!data.hasCredentials) {
+        setTestResult({ id: integ.id, ok: false, message: "Identifiants QuickBooks manquants. Configurez QUICKBOOKS_CLIENT_ID et QUICKBOOKS_CLIENT_SECRET dans le fichier .env" });
+      } else {
+        setTestResult({ id: integ.id, ok: false, message: data.error || "Erreur inconnue lors de la connexion QuickBooks." });
+      }
+    } catch (err) {
+      setTestResult({ id: integ.id, ok: false, message: err instanceof Error ? err.message : "Erreur réseau" });
+    } finally {
+      setConnectingProvider(null);
+    }
+  }
 
   async function handleTestAtera(integ: TenantIntegration) {
     setTestingId(integ.id);
@@ -321,16 +442,69 @@ export function IntegrationsSection() {
                             Tester
                           </Button>
                         )}
-                        <Button variant="ghost" size="sm">
+                        {integ.provider === "quickbooks_online" && isConnected && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            loading={testingId === integ.id}
+                            onClick={async () => {
+                              setTestingId(integ.id);
+                              setTestResult(null);
+                              try {
+                                const res = await fetch("/api/v1/integrations/quickbooks/sync?section=invoices");
+                                const data = await res.json();
+                                if (data.error) {
+                                  setTestResult({ id: integ.id, ok: false, message: data.error });
+                                } else {
+                                  const count = data.invoices?.length ?? 0;
+                                  setTestResult({ id: integ.id, ok: true, message: `Connexion réussie — ${count} factures trouvées dans QuickBooks` });
+                                  setIntegrations((prev) =>
+                                    prev.map((i) =>
+                                      i.id === integ.id
+                                        ? { ...i, lastSyncAt: new Date().toISOString(), totalRecordsSynced: count }
+                                        : i
+                                    )
+                                  );
+                                }
+                              } catch (err) {
+                                setTestResult({ id: integ.id, ok: false, message: err instanceof Error ? err.message : "Erreur réseau" });
+                              } finally {
+                                setTestingId(null);
+                              }
+                            }}
+                          >
+                            <RefreshCw className="h-3 w-3" strokeWidth={2.25} />
+                            Tester
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => {
+                          if (integ.provider === "quickbooks_online") setShowQboConfig(!showQboConfig);
+                        }}>
                           <SettingsIcon className="h-3 w-3" strokeWidth={2.25} />
                           Configurer
                         </Button>
                       </div>
                       {isConnected ? (
-                        <button className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700">
-                          Détails
-                          <ExternalLink className="h-2.5 w-2.5" />
-                        </button>
+                        integ.provider === "quickbooks_online" ? (
+                          <button onClick={disconnectQbo} className="inline-flex items-center gap-1 text-[11px] font-medium text-red-500 hover:text-red-700">
+                            Déconnecter
+                          </button>
+                        ) : (
+                          <button className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700">
+                            Détails
+                            <ExternalLink className="h-2.5 w-2.5" />
+                          </button>
+                        )
+                      ) : integ.provider === "quickbooks_online" ? (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          loading={connectingProvider === integ.provider}
+                          onClick={() => handleConnectQuickBooks(integ)}
+                        >
+                          <Plug className="h-3 w-3" strokeWidth={2.25} />
+                          Connecter
+                        </Button>
                       ) : (
                         <Button variant="primary" size="sm">
                           <Plug className="h-3 w-3" strokeWidth={2.25} />
@@ -345,6 +519,99 @@ export function IntegrationsSection() {
           </div>
         </div>
       ))}
+
+      {/* QuickBooks Configuration Panel */}
+      {showQboConfig && (
+        <Card className="border-green-200 bg-green-50/20">
+          <CardContent className="p-5 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-600 to-emerald-700 flex items-center justify-center text-white text-[10px] font-bold">QB</div>
+                <div>
+                  <h3 className="text-[15px] font-semibold text-slate-900">Configuration QuickBooks Online</h3>
+                  <p className="text-[11px] text-slate-500">Remplissez les champs puis cliquez Enregistrer</p>
+                </div>
+              </div>
+              <button onClick={() => setShowQboConfig(false)} className="text-slate-400 hover:text-slate-600 rounded-lg p-1 hover:bg-slate-100">&times;</button>
+            </div>
+
+            {/* Section 1: OAuth App Credentials */}
+            <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+              <h4 className="text-[12px] font-semibold text-slate-800">1. Identifiants de l&apos;application OAuth2</h4>
+              <p className="text-[11px] text-slate-400">Disponibles dans votre app sur <a href="https://developer.intuit.com/app/developer/dashboard" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">developer.intuit.com</a></p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[12px] font-medium text-slate-700 mb-1">Client ID <span className="text-red-500">*</span></label>
+                  <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none" placeholder="ABxxxxxxxxxxxxxxxxxx" value={qboForm.clientId} onChange={(e) => setQboForm((f) => ({ ...f, clientId: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-slate-700 mb-1">Client Secret <span className="text-red-500">*</span></label>
+                  <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" value={qboForm.clientSecret} onChange={(e) => setQboForm((f) => ({ ...f, clientSecret: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-slate-700 mb-1">Redirect URI</label>
+                  <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none" placeholder="https://nexus.cetix.ca/api/v1/integrations/quickbooks/callback" value={qboForm.redirectUri} onChange={(e) => setQboForm((f) => ({ ...f, redirectUri: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-slate-700 mb-1">Environnement</label>
+                  <div className="flex items-center gap-4 mt-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="qbo-env" checked={qboForm.sandbox} onChange={() => setQboForm((f) => ({ ...f, sandbox: true }))} className="accent-green-600" />
+                      <span className="text-[13px] text-slate-700">Sandbox (test)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="qbo-env" checked={!qboForm.sandbox} onChange={() => setQboForm((f) => ({ ...f, sandbox: false }))} className="accent-green-600" />
+                      <span className="text-[13px] font-medium text-slate-900">Production</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Connection (manual tokens) */}
+            <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+              <h4 className="text-[12px] font-semibold text-slate-800">2. Connexion au compte QuickBooks</h4>
+              <p className="text-[11px] text-slate-400">
+                <strong>Option A :</strong> Enregistrez la section 1, puis utilisez le bouton « Connecter » pour l&apos;OAuth automatique.<br />
+                <strong>Option B :</strong> Entrez manuellement les tokens ci-dessous pour une connexion directe.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[12px] font-medium text-slate-700 mb-1">Realm ID (Company ID)</label>
+                  <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] font-mono focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none" placeholder="123456789" value={qboForm.realmId} onChange={(e) => setQboForm((f) => ({ ...f, realmId: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-slate-700 mb-1">Nom de la compagnie</label>
+                  <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none" placeholder="Cetix Inc." value={qboForm.companyName} onChange={(e) => setQboForm((f) => ({ ...f, companyName: e.target.value }))} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-[12px] font-medium text-slate-700 mb-1">Access Token</label>
+                  <textarea className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[11px] font-mono h-16 resize-y focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none" placeholder="eyJhbGciOiJSUzI1NiIsImtpZCI6..." value={qboForm.accessToken} onChange={(e) => setQboForm((f) => ({ ...f, accessToken: e.target.value }))} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-[12px] font-medium text-slate-700 mb-1">Refresh Token</label>
+                  <textarea className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[11px] font-mono h-16 resize-y focus:border-green-500 focus:ring-2 focus:ring-green-500/20 focus:outline-none" placeholder="AB11..." value={qboForm.refreshToken} onChange={(e) => setQboForm((f) => ({ ...f, refreshToken: e.target.value }))} />
+                </div>
+              </div>
+            </div>
+
+            {/* Status + Actions */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-3 border-t border-green-200">
+              <div className="text-[11px] text-slate-500 space-y-0.5">
+                <p>Environnement : <strong>{qboForm.sandbox ? "Sandbox" : "Production"}</strong></p>
+                {qboForm.realmId && <p>Realm ID : <span className="font-mono">{qboForm.realmId}</span></p>}
+                {qboForm.accessToken && <p className="text-emerald-600 font-medium">✓ Access token fourni</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setShowQboConfig(false)}>Annuler</Button>
+                <Button variant="primary" size="sm" loading={qboSaving} onClick={saveQboConfig}>
+                  Enregistrer
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Add custom integration */}
       <Card className="border-dashed">

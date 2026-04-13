@@ -1,11 +1,16 @@
 import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { successResponse } from "@/lib/api-helpers";
 import type { AssetSource, OrgAsset } from "@/lib/assets/types";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { id } = await params;
   let provider: AssetSource = "atera";
   try {

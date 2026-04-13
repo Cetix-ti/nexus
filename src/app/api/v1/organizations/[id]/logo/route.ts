@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { uploadOrgLogo, deleteFile, extractKeyFromUrl } from "@/lib/storage/minio";
 import { optimizeToDataUri, optimizeImage, PRESET_LOGO } from "@/lib/images/optimize";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 // Logos sous ce seuil sont stockés en data URI base64 directement dans la
 // colonne `logo` (text) — évite la dépendance MinIO et les problèmes
@@ -28,6 +29,8 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
 
   const org = await prisma.organization.findUnique({ where: { id } });
@@ -122,6 +125,8 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const org = await prisma.organization.findUnique({ where: { id } });
   if (!org) {

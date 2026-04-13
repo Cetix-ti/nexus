@@ -174,7 +174,7 @@ export async function GET() {
       subject: t.subject,
       status: t.status.toLowerCase(),
       priority: t.priority.toLowerCase(),
-      type: t.type === "SERVICE_REQUEST" ? "request" : t.type.toLowerCase(),
+      type: t.type.toLowerCase(),
       organizationName: t.organization?.name ?? "—",
       requesterName: t.requester
         ? `${t.requester.firstName} ${t.requester.lastName}`

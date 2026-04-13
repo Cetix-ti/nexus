@@ -54,5 +54,8 @@ export const authConfig: NextAuthConfig = {
       return true;
     },
   },
-  secret: process.env.NEXTAUTH_SECRET,
+  secret:
+    process.env.AUTH_SECRET ||
+    process.env.NEXTAUTH_SECRET ||
+    "dev-secret-please-change-in-production",
 };

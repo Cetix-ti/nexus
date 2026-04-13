@@ -44,8 +44,13 @@ function contractTypeToBillingMode(type: string | null | undefined): string {
   }
 }
 
-export async function listOrganizations(): Promise<UiOrganization[]> {
+export async function listOrganizations(search?: string): Promise<UiOrganization[]> {
+  const where = search
+    ? { name: { contains: search, mode: "insensitive" as const } }
+    : undefined;
+
   const rows = await prisma.organization.findMany({
+    where,
     include: {
       _count: { select: { sites: true, contacts: true, tickets: true } },
       sites: { take: 1, where: { isMain: true } },

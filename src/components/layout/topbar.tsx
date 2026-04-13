@@ -206,11 +206,7 @@ export function Topbar() {
               />
               {searching ? (
                 <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-slate-400" />
-              ) : (
-                <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 hidden md:inline-flex items-center gap-0.5 h-5 px-1.5 bg-white rounded border border-slate-200 text-[10px] font-medium text-slate-400 shadow-sm">
-                  <span>⌘</span>K
-                </kbd>
-              )}
+              ) : null}
             </div>
 
             {/* Results dropdown */}
@@ -262,9 +258,6 @@ export function Topbar() {
 
           {/* Separator */}
           <div className="w-px h-6 bg-slate-200 mx-1.5" />
-
-          {/* Organization switcher */}
-          <OrgSwitcher />
 
           {/* User menu */}
           <UserMenu />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, Car, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,12 @@ export function AddTravelModal({
   const [durationMinutes, setDuration] = useState(0);
   const [isRoundTrip, setRoundTrip] = useState(true);
   const [notes, setNotes] = useState("");
+  const [currentUserName, setCurrentUserName] = useState("—");
+  useEffect(() => {
+    fetch("/api/v1/me").then((r) => r.ok ? r.json() : null).then((d) => {
+      if (d?.firstName) setCurrentUserName(`${d.firstName} ${d.lastName}`);
+    }).catch(() => {});
+  }, []);
 
   const profile = mockBillingProfiles[0];
   const contract = useMemo(
@@ -84,7 +90,7 @@ export function AddTravelModal({
       organizationId,
       organizationName,
       agentId: "usr_current",
-      agentName: "Jean-Philippe Côté",
+      agentName: currentUserName,
       date: new Date(`${date}T00:00:00`).toISOString(),
       fromLocation,
       toLocation,

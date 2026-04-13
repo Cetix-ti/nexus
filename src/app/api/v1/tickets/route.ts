@@ -1,14 +1,29 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { listTickets, createTicket } from "@/lib/tickets/service";
+import { listTickets, createTicket, typeToDb } from "@/lib/tickets/service";
 import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+
+  // Resolve assignee=me to current user's ID
+  let assigneeId = url.searchParams.get("assigneeId") || undefined;
+  const assigneeParam = url.searchParams.get("assignee");
+  if (assigneeParam === "me") {
+    const me = await getCurrentUser();
+    if (me) assigneeId = me.id;
+  }
+
+  const limitParam = url.searchParams.get("limit");
+  const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+
   const tickets = await listTickets({
     organizationId: url.searchParams.get("organizationId") || undefined,
     status: url.searchParams.get("status") || undefined,
     search: url.searchParams.get("q") || url.searchParams.get("search") || undefined,
+    assigneeId,
+    projectId: url.searchParams.get("projectId") || undefined,
+    limit,
   });
   return NextResponse.json(tickets);
 }
@@ -37,7 +52,10 @@ export async function POST(req: Request) {
         where: { isActive: true },
         select: { id: true },
       });
-      organizationId = firstOrg?.id ?? "unknown";
+      organizationId = firstOrg?.id;
+    }
+    if (!organizationId) {
+      return NextResponse.json({ error: "Organisation non trouvée" }, { status: 400 });
     }
 
     // Resolve requester by name if provided
@@ -59,7 +77,7 @@ export async function POST(req: Request) {
 
     // Resolve assignee by name if provided
     let assigneeId = body.assigneeId;
-    if (!assigneeId && body.assigneeName) {
+    if (!assigneeId && body.assigneeName && body.assigneeName !== "unassigned") {
       const parts = body.assigneeName.split(" ");
       const user = await prisma.user.findFirst({
         where: {
@@ -74,39 +92,46 @@ export async function POST(req: Request) {
       if (user) assigneeId = user.id;
     }
 
-    const creatorId = me?.id ?? body.creatorId;
+    // Resolve creator — current user, then body, then first admin
+    let creatorId = me?.id ?? body.creatorId;
     if (!creatorId) {
-      // Fallback to first admin
       const admin = await prisma.user.findFirst({
         where: { role: { in: ["SUPER_ADMIN", "MSP_ADMIN"] }, isActive: true },
         select: { id: true },
       });
-      if (!admin) return NextResponse.json({ error: "Aucun agent trouvé" }, { status: 500 });
+      creatorId = admin?.id;
+    }
+    if (!creatorId) {
+      const anyUser = await prisma.user.findFirst({
+        where: { isActive: true },
+        select: { id: true },
+      });
+      creatorId = anyUser?.id;
+    }
+    if (!creatorId) {
+      return NextResponse.json({ error: "Aucun agent trouvé" }, { status: 500 });
     }
 
-    // Resolve category by name
+    // Resolve category by name (accept both `category` and `categoryName`)
     let categoryId = body.categoryId ?? null;
-    if (!categoryId && body.category) {
+    const categoryName = body.category || body.categoryName;
+    if (!categoryId && categoryName) {
       const cat = await prisma.category.findFirst({
-        where: { name: { equals: body.category, mode: "insensitive" } },
+        where: { name: { equals: categoryName, mode: "insensitive" } },
         select: { id: true },
       });
       if (cat) categoryId = cat.id;
     }
 
-    // Resolve queue by name
+    // Resolve queue by name (accept both `queue` and `queueName`)
     let queueId = body.queueId ?? null;
-    if (!queueId && body.queue) {
+    const queueName = body.queue || body.queueName;
+    if (!queueId && queueName) {
       const q = await prisma.queue.findFirst({
-        where: { name: { equals: body.queue, mode: "insensitive" } },
+        where: { name: { equals: queueName, mode: "insensitive" } },
         select: { id: true },
       });
       if (q) queueId = q.id;
-    }
-
-    const finalCreatorId = creatorId ?? (await prisma.user.findFirst({ where: { isActive: true }, select: { id: true } }))?.id;
-    if (!finalCreatorId) {
-      return NextResponse.json({ error: "Aucun agent trouvé" }, { status: 500 });
     }
 
     const created = await createTicket({
@@ -115,12 +140,37 @@ export async function POST(req: Request) {
       organizationId,
       requesterId,
       assigneeId,
-      creatorId: finalCreatorId,
-      type: body.type?.toUpperCase() ?? "INCIDENT",
-      priority: body.priority?.toUpperCase() ?? "MEDIUM",
+      creatorId,
+      type: body.type ?? "incident",
+      priority: body.priority ?? "medium",
+      urgency: body.urgency,
+      impact: body.impact,
+      source: body.source,
       categoryId,
       queueId,
     });
+
+    // Handle approval workflow if requested
+    if (body.requireApproval && Array.isArray(body.approvers) && body.approvers.length > 0) {
+      const approvalData = body.approvers.map((a: any, i: number) => ({
+        ticketId: created.id,
+        approverId: a.contactId || a.id || "",
+        approverName: a.name || a.contactName || "",
+        approverEmail: a.email || a.contactEmail || "",
+        role: i === 0 ? "primary" : "secondary",
+      }));
+
+      await prisma.$transaction([
+        prisma.ticketApproval.createMany({ data: approvalData }),
+        prisma.ticket.update({
+          where: { id: created.id },
+          data: {
+            requiresApproval: true,
+            approvalStatus: "PENDING",
+          },
+        }),
+      ]);
+    }
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {

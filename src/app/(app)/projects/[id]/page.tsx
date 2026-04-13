@@ -35,14 +35,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  mockProjects,
-  mockProjectPhases,
-  mockProjectMilestones,
-  mockProjectTasks,
-  mockProjectMembers,
-  mockProjectActivities,
-} from "@/lib/projects/mock-data";
-import {
   PROJECT_STATUS_LABELS,
   PROJECT_STATUS_COLORS,
   PROJECT_TYPE_LABELS,
@@ -55,6 +47,10 @@ import {
   type ProjectVisibilitySettings,
   type ProjectTask,
   type TaskStatus,
+  type Project,
+  type ProjectRole,
+  type PhaseStatus,
+  type MilestoneStatus,
 } from "@/lib/projects/types";
 import { STATUS_CONFIG, PRIORITY_CONFIG } from "@/lib/mock-data";
 import { useTicketsStore } from "@/stores/tickets-store";
@@ -98,37 +94,130 @@ const VISIBILITY_LABELS: Record<keyof ProjectVisibilitySettings, string> = {
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const project = mockProjects.find((p) => p.id === params.id);
+  const [project, setProject] = useState<Project | null>(null);
+  const [tasks, setTasks] = useState<ProjectTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [tab, setTab] = useState<TabKey>("kanban");
 
-  if (!project) {
-    return (
-      <div className="px-6 py-12 text-center">
-        <p className="text-slate-500 text-[14px]">Projet introuvable.</p>
-        <Button variant="outline" size="sm" className="mt-4" onClick={() => router.push("/projects")}>
-          <ArrowLeft className="h-4 w-4 mr-1.5" /> Retour
-        </Button>
-      </div>
-    );
-  }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(false);
+    fetch(`/api/v1/projects/${params.id}`)
+      .then((r) => {
+        if (!r.ok) throw new Error("not found");
+        return r.json();
+      })
+      .then((json) => {
+        if (cancelled) return;
+        const d = json.data;
+        const proj: Project = {
+          id: d.id,
+          code: d.code,
+          name: d.name,
+          description: d.description ?? "",
+          organizationId: d.organizationId,
+          organizationName: d.organizationName,
+          type: d.type,
+          status: d.status,
+          priority: d.priority,
+          managerId: d.managerId,
+          managerName: d.managerName,
+          startDate: d.startDate,
+          targetEndDate: d.targetEndDate,
+          actualEndDate: d.actualEndDate ?? undefined,
+          progressPercent: d.progressPercent,
+          budgetHours: d.budgetHours ?? undefined,
+          consumedHours: d.consumedHours,
+          budgetAmount: d.budgetAmount ?? undefined,
+          consumedAmount: d.consumedAmount ?? 0,
+          isVisibleToClient: d.isVisibleToClient,
+          visibilitySettings: {
+            showProject: d.isVisibleToClient,
+            showPhases: false,
+            showMilestones: false,
+            showTasks: false,
+            showLinkedTickets: false,
+            showTimeConsumed: false,
+            showBudgetVsActual: false,
+            showInternalNotes: false,
+            showActivity: false,
+            showTeamMembers: false,
+          },
+          phaseCount: 0,
+          milestoneCount: 0,
+          taskCount: d.taskCount ?? 0,
+          completedTaskCount: d.completedTaskCount ?? 0,
+          linkedTicketCount: 0,
+          memberCount: 0,
+          tags: d.tags ?? [],
+          isAtRisk: d.isAtRisk ?? false,
+          riskNotes: d.riskNotes ?? undefined,
+          isArchived: d.isArchived ?? false,
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+        };
+        setProject(proj);
+        setTasks(
+          (d.tasks ?? []).map((t: Record<string, unknown>) => ({
+            id: t.id as string,
+            projectId: d.id,
+            phaseId: null,
+            name: t.name as string,
+            description: (t.description as string) ?? "",
+            status: t.status as TaskStatus,
+            priority: t.priority as string,
+            assigneeId: t.assigneeId as string | null,
+            assigneeName: null,
+            startDate: t.startDate as string | null,
+            dueDate: t.dueDate as string | null,
+            completedAt: t.completedAt as string | null,
+            estimatedHours: t.estimatedHours as number | null,
+            actualHours: t.actualHours as number | null,
+            progressPercent: t.progressPercent as number,
+            isVisibleToClient: t.isVisibleToClient as boolean,
+            order: (t.order as number) ?? 0,
+            createdAt: d.createdAt,
+            updatedAt: d.updatedAt,
+          }))
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [params.id]);
 
-  const phases = mockProjectPhases
-    .filter((p) => p.projectId === project.id)
-    .sort((a, b) => a.order - b.order);
-  const milestones = mockProjectMilestones
-    .filter((m) => m.projectId === project.id)
-    .sort((a, b) => new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime());
-  const tasks = mockProjectTasks.filter((t) => t.projectId === project.id);
-  const members = mockProjectMembers.filter((m) => m.projectId === project.id);
-  const activities = [...mockProjectActivities.filter((a) => a.projectId === project.id)].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
   const allTickets = useTicketsStore((s) => s.tickets);
   const loadAllTickets = useTicketsStore((s) => s.loadAll);
   const ticketsLoaded = useTicketsStore((s) => s.loaded);
   useEffect(() => {
     if (!ticketsLoaded) loadAllTickets();
   }, [ticketsLoaded, loadAllTickets]);
+
+  if (loading) {
+    return (
+      <div className="px-6 py-12 text-center">
+        <p className="text-slate-500 text-[14px]">Chargement du projet...</p>
+      </div>
+    );
+  }
+
+  if (error || !project) {
+    return (
+      <div className="px-6 py-12 text-center">
+        <p className="text-slate-500 text-[14px]">Projet introuvable.</p>
+        <Button variant="outline" size="sm" className="mt-4" onClick={() => router.back()}>
+          <ArrowLeft className="h-4 w-4 mr-1.5" /> Retour
+        </Button>
+      </div>
+    );
+  }
+
   const linkedTickets = allTickets
     .filter((t) => t.organizationName === project.organizationName)
     .slice(0, 7);
@@ -138,8 +227,8 @@ export default function ProjectDetailPage() {
 
   const tabCounts: Record<TabKey, number | undefined> = {
     overview: undefined,
-    phases: phases.length,
-    milestones: milestones.length,
+    phases: 0,
+    milestones: 0,
     tasks: tasks.length,
     kanban: undefined,
     tickets: linkedTickets.length,
@@ -160,10 +249,21 @@ export default function ProjectDetailPage() {
             <span className="font-mono text-slate-700 font-medium">{project.code}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">
-              <Edit3 className="h-3.5 w-3.5 mr-1.5" /> Modifier
+            <Button variant="outline" size="sm" onClick={() => {
+              const newStatus = prompt("Nouveau statut (draft, planning, active, on_hold, at_risk, completed, cancelled) :", project.status);
+              if (newStatus && newStatus !== project.status) {
+                fetch(`/api/v1/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: newStatus }) })
+                  .then((r) => { if (r.ok) setProject((p) => p ? { ...p, status: newStatus as any } : p); });
+              }
+            }}>
+              <Edit3 className="h-3.5 w-3.5 mr-1.5" /> Modifier le statut
             </Button>
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => {
+              if (confirm("Archiver ce projet ?")) {
+                fetch(`/api/v1/projects/${project.id}`, { method: "DELETE" })
+                  .then((r) => { if (r.ok) router.push("/projects"); });
+              }
+            }}>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </div>
@@ -287,18 +387,18 @@ export default function ProjectDetailPage() {
         {tab === "overview" && (
           <OverviewTab
             project={project}
-            phases={phases}
-            members={members}
-            activities={activities}
+            phases={[]}
+            members={[]}
+            activities={[]}
           />
         )}
-        {tab === "phases" && <PhasesTab phases={phases} />}
-        {tab === "milestones" && <MilestonesTab milestones={milestones} />}
-        {tab === "tasks" && <TasksTab tasks={tasks} phases={phases} />}
+        {tab === "phases" && <PhasesTab phases={[]} />}
+        {tab === "milestones" && <MilestonesTab milestones={[]} />}
+        {tab === "tasks" && <TasksTab tasks={tasks} phases={[]} />}
         {tab === "kanban" && <ProjectKanbanView projectId={project.id} />}
         {tab === "tickets" && <TicketsTab tickets={linkedTickets} />}
-        {tab === "activity" && <ActivityTab activities={activities} />}
-        {tab === "team" && <TeamTab members={members} />}
+        {tab === "activity" && <ActivityTab activities={[]} />}
+        {tab === "team" && <TeamTab members={[]} />}
       </div>
     </div>
   );
@@ -349,10 +449,10 @@ function OverviewTab({
   members,
   activities,
 }: {
-  project: ReturnType<typeof mockProjects.find> & object;
-  phases: typeof mockProjectPhases;
-  members: typeof mockProjectMembers;
-  activities: typeof mockProjectActivities;
+  project: Project;
+  phases: { id: string; name: string; progressPercent: number }[];
+  members: { id: string; agentName: string; role: ProjectRole }[];
+  activities: { id: string; authorName: string; content: string; createdAt: string }[];
 }) {
   const isAtRisk = project.isAtRisk || project.status === "at_risk";
   const recent = activities.slice(0, 5);
@@ -379,10 +479,10 @@ function OverviewTab({
               <Detail label="Priorité">{PROJECT_PRIORITY_LABELS[project.priority]}</Detail>
               <Detail label="Responsable">{project.managerName}</Detail>
               <Detail label="Date de début">
-                {format(new Date(project.startDate), "d MMMM yyyy", { locale: fr })}
+                {project.startDate ? format(new Date(project.startDate), "d MMMM yyyy", { locale: fr }) : "Non définie"}
               </Detail>
               <Detail label="Date cible">
-                {format(new Date(project.targetEndDate), "d MMMM yyyy", { locale: fr })}
+                {project.targetEndDate ? format(new Date(project.targetEndDate), "d MMMM yyyy", { locale: fr }) : "Non définie"}
               </Detail>
               {project.actualEndDate && (
                 <Detail label="Date de fin réelle">
@@ -581,7 +681,7 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
 // ----------------------------------------------------------------------------
 // PHASES TAB
 // ----------------------------------------------------------------------------
-function PhasesTab({ phases }: { phases: typeof mockProjectPhases }) {
+function PhasesTab({ phases }: { phases: { id: string; name: string; order: number; status: PhaseStatus; description: string; progressPercent: number; startDate?: string | null; endDate?: string | null; taskIds: string[] }[] }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -665,7 +765,7 @@ function PhasesTab({ phases }: { phases: typeof mockProjectPhases }) {
 // ----------------------------------------------------------------------------
 // MILESTONES TAB
 // ----------------------------------------------------------------------------
-function MilestonesTab({ milestones }: { milestones: typeof mockProjectMilestones }) {
+function MilestonesTab({ milestones }: { milestones: { id: string; name: string; description: string; status: MilestoneStatus; targetDate: string; achievedDate?: string | null; isCriticalPath: boolean }[] }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -777,7 +877,7 @@ function TasksTab({
   phases,
 }: {
   tasks: ProjectTask[];
-  phases: typeof mockProjectPhases;
+  phases: { id: string; name: string; order: number }[];
 }) {
   const grouped = useMemo(() => {
     const map = new Map<string, ProjectTask[]>();
@@ -946,7 +1046,7 @@ function TicketsTab({ tickets }: { tickets: import("@/lib/mock-data").Ticket[] }
 // ----------------------------------------------------------------------------
 // ACTIVITY TAB
 // ----------------------------------------------------------------------------
-function ActivityTab({ activities }: { activities: typeof mockProjectActivities }) {
+function ActivityTab({ activities }: { activities: { id: string; type: string; authorName: string; content: string; createdAt: string; isVisibleToClient: boolean }[] }) {
   const iconFor = (type: string) => {
     switch (type) {
       case "task_completed":
@@ -1025,7 +1125,7 @@ function ActivityTab({ activities }: { activities: typeof mockProjectActivities 
 // ----------------------------------------------------------------------------
 // TEAM TAB
 // ----------------------------------------------------------------------------
-function TeamTab({ members }: { members: typeof mockProjectMembers }) {
+function TeamTab({ members }: { members: { id: string; agentName: string; agentEmail: string; role: ProjectRole; allocatedHoursPerWeek?: number | null }[] }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">

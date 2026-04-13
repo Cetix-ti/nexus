@@ -20,9 +20,22 @@ import {
   Server,
   Monitor,
 } from "lucide-react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  closestCorners,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { useOrgLogosStore } from "@/stores/org-logos-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -54,6 +67,11 @@ interface MonAlert {
   ticketId: string | null;
   notes: string | null;
   alertGroupKey: string | null;
+  // Extended fields from ticket-sourced alerts
+  isTicket?: boolean;
+  ticketNumber?: number;
+  ticketStatus?: string;
+  assigneeName?: string | null;
 }
 
 const STAGES = ["TRIAGE", "INVESTIGATING", "WAITING_PARTS", "WAITING_VENDOR", "WAITING_MAINTENANCE", "RESOLVED", "IGNORED"] as const;
@@ -194,7 +212,7 @@ export default function MonitoringPage() {
           <p className="mt-1 text-[12px] sm:text-[13px] text-slate-500">Triage et suivi — {days} derniers jours</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
+          <div className="hidden sm:flex items-center border border-slate-200 rounded-lg overflow-hidden">
             <button onClick={() => setViewMode("kanban")} className={cn("px-2.5 py-1.5", viewMode === "kanban" ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:bg-slate-50")}>
               <LayoutGrid className="h-4 w-4" />
             </button>
@@ -256,70 +274,21 @@ export default function MonitoringPage() {
         })}
       </div>
 
-      {/* Kanban view */}
+      {/* Kanban view — with drag & drop */}
+      {/* Kanban — desktop only */}
       {viewMode === "kanban" && (
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {STAGES.filter((s) => s !== "RESOLVED" && s !== "IGNORED").map((stage) => {
-            const cfg = STAGE_CONFIG[stage];
-            const stageAlerts = filtered.filter((a) => a.stage === stage);
-            return (
-              <div key={stage} className="flex-shrink-0 w-64 sm:w-72">
-                <div className={cn("flex items-center gap-2 mb-3 px-2")}>
-                  <span className={cn("h-2.5 w-2.5 rounded-full", cfg.color.replace("text-", "bg-"))} />
-                  <span className="text-[13px] font-semibold text-slate-900">{cfg.label}</span>
-                  <span className="text-[11px] text-slate-400 tabular-nums">{stageAlerts.length}</span>
-                </div>
-                <div className="space-y-2">
-                  {stageAlerts.slice(0, 20).map((a) => {
-                    const sev = SEVERITY_CONFIG[a.severity] ?? SEVERITY_CONFIG.WARNING;
-                    const SrcIcon = SOURCE_ICONS[a.sourceType] ?? Bell;
-                    return (
-                      <Card key={a.id} className="hover:shadow-md transition-shadow">
-                        <CardContent className="p-3 space-y-2">
-                          <div className="flex items-start gap-2">
-                            <SrcIcon className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", cfg.color)} />
-                            <p className="text-[12px] font-medium text-slate-900 line-clamp-2">{a.subject}</p>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge variant={sev.variant} className="text-[9px]">{sev.label}</Badge>
-                            <span className="text-[10px] text-slate-400">{a.sourceType}</span>
-                            {a.organizationName && <span className="text-[10px] text-slate-500 font-medium">{a.organizationName}</span>}
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-slate-400">{timeAgo(a.receivedAt)}</span>
-                            <div className="flex items-center gap-1">
-                              {!a.ticketId && (
-                                <button onClick={() => createTicket(a.id)} className="h-6 px-1.5 rounded text-[10px] text-blue-600 hover:bg-blue-50 font-medium" title="Créer un ticket">
-                                  <Ticket className="h-3 w-3" />
-                                </button>
-                              )}
-                              {a.ticketId && <Badge variant="primary" className="text-[9px]">Ticket lié</Badge>}
-                              <Select value={a.stage} onValueChange={(v) => updateStage(a.id, v)}>
-                                <SelectTrigger className="h-6 w-6 p-0 border-0 shadow-none [&>svg]:hidden">
-                                  <ChevronRight className="h-3 w-3 text-slate-400" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {STAGES.map((s) => <SelectItem key={s} value={s}>{STAGE_CONFIG[s].label}</SelectItem>)}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                  {stageAlerts.length === 0 && (
-                    <div className="py-8 text-center text-[12px] text-slate-300">Aucune alerte</div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+        <div className="hidden sm:block">
+        <MonitoringKanban
+          alerts={filtered}
+          onStageChange={updateStage}
+          onCreateTicket={createTicket}
+        />
         </div>
       )}
 
-      {/* Table view */}
-      {viewMode === "table" && (
+      {/* Table view — always shown on mobile, toggle on desktop */}
+      {(viewMode === "table" || true) && (
+        <div className={viewMode === "kanban" ? "sm:hidden" : ""}>
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -397,7 +366,224 @@ export default function MonitoringPage() {
             </div>
           )}
         </Card>
+        </div>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Monitoring Kanban with Drag & Drop
+// ---------------------------------------------------------------------------
+
+function DraggableAlertCard({
+  alert,
+  children,
+}: {
+  alert: MonAlert;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: alert.id,
+    data: { alert },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={cn("touch-none", isDragging && "opacity-30")}
+    >
+      {children}
+    </div>
+  );
+}
+
+function DroppableColumn({
+  stageId,
+  children,
+}: {
+  stageId: string;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: stageId });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex-1 overflow-y-auto px-2.5 py-2.5 transition-colors min-h-[200px]",
+        isOver && "bg-blue-50/40",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function MonitoringKanban({
+  alerts,
+  onStageChange,
+  onCreateTicket,
+}: {
+  alerts: MonAlert[];
+  onStageChange: (id: string, stage: string) => void;
+  onCreateTicket: (id: string) => void;
+}) {
+  const [localAlerts, setLocalAlerts] = useState(alerts);
+  const [dragging, setDragging] = useState<MonAlert | null>(null);
+  const orgLogos = useOrgLogosStore((s) => s.logos);
+  const loadOrgLogos = useOrgLogosStore((s) => s.load);
+
+  useEffect(() => { loadOrgLogos(); }, [loadOrgLogos]);
+  useEffect(() => { setLocalAlerts(alerts); }, [alerts]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  function handleDragStart(e: DragStartEvent) {
+    const a = localAlerts.find((x) => x.id === e.active.id);
+    if (a) setDragging(a);
+  }
+
+  function handleDragEnd(e: DragEndEvent) {
+    setDragging(null);
+    const { active, over } = e;
+    if (!over) return;
+    const alertId = active.id as string;
+    const newStage = over.id as string;
+    const old = localAlerts.find((a) => a.id === alertId);
+    if (!old || old.stage === newStage) return;
+
+    // Optimistic update
+    setLocalAlerts((prev) =>
+      prev.map((a) => (a.id === alertId ? { ...a, stage: newStage } : a)),
+    );
+    onStageChange(alertId, newStage);
+  }
+
+  const visibleStages = STAGES.filter((s) => s !== "RESOLVED" && s !== "IGNORED");
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="flex gap-4 overflow-x-auto pb-4" style={{ minHeight: "calc(100vh - 380px)" }}>
+        {visibleStages.map((stage) => {
+          const cfg = STAGE_CONFIG[stage];
+          const stageAlerts = localAlerts.filter((a) => a.stage === stage);
+          return (
+            <div
+              key={stage}
+              className="flex-shrink-0 w-[270px] sm:w-[300px] flex flex-col rounded-xl border border-slate-200/80 bg-slate-50/40"
+            >
+              {/* Column header */}
+              <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-200/80 rounded-t-xl">
+                <span className={cn("h-2.5 w-2.5 rounded-full", cfg.color.replace("text-", "bg-"))} />
+                <span className="text-[12.5px] font-semibold uppercase tracking-[0.04em] text-slate-700 flex-1">
+                  {cfg.label}
+                </span>
+                <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-md bg-white px-1.5 text-[11px] font-bold text-slate-700 tabular-nums shadow-sm ring-1 ring-inset ring-slate-200/60">
+                  {stageAlerts.length}
+                </span>
+              </div>
+
+              <DroppableColumn stageId={stage}>
+                <div className="space-y-2.5">
+                  {stageAlerts.slice(0, 30).map((a) => {
+                    const sev = SEVERITY_CONFIG[a.severity] ?? SEVERITY_CONFIG.WARNING;
+                    const SrcIcon = SOURCE_ICONS[a.sourceType] ?? Bell;
+                    const logo = a.organizationName ? orgLogos[a.organizationName] : null;
+
+                    return (
+                      <DraggableAlertCard key={a.id} alert={a}>
+                        <div className="rounded-[14px] bg-white border border-slate-200/70 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_24px_-6px_rgba(0,0,0,0.1)] hover:-translate-y-[2px] transition-all duration-200 ease-out cursor-grab active:cursor-grabbing">
+                          {/* Severity accent */}
+                          <div
+                            className="absolute left-0 top-3 bottom-3 w-[3px] rounded-full"
+                            style={{ backgroundColor: sev.variant === "danger" ? "#EF4444" : sev.variant === "warning" ? "#F59E0B" : "#3B82F6" }}
+                          />
+                          <div className="relative pl-4 pr-3.5 py-3">
+                            {/* Row 1: source + severity */}
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <SrcIcon className={cn("h-3 w-3", cfg.color)} strokeWidth={2.5} />
+                                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">
+                                  {a.sourceType}
+                                </span>
+                              </div>
+                              <Badge variant={sev.variant} className="text-[9px]">{sev.label}</Badge>
+                            </div>
+
+                            {/* Row 2: subject */}
+                            <p className="text-[13px] font-semibold leading-[1.35] text-slate-900 line-clamp-2 mb-2.5">
+                              {a.subject}
+                            </p>
+
+                            {/* Row 3: org logo + name */}
+                            {a.organizationName && (
+                              <div className="flex items-center gap-2 mb-2">
+                                {logo ? (
+                                  <img src={logo} alt="" className="h-[18px] w-[18px] rounded object-contain bg-white ring-1 ring-slate-200/80 shrink-0" />
+                                ) : (
+                                  <div className="h-[18px] w-[18px] rounded bg-slate-100 ring-1 ring-slate-200/80 flex items-center justify-center shrink-0">
+                                    <span className="text-[7px] font-bold text-slate-500">
+                                      {a.organizationName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                                    </span>
+                                  </div>
+                                )}
+                                <span className="text-[11.5px] text-slate-600 truncate">{a.organizationName}</span>
+                              </div>
+                            )}
+
+                            {/* Row 4: footer */}
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-slate-400">{timeAgo(a.receivedAt)}</span>
+                              <div className="flex items-center gap-1">
+                                {a.ticketId ? (
+                                  <Badge variant="primary" className="text-[8px]">Ticket</Badge>
+                                ) : (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); onCreateTicket(a.id); }}
+                                    className="h-5 px-1.5 rounded text-[9px] text-blue-600 hover:bg-blue-50 font-medium"
+                                  >
+                                    + Ticket
+                                  </button>
+                                )}
+                                {a.assigneeName && (
+                                  <span className="text-[10px] text-slate-500">{a.assigneeName}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </DraggableAlertCard>
+                    );
+                  })}
+                  {stageAlerts.length === 0 && (
+                    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white/40 py-10 px-3 text-center">
+                      <p className="text-[11.5px] font-medium text-slate-400">Aucune alerte</p>
+                      <p className="mt-0.5 text-[10.5px] text-slate-300">Glissez une alerte ici</p>
+                    </div>
+                  )}
+                </div>
+              </DroppableColumn>
+            </div>
+          );
+        })}
+      </div>
+
+      <DragOverlay dropAnimation={null}>
+        {dragging && (
+          <div className="rotate-2 cursor-grabbing scale-105 shadow-2xl rounded-xl bg-white border border-slate-200 p-3 w-[270px]">
+            <p className="text-[12px] font-semibold text-slate-900 line-clamp-2">{dragging.subject}</p>
+            <p className="text-[10px] text-slate-400 mt-1">{dragging.organizationName}</p>
+          </div>
+        )}
+      </DragOverlay>
+    </DndContext>
   );
 }

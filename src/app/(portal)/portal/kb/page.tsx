@@ -19,50 +19,50 @@ import {
 
 const categories = [
   {
-    title: "Getting Started",
-    description: "New employee setup, first steps, and onboarding guides",
+    title: "Premiers pas",
+    description: "Configuration pour les nouveaux employés, premiers pas et guides d'intégration",
     icon: Rocket,
     articles: 12,
     color: "bg-blue-50 text-[#2563EB]",
   },
   {
-    title: "Email & Communication",
-    description: "Outlook, Teams, email signatures, and calendar setup",
+    title: "Courriel et communication",
+    description: "Outlook, Teams, signatures de courriel et configuration du calendrier",
     icon: Mail,
     articles: 18,
     color: "bg-emerald-50 text-emerald-600",
   },
   {
-    title: "Network & VPN",
-    description: "VPN setup, Wi-Fi, network drives, and remote access",
+    title: "Réseau et VPN",
+    description: "Configuration VPN, Wi-Fi, lecteurs réseau et accès à distance",
     icon: Wifi,
     articles: 9,
     color: "bg-violet-50 text-violet-600",
   },
   {
-    title: "Hardware",
-    description: "Laptops, monitors, printers, and peripherals",
+    title: "Matériel",
+    description: "Ordinateurs portables, écrans, imprimantes et périphériques",
     icon: Monitor,
     articles: 14,
     color: "bg-amber-50 text-amber-600",
   },
   {
-    title: "Software",
-    description: "Installation, licenses, updates, and troubleshooting",
+    title: "Logiciels",
+    description: "Installation, licences, mises à jour et dépannage",
     icon: AppWindow,
     articles: 21,
     color: "bg-pink-50 text-pink-600",
   },
   {
-    title: "Security",
-    description: "Password policies, 2FA, phishing, and data protection",
+    title: "Sécurité",
+    description: "Politiques de mots de passe, 2FA, hameçonnage et protection des données",
     icon: Shield,
     articles: 8,
     color: "bg-red-50 text-red-600",
   },
   {
-    title: "Account & Access",
-    description: "Password resets, permissions, and access requests",
+    title: "Compte et accès",
+    description: "Réinitialisation de mot de passe, permissions et demandes d'accès",
     icon: KeyRound,
     articles: 11,
     color: "bg-teal-50 text-teal-600",
@@ -71,33 +71,33 @@ const categories = [
 
 const popularArticles = [
   {
-    title: "How to connect to the VPN from home",
-    category: "Network & VPN",
+    title: "Comment se connecter au VPN depuis la maison",
+    category: "Réseau et VPN",
     views: 1243,
   },
   {
-    title: "Reset your password using self-service portal",
-    category: "Account & Access",
+    title: "Réinitialiser votre mot de passe via le portail libre-service",
+    category: "Compte et accès",
     views: 987,
   },
   {
-    title: "Set up your email signature in Outlook",
-    category: "Email & Communication",
+    title: "Configurer votre signature de courriel dans Outlook",
+    category: "Courriel et communication",
     views: 856,
   },
   {
-    title: "Request a new software license",
-    category: "Software",
+    title: "Demander une nouvelle licence logicielle",
+    category: "Logiciels",
     views: 742,
   },
   {
-    title: "Connect to the office Wi-Fi network",
-    category: "Network & VPN",
+    title: "Se connecter au réseau Wi-Fi du bureau",
+    category: "Réseau et VPN",
     views: 698,
   },
   {
-    title: "Enable two-factor authentication on your account",
-    category: "Security",
+    title: "Activer l'authentification à deux facteurs sur votre compte",
+    category: "Sécurité",
     views: 621,
   },
 ];
@@ -111,13 +111,13 @@ export default function PortalKnowledgeBasePage() {
       <div className="text-center">
         <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-[#2563EB] mb-4">
           <BookOpen className="h-3.5 w-3.5" />
-          Knowledge Base
+          Base de connaissances
         </div>
         <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">
-          Find answers to your questions
+          Trouvez des réponses à vos questions
         </h1>
         <p className="mt-2 text-sm text-neutral-500 max-w-md mx-auto">
-          Browse our help articles or search for a specific topic.
+          Parcourez nos articles d'aide ou recherchez un sujet précis.
         </p>
 
         {/* Search */}
@@ -127,7 +127,7 @@ export default function PortalKnowledgeBasePage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search articles..."
+            placeholder="Rechercher..."
             className="w-full rounded-xl border border-neutral-200 bg-white py-3.5 pl-12 pr-4 text-sm placeholder:text-neutral-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
           />
         </div>
@@ -174,7 +174,7 @@ export default function PortalKnowledgeBasePage() {
       <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
         <div className="flex items-center justify-between p-5 border-b border-neutral-100">
           <h2 className="text-base font-semibold text-neutral-900">
-            Popular Articles
+            Articles populaires
           </h2>
         </div>
         <div className="divide-y divide-neutral-100">

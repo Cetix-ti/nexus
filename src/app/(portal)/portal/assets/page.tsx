@@ -10,6 +10,8 @@ import {
   Search,
   Loader2,
   User,
+  Cpu,
+  MemoryStick,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +31,8 @@ interface PortalAsset {
   siteName: string | null;
   assignedContact: { id: string; name: string; email: string } | null;
   externalSource: string | null;
+  cpuModel: string | null;
+  ramGb: number | null;
 }
 
 const TYPE_ICONS: Record<string, any> = {
@@ -36,6 +40,10 @@ const TYPE_ICONS: Record<string, any> = {
   LAPTOP: Laptop,
   SERVER: Server,
   VIRTUAL_MACHINE: Server,
+  NETWORK_DEVICE: Server,
+  PRINTER: Monitor,
+  MOBILE: Laptop,
+  OTHER: Monitor,
 };
 
 const STATUS_VARIANTS: Record<string, "success" | "default" | "warning" | "danger"> = {
@@ -139,6 +147,22 @@ export default function PortalAssetsPage() {
                       )}
                       {a.siteName && <span>{a.siteName}</span>}
                     </div>
+                    {(a.cpuModel || a.ramGb) && (
+                      <div className="flex items-center gap-3 text-[11px] text-slate-400">
+                        {a.cpuModel && (
+                          <span className="flex items-center gap-1 truncate max-w-[200px]" title={a.cpuModel}>
+                            <Cpu className="h-3 w-3 shrink-0" />
+                            {a.cpuModel}
+                          </span>
+                        )}
+                        {a.ramGb && (
+                          <span className="flex items-center gap-1">
+                            <MemoryStick className="h-3 w-3 shrink-0" />
+                            {a.ramGb} Go
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {a.assignedContact && (
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
                         <User className="h-3 w-3" />

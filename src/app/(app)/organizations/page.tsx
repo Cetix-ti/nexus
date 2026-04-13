@@ -14,6 +14,7 @@ import {
   ChevronUp,
   ChevronDown,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import { EditOrgModal, type EditOrgModalOrg } from "@/components/organizations/edit-org-modal";
 import { cn } from "@/lib/utils";
@@ -47,94 +48,6 @@ interface Organization {
   phone: string;
   logo?: string | null;
 }
-
-// ---------- Demo Data fallback (used until API loads) ----------
-const FALLBACK_ORGS: Organization[] = [
-  {
-    id: "org-1",
-    name: "Cetix",
-    slug: "cetix",
-    billingMode: "msp_monthly",
-    sites: 4,
-    contacts: 18,
-    openTickets: 7,
-    contractStatus: "Actif",
-    createdAt: "2023-06-15",
-    color: "bg-blue-600",
-    domain: "cetix.ca",
-    phone: "+1 514 555-0100",
-  },
-  {
-    id: "org-2",
-    name: "Acme Corp",
-    slug: "acme-corp",
-    billingMode: "hour_bank",
-    sites: 3,
-    contacts: 12,
-    openTickets: 4,
-    contractStatus: "Actif",
-    createdAt: "2023-09-22",
-    color: "bg-emerald-600",
-    domain: "acmecorp.com",
-    phone: "+1 438 555-0200",
-  },
-  {
-    id: "org-3",
-    name: "TechStart Inc",
-    slug: "techstart-inc",
-    billingMode: "time_and_materials",
-    sites: 1,
-    contacts: 5,
-    openTickets: 2,
-    contractStatus: "Actif",
-    createdAt: "2024-01-10",
-    color: "bg-violet-600",
-    domain: "techstart.io",
-    phone: "+1 450 555-0300",
-  },
-  {
-    id: "org-4",
-    name: "Global Finance",
-    slug: "global-finance",
-    billingMode: "msp_monthly",
-    sites: 6,
-    contacts: 32,
-    openTickets: 11,
-    contractStatus: "Actif",
-    createdAt: "2022-11-03",
-    color: "bg-amber-600",
-    domain: "globalfinance.ca",
-    phone: "+1 514 555-0400",
-  },
-  {
-    id: "org-5",
-    name: "HealthCare Plus",
-    slug: "healthcare-plus",
-    billingMode: "hour_bank",
-    sites: 2,
-    contacts: 9,
-    openTickets: 3,
-    contractStatus: "Expiré",
-    createdAt: "2023-03-18",
-    color: "bg-rose-600",
-    domain: "healthcareplus.ca",
-    phone: "+1 819 555-0500",
-  },
-  {
-    id: "org-6",
-    name: "MédiaCentre QC",
-    slug: "mediacentre-qc",
-    billingMode: "time_and_materials",
-    sites: 1,
-    contacts: 4,
-    openTickets: 1,
-    contractStatus: "En attente",
-    createdAt: "2024-08-01",
-    color: "bg-cyan-600",
-    domain: "mediacentre.qc.ca",
-    phone: "+1 418 555-0600",
-  },
-];
 
 // ---------- Helpers ----------
 const billingModeBadgeVariant = (mode: ContractType): "default" | "primary" | "success" | "warning" | "danger" | "outline" => {
@@ -187,7 +100,7 @@ export default function OrganizationsPage() {
           setOrganizations(data as Organization[]);
         }
       })
-      .catch((e) => console.error("Failed to load orgs", e))
+      .catch((e) => console.error("Erreur de chargement des organisations", e))
       .finally(() => {
         if (!cancelled) setLoaded(true);
       });
@@ -195,7 +108,6 @@ export default function OrganizationsPage() {
       cancelled = true;
     };
   }, []);
-  void FALLBACK_ORGS;
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -422,23 +334,48 @@ export default function OrganizationsPage() {
                     {new Date(org.createdAt).toLocaleDateString("fr-CA")}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setEditingOrg({
-                          id: org.id,
-                          name: org.name,
-                          slug: org.slug,
-                          plan: "Standard",
-                          domain: org.domain,
-                          isActive: org.contractStatus === "Actif",
-                        })
-                      }
-                      title="Modifier"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setEditingOrg({
+                            id: org.id,
+                            name: org.name,
+                            slug: org.slug,
+                            plan: "Standard",
+                            domain: org.domain,
+                            isActive: org.contractStatus === "Actif",
+                          })
+                        }
+                        title="Modifier"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Supprimer « ${org.name} » ?\n\nCette action supprimera l'organisation et toutes ses données associées. Cette action est irréversible.`)) return;
+                          try {
+                            const res = await fetch(`/api/v1/organizations/${org.id}`, { method: "DELETE" });
+                            if (res.ok) {
+                              setOrganizations((prev) => prev.filter((o) => o.id !== org.id));
+                            } else {
+                              const data = await res.json().catch(() => ({}));
+                              alert(data.error || "Erreur lors de la suppression");
+                            }
+                          } catch {
+                            alert("Erreur réseau");
+                          }
+                        }}
+                        title="Supprimer"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

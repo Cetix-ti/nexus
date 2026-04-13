@@ -19,7 +19,7 @@ export const mockRecurringTemplates: RecurringTicketTemplate[] = [
     ticketSubject: "[Auto] Vérification des sauvegardes Veeam",
     ticketDescription:
       "Tâche automatique : vérifier l'état des sauvegardes Veeam pour Acme Corp.",
-    ticketType: "request",
+    ticketType: "service_request",
     ticketPriority: "low",
     ticketUrgency: "low",
     ticketImpact: "low",
@@ -52,7 +52,7 @@ export const mockRecurringTemplates: RecurringTicketTemplate[] = [
     ticketSubject: "[Auto] Maintenance préventive serveurs",
     ticketDescription:
       "Vérification des journaux d'événements, mises à jour Windows en attente, état du RAID, espace disque.",
-    ticketType: "request",
+    ticketType: "service_request",
     ticketPriority: "medium",
     ticketUrgency: "low",
     ticketImpact: "low",
@@ -86,7 +86,7 @@ export const mockRecurringTemplates: RecurringTicketTemplate[] = [
     ticketSubject: "[Auto] Audit mensuel des comptes utilisateurs",
     ticketDescription:
       "Audit ITIL : exporter la liste AD, vérifier les comptes inactifs > 90 jours, désactiver, remonter le rapport.",
-    ticketType: "request",
+    ticketType: "service_request",
     ticketPriority: "medium",
     ticketUrgency: "medium",
     ticketImpact: "low",
@@ -120,7 +120,7 @@ export const mockRecurringTemplates: RecurringTicketTemplate[] = [
     ticketSubject: "[Auto] Rapport SLA hebdomadaire",
     ticketDescription:
       "Générer et envoyer le rapport SLA hebdomadaire au responsable client.",
-    ticketType: "request",
+    ticketType: "service_request",
     ticketPriority: "low",
     ticketUrgency: "low",
     ticketImpact: "low",
@@ -153,7 +153,7 @@ export const mockRecurringTemplates: RecurringTicketTemplate[] = [
     ticketSubject: "[Auto] Audit certificats SSL",
     ticketDescription:
       "Vérifier les dates d'expiration de tous les certificats SSL et renouveler ceux qui expirent dans < 30 jours.",
-    ticketType: "request",
+    ticketType: "service_request",
     ticketPriority: "high",
     ticketUrgency: "medium",
     ticketImpact: "high",
@@ -186,7 +186,7 @@ export const mockRecurringTemplates: RecurringTicketTemplate[] = [
     ticketSubject: "[Auto] Test de restauration trimestriel",
     ticketDescription:
       "Effectuer un test de restauration complet d'une VM à partir de la dernière sauvegarde.",
-    ticketType: "request",
+    ticketType: "service_request",
     ticketPriority: "high",
     ticketUrgency: "medium",
     ticketImpact: "high",

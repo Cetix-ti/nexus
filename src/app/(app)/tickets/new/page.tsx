@@ -1,10 +1,11 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, ChevronRight, Save } from "lucide-react";
+import { ArrowLeft, ChevronRight, Save, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,46 +18,83 @@ import {
 } from "@/components/ui/select";
 
 const ticketSchema = z.object({
-  subject: z.string().min(5, "Subject must be at least 5 characters"),
-  description: z.string().min(10, "Description must be at least 10 characters"),
-  organizationName: z.string().min(1, "Organization is required"),
-  requesterName: z.string().min(1, "Requester is required"),
-  type: z.enum(["incident", "request", "problem", "change"]),
+  subject: z.string().min(5, "Le sujet doit contenir au moins 5 caractères"),
+  description: z.string().min(10, "La description doit contenir au moins 10 caractères"),
+  organizationName: z.string().min(1, "L'organisation est requise"),
+  requesterName: z.string().min(1, "Le demandeur est requis"),
+  type: z.enum(["incident", "service_request", "problem", "change", "alert"]),
   priority: z.enum(["critical", "high", "medium", "low"]),
   urgency: z.enum(["critical", "high", "medium", "low"]),
   impact: z.enum(["critical", "high", "medium", "low"]),
-  categoryName: z.string().min(1, "Category is required"),
-  queueName: z.string().min(1, "Queue is required"),
+  category: z.string().optional(),
+  queue: z.string().optional(),
   assigneeName: z.string().optional(),
   tags: z.string().optional(),
 });
 
 type TicketFormData = z.infer<typeof ticketSchema>;
 
-const ORGANIZATIONS = ["Acme Corp", "TechStart Inc", "Global Finance", "HealthCare Plus", "Cetix"];
-const REQUESTERS: Record<string, string[]> = {
-  "Acme Corp": ["Sarah Mitchell", "Robert Kim", "Karen Lee"],
-  "TechStart Inc": ["Emily Watson", "Mike Johnson", "Tom Bradley"],
-  "Global Finance": ["David Chen", "Lisa Thompson", "Anna Williams"],
-  "HealthCare Plus": ["Dr. James Morrison", "Nancy Adams", "Sandra Brooks"],
-  Cetix: ["Jean-Philippe Côté", "Marie Tremblay", "Alexandre Dubois"],
-};
-const CATEGORIES = [
-  "Network",
-  "Hardware",
-  "Software",
-  "Email & Collaboration",
-  "Access Management",
-  "User Management",
-  "Server",
-  "Backup & Recovery",
-  "Security",
-];
-const QUEUES = ["Helpdesk", "Infrastructure", "On-site Support", "Procurement", "Security"];
-const TECHNICIANS = ["Jean-Philippe Côté", "Marie Tremblay", "Alexandre Dubois"];
-
 export default function NewTicketPage() {
   const router = useRouter();
+
+  const [organizations, setOrganizations] = useState<string[]>([]);
+  const [orgsLoading, setOrgsLoading] = useState(true);
+  const [requesters, setRequesters] = useState<string[]>([]);
+  const [requestersLoading, setRequestersLoading] = useState(false);
+  const [categories, setCategories] = useState<{ id: string; name: string; parentId: string | null }[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [queues, setQueues] = useState<{ id: string; name: string }[]>([]);
+  const [queuesLoading, setQueuesLoading] = useState(true);
+  const [technicians, setTechnicians] = useState<string[]>([]);
+  const [techniciansLoading, setTechniciansLoading] = useState(true);
+
+  // Fetch organizations on mount
+  useEffect(() => {
+    fetch("/api/v1/organizations")
+      .then((r) => r.json())
+      .then((orgs: { name: string }[]) => {
+        if (Array.isArray(orgs)) setOrganizations(orgs.map((o) => o.name));
+      })
+      .catch(() => {})
+      .finally(() => setOrgsLoading(false));
+  }, []);
+
+  // Fetch ticket categories on mount
+  useEffect(() => {
+    fetch("/api/v1/categories")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setCategories(data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCategoriesLoading(false));
+  }, []);
+
+  // Fetch queues on mount
+  useEffect(() => {
+    fetch("/api/v1/queues")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setQueues(data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setQueuesLoading(false));
+  }, []);
+
+  // Fetch technicians on mount
+  useEffect(() => {
+    fetch("/api/v1/users?role=TECHNICIAN,SUPERVISOR,MSP_ADMIN,SUPER_ADMIN")
+      .then((r) => r.json())
+      .then((users: { name: string }[]) => {
+        if (Array.isArray(users)) setTechnicians(users.map((u) => u.name));
+      })
+      .catch(() => {})
+      .finally(() => setTechniciansLoading(false));
+  }, []);
 
   const {
     register,
@@ -71,8 +109,8 @@ export default function NewTicketPage() {
       priority: "medium",
       urgency: "medium",
       impact: "medium",
-      categoryName: "",
-      queueName: "",
+      category: "",
+      queue: "",
       organizationName: "",
       requesterName: "",
       assigneeName: "",
@@ -81,7 +119,26 @@ export default function NewTicketPage() {
   });
 
   const selectedOrg = watch("organizationName");
-  const availableRequesters = selectedOrg ? REQUESTERS[selectedOrg] ?? [] : [];
+
+  // Fetch contacts when org changes
+  useEffect(() => {
+    if (!selectedOrg) {
+      setRequesters([]);
+      return;
+    }
+    setRequestersLoading(true);
+    fetch(`/api/v1/contacts?organizationName=${encodeURIComponent(selectedOrg)}`)
+      .then((r) => r.json())
+      .then((contacts: { firstName: string; lastName: string; organization: string }[]) => {
+        if (!Array.isArray(contacts)) return;
+        const filtered = contacts
+          .filter((c) => c.organization === selectedOrg)
+          .map((c) => `${c.firstName} ${c.lastName}`);
+        setRequesters(filtered);
+      })
+      .catch(() => {})
+      .finally(() => setRequestersLoading(false));
+  }, [selectedOrg]);
 
   async function onSubmit(data: TicketFormData) {
     try {
@@ -95,6 +152,12 @@ export default function NewTicketPage() {
           requesterName: data.requesterName,
           type: data.type,
           priority: data.priority,
+          urgency: data.urgency,
+          impact: data.impact,
+          category: data.category,
+          queue: data.queue,
+          assigneeName: data.assigneeName,
+          tags: data.tags,
         }),
       });
       if (res.ok) {
@@ -108,12 +171,15 @@ export default function NewTicketPage() {
     }
   }
 
+  // Build root categories (no parentId)
+  const rootCategories = categories.filter((c) => !c.parentId);
+
   return (
     <div className="flex flex-col gap-0">
       {/* Top bar */}
       <div className="flex items-center gap-3 border-b border-gray-200 bg-white px-6 py-3">
         <button
-          onClick={() => router.push("/tickets")}
+          onClick={() => router.back()}
           className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -126,7 +192,7 @@ export default function NewTicketPage() {
       <div className="mx-auto w-full max-w-4xl p-6">
         <div className="mb-6">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Nouveau ticket</h1>
-          <p className="mt-1 text-sm text-gray-500">Fill in the details to create a new support ticket.</p>
+          <p className="mt-1 text-sm text-gray-500">Remplissez les informations pour créer un nouveau ticket de support.</p>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -135,7 +201,7 @@ export default function NewTicketPage() {
             <div className="space-y-4">
               <Input
                 label="Sujet"
-                placeholder="Brief description of the issue"
+                placeholder="Brève description du problème"
                 error={errors.subject?.message}
                 {...register("subject")}
               />
@@ -145,7 +211,7 @@ export default function NewTicketPage() {
                   Description
                 </label>
                 <textarea
-                  placeholder="Detailed description of the issue or request..."
+                  placeholder="Description détaillée du problème ou de la demande..."
                   className={cn(
                     "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-sm text-neutral-900 shadow-sm transition-colors",
                     "placeholder:text-neutral-400",
@@ -168,7 +234,7 @@ export default function NewTicketPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-neutral-700">
-                  Organization
+                  Organisation
                 </label>
                 <Select
                   value={watch("organizationName")}
@@ -176,12 +242,13 @@ export default function NewTicketPage() {
                     setValue("organizationName", val);
                     setValue("requesterName", "");
                   }}
+                  disabled={orgsLoading}
                 >
                   <SelectTrigger className={cn(errors.organizationName && "border-red-500")}>
-                    <SelectValue placeholder="Select organization" />
+                    <SelectValue placeholder={orgsLoading ? "Chargement..." : "Sélectionner une organisation"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {ORGANIZATIONS.map((org) => (
+                    {organizations.map((org) => (
                       <SelectItem key={org} value={org}>
                         {org}
                       </SelectItem>
@@ -195,18 +262,21 @@ export default function NewTicketPage() {
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-neutral-700">
-                  Requester
+                  Demandeur
                 </label>
                 <Select
                   value={watch("requesterName")}
                   onValueChange={(val) => setValue("requesterName", val)}
-                  disabled={!selectedOrg}
+                  disabled={!selectedOrg || requestersLoading}
                 >
                   <SelectTrigger className={cn(errors.requesterName && "border-red-500")}>
-                    <SelectValue placeholder={selectedOrg ? "Select requester" : "Select organization first"} />
+                    <SelectValue placeholder={
+                      requestersLoading ? "Chargement..." :
+                      selectedOrg ? "Sélectionner un demandeur" : "Sélectionner d'abord une organisation"
+                    } />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableRequesters.map((name) => (
+                    {requesters.map((name) => (
                       <SelectItem key={name} value={name}>
                         {name}
                       </SelectItem>
@@ -235,15 +305,16 @@ export default function NewTicketPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="incident">Incident</SelectItem>
-                    <SelectItem value="request">Request</SelectItem>
-                    <SelectItem value="problem">Problem</SelectItem>
-                    <SelectItem value="change">Change</SelectItem>
+                    <SelectItem value="service_request">Demande de service</SelectItem>
+                    <SelectItem value="problem">Problème</SelectItem>
+                    <SelectItem value="change">Changement</SelectItem>
+                    <SelectItem value="alert">Alerte monitoring</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-neutral-700">Priority</label>
+                <label className="mb-1.5 block text-sm font-medium text-neutral-700">Priorité</label>
                 <Select
                   value={watch("priority")}
                   onValueChange={(val) => setValue("priority", val as TicketFormData["priority"])}
@@ -252,16 +323,16 @@ export default function NewTicketPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="critical">Critical</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="critical">Critique</SelectItem>
+                    <SelectItem value="high">Haute</SelectItem>
+                    <SelectItem value="medium">Moyenne</SelectItem>
+                    <SelectItem value="low">Basse</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-neutral-700">Urgency</label>
+                <label className="mb-1.5 block text-sm font-medium text-neutral-700">Urgence</label>
                 <Select
                   value={watch("urgency")}
                   onValueChange={(val) => setValue("urgency", val as TicketFormData["urgency"])}
@@ -270,10 +341,10 @@ export default function NewTicketPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="critical">Critical</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="critical">Critique</SelectItem>
+                    <SelectItem value="high">Haute</SelectItem>
+                    <SelectItem value="medium">Moyenne</SelectItem>
+                    <SelectItem value="low">Basse</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -288,76 +359,73 @@ export default function NewTicketPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="critical">Critical</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="critical">Critique</SelectItem>
+                    <SelectItem value="high">Haute</SelectItem>
+                    <SelectItem value="medium">Moyenne</SelectItem>
+                    <SelectItem value="low">Basse</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-neutral-700">Category</label>
+                <label className="mb-1.5 block text-sm font-medium text-neutral-700">Catégorie</label>
                 <Select
-                  value={watch("categoryName")}
-                  onValueChange={(val) => setValue("categoryName", val)}
+                  value={watch("category") || ""}
+                  onValueChange={(val) => setValue("category", val)}
+                  disabled={categoriesLoading}
                 >
-                  <SelectTrigger className={cn(errors.categoryName && "border-red-500")}>
-                    <SelectValue placeholder="Select category" />
+                  <SelectTrigger className={cn(errors.category && "border-red-500")}>
+                    <SelectValue placeholder={categoriesLoading ? "Chargement..." : "Sélectionner une catégorie"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {CATEGORIES.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat}
+                    {rootCategories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.name}>
+                        {cat.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {errors.categoryName && (
-                  <p className="mt-1.5 text-sm text-red-600">{errors.categoryName.message}</p>
-                )}
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-neutral-700">Queue</label>
+                <label className="mb-1.5 block text-sm font-medium text-neutral-700">File d&apos;attente</label>
                 <Select
-                  value={watch("queueName")}
-                  onValueChange={(val) => setValue("queueName", val)}
+                  value={watch("queue") || ""}
+                  onValueChange={(val) => setValue("queue", val)}
+                  disabled={queuesLoading}
                 >
-                  <SelectTrigger className={cn(errors.queueName && "border-red-500")}>
-                    <SelectValue placeholder="Select queue" />
+                  <SelectTrigger>
+                    <SelectValue placeholder={queuesLoading ? "Chargement..." : "Sélectionner une file d'attente"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {QUEUES.map((q) => (
-                      <SelectItem key={q} value={q}>
-                        {q}
+                    {queues.map((q) => (
+                      <SelectItem key={q.id} value={q.name}>
+                        {q.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {errors.queueName && (
-                  <p className="mt-1.5 text-sm text-red-600">{errors.queueName.message}</p>
-                )}
               </div>
             </div>
           </div>
 
           {/* Assignment & Tags */}
           <div className="rounded-lg border border-gray-200 bg-white p-5">
-            <h2 className="mb-4 text-sm font-semibold text-gray-500 uppercase tracking-wider">Assignment</h2>
+            <h2 className="mb-4 text-sm font-semibold text-gray-500 uppercase tracking-wider">Affectation</h2>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-neutral-700">Assignee</label>
+                <label className="mb-1.5 block text-sm font-medium text-neutral-700">Assigné</label>
                 <Select
                   value={watch("assigneeName") ?? ""}
                   onValueChange={(val) => setValue("assigneeName", val)}
+                  disabled={techniciansLoading}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Unassigned" />
+                    <SelectValue placeholder={techniciansLoading ? "Chargement..." : "Non assigné"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="unassigned">Unassigned</SelectItem>
-                    {TECHNICIANS.map((tech) => (
+                    <SelectItem value="unassigned">Non assigné</SelectItem>
+                    {technicians.map((tech) => (
                       <SelectItem key={tech} value={tech}>
                         {tech}
                       </SelectItem>
@@ -368,7 +436,7 @@ export default function NewTicketPage() {
 
               <Input
                 label="Étiquettes"
-                placeholder="Comma-separated tags"
+                placeholder="Étiquettes séparées par des virgules"
                 {...register("tags")}
               />
             </div>
@@ -379,13 +447,13 @@ export default function NewTicketPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => router.push("/tickets")}
+              onClick={() => router.back()}
             >
-              Cancel
+              Annuler
             </Button>
             <Button type="submit" variant="primary" loading={isSubmitting}>
               <Save className="h-4 w-4" />
-              Create Ticket
+              Créer le ticket
             </Button>
           </div>
         </form>

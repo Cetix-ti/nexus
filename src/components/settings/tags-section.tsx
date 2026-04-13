@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Trash2, Tag as TagIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,6 +43,16 @@ const initialTags: Tag[] = [
 
 export function TagsSection() {
   const [tags, setTags] = useState<Tag[]>(initialTags);
+
+  // Load from API
+  useEffect(() => {
+    fetch("/api/v1/tags")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) setTags(data);
+      })
+      .catch(() => {});
+  }, []);
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(TAG_COLORS[0].value);
   const [search, setSearch] = useState("");

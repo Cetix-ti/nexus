@@ -31,10 +31,10 @@ function DataTable<TData, TValue>({
   columns,
   data,
   searchKey,
-  searchPlaceholder = "Search...",
+  searchPlaceholder = "Rechercher...",
   pageSize = 10,
   onRowClick,
-  emptyMessage = "No results found.",
+  emptyMessage = "Aucun résultat trouvé.",
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { createAsset } from "@/lib/assets/service";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 const TYPE_MAP: Record<string, string> = {
   WORKSTATION: "workstation",
@@ -23,6 +24,8 @@ const STATUS_MAP: Record<string, string> = {
 };
 
 export async function GET(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const url = new URL(req.url);
   const orgId = url.searchParams.get("organizationId") || undefined;
 
@@ -51,11 +54,15 @@ export async function GET(req: Request) {
         : "—",
       manufacturer: a.manufacturer ?? "—",
       model: a.model ?? "—",
+      cpuModel: (a.metadata as any)?.cpuModel ?? null,
+      ramGb: (a.metadata as any)?.ramGb ?? null,
     }))
   );
 }
 
 export async function POST(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
   if (!body.organizationId || !body.name) {
     return NextResponse.json(

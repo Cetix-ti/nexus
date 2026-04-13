@@ -1,86 +1,117 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  mockOrgIntegrationMappings,
-  getOrgMapping,
-} from "@/lib/integrations/mock-data";
+import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-/**
- * GET /api/v1/organizations/[id]/integrations
- * Returns the list of integration mappings for a given org
- */
 export async function GET(_request: NextRequest, context: RouteContext) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { id } = await context.params;
-  const mappings = mockOrgIntegrationMappings.filter(
-    (m) => m.organizationId === id
-  );
+  const mappings = await prisma.orgIntegrationMapping.findMany({
+    where: { organizationId: id },
+    orderBy: { provider: "asc" },
+  });
+
   return NextResponse.json({
     success: true,
-    data: mappings,
+    data: mappings.map((m) => ({
+      id: m.id,
+      organizationId: m.organizationId,
+      provider: m.provider,
+      externalId: m.externalId,
+      externalName: m.externalName,
+      lastSyncAt: m.lastSyncAt?.toISOString() ?? null,
+      recordCount: m.syncedRecordCount ?? 0,
+      isActive: m.isActive,
+    })),
     meta: { total: mappings.length, organizationId: id },
   });
 }
 
-/**
- * POST /api/v1/organizations/[id]/integrations
- * Create a new mapping (e.g. link this org to an Atera customer)
- *
- * Body: { provider: string, externalId: string, externalName: string }
- */
 export async function POST(request: NextRequest, context: RouteContext) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { id } = await context.params;
   const body = await request.json();
 
   if (!body.provider || !body.externalId || !body.externalName) {
     return NextResponse.json(
-      { success: false, error: "Missing required fields" },
-      { status: 400 }
+      { success: false, error: "Champs requis manquants" },
+      { status: 400 },
     );
   }
 
-  const existing = getOrgMapping(id, body.provider);
+  // Check existing
+  const existing = await prisma.orgIntegrationMapping.findFirst({
+    where: { organizationId: id, provider: body.provider },
+  });
   if (existing) {
     return NextResponse.json(
-      { success: false, error: "Cette organisation est déjà mappée à ce fournisseur" },
-      { status: 409 }
+      { success: false, error: "Ce fournisseur est déjà mappé pour cette organisation" },
+      { status: 409 },
     );
   }
 
-  const mapping = {
-    id: `map_${body.provider}_${id}_${Date.now()}`,
-    organizationId: id,
-    organizationName: body.organizationName || "—",
-    provider: body.provider,
-    externalId: body.externalId,
-    externalName: body.externalName,
-    externalUrl: body.externalUrl,
-    isActive: true,
-    syncedRecordCount: 0,
-    syncedRecordType: body.syncedRecordType,
-    mappedAt: new Date().toISOString(),
-    mappedBy: "Jean-Philippe Côté",
-  };
+  // Find or create the tenant integration record for this provider
+  let integration = await prisma.tenantIntegration.findFirst({
+    where: { provider: body.provider },
+  });
+  if (!integration) {
+    integration = await prisma.tenantIntegration.create({
+      data: {
+        provider: body.provider,
+        name: body.provider === "atera" ? "Atera RMM" : "QuickBooks Online",
+        category: body.provider === "atera" ? "rmm" : "accounting",
+        authType: body.provider === "atera" ? "api_key" : "oauth2",
+        status: "connected",
+      },
+    });
+  }
 
-  return NextResponse.json({ success: true, data: mapping }, { status: 201 });
+  const mapping = await prisma.orgIntegrationMapping.create({
+    data: {
+      organizationId: id,
+      integrationId: integration.id,
+      provider: body.provider,
+      externalId: body.externalId,
+      externalName: body.externalName,
+      isActive: true,
+    },
+  });
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      id: mapping.id,
+      organizationId: mapping.organizationId,
+      provider: mapping.provider,
+      externalId: mapping.externalId,
+      externalName: mapping.externalName,
+      lastSyncAt: null,
+      recordCount: 0,
+      isActive: true,
+    },
+  }, { status: 201 });
 }
 
-/**
- * DELETE /api/v1/organizations/[id]/integrations?provider=atera
- */
 export async function DELETE(request: NextRequest, context: RouteContext) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { id } = await context.params;
   const provider = request.nextUrl.searchParams.get("provider");
   if (!provider) {
-    return NextResponse.json(
-      { success: false, error: "provider query param required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Paramètre provider requis" }, { status: 400 });
   }
-  return NextResponse.json({
-    success: true,
-    data: { organizationId: id, provider, removed: true },
+
+  await prisma.orgIntegrationMapping.deleteMany({
+    where: { organizationId: id, provider },
   });
+
+  return NextResponse.json({ success: true });
 }

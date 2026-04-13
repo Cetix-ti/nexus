@@ -111,7 +111,7 @@ export function OrgApproversSection({
     fetch(`/api/v1/approvers?organizationId=${organizationId}`)
       .then((r) => r.json())
       .then((data) => Array.isArray(data) && setApprovers(data))
-      .catch((e) => console.error("Failed to load approvers", e));
+      .catch((e) => console.error("Erreur de chargement des approbateurs", e));
     fetch(`/api/v1/contacts?organizationId=${organizationId}`)
       .then((r) => r.json())
       .then((data) => {

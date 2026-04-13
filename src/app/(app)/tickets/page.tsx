@@ -30,21 +30,13 @@ import { type TicketStatus } from "@/lib/mock-data";
 type ViewMode = "list" | "kanban";
 
 const STATUS_TABS: { key: string; label: string; filter: TicketStatus[] | null }[] = [
-  { key: "all", label: "All", filter: null },
+  { key: "all", label: "Tous", filter: null },
   { key: "open", label: "Ouverts", filter: ["new", "open"] },
-  { key: "in_progress", label: "In Progress", filter: ["in_progress"] },
-  { key: "waiting", label: "En attente", filter: ["waiting_client"] },
-  { key: "on_site", label: "Sur place", filter: ["on_site"] },
-  { key: "resolved", label: "Resolved", filter: ["resolved", "closed"] },
+  { key: "in_progress", label: "En cours", filter: ["in_progress", "on_site"] },
+  { key: "waiting", label: "En attente", filter: ["pending", "waiting_client", "waiting_vendor", "scheduled"] },
+  { key: "resolved", label: "Résolus", filter: ["resolved", "closed", "cancelled"] },
 ];
 
-const ORGANIZATIONS = [
-  "Cetix",
-  "Acme Corp",
-  "TechStart Inc",
-  "Global Finance",
-  "HealthCare Plus",
-];
 
 export default function TicketsPage() {
   return (
@@ -83,6 +75,14 @@ function TicketsPageInner() {
   const [search, setSearch] = usePersistentState("nexus.tickets.search", "");
   const [priorityFilter, setPriorityFilter] = usePersistentState("nexus.tickets.priority", "all");
   const [orgFilter, setOrgFilter] = usePersistentState("nexus.tickets.org", "all");
+
+  const organizations = useMemo(() => {
+    const names = new Set<string>();
+    for (const t of tickets) {
+      if (t.organizationName && t.organizationName !== "—") names.add(t.organizationName);
+    }
+    return [...names].sort();
+  }, [tickets]);
 
   const filtered = useMemo(() => {
     let result = [...tickets];
@@ -189,7 +189,8 @@ function TicketsPageInner() {
             })}
           </div>
 
-          <div className="flex items-center gap-0.5 rounded-lg bg-slate-100/80 p-1 ring-1 ring-inset ring-slate-200/60">
+          {/* View toggle — hidden on mobile (Kanban not available on mobile) */}
+          <div className="hidden sm:flex items-center gap-0.5 rounded-lg bg-slate-100/80 p-1 ring-1 ring-inset ring-slate-200/60">
             <button
               onClick={() => setViewMode("list")}
               className={cn(
@@ -245,7 +246,7 @@ function TicketsPageInner() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Toutes organisations</SelectItem>
-              {ORGANIZATIONS.map((org) => (
+              {organizations.map((org) => (
                 <SelectItem key={org} value={org}>
                   {org}
                 </SelectItem>
@@ -255,12 +256,17 @@ function TicketsPageInner() {
         </div>
       </div>
 
-      {/* Content */}
-      {viewMode === "list" ? (
+      {/* Content — Kanban hidden on mobile, always show list */}
+      <div className="sm:hidden">
         <TicketListView tickets={filtered} />
-      ) : (
-        <TicketKanbanView tickets={filtered} />
-      )}
+      </div>
+      <div className="hidden sm:block">
+        {viewMode === "list" ? (
+          <TicketListView tickets={filtered} />
+        ) : (
+          <TicketKanbanView tickets={filtered} />
+        )}
+      </div>
     </div>
   );
 }

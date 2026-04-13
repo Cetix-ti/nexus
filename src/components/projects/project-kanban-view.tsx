@@ -18,12 +18,9 @@ import { cn } from "@/lib/utils";
 import { TicketCard } from "@/components/tickets/ticket-card";
 import { ProjectKanbanQuickView } from "./project-kanban-quick-view";
 import {
-  mockTickets,
   type Ticket,
   type TicketStatus,
 } from "@/lib/mock-data";
-import { mockProjects, mockProjectTasks } from "@/lib/projects/mock-data";
-import { mockTimeEntries } from "@/lib/billing/mock-data";
 import { useKanbanStore, type KanbanColumn } from "@/stores/kanban-store";
 
 interface ProjectKanbanViewProps {
@@ -102,21 +99,39 @@ function getInitials(name: string): string {
 }
 
 export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
-  const project = mockProjects.find((p) => p.id === projectId);
+  const [projectData, setProjectData] = useState<{
+    budgetHours?: number;
+    tasks: { estimatedHours?: number | null }[];
+  } | null>(null);
   const columnsConfig = useKanbanStore((s) => s.columns);
 
-  const initialTickets = useMemo(
-    () => mockTickets.filter((t) => t.projectId === projectId),
-    [projectId]
-  );
-  const [localTickets, setLocalTickets] = useState<Ticket[]>(initialTickets);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/v1/projects/${projectId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (cancelled || !json?.data) return;
+        setProjectData({
+          budgetHours: json.data.budgetHours ?? undefined,
+          tasks: json.data.tasks ?? [],
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  const [localTickets, setLocalTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
   const [quickViewTicket, setQuickViewTicket] = useState<Ticket | null>(null);
   const [quickViewOpen, setQuickViewOpen] = useState(false);
 
+  // Fetch tickets linked to this project
   useEffect(() => {
-    setLocalTickets(initialTickets);
-  }, [initialTickets]);
+    fetch(`/api/v1/tickets?projectId=${projectId}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((d) => setLocalTickets(Array.isArray(d) ? d : []))
+      .catch(() => setLocalTickets([]));
+  }, [projectId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -124,24 +139,35 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
 
   // Stats
   const projectTasks = useMemo(
-    () => mockProjectTasks.filter((t) => t.projectId === projectId),
-    [projectId]
+    () => projectData?.tasks ?? [],
+    [projectData]
   );
 
-  const ticketIds = useMemo(() => new Set(initialTickets.map((t) => t.id)), [initialTickets]);
+  const ticketIds = useMemo(() => new Set(localTickets.map((t) => t.id)), [localTickets]);
 
-  const projectTimeEntries = useMemo(
-    () => mockTimeEntries.filter((e) => ticketIds.has(e.ticketId)),
-    [ticketIds]
-  );
+  const [projectTimeEntries, setProjectTimeEntries] = useState<{ durationMinutes: number; amount?: number | null; agentId?: string; agentName?: string }[]>([]);
+  useEffect(() => {
+    if (localTickets.length === 0) { setProjectTimeEntries([]); return; }
+    // Fetch time entries for each ticket in the project
+    Promise.all(
+      localTickets.slice(0, 20).map((t) =>
+        fetch(`/api/v1/time-entries?ticketId=${t.id}`)
+          .then((r) => r.ok ? r.json() : [])
+          .catch(() => [])
+      )
+    ).then((results) => {
+      const all = results.flat().filter(Array.isArray(results) ? Boolean : () => false);
+      setProjectTimeEntries(results.flat());
+    });
+  }, [localTickets]);
 
   const plannedHours = useMemo(() => {
     const fromTasks = projectTasks.reduce(
       (s, t) => s + (t.estimatedHours ?? 0),
       0
     );
-    return fromTasks > 0 ? fromTasks : project?.budgetHours ?? 0;
-  }, [projectTasks, project]);
+    return fromTasks > 0 ? fromTasks : projectData?.budgetHours ?? 0;
+  }, [projectTasks, projectData]);
 
   const consumedHours = useMemo(
     () => projectTimeEntries.reduce((s, e) => s + e.durationMinutes, 0) / 60,
@@ -157,9 +183,10 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
   const byTechnician = useMemo(() => {
     const map = new Map<string, { name: string; minutes: number }>();
     projectTimeEntries.forEach((e) => {
-      const cur = map.get(e.agentId) ?? { name: e.agentName, minutes: 0 };
+      const id = e.agentId ?? "unknown";
+      const cur = map.get(id) ?? { name: e.agentName ?? "Inconnu", minutes: 0 };
       cur.minutes += e.durationMinutes;
-      map.set(e.agentId, cur);
+      map.set(id, cur);
     });
     return Array.from(map.values()).sort((a, b) => b.minutes - a.minutes);
   }, [projectTimeEntries]);

@@ -58,7 +58,6 @@ import { IntegrationsSection } from "@/components/settings/integrations-section"
 import { PortalDomainSection } from "@/components/settings/portal-domain-section";
 import { MonitoringSection } from "@/components/settings/monitoring-section";
 import { PortalPreviewSection } from "@/components/settings/portal-preview-section";
-import { VeeamSection } from "@/components/settings/veeam-section";
 import { ProjectTypesSection } from "@/components/settings/project-types-section";
 import { EmailToTicketSection } from "@/components/settings/email-to-ticket-section";
 import { useSession } from "next-auth/react";
@@ -84,10 +83,9 @@ const sectionGroups: SettingsGroup[] = [
   {
     label: "Général",
     sections: [
-      { key: "general", label: "Général", icon: Settings },
-      { key: "users", label: "Utilisateurs", icon: Users },
-      { key: "roles", label: "Rôles & Permissions", icon: Shield },
-      { key: "agents", label: "Profils & Signatures", icon: UserCircle },
+      { key: "general", label: "Général", icon: Settings, superAdminOnly: true },
+      { key: "users", label: "Agents", icon: Users, superAdminOnly: true },
+      { key: "roles", label: "Rôles & Permissions", icon: Shield, superAdminOnly: true },
     ],
   },
   {
@@ -130,6 +128,7 @@ const sectionGroups: SettingsGroup[] = [
       { key: "integrations", label: "Intégrations", icon: Plug },
       { key: "email_monitoring", label: "Surveillance par courriel", icon: Bell },
       { key: "api", label: "API", icon: Key },
+      { key: "system", label: "Système", icon: HardDrive, superAdminOnly: true },
     ],
   },
 ];
@@ -142,63 +141,6 @@ type SectionKey = string;
 // ---------------------------------------------------------------------------
 // Mock users
 // ---------------------------------------------------------------------------
-
-const mockUsers = [
-  {
-    id: "u1",
-    name: "Jean-Philippe Martin",
-    email: "jp.martin@cetix.ca",
-    role: "Administrateur",
-    roleBadge: "danger" as const,
-    status: "Actif",
-    lastLogin: "Aujourd'hui, 09:12",
-  },
-  {
-    id: "u2",
-    name: "Marie Tremblay",
-    email: "m.tremblay@cetix.ca",
-    role: "Technicien Senior",
-    roleBadge: "primary" as const,
-    status: "Actif",
-    lastLogin: "Aujourd'hui, 08:45",
-  },
-  {
-    id: "u3",
-    name: "Sophie Lavoie",
-    email: "s.lavoie@cetix.ca",
-    role: "Technicien",
-    roleBadge: "primary" as const,
-    status: "Actif",
-    lastLogin: "Hier, 17:30",
-  },
-  {
-    id: "u4",
-    name: "Lucas Bergeron",
-    email: "l.bergeron@cetix.ca",
-    role: "Technicien",
-    roleBadge: "primary" as const,
-    status: "Actif",
-    lastLogin: "Aujourd'hui, 10:05",
-  },
-  {
-    id: "u5",
-    name: "Isabelle Côté",
-    email: "i.cote@cetix.ca",
-    role: "Gestionnaire",
-    roleBadge: "warning" as const,
-    status: "Actif",
-    lastLogin: "Hier, 14:22",
-  },
-  {
-    id: "u6",
-    name: "Marc-André Roy",
-    email: "ma.roy@cetix.ca",
-    role: "Technicien",
-    roleBadge: "primary" as const,
-    status: "Inactif",
-    lastLogin: "Il y a 15 jours",
-  },
-];
 
 // ---------------------------------------------------------------------------
 // General Section
@@ -428,138 +370,282 @@ function GeneralSection() {
       </Card>
 
       {/* Regional Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Paramètres régionaux</CardTitle>
-          <CardDescription>
-            Fuseau horaire, langue et format de date
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-neutral-700">
-                Fuseau horaire
-              </label>
-              <Select defaultValue="america_montreal">
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="america_montreal">
-                    America/Montreal (UTC-5)
-                  </SelectItem>
-                  <SelectItem value="america_toronto">
-                    America/Toronto (UTC-5)
-                  </SelectItem>
-                  <SelectItem value="america_vancouver">
-                    America/Vancouver (UTC-8)
-                  </SelectItem>
-                  <SelectItem value="europe_paris">
-                    Europe/Paris (UTC+1)
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-neutral-700">
-                Langue
-                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-700">
-                  À venir
-                </span>
-              </label>
-              <Select defaultValue="fr" disabled>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fr">Français</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="mt-1 text-[10.5px] text-neutral-400">
-                L&apos;internationalisation (i18n) sera ajoutée dans une prochaine version. L&apos;UI est actuellement disponible en français uniquement.
-              </p>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-neutral-700">
-                Format de date
-              </label>
-              <Select defaultValue="dd_mm_yyyy">
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="dd_mm_yyyy">JJ/MM/AAAA</SelectItem>
-                  <SelectItem value="mm_dd_yyyy">MM/JJ/AAAA</SelectItem>
-                  <SelectItem value="yyyy_mm_dd">AAAA-MM-JJ</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button variant="primary">Enregistrer</Button>
-          </div>
-        </CardContent>
-      </Card>
+      <RegionalSettingsCard />
 
       {/* Ticket Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Paramètres des tickets</CardTitle>
-          <CardDescription>
-            Configuration par défaut pour la création de tickets
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Input
-              label="Préfixe de numérotation"
-              defaultValue="TK-"
-            />
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-neutral-700">
-                Priorité par défaut
-              </label>
-              <Select defaultValue="medium">
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">Basse</SelectItem>
-                  <SelectItem value="medium">Moyenne</SelectItem>
-                  <SelectItem value="high">Haute</SelectItem>
-                  <SelectItem value="critical">Critique</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-neutral-700">
-                File d&apos;attente par défaut
-              </label>
-              <Select defaultValue="general">
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="general">Support général</SelectItem>
-                  <SelectItem value="network">Réseau</SelectItem>
-                  <SelectItem value="security">Sécurité</SelectItem>
-                  <SelectItem value="cloud">Infrastructure Cloud</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Input
-              label="Fermeture automatique après (jours)"
-              type="number"
-              defaultValue="7"
-            />
-          </div>
-          <div className="flex justify-end">
-            <Button variant="primary">Enregistrer</Button>
-          </div>
-        </CardContent>
-      </Card>
+      <TicketSettingsCard />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Regional Settings Card
+// ---------------------------------------------------------------------------
+
+function RegionalSettingsCard() {
+  const [timezone, setTimezone] = useState("america_montreal");
+  const [language] = useState("fr");
+  const [dateFormat, setDateFormat] = useState("dd_mm_yyyy");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/settings/regional")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data.timezone) setTimezone(data.timezone);
+        if (data.dateFormat) setDateFormat(data.dateFormat);
+      })
+      .catch((e) => console.error("Erreur de chargement des paramètres régionaux", e))
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function handleSaveRegional() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/v1/settings/regional", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timezone, language, dateFormat }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setMessage({ tone: "ok", text: "Paramètres régionaux enregistrés" });
+    } catch (err) {
+      setMessage({ tone: "err", text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Paramètres régionaux</CardTitle>
+        <CardDescription>
+          Fuseau horaire, langue et format de date
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700">
+              Fuseau horaire
+            </label>
+            <Select value={timezone} onValueChange={setTimezone} disabled={!loaded}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="america_montreal">
+                  America/Montreal (UTC-5)
+                </SelectItem>
+                <SelectItem value="america_toronto">
+                  America/Toronto (UTC-5)
+                </SelectItem>
+                <SelectItem value="america_vancouver">
+                  America/Vancouver (UTC-8)
+                </SelectItem>
+                <SelectItem value="europe_paris">
+                  Europe/Paris (UTC+1)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-neutral-700">
+              Langue
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-700">
+                À venir
+              </span>
+            </label>
+            <Select defaultValue="fr" disabled>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fr">Français</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="mt-1 text-[10.5px] text-neutral-400">
+              L&apos;internationalisation (i18n) sera ajoutée dans une prochaine version. L&apos;UI est actuellement disponible en français uniquement.
+            </p>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700">
+              Format de date
+            </label>
+            <Select value={dateFormat} onValueChange={setDateFormat} disabled={!loaded}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dd_mm_yyyy">JJ/MM/AAAA</SelectItem>
+                <SelectItem value="mm_dd_yyyy">MM/JJ/AAAA</SelectItem>
+                <SelectItem value="yyyy_mm_dd">AAAA-MM-JJ</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {message ? (
+          <div
+            className={cn(
+              "rounded-lg border px-3 py-2 text-sm",
+              message.tone === "ok"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-red-200 bg-red-50 text-red-700"
+            )}
+          >
+            {message.text}
+          </div>
+        ) : null}
+        <div className="flex justify-end">
+          <Button variant="primary" onClick={handleSaveRegional} disabled={saving || !loaded}>
+            {saving ? "Enregistrement…" : "Enregistrer"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ticket Settings Card
+// ---------------------------------------------------------------------------
+
+function TicketSettingsCard() {
+  const [numberingPrefix, setNumberingPrefix] = useState("TK-");
+  const [defaultPriority, setDefaultPriority] = useState("medium");
+  const [defaultQueue, setDefaultQueue] = useState("general");
+  const [autoCloseDays, setAutoCloseDays] = useState("7");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/settings/tickets")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data.numberingPrefix !== undefined) setNumberingPrefix(data.numberingPrefix);
+        if (data.defaultPriority) setDefaultPriority(data.defaultPriority);
+        if (data.defaultQueue) setDefaultQueue(data.defaultQueue);
+        if (data.autoCloseDays !== undefined) setAutoCloseDays(String(data.autoCloseDays));
+      })
+      .catch((e) => console.error("Erreur de chargement des paramètres de tickets", e))
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function handleSaveTickets() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/v1/settings/tickets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          numberingPrefix,
+          defaultPriority,
+          defaultQueue,
+          autoCloseDays: parseInt(autoCloseDays) || 7,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setMessage({ tone: "ok", text: "Paramètres des tickets enregistrés" });
+    } catch (err) {
+      setMessage({ tone: "err", text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Paramètres des tickets</CardTitle>
+        <CardDescription>
+          Configuration par défaut pour la création de tickets
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Préfixe de numérotation"
+            value={numberingPrefix}
+            onChange={(e) => setNumberingPrefix(e.target.value)}
+            disabled={!loaded}
+          />
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700">
+              Priorité par défaut
+            </label>
+            <Select value={defaultPriority} onValueChange={setDefaultPriority} disabled={!loaded}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">Basse</SelectItem>
+                <SelectItem value="medium">Moyenne</SelectItem>
+                <SelectItem value="high">Haute</SelectItem>
+                <SelectItem value="critical">Critique</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700">
+              File d&apos;attente par défaut
+            </label>
+            <Select value={defaultQueue} onValueChange={setDefaultQueue} disabled={!loaded}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="general">Support général</SelectItem>
+                <SelectItem value="network">Réseau</SelectItem>
+                <SelectItem value="security">Sécurité</SelectItem>
+                <SelectItem value="cloud">Infrastructure Cloud</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Input
+            label="Fermeture automatique après (jours)"
+            type="number"
+            value={autoCloseDays}
+            onChange={(e) => setAutoCloseDays(e.target.value)}
+            disabled={!loaded}
+          />
+        </div>
+        {message ? (
+          <div
+            className={cn(
+              "rounded-lg border px-3 py-2 text-sm",
+              message.tone === "ok"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-red-200 bg-red-50 text-red-700"
+            )}
+          >
+            {message.text}
+          </div>
+        ) : null}
+        <div className="flex justify-end">
+          <Button variant="primary" onClick={handleSaveTickets} disabled={saving || !loaded}>
+            {saving ? "Enregistrement…" : "Enregistrer"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -820,16 +906,115 @@ function PlaceholderSection({ title, description }: { title: string; description
 }
 
 // ---------------------------------------------------------------------------
+// System Info Section — displays server, proxy, and network details
+// ---------------------------------------------------------------------------
+
+function SystemInfoSection() {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/v1/settings/system")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setData(d?.data ?? null))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Card><CardContent className="py-12 text-center text-slate-400">Chargement...</CardContent></Card>;
+  if (!data) return <Card><CardContent className="py-12 text-center text-slate-400">Impossible de charger les informations système.</CardContent></Card>;
+
+  const s = data.server;
+  const n = data.network;
+  const proxy = n.proxy;
+
+  return (
+    <div className="space-y-6">
+      {/* Reverse Proxy Detection */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Réseau & Reverse Proxy</CardTitle>
+          <CardDescription>Détection automatique de la topologie réseau</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <InfoRow label="URL publique" value={n.publicUrl} />
+            <InfoRow label="Host détecté" value={n.host} />
+          </div>
+          <div className="rounded-lg border border-slate-200 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className={cn("h-2.5 w-2.5 rounded-full", proxy.detected ? "bg-emerald-500" : "bg-slate-300")} />
+              <span className="text-sm font-medium text-slate-900">
+                {proxy.detected ? "Reverse proxy détecté" : "Connexion directe (pas de proxy)"}
+              </span>
+            </div>
+            {proxy.detected && (
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <InfoRow label="IP du proxy" value={proxy.ip || "—"} />
+                <InfoRow label="Protocole" value={proxy.protocol} />
+                <InfoRow label="X-Forwarded-For" value={proxy.forwardedFor || "—"} />
+                <InfoRow label="X-Real-IP" value={proxy.realIp || "—"} />
+                {proxy.via && <InfoRow label="Via" value={proxy.via} />}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Server Info */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Serveur</CardTitle>
+          <CardDescription>Informations sur le serveur Nexus</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4">
+            <InfoRow label="Nom d'hôte" value={s.hostname} />
+            <InfoRow label="IP internes" value={s.internalIps.join(", ")} />
+            <InfoRow label="Node.js" value={s.nodeVersion} />
+            <InfoRow label="Plateforme" value={s.platform} />
+            <InfoRow label="Uptime" value={`${Math.floor(s.uptime / 3600)}h ${Math.floor((s.uptime % 3600) / 60)}m`} />
+            <InfoRow label="Mémoire" value={`${s.memoryUsage.used} Mo / ${s.memoryUsage.total} Mo`} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Environment */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Environnement</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4">
+            <InfoRow label="Mode" value={data.environment.nodeEnv} />
+            <InfoRow label="AUTH_URL" value={data.environment.authUrl} />
+            <InfoRow label="Base de données" value={data.environment.databaseConnected ? "Connectée" : "Déconnectée"} />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">{label}</p>
+      <p className="text-sm font-medium text-slate-900 mt-0.5 font-mono">{value}</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Section content map
 // ---------------------------------------------------------------------------
 
 const sectionContent: Record<SectionKey, React.ReactNode> = {
   general: <GeneralSection />,
-  users: <UsersSection />,
+  users: <><UsersSection /><div className="mt-10 pt-10 border-t border-slate-200"><AgentProfilesSection /></div></>,
   roles: <RolesSection />,
   notifications: <NotificationsSection />,
   email: <><EmailSection /><div className="mt-8"><EmailToTicketSection /></div></>,
-  agents: <AgentProfilesSection />,
   portal_access: <PortalAccessSection />,
   portal_preview: <PortalPreviewSection />,
   sla: <SLASection />,
@@ -842,7 +1027,7 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   contracts: <ContractsSection />,
   project_types: <ProjectTypesSection />,
   integrations: <IntegrationsSection />,
-  email_monitoring: <><VeeamSection /><div className="mt-10 pt-10 border-t border-slate-200"><MonitoringSection /></div></>,
+  email_monitoring: <MonitoringSection />,
   portal_domain: <PortalDomainSection />,
   api: (
     <PlaceholderSection
@@ -850,6 +1035,7 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
       description="Gérez vos clés d'accès à l'API Nexus"
     />
   ),
+  system: <SystemInfoSection />,
 };
 
 // ---------------------------------------------------------------------------
@@ -887,10 +1073,35 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Layout: Sidebar + Content */}
+      {/* Mobile: horizontal scrollable tabs */}
+      <div className="lg:hidden -mx-4 px-4 overflow-x-auto pb-3 mb-4">
+        <div className="flex items-center gap-1.5 min-w-max">
+          {visibleSections.map((section) => {
+            const Icon = section.icon;
+            const isActive = effectiveSection === section.key;
+            return (
+              <button
+                key={section.key}
+                onClick={() => setActiveSection(section.key)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium whitespace-nowrap transition-colors shrink-0",
+                  isActive
+                    ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200/60"
+                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {section.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Layout: Sidebar (desktop) + Content */}
       <div className="flex flex-col gap-6 lg:flex-row">
-        {/* Settings Sidebar */}
-        <nav className="w-full shrink-0 lg:w-64">
+        {/* Settings Sidebar — hidden on mobile (replaced by tabs above) */}
+        <nav className="hidden lg:block w-64 shrink-0">
           <div className="space-y-4">
             {sectionGroups.map((group) => {
               const groupSections = group.sections.filter((s) => {

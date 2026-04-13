@@ -2,16 +2,20 @@ export type TicketStatus =
   | "new"
   | "open"
   | "in_progress"
-  | "waiting_client"
   | "on_site"
+  | "pending"
+  | "waiting_client"
+  | "waiting_vendor"
+  | "scheduled"
   | "resolved"
-  | "closed";
+  | "closed"
+  | "cancelled";
 
 export type TicketPriority = "critical" | "high" | "medium" | "low";
 export type TicketUrgency = "critical" | "high" | "medium" | "low";
 export type TicketImpact = "critical" | "high" | "medium" | "low";
-export type TicketType = "incident" | "request" | "problem" | "change";
-export type TicketSource = "portal" | "email" | "phone" | "monitoring";
+export type TicketType = "incident" | "service_request" | "problem" | "change" | "alert";
+export type TicketSource = "portal" | "email" | "phone" | "chat" | "api" | "monitoring" | "automation";
 
 export interface TicketComment {
   id: string;
@@ -122,6 +126,27 @@ export const STATUS_CONFIG: Record<
     textClass: "text-cyan-700",
     dotClass: "bg-cyan-500",
   },
+  pending: {
+    label: "En attente",
+    color: "#A855F7",
+    bgClass: "bg-violet-100",
+    textClass: "text-violet-700",
+    dotClass: "bg-violet-500",
+  },
+  waiting_vendor: {
+    label: "Attente fournisseur",
+    color: "#EC4899",
+    bgClass: "bg-pink-100",
+    textClass: "text-pink-700",
+    dotClass: "bg-pink-500",
+  },
+  scheduled: {
+    label: "Planifié",
+    color: "#14B8A6",
+    bgClass: "bg-teal-100",
+    textClass: "text-teal-700",
+    dotClass: "bg-teal-500",
+  },
   resolved: {
     label: "Résolu",
     color: "#10B981",
@@ -135,6 +160,13 @@ export const STATUS_CONFIG: Record<
     bgClass: "bg-gray-100",
     textClass: "text-gray-700",
     dotClass: "bg-gray-500",
+  },
+  cancelled: {
+    label: "Annulé",
+    color: "#9CA3AF",
+    bgClass: "bg-gray-100",
+    textClass: "text-gray-500",
+    dotClass: "bg-gray-400",
   },
 };
 
@@ -176,12 +208,51 @@ export const PRIORITY_CONFIG: Record<
   },
 };
 
+export const TYPE_CONFIG: Record<
+  TicketType,
+  { label: string; color: string; bgClass: string; textClass: string }
+> = {
+  incident: {
+    label: "Incident",
+    color: "#EF4444",
+    bgClass: "bg-red-100",
+    textClass: "text-red-700",
+  },
+  service_request: {
+    label: "Demande de service",
+    color: "#3B82F6",
+    bgClass: "bg-blue-100",
+    textClass: "text-blue-700",
+  },
+  problem: {
+    label: "Problème",
+    color: "#F59E0B",
+    bgClass: "bg-amber-100",
+    textClass: "text-amber-700",
+  },
+  change: {
+    label: "Changement",
+    color: "#8B5CF6",
+    bgClass: "bg-purple-100",
+    textClass: "text-purple-700",
+  },
+  alert: {
+    label: "Alerte",
+    color: "#F97316",
+    bgClass: "bg-orange-100",
+    textClass: "text-orange-700",
+  },
+};
+
 export const KANBAN_COLUMNS: TicketStatus[] = [
   "new",
   "open",
   "in_progress",
   "on_site",
+  "pending",
   "waiting_client",
+  "waiting_vendor",
+  "scheduled",
   "resolved",
 ];
 
@@ -437,7 +508,7 @@ export const mockTickets: Ticket[] = [
     priority: "medium",
     urgency: "medium",
     impact: "low",
-    type: "request",
+    type: "service_request",
     source: "portal",
     organizationName: "Acme Corp",
     requesterName: "Robert Kim",
@@ -518,7 +589,7 @@ export const mockTickets: Ticket[] = [
     priority: "low",
     urgency: "low",
     impact: "low",
-    type: "request",
+    type: "service_request",
     source: "portal",
     organizationName: "TechStart Inc",
     requesterName: "Mike Johnson",
@@ -645,7 +716,7 @@ export const mockTickets: Ticket[] = [
     priority: "low",
     urgency: "low",
     impact: "low",
-    type: "request",
+    type: "service_request",
     source: "portal",
     organizationName: "Acme Corp",
     requesterName: "Karen Lee",
@@ -826,7 +897,7 @@ export const mockTickets: Ticket[] = [
     priority: "medium",
     urgency: "medium",
     impact: "low",
-    type: "request",
+    type: "service_request",
     source: "email",
     organizationName: "Acme Corp",
     requesterName: "Robert Kim",

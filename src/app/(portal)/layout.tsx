@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { PortalImpersonationBanner } from "@/components/portal/impersonation-banner";
+import { LanguageSelector } from "@/components/layout/language-selector";
 
 interface NavItem {
   label: string;
@@ -33,12 +34,11 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: "Accueil", href: "/portal", icon: Home },
   { label: "Billets", href: "/portal/tickets", icon: Ticket },
-  { label: "Projets", href: "/portal/projects", icon: FolderKanban },
   { label: "Actifs", href: "/portal/assets", icon: Monitor },
-  { label: "Rapports", href: "/portal/reports", icon: BarChart3 },
-  { label: "Finances", href: "/portal/finances", icon: DollarSign },
+  { label: "Projets", href: "/portal/projects", icon: FolderKanban, adminOnly: true },
+  { label: "Rapports", href: "/portal/reports", icon: BarChart3, adminOnly: true },
+  { label: "Finances", href: "/portal/finances", icon: DollarSign, adminOnly: true },
   { label: "Contacts", href: "/portal/contacts", icon: Users, adminOnly: true },
-  { label: "Nouveau billet", href: "/portal/tickets/new", icon: PlusCircle },
 ];
 
 function getInitials(name: string): string {
@@ -244,6 +244,10 @@ export default function PortalLayout({
                         <User className="h-4 w-4 text-neutral-400" />
                         Mon profil
                       </Link>
+                      <div className="px-4 py-2 border-t border-neutral-100">
+                        <p className="text-[10.5px] font-medium text-neutral-400 uppercase tracking-wider mb-1.5">Langue</p>
+                        <LanguageSelector />
+                      </div>
                       <button
                         onClick={() => {
                           setUserMenuOpen(false);

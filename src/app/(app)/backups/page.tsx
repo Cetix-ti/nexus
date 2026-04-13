@@ -1003,7 +1003,7 @@ function AiDailySummary() {
 
             {/* Rich HTML content from AI */}
             <div
-              className="ai-summary-content rounded-xl border border-slate-200/80 bg-white p-4"
+              className="ai-summary-content rounded-xl border border-slate-200/80 bg-white p-4 overflow-x-auto max-w-full [&_table]:text-[11px] [&_table]:w-full [&_pre]:overflow-x-auto [&_pre]:text-[11px] [&_img]:max-w-full"
               dangerouslySetInnerHTML={{ __html: data.html }}
             />
           </div>

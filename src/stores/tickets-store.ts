@@ -25,6 +25,7 @@ export const useTicketsStore = create<TicketsState>()((set, get) => ({
     try {
       const res = await fetch("/api/v1/tickets");
       const tickets = (await res.json()) as Ticket[];
+      // Replace (not append) to prevent memory accumulation
       set({ tickets, loaded: true, loading: false });
     } catch (e) {
       console.error("Tickets load failed", e);
@@ -33,33 +34,49 @@ export const useTicketsStore = create<TicketsState>()((set, get) => ({
   },
 
   refresh: async () => {
-    set({ loaded: false });
+    set({ loaded: false, loading: false });
     await get().loadAll();
   },
 
   updateTicket: async (id, patch) => {
-    const res = await fetch(`/api/v1/tickets/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-    const updated = (await res.json()) as Ticket;
-    set((s) => ({ tickets: s.tickets.map((t) => (t.id === id ? updated : t)) }));
+    try {
+      const res = await fetch(`/api/v1/tickets/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error("Erreur lors de la mise à jour du ticket");
+      const updated = (await res.json()) as Ticket;
+      set((s) => ({ tickets: s.tickets.map((t) => (t.id === id ? updated : t)) }));
+    } catch (err) {
+      console.error("updateTicket failed", err);
+    }
   },
 
   deleteTicket: async (id) => {
-    await fetch(`/api/v1/tickets/${id}`, { method: "DELETE" });
-    set((s) => ({ tickets: s.tickets.filter((t) => t.id !== id) }));
+    try {
+      const res = await fetch(`/api/v1/tickets/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Erreur lors de la suppression du ticket");
+      set((s) => ({ tickets: s.tickets.filter((t) => t.id !== id) }));
+    } catch (err) {
+      console.error("deleteTicket failed", err);
+    }
   },
 
   createTicket: async (input) => {
-    const res = await fetch("/api/v1/tickets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    });
-    const created = (await res.json()) as Ticket;
-    set((s) => ({ tickets: [created, ...s.tickets] }));
-    return created;
+    try {
+      const res = await fetch("/api/v1/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) throw new Error("Erreur lors de la création du ticket");
+      const created = (await res.json()) as Ticket;
+      set((s) => ({ tickets: [created, ...s.tickets] }));
+      return created;
+    } catch (err) {
+      console.error("createTicket failed", err);
+      throw err;
+    }
   },
 }));

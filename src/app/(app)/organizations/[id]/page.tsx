@@ -48,6 +48,7 @@ import {
 } from "@/components/portal/edit-portal-access-modal";
 import { OrgApproversSection } from "@/components/approvers/org-approvers-section";
 import { ContractModal } from "@/components/settings/contract-modal";
+import { EditContactModal, type EditContactModalContact } from "@/components/contacts/edit-contact-modal";
 import { FreshserviceImportModal } from "@/components/freshservice/freshservice-import-modal";
 import { Database } from "lucide-react";
 import type { Contract as BillingContract } from "@/lib/billing/types";
@@ -56,27 +57,8 @@ import { SupportTiersSection } from "@/components/billing/support-tiers-section"
 import { OrgAssetsTab } from "@/components/assets/org-assets-tab";
 import { OrgSlaSection } from "@/components/sla/org-sla-section";
 import { OrgPortalSection } from "@/components/portal/org-portal-section";
+import { OrgReportsTab } from "@/components/organizations/org-reports-tab";
 import { Plus, X } from "lucide-react";
-
-const ORG_PORTAL_USERS: Record<string, Array<{ name: string; email: string; role: ClientPortalPermissions["portalRole"] | null }>> = {
-  "org-1": [
-    { name: "Marc Tremblay", email: "marc.tremblay@cetix.ca", role: "admin" },
-    { name: "Sophie Gagnon", email: "sophie.gagnon@cetix.ca", role: "manager" },
-    { name: "Julien Lavoie", email: "julien.lavoie@cetix.ca", role: "viewer" },
-    { name: "Isabelle Roy", email: "isabelle.roy@cetix.ca", role: null },
-  ],
-  "org-2": [
-    { name: "James Wilson", email: "j.wilson@acmecorp.com", role: "admin" },
-    { name: "Sarah Chen", email: "s.chen@acmecorp.com", role: "manager" },
-    { name: "David Kumar", email: "d.kumar@acmecorp.com", role: "viewer" },
-  ],
-  "org-4": [
-    { name: "Nathalie Bergeron", email: "n.bergeron@globalfinance.ca", role: "admin" },
-    { name: "Pierre Dufour", email: "p.dufour@globalfinance.ca", role: "manager" },
-    { name: "Amélie Martin", email: "a.martin@globalfinance.ca", role: "viewer" },
-    { name: "Liam O'Brien", email: "l.obrien@globalfinance.ca", role: null },
-  ],
-};
 
 function portalRoleVariant(role: ClientPortalPermissions["portalRole"] | null): "danger" | "warning" | "primary" | "default" {
   if (role === "admin") return "danger";
@@ -173,90 +155,13 @@ const orgsMap: Record<string, OrgDetail> = {
   "org-6": { id: "org-6", name: "MédiaCentre QC", slug: "mediacentre-qc", plan: "Standard", status: "Actif", color: "bg-cyan-600", domain: "mediacentre.qc.ca", phone: "+1 418 555-0600", createdAt: "2024-08-01", openTickets: 1, activeContracts: 1, sitesCount: 1, contactsCount: 4, assetsCount: 6 },
 };
 
-const sitesData: Record<string, Site[]> = {
-  "org-1": [
-    { id: "s1", name: "Siège social", address: "500 Place d'Armes, Bureau 800", city: "Montréal, QC", phone: "+1 514 555-0101", primary: true },
-    { id: "s2", name: "Bureau Québec", address: "2875 Boul. Laurier, Suite 450", city: "Québec, QC", phone: "+1 418 555-0102", primary: false },
-    { id: "s3", name: "Entrepôt Laval", address: "1200 Autoroute Laval Ouest", city: "Laval, QC", phone: "+1 450 555-0103", primary: false },
-    { id: "s4", name: "Bureau Toronto", address: "100 King Street West, Suite 5600", city: "Toronto, ON", phone: "+1 416 555-0104", primary: false },
-  ],
-  "org-2": [
-    { id: "s5", name: "Head Office", address: "1 Place Ville Marie, Suite 3000", city: "Montréal, QC", phone: "+1 438 555-0201", primary: true },
-    { id: "s6", name: "R&D Lab", address: "345 Rue de la Gauchetière", city: "Montréal, QC", phone: "+1 438 555-0202", primary: false },
-    { id: "s7", name: "Warehouse", address: "8900 Boul. Métropolitain Est", city: "Anjou, QC", phone: "+1 438 555-0203", primary: false },
-  ],
-  "org-4": [
-    { id: "s8", name: "Tour principale", address: "1250 René-Lévesque Ouest", city: "Montréal, QC", phone: "+1 514 555-0401", primary: true },
-    { id: "s9", name: "Centre de données", address: "4444 Pierre-de-Coubertin", city: "Montréal, QC", phone: "+1 514 555-0402", primary: false },
-    { id: "s10", name: "Succursale Ottawa", address: "150 Elgin Street", city: "Ottawa, ON", phone: "+1 613 555-0403", primary: false },
-    { id: "s11", name: "Succursale Calgary", address: "225 6th Ave SW", city: "Calgary, AB", phone: "+1 403 555-0404", primary: false },
-    { id: "s12", name: "Succursale Vancouver", address: "1055 West Georgia Street", city: "Vancouver, BC", phone: "+1 604 555-0405", primary: false },
-    { id: "s13", name: "Succursale Halifax", address: "1969 Upper Water Street", city: "Halifax, NS", phone: "+1 902 555-0406", primary: false },
-  ],
-};
+// Sites are now fetched from /api/v1/sites (see useEffect below)
 
-const contactsData: Record<string, Contact[]> = {
-  "org-1": [
-    { id: "c1", firstName: "Marc", lastName: "Tremblay", email: "marc.tremblay@cetix.ca", phone: "+1 514 555-1001", jobTitle: "Directeur TI", vip: true },
-    { id: "c2", firstName: "Sophie", lastName: "Gagnon", email: "sophie.gagnon@cetix.ca", phone: "+1 514 555-1002", jobTitle: "Analyste d'affaires", vip: false },
-    { id: "c3", firstName: "Julien", lastName: "Lavoie", email: "julien.lavoie@cetix.ca", phone: "+1 514 555-1003", jobTitle: "Développeur principal", vip: false },
-    { id: "c4", firstName: "Isabelle", lastName: "Roy", email: "isabelle.roy@cetix.ca", phone: "+1 418 555-1004", jobTitle: "VP Opérations", vip: true },
-  ],
-  "org-2": [
-    { id: "c5", firstName: "James", lastName: "Wilson", email: "j.wilson@acmecorp.com", phone: "+1 438 555-2001", jobTitle: "CTO", vip: true },
-    { id: "c6", firstName: "Sarah", lastName: "Chen", email: "s.chen@acmecorp.com", phone: "+1 438 555-2002", jobTitle: "IT Manager", vip: false },
-    { id: "c7", firstName: "David", lastName: "Kumar", email: "d.kumar@acmecorp.com", phone: "+1 438 555-2003", jobTitle: "Sys Admin", vip: false },
-  ],
-  "org-4": [
-    { id: "c8", firstName: "Nathalie", lastName: "Bergeron", email: "n.bergeron@globalfinance.ca", phone: "+1 514 555-4001", jobTitle: "CISO", vip: true },
-    { id: "c9", firstName: "Pierre", lastName: "Dufour", email: "p.dufour@globalfinance.ca", phone: "+1 514 555-4002", jobTitle: "Dir. Infrastructure", vip: true },
-    { id: "c10", firstName: "Amélie", lastName: "Martin", email: "a.martin@globalfinance.ca", phone: "+1 514 555-4003", jobTitle: "Analyste sécurité", vip: false },
-  ],
-};
+// contactsData removed — now fetched from /api/v1/contacts?organizationId={id}
 
-const ticketsData: Record<string, OrgTicket[]> = {
-  "org-1": [
-    { id: "t1", number: "TK-1042", subject: "VPN ne fonctionne pas depuis le bureau de Québec", status: "Ouvert", priority: "Haute", requester: "Sophie Gagnon", assignee: "Marie Tremblay", createdAt: "2026-04-05" },
-    { id: "t2", number: "TK-1038", subject: "Mise à jour des licences Microsoft 365", status: "En cours", priority: "Moyenne", requester: "Marc Tremblay", assignee: "Alexandre Dubois", createdAt: "2026-04-04" },
-    { id: "t3", number: "TK-1035", subject: "Problème d'impression étage 3", status: "Sur place", priority: "Basse", requester: "Julien Lavoie", assignee: "Lucas Bergeron", createdAt: "2026-04-03" },
-    { id: "t4", number: "TK-1029", subject: "Accès SharePoint refusé pour l'équipe marketing", status: "En attente", priority: "Moyenne", requester: "Isabelle Roy", assignee: "Marie Tremblay", createdAt: "2026-04-02" },
-    { id: "t5", number: "TK-1021", subject: "Déploiement nouveau poste de travail - Bureau Toronto", status: "Sur place", priority: "Haute", requester: "Marc Tremblay", assignee: "Sophie Lavoie", createdAt: "2026-04-01" },
-    { id: "t6", number: "TK-1015", subject: "Alerte sécurité - tentative de connexion suspecte", status: "Ouvert", priority: "Critique", requester: "Sophie Gagnon", assignee: "Alexandre Dubois", createdAt: "2026-03-30" },
-    { id: "t7", number: "TK-1010", subject: "Demande de nouveau moniteur", status: "Résolu", priority: "Basse", requester: "Julien Lavoie", assignee: "Marie Tremblay", createdAt: "2026-03-28" },
-  ],
-  "org-2": [
-    { id: "t8", number: "TK-1040", subject: "Email delivery delays", status: "Ouvert", priority: "Haute", requester: "James Wilson", assignee: "Marie Tremblay", createdAt: "2026-04-05" },
-    { id: "t9", number: "TK-1036", subject: "New employee onboarding - Sarah Miller", status: "Sur place", priority: "Moyenne", requester: "Sarah Chen", assignee: "Lucas Bergeron", createdAt: "2026-04-03" },
-    { id: "t10", number: "TK-1030", subject: "Server room temperature alert", status: "Sur place", priority: "Critique", requester: "David Kumar", assignee: "Alexandre Dubois", createdAt: "2026-04-01" },
-    { id: "t11", number: "TK-1025", subject: "Backup job failed on file server", status: "Ouvert", priority: "Haute", requester: "David Kumar", assignee: "Marie Tremblay", createdAt: "2026-03-29" },
-  ],
-  "org-4": [
-    { id: "t12", number: "TK-1043", subject: "Firewall rule change request - Ottawa office", status: "Nouveau", priority: "Haute", requester: "Nathalie Bergeron", assignee: "Marie Tremblay", createdAt: "2026-04-06" },
-    { id: "t13", number: "TK-1041", subject: "Certificat SSL expire dans 7 jours", status: "Ouvert", priority: "Critique", requester: "Pierre Dufour", assignee: "Alexandre Dubois", createdAt: "2026-04-05" },
-    { id: "t14", number: "TK-1039", subject: "Mise à jour antivirus bloque application métier", status: "En cours", priority: "Haute", requester: "Amélie Martin", assignee: "Sophie Lavoie", createdAt: "2026-04-04" },
-    { id: "t15", number: "TK-1033", subject: "Demande d'accès VDI pour sous-traitants", status: "Sur place", priority: "Moyenne", requester: "Nathalie Bergeron", assignee: "Lucas Bergeron", createdAt: "2026-04-02" },
-    { id: "t16", number: "TK-1028", subject: "Performance dégradée sur l'application de trading", status: "Ouvert", priority: "Critique", requester: "Pierre Dufour", assignee: null, createdAt: "2026-03-31" },
-  ],
-};
+// ticketsData removed — now fetched from /api/v1/tickets?organizationId={id}
 
-const contractsData: Record<string, Contract[]> = {
-  "org-1": [
-    { id: "ct1", name: "Support Infra Premium", type: "Support", status: "Actif", startDate: "2025-01-01", endDate: "2025-12-31", hours: 200, usedHours: 142 },
-    { id: "ct2", name: "Gestion réseau", type: "Gestion", status: "Actif", startDate: "2025-03-01", endDate: "2026-02-28", hours: 100, usedHours: 67 },
-  ],
-  "org-2": [
-    { id: "ct3", name: "Managed IT Services", type: "Support", status: "Actif", startDate: "2025-06-01", endDate: "2026-05-31", hours: 150, usedHours: 89 },
-  ],
-  "org-4": [
-    { id: "ct4", name: "Sécurité gérée", type: "Sécurité", status: "Actif", startDate: "2025-01-01", endDate: "2025-12-31", hours: 300, usedHours: 234 },
-    { id: "ct5", name: "Support Infrastructure", type: "Support", status: "Actif", startDate: "2025-04-01", endDate: "2026-03-31", hours: 250, usedHours: 178 },
-    { id: "ct6", name: "Migration Cloud", type: "Projet", status: "Actif", startDate: "2025-09-01", endDate: "2026-08-31", hours: 500, usedHours: 120 },
-  ],
-  "org-5": [],
-  "org-6": [
-    { id: "ct7", name: "Support de base", type: "Support", status: "Actif", startDate: "2024-08-01", endDate: "2025-07-31", hours: 50, usedHours: 32 },
-  ],
-};
+// contractsData removed — now fetched from /api/v1/contracts?organizationId={id}
 
 const assetsData: Record<string, Asset[]> = {
   "org-1": [
@@ -283,26 +188,32 @@ const assetsData: Record<string, Asset[]> = {
   ],
 };
 
-const activitiesData: Record<string, Activity[]> = {
-  "org-1": [
-    { id: "ac1", text: "Nouveau ticket TK-1042 créé par Sophie Gagnon", time: "Il y a 2 heures", type: "ticket" },
-    { id: "ac2", text: "Contrat \"Support Infra Premium\" : 142/200 heures utilisées", time: "Il y a 5 heures", type: "contract" },
-    { id: "ac3", text: "Ticket TK-1038 assigné à l'équipe infrastructure", time: "Il y a 1 jour", type: "ticket" },
-    { id: "ac4", text: "Nouveau contact ajouté : Éric Beaulieu", time: "Il y a 2 jours", type: "contact" },
-    { id: "ac5", text: "Serveur SRV-DEV-01 mis en maintenance", time: "Il y a 3 jours", type: "asset" },
-  ],
-  "org-2": [
-    { id: "ac6", text: "New ticket TK-1040 created by James Wilson", time: "Il y a 3 heures", type: "ticket" },
-    { id: "ac7", text: "Ticket TK-1030 resolved - Server room temp normalized", time: "Il y a 1 jour", type: "ticket" },
-    { id: "ac8", text: "Asset UPS-MAIN-01 retired from service", time: "Il y a 4 jours", type: "asset" },
-  ],
-  "org-4": [
-    { id: "ac9", text: "Ticket TK-1043 créé par Nathalie Bergeron (Critique)", time: "Il y a 1 heure", type: "ticket" },
-    { id: "ac10", text: "Contrat \"Migration Cloud\" : 120/500 heures utilisées", time: "Il y a 6 heures", type: "contract" },
-    { id: "ac11", text: "Alerte : Certificat SSL expire dans 7 jours", time: "Il y a 1 jour", type: "ticket" },
-    { id: "ac12", text: "Nouveau site ajouté : Succursale Halifax", time: "Il y a 5 jours", type: "contact" },
-  ],
-};
+/** Derive recent activities from real ticket data. */
+function deriveActivities(tickets: OrgTicket[]): Activity[] {
+  const sorted = [...tickets].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+  return sorted.slice(0, 5).map((t) => {
+    const d = new Date(t.createdAt);
+    const diffMs = Date.now() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60_000);
+    const diffH = Math.floor(diffMs / 3_600_000);
+    const diffD = Math.floor(diffMs / 86_400_000);
+    const time =
+      diffMin < 60
+        ? `Il y a ${diffMin} min`
+        : diffH < 24
+        ? `Il y a ${diffH} h`
+        : `Il y a ${diffD} j`;
+    return {
+      id: `act-${t.id}`,
+      text: `Ticket #${t.number} — ${t.subject}`,
+      time,
+      type: "ticket" as const,
+      href: `/tickets/${t.id}`,
+    };
+  });
+}
 
 // ---------- Helpers ----------
 const planBadgeVariant = (plan: string) => {
@@ -589,6 +500,7 @@ const TABS = [
   { key: "billing", label: "Facturation" },
   { key: "contracts", label: "Contrats" },
   { key: "assets", label: "Actifs" },
+  { key: "reports", label: "Rapports" },
   { key: "portal_access", label: "Portail client" },
   { key: "sla", label: "SLA" },
 ] as const;
@@ -596,7 +508,13 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 // ---------- Sites Tab (editable) ----------
-function OrgSitesTab({ initialSites }: { initialSites: Site[] }) {
+function OrgSitesTab({
+  initialSites,
+  organizationId,
+}: {
+  initialSites: Site[];
+  organizationId: string;
+}) {
   const [sites, setSites] = useState<Site[]>(initialSites);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -631,29 +549,81 @@ function OrgSitesTab({ initialSites }: { initialSites: Site[] }) {
     setCreating(false);
   }
 
-  function saveSite() {
-    if (!form.name.trim()) return;
-    if (editingId) {
-      setSites((prev) =>
-        prev.map((s) => (s.id === editingId ? { ...s, ...form } : s))
-      );
-    } else if (creating) {
-      setSites((prev) => [
-        ...prev,
-        { id: `site_${Date.now()}`, ...form },
-      ]);
+  const [saving, setSaving] = useState(false);
+
+  async function saveSite() {
+    if (!form.name.trim() || saving) return;
+    setSaving(true);
+    try {
+      if (editingId) {
+        const res = await fetch(`/api/v1/sites/${editingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        });
+        if (!res.ok) throw new Error("Échec de la mise à jour");
+        setSites((prev) =>
+          prev.map((s) => (s.id === editingId ? { ...s, ...form } : s))
+        );
+      } else if (creating) {
+        const res = await fetch("/api/v1/sites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: form.name,
+            address: form.address,
+            city: form.city,
+            phone: form.phone,
+            primary: false,
+            organizationId,
+          }),
+        });
+        if (!res.ok) throw new Error("Échec de la création");
+        const created = await res.json();
+        setSites((prev) => [
+          ...prev,
+          {
+            id: created.id,
+            name: created.name,
+            address: created.address || "—",
+            city: created.city || "—",
+            phone: created.phone || "—",
+            primary: created.isMain ?? false,
+          },
+        ]);
+      }
+      cancelEdit();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
     }
-    cancelEdit();
   }
 
-  function deleteSite(id: string) {
-    setSites((prev) => prev.filter((s) => s.id !== id));
+  async function deleteSite(id: string) {
+    try {
+      const res = await fetch(`/api/v1/sites/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Échec de la suppression");
+      setSites((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      console.error(err);
+    }
   }
 
-  function setPrimary(id: string) {
-    setSites((prev) =>
-      prev.map((s) => ({ ...s, primary: s.id === id }))
-    );
+  async function setPrimary(id: string) {
+    try {
+      const res = await fetch(`/api/v1/sites/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ primary: true }),
+      });
+      if (!res.ok) throw new Error("Échec de la mise à jour");
+      setSites((prev) =>
+        prev.map((s) => ({ ...s, primary: s.id === id }))
+      );
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   const isEditing = editingId !== null || creating;
@@ -849,6 +819,7 @@ export default function OrganizationDetailPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [tabSearch, setTabSearch] = useState("");
   const [editingOrg, setEditingOrg] = useState<EditOrgModalOrg | null>(null);
+  const [editingContact, setEditingContact] = useState<EditContactModalContact | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [editingPortalUser, setEditingPortalUser] = useState<PortalAccessUser | null>(null);
   const [editingContract, setEditingContract] = useState<BillingContract | null>(null);
@@ -938,15 +909,44 @@ export default function OrganizationDetailPage() {
         logo: dbOrg.logo,
       }
     : org || fallbackOrg;
-  const fallbackSites = sitesData[orgId] || sitesData["org-1"] || [];
-  const sites = fallbackSites; // TODO: wire to /api/v1/sites once endpoint exists
-  const fallbackContacts = contactsData[orgId] || contactsData["org-1"] || [];
-  const [dbContacts, setDbContacts] = useState<Contact[] | null>(null);
+  const [dbSites, setDbSites] = useState<Site[] | null>(null);
+  const [sitesLoading, setSitesLoading] = useState(true);
   useEffect(() => {
+    setDbSites(null);
+    setSitesLoading(true);
+    let cancelled = false;
+    fetch(`/api/v1/sites?organizationId=${orgId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (!Array.isArray(data)) { setDbSites([]); return; }
+        setDbSites(
+          data.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            address: s.address || "—",
+            city: s.city || "—",
+            phone: s.phone || "—",
+            primary: s.primary ?? false,
+          }))
+        );
+      })
+      .catch(() => { if (!cancelled) setDbSites([]); })
+      .finally(() => { if (!cancelled) setSitesLoading(false); });
+    return () => { cancelled = true; };
+  }, [orgId]);
+  const sites = dbSites ?? [];
+  const [dbContacts, setDbContacts] = useState<Contact[] | null>(null);
+  const [contactsLoading, setContactsLoading] = useState(true);
+  useEffect(() => {
+    setDbContacts(null);
+    setContactsLoading(true);
+    let cancelled = false;
     fetch(`/api/v1/contacts?organizationId=${orgId}`)
       .then((r) => r.json())
       .then((data) => {
-        if (!Array.isArray(data)) return;
+        if (cancelled) return;
+        if (!Array.isArray(data)) { setDbContacts([]); return; }
         setDbContacts(
           data.map((c: any) => ({
             id: c.id,
@@ -959,16 +959,23 @@ export default function OrganizationDetailPage() {
           }))
         );
       })
-      .catch(() => {});
+      .catch(() => { if (!cancelled) setDbContacts([]); })
+      .finally(() => { if (!cancelled) setContactsLoading(false); });
+    return () => { cancelled = true; };
   }, [orgId]);
-  const contacts = dbContacts ?? fallbackContacts;
-  const fallbackTickets = ticketsData[orgId] || ticketsData["org-1"] || [];
+  const contacts = dbContacts ?? [];
+
   const [dbTickets, setDbTickets] = useState<OrgTicket[] | null>(null);
+  const [ticketsLoading, setTicketsLoading] = useState(true);
   useEffect(() => {
+    setDbTickets(null);
+    setTicketsLoading(true);
+    let cancelled = false;
     fetch(`/api/v1/tickets?organizationId=${orgId}`)
       .then((r) => r.json())
       .then((data) => {
-        if (!Array.isArray(data)) return;
+        if (cancelled) return;
+        if (!Array.isArray(data)) { setDbTickets([]); return; }
         const STATUS_FR: Record<string, OrgTicket["status"]> = {
           new: "Nouveau",
           open: "Ouvert",
@@ -1000,16 +1007,23 @@ export default function OrganizationDetailPage() {
           }))
         );
       })
-      .catch(() => {});
+      .catch(() => { if (!cancelled) setDbTickets([]); })
+      .finally(() => { if (!cancelled) setTicketsLoading(false); });
+    return () => { cancelled = true; };
   }, [orgId]);
-  const tickets = dbTickets ?? fallbackTickets;
+  const tickets = dbTickets ?? [];
 
   const [dbContracts, setDbContracts] = useState<Contract[] | null>(null);
+  const [contractsLoading, setContractsLoading] = useState(true);
   useEffect(() => {
+    setDbContracts(null);
+    setContractsLoading(true);
+    let cancelled = false;
     fetch(`/api/v1/contracts?organizationId=${orgId}`)
       .then((r) => r.json())
       .then((data) => {
-        if (!Array.isArray(data)) return;
+        if (cancelled) return;
+        if (!Array.isArray(data)) { setDbContracts([]); return; }
         const STATUS_FR: Record<string, Contract["status"]> = {
           ACTIVE: "Actif",
           EXPIRED: "Expiré",
@@ -1030,11 +1044,13 @@ export default function OrganizationDetailPage() {
           }))
         );
       })
-      .catch(() => {});
+      .catch(() => { if (!cancelled) setDbContracts([]); })
+      .finally(() => { if (!cancelled) setContractsLoading(false); });
+    return () => { cancelled = true; };
   }, [orgId]);
-  const contracts = dbContracts ?? contractsData[orgId] ?? contractsData["org-1"] ?? [];
+  const contracts = dbContracts ?? [];
   const assets = assetsData[orgId] || assetsData["org-1"] || [];
-  const activities = activitiesData[orgId] || activitiesData["org-1"] || [];
+  const activities = useMemo(() => deriveActivities(tickets), [tickets]);
 
   // Tab-level search filter
   const filteredSites = useMemo(() => {
@@ -1162,6 +1178,12 @@ export default function OrganizationDetailPage() {
         open={!!editingOrg}
         onClose={() => setEditingOrg(null)}
         org={editingOrg}
+      />
+
+      <EditContactModal
+        open={!!editingContact}
+        onClose={() => setEditingContact(null)}
+        contact={editingContact}
       />
 
       <FreshserviceImportModal
@@ -1372,12 +1394,20 @@ export default function OrganizationDetailPage() {
 
       {/* Sites Tab */}
       {activeTab === "sites" && (
-        <OrgSitesTab initialSites={filteredSites} />
+        <OrgSitesTab initialSites={filteredSites} organizationId={orgId} />
       )}
 
       {/* Contacts Tab */}
       {activeTab === "contacts" && (
         <Card className="overflow-hidden">
+          {contactsLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+                <p className="text-[13px] text-slate-500">Chargement des contacts...</p>
+              </div>
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -1391,7 +1421,21 @@ export default function OrganizationDetailPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filteredContacts.map((c) => (
-                  <tr key={c.id} className="hover:bg-gray-50/80 transition-colors">
+                  <tr
+                    key={c.id}
+                    className="hover:bg-gray-50/80 transition-colors cursor-pointer"
+                    onClick={() =>
+                      setEditingContact({
+                        id: c.id,
+                        name: `${c.firstName} ${c.lastName}`,
+                        email: c.email,
+                        phone: c.phone,
+                        organization: o.name,
+                        jobTitle: c.jobTitle,
+                        isVIP: c.vip,
+                      })
+                    }
+                  >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
@@ -1414,12 +1458,24 @@ export default function OrganizationDetailPage() {
               </tbody>
             </table>
           </div>
+          )}
         </Card>
       )}
 
       {/* Tickets Tab */}
       {activeTab === "tickets" && (
-        <OrgTicketsTab tickets={filteredTickets} />
+        ticketsLoading ? (
+          <Card className="overflow-hidden">
+            <div className="flex items-center justify-center py-16">
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+                <p className="text-[13px] text-slate-500">Chargement des tickets...</p>
+              </div>
+            </div>
+          </Card>
+        ) : (
+          <OrgTicketsTab tickets={filteredTickets} />
+        )
       )}
 
       {/* Billing Tab */}
@@ -1439,6 +1495,15 @@ export default function OrganizationDetailPage() {
       {/* Contracts Tab */}
       {activeTab === "contracts" && (
         <Card className="overflow-hidden">
+          {contractsLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+                <p className="text-[13px] text-slate-500">Chargement des contrats...</p>
+              </div>
+            </div>
+          ) : (
+          <>
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div>
               <h3 className="text-[15px] font-semibold text-slate-900">
@@ -1540,7 +1605,14 @@ export default function OrganizationDetailPage() {
               </tbody>
             </table>
           </div>
+          </>
+          )}
         </Card>
+      )}
+
+      {/* Reports Tab */}
+      {activeTab === "reports" && (
+        <OrgReportsTab organizationId={orgId} />
       )}
 
       {/* Portal Access Tab */}
@@ -1553,7 +1625,7 @@ export default function OrganizationDetailPage() {
 
       {/* Assets Tab */}
       {activeTab === "assets" && (
-        <OrgAssetsTab organizationId={orgId} />
+        <OrgAssetsTab organizationId={orgId} organizationName={(org || fallbackOrg).name} />
       )}
 
       {/* SLA Tab */}

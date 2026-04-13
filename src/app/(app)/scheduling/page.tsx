@@ -34,14 +34,6 @@ import { RecurringTemplateModal } from "@/components/scheduling/recurring-templa
 import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
 
-const ORG_OPTIONS = [
-  { label: "Acme Corp", value: "org-2" },
-  { label: "TechStart Inc", value: "org-3" },
-  { label: "Global Finance", value: "org-4" },
-  { label: "HealthCare Plus", value: "org-5" },
-  { label: "MédiaCentre QC", value: "org-6" },
-];
-
 const FREQUENCY_OPTIONS: { label: string; value: RecurrenceFrequency }[] = [
   { label: "Quotidien", value: "daily" },
   { label: "Hebdomadaire", value: "weekly" },
@@ -58,6 +50,7 @@ const FREQUENCY_COLORS: Record<RecurrenceFrequency, string> = {
 };
 
 export default function SchedulingPage() {
+  const [orgOptions, setOrgOptions] = useState<{ label: string; value: string }[]>([]);
   const [search, setSearch] = useState("");
   const [orgFilter, setOrgFilter] = useState<string[]>([]);
   const [freqFilter, setFreqFilter] = useState<string[]>([]);
@@ -78,6 +71,16 @@ export default function SchedulingPage() {
       })
       .catch((e) => console.error("scheduling load failed", e))
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/v1/organizations")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: { id: string; name: string }[]) => {
+        if (Array.isArray(data))
+          setOrgOptions(data.map((o) => ({ label: o.name, value: o.id })));
+      })
+      .catch(() => setOrgOptions([]));
   }, []);
 
   function handleSave(template: RecurringTicketTemplate) {
@@ -200,7 +203,7 @@ export default function SchedulingPage() {
             iconLeft={<Search className="h-3.5 w-3.5" />}
           />
         </div>
-        <MultiSelect options={ORG_OPTIONS} selected={orgFilter} onChange={setOrgFilter} placeholder="Organisation" width={200} />
+        <MultiSelect options={orgOptions} selected={orgFilter} onChange={setOrgFilter} placeholder="Organisation" width={200} />
         <MultiSelect
           options={FREQUENCY_OPTIONS.map((f) => ({ label: f.label, value: f.value }))}
           selected={freqFilter}

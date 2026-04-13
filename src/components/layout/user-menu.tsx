@@ -12,6 +12,7 @@ import {
   HelpCircle,
   LogOut,
   KeyRound,
+  Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserAvatarStore } from "@/stores/user-avatar-store";
@@ -61,36 +62,8 @@ export function UserMenu() {
         {
           icon: User,
           label: "Mon profil",
-          description: "Voir et modifier votre profil",
-          href: "/account?tab=profile",
-        },
-        {
-          icon: KeyRound,
-          label: "Mot de passe",
-          description: "Modifier votre mot de passe",
-          href: "/account?tab=security",
-        },
-      ],
-    },
-    {
-      items: [
-        {
-          icon: Shield,
-          label: "Authentification à deux facteurs",
-          description: "Activer le MFA",
-          href: "/account?tab=security",
-        },
-        {
-          icon: Bell,
-          label: "Préférences de notifications",
-          description: "Email, in-app, SMS",
-          href: "/account?tab=notifications",
-        },
-        {
-          icon: Settings,
-          label: "Paramètres du compte",
-          description: "Langue, fuseau, format",
-          href: "/account?tab=preferences",
+          description: "Profil, sécurité et préférences",
+          href: "/account",
         },
       ],
     },

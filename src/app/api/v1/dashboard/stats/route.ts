@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function GET() {
   try {
-    const session = await auth();
-    const myUserId = (session?.user as any)?.id as string | undefined;
+    const me = await getCurrentUser();
+    if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const myUserId = me.id;
 
     const now = new Date();
     const startOfToday = new Date(now);

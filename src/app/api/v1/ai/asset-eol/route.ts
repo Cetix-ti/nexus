@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 export async function POST(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!OPENAI_API_KEY) {
     return NextResponse.json(
       { error: "OPENAI_API_KEY non configurée" },

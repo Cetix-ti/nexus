@@ -45,7 +45,7 @@ interface Props {
   };
   initialWebsite?: string;
   onClose: () => void;
-  onApplied: () => void;
+  onApplied: (applied: Record<string, string | boolean>) => void;
 }
 
 interface FieldChoice {
@@ -226,7 +226,7 @@ export function EnrichPreviewModal({
         const data = await res.json();
         throw new Error(data.error || "Échec de la sauvegarde");
       }
-      onApplied();
+      onApplied(patch);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

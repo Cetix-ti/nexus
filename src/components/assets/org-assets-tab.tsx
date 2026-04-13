@@ -63,6 +63,7 @@ interface AteraMapping {
 
 interface OrgAssetsTabProps {
   organizationId: string;
+  organizationName?: string;
 }
 
 const TYPE_ICONS: Record<AssetType, React.ComponentType<{ className?: string }>> = {
@@ -125,9 +126,9 @@ function isWarrantyExpiringSoon(iso?: string): boolean {
   return days >= 0 && days <= 90;
 }
 
-const PROVIDERS_TO_SHOW: AssetSource[] = ["atera", "intune"];
+const PROVIDERS_TO_SHOW: AssetSource[] = ["atera", "other"];
 
-export function OrgAssetsTab({ organizationId }: OrgAssetsTabProps) {
+export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabProps) {
   const [assets, setAssets] = useState<OrgAsset[]>([]);
   const [integrations, setIntegrations] = useState<RmmIntegration[]>(() =>
     PROVIDERS_TO_SHOW.map((provider) => ({
@@ -148,12 +149,13 @@ export function OrgAssetsTab({ organizationId }: OrgAssetsTabProps) {
       .finally(() => setLoadingAssets(false));
 
     fetch(`/api/v1/organizations/${encodeURIComponent(organizationId)}/integrations`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data) => {
-        if (!Array.isArray(data)) return;
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((res) => {
+        const items = Array.isArray(res) ? res : (res.data || []);
+        if (!Array.isArray(items)) return;
         setIntegrations((prev) =>
           PROVIDERS_TO_SHOW.map((provider) => {
-            const fromApi = data.find((i: RmmIntegration) => i.provider === provider);
+            const fromApi = items.find((i: RmmIntegration) => i.provider === provider);
             return fromApi ?? prev.find((i) => i.provider === provider)!;
           })
         );
@@ -367,7 +369,7 @@ export function OrgAssetsTab({ organizationId }: OrgAssetsTabProps) {
         {mapping && (
           <div className="mb-3 rounded-lg border border-orange-200 bg-orange-50/50 px-3 py-2 text-[12px] text-orange-900 flex items-center justify-between gap-3">
             <span>
-              🔗 Mappée avec la company Atera{" "}
+              🔗 Mappée avec l&apos;entreprise Atera{" "}
               <strong>{mapping.externalName}</strong>{" "}
               <span className="font-mono text-[10.5px] text-orange-700">
                 ({mapping.externalId})
@@ -405,7 +407,7 @@ export function OrgAssetsTab({ organizationId }: OrgAssetsTabProps) {
 
       <AteraMappingModal
         open={mappingOpen}
-        organizationName={organizationId}
+        organizationName={organizationName || organizationId}
         onClose={() => setMappingOpen(false)}
         onPick={(externalId, externalName) => {
           const m = { externalId, externalName };

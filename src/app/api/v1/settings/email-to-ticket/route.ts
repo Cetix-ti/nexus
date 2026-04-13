@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getConfig, setConfig, testConnection } from "@/lib/email-to-ticket/service";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function GET() {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const config = await getConfig();
   return NextResponse.json({
     config,
@@ -14,6 +17,8 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
   if (!body.mailbox) {
     return NextResponse.json({ error: "mailbox requis" }, { status: 422 });
@@ -28,6 +33,8 @@ export async function PUT(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
   if (!body.mailbox) {
     return NextResponse.json({ ok: false, error: "mailbox requis" });

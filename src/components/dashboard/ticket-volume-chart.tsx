@@ -24,9 +24,9 @@ export function TicketVolumeChart({ data }: TicketVolumeChartProps) {
     <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
       <div className="mb-6">
         <h3 className="text-base font-semibold text-neutral-900">
-          Ticket Volume
+          Volume de tickets
         </h3>
-        <p className="text-sm text-neutral-500">Last 7 days</p>
+        <p className="text-sm text-neutral-500">7 derniers jours</p>
       </div>
       <div className="h-[280px]">
         <ResponsiveContainer width="100%" height="100%">

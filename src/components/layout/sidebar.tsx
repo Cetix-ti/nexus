@@ -16,6 +16,8 @@ import {
   BookOpen,
   BarChart3,
   Zap,
+  PieChart,
+  FileBarChart,
   Bell,
   HardDrive,
   DollarSign,
@@ -24,6 +26,7 @@ import {
   ChevronsRight,
   ChevronDown,
   LogOut,
+  UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/stores/sidebar";
@@ -35,11 +38,20 @@ interface NavItem {
   href: string;
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   children?: { label: string; href: string }[];
+  minRole?: string;
 }
 
 interface NavSection {
   label?: string;
   items: NavItem[];
+}
+
+const ROLE_LEVELS: Record<string, number> = {
+  SUPER_ADMIN: 0, MSP_ADMIN: 1, SUPERVISOR: 2, TECHNICIAN: 3, READ_ONLY: 4,
+};
+function hasNavAccess(userRole: string, minRole?: string): boolean {
+  if (!minRole) return true;
+  return (ROLE_LEVELS[userRole] ?? 99) <= (ROLE_LEVELS[minRole] ?? 99);
 }
 
 const NAV_SECTIONS: NavSection[] = [
@@ -48,11 +60,11 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
       {
         label: "Tickets",
-        href: "/tickets/kanban",
+        href: "/tickets",
         icon: Ticket,
         children: [
-          { label: "Kanban", href: "/tickets/kanban" },
           { label: "Liste", href: "/tickets" },
+          { label: "Kanban", href: "/tickets/kanban" },
           { label: "Ma journée", href: "/tickets/my-day" },
         ],
       },
@@ -66,8 +78,8 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Actifs", href: "/assets", icon: Monitor },
       { label: "Projets", href: "/projects", icon: FolderKanban },
       { label: "Planificateur", href: "/scheduling", icon: CalendarDays },
-      { label: "Préfacturation", href: "/billing", icon: Receipt },
-      { label: "Finances", href: "/finances", icon: DollarSign },
+      { label: "Préfacturation", href: "/billing", icon: Receipt, minRole: "SUPERVISOR" },
+      { label: "Finances", href: "/finances", icon: DollarSign, minRole: "SUPERVISOR" },
     ],
   },
   {
@@ -81,13 +93,29 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Ressources",
     items: [
       { label: "Base de connaissances", href: "/knowledge", icon: BookOpen },
-      { label: "Rapports", href: "/reports", icon: BarChart3 },
+      {
+        label: "Analytique",
+        href: "/analytics/dashboards",
+        icon: BarChart3,
+        children: [
+          { label: "Dashboards", href: "/analytics/dashboards" },
+          { label: "Rapports", href: "/analytics/reports" },
+          { label: "Widgets", href: "/analytics/widgets" },
+          { label: "Sources & Variables", href: "/analytics/data" },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Personnel",
+    items: [
+      { label: "Mon espace", href: "/my-space", icon: UserCircle },
     ],
   },
   {
     label: "Système",
     items: [
-      { label: "Paramètres", href: "/settings", icon: Settings },
+      { label: "Paramètres", href: "/settings", icon: Settings, minRole: "MSP_ADMIN" },
     ],
   },
 ];
@@ -169,13 +197,21 @@ function NavItemComponent({
 
 export function Sidebar() {
   const { collapsed, toggle } = useSidebarStore();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
 
   const user = session?.user;
+  // Don't filter until session is loaded — show all items while loading
+  const userRole = sessionStatus === "authenticated" ? ((user as any)?.role ?? "TECHNICIAN") : "SUPER_ADMIN";
   const avatar = useUserAvatarStore((s) => s.avatar);
   const initials = user
     ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`
     : "NX";
+
+  // Filter nav items by role
+  const filteredSections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => hasNavAccess(userRole, item.minRole)),
+  })).filter((section) => section.items.length > 0);
 
   return (
     <aside
@@ -207,7 +243,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="sidebar-scroll flex-1 overflow-y-auto py-5 px-4">
-        {NAV_SECTIONS.map((section, idx) => (
+        {filteredSections.map((section, idx) => (
           <div key={idx} className={cn(idx > 0 && "mt-6")}>
             {section.label && !collapsed && (
               <h3 className="px-3 mb-2 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-600">

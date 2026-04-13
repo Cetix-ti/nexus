@@ -29,6 +29,41 @@ export async function GET() {
     orderBy: { name: "asc" },
   });
 
+  // If DB has no assets for this org, fallback to Atera live data if mapped
+  if (assets.length === 0 && canSeeAll) {
+    try {
+      const mapping = await prisma.orgIntegrationMapping.findFirst({
+        where: { organizationId: user.organizationId, provider: "atera" },
+      });
+      if (mapping?.externalId) {
+        const { listAteraAgentsForCustomer, mapAteraAgentToOrgAsset } =
+          await import("@/lib/integrations/atera-client");
+        const agents = await listAteraAgentsForCustomer(parseInt(mapping.externalId, 10));
+        const ateraAssets = agents.map((a: any) => mapAteraAgentToOrgAsset(a, user.organizationId));
+        return NextResponse.json(
+          ateraAssets.map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            type: a.type,
+            status: a.status,
+            manufacturer: a.manufacturer,
+            model: a.model,
+            serialNumber: a.serialNumber,
+            ipAddress: a.ipAddress,
+            siteName: null,
+            assignedContact: null,
+            externalSource: "atera",
+            externalId: a.externalId,
+            cpuModel: a.cpuModel ?? null,
+            ramGb: a.ramGb ?? null,
+            createdAt: String(a.createdAt),
+            updatedAt: String(a.updatedAt),
+          })),
+        );
+      }
+    } catch { /* Atera unavailable — return empty */ }
+  }
+
   return NextResponse.json(
     assets.map((a) => ({
       id: a.id,
@@ -49,6 +84,8 @@ export async function GET() {
         : null,
       externalSource: a.externalSource,
       externalId: a.externalId,
+      cpuModel: (a.metadata as any)?.cpuModel ?? null,
+      ramGb: (a.metadata as any)?.ramGb ?? null,
       createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
     })),
