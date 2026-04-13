@@ -76,12 +76,20 @@ interface SettingsSection {
 
 interface SettingsGroup {
   label: string;
+  description: string;
+  icon: any;
+  accent: string;
+  iconBg: string;
   sections: SettingsSection[];
 }
 
 const sectionGroups: SettingsGroup[] = [
   {
     label: "Général",
+    description: "Configuration de la plateforme, branding et paramètres régionaux",
+    icon: Settings,
+    accent: "text-orange-600",
+    iconBg: "bg-orange-50 ring-orange-200/60",
     sections: [
       { key: "general", label: "Général", icon: Settings, superAdminOnly: true },
       { key: "users", label: "Agents", icon: Users, superAdminOnly: true },
@@ -90,6 +98,10 @@ const sectionGroups: SettingsGroup[] = [
   },
   {
     label: "Tickets & Projets",
+    description: "Catégories, files d'attente, SLA et workflows de gestion",
+    icon: Ticket,
+    accent: "text-blue-600",
+    iconBg: "bg-blue-50 ring-blue-200/60",
     sections: [
       { key: "categories", label: "Catégories", icon: Tag },
       { key: "queues", label: "Files d'attente", icon: ListFilter },
@@ -102,6 +114,10 @@ const sectionGroups: SettingsGroup[] = [
   },
   {
     label: "Facturation",
+    description: "Profils de facturation et contrats de service",
+    icon: DollarSign,
+    accent: "text-emerald-600",
+    iconBg: "bg-emerald-50 ring-emerald-200/60",
     sections: [
       { key: "billing_profiles", label: "Profils de facturation", icon: DollarSign },
       { key: "contracts", label: "Contrats", icon: FileText },
@@ -109,6 +125,10 @@ const sectionGroups: SettingsGroup[] = [
   },
   {
     label: "Communications",
+    description: "Notifications, courriels et alertes automatisées",
+    icon: Bell,
+    accent: "text-violet-600",
+    iconBg: "bg-violet-50 ring-violet-200/60",
     sections: [
       { key: "notifications", label: "Notifications", icon: Bell },
       { key: "email", label: "Courriels", icon: Mail },
@@ -116,6 +136,10 @@ const sectionGroups: SettingsGroup[] = [
   },
   {
     label: "Portail client",
+    description: "Accès client, domaine personnalisé et aperçu du portail",
+    icon: Globe,
+    accent: "text-cyan-600",
+    iconBg: "bg-cyan-50 ring-cyan-200/60",
     sections: [
       { key: "portal_access", label: "Portail client", icon: UserCogIcon },
       { key: "portal_preview", label: "Visualiser le portail", icon: Eye },
@@ -124,6 +148,10 @@ const sectionGroups: SettingsGroup[] = [
   },
   {
     label: "Intégrations & Monitoring",
+    description: "Connecteurs tiers, surveillance et informations système",
+    icon: Plug,
+    accent: "text-rose-600",
+    iconBg: "bg-rose-50 ring-rose-200/60",
     sections: [
       { key: "integrations", label: "Intégrations", icon: Plug },
       { key: "email_monitoring", label: "Surveillance par courriel", icon: Bell },
@@ -1044,11 +1072,16 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
-  const initialSection = (searchParams.get("section") as SectionKey) || "general";
-  const [activeSection, setActiveSection] = useState<SectionKey>(initialSection);
+  const sectionParam = searchParams.get("section") as SectionKey | null;
+  const [activeSection, setActiveSection] = useState<SectionKey | null>(sectionParam);
   const { data: session } = useSession();
   const role = (session?.user as any)?.role;
   const isSuperAdmin = role === "SUPER_ADMIN" || role === "MSP_ADMIN";
+
+  // Sync with URL param changes
+  useEffect(() => {
+    setActiveSection(searchParams.get("section") as SectionKey | null);
+  }, [searchParams]);
 
   // Filter out super-admin only sections for regular users
   const visibleSections = sections.filter((s) => {
@@ -1056,21 +1089,124 @@ export default function SettingsPage() {
     return true;
   });
 
-  // Guard the active section in case user lost access
-  const effectiveSection = visibleSections.some((s) => s.key === activeSection)
-    ? activeSection
-    : "general";
+  function navigateToSection(key: string) {
+    setActiveSection(key);
+    window.history.pushState(null, "", `/settings?section=${key}`);
+  }
 
+  function navigateToIndex() {
+    setActiveSection(null);
+    window.history.pushState(null, "", "/settings");
+  }
+
+  // Guard the active section in case user lost access
+  const effectiveSection = activeSection && visibleSections.some((s) => s.key === activeSection)
+    ? activeSection
+    : null;
+
+  // -------------------------------------------------------------------------
+  // INDEX VIEW — Freshservice-style category cards
+  // -------------------------------------------------------------------------
+  if (!effectiveSection) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900">
+            Paramètres
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Configurez votre plateforme Nexus
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {sectionGroups.map((group) => {
+            const groupSections = group.sections.filter((s) => {
+              if (s.superAdminOnly) return isSuperAdmin;
+              return true;
+            });
+            if (groupSections.length === 0) return null;
+            const GroupIcon = group.icon;
+            return (
+              <Card key={group.label} className="overflow-hidden">
+                <CardContent className="p-0">
+                  {/* Category header */}
+                  <div className="px-5 pt-5 pb-4 flex items-start gap-3.5">
+                    <div
+                      className={cn(
+                        "h-10 w-10 rounded-xl flex items-center justify-center ring-1 ring-inset shrink-0",
+                        group.iconBg
+                      )}
+                    >
+                      <GroupIcon className={cn("h-5 w-5", group.accent)} />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="text-[15px] font-semibold text-slate-900 leading-tight">
+                        {group.label}
+                      </h2>
+                      <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">
+                        {group.description}
+                      </p>
+                    </div>
+                  </div>
+                  {/* Sub-items */}
+                  <div className="border-t border-slate-100">
+                    {groupSections.map((section) => {
+                      const SectionIcon = section.icon;
+                      return (
+                        <button
+                          key={section.key}
+                          onClick={() => navigateToSection(section.key)}
+                          className="flex w-full items-center gap-3 px-5 py-2.5 text-left hover:bg-slate-50 transition-colors group"
+                        >
+                          <SectionIcon className="h-4 w-4 text-slate-400 group-hover:text-slate-600 shrink-0" />
+                          <span className="text-[13px] font-medium text-slate-700 group-hover:text-slate-900 flex-1">
+                            {section.label}
+                          </span>
+                          {section.superAdminOnly && (
+                            <span className="inline-flex h-4 items-center rounded bg-red-100 px-1 text-[8px] font-bold text-red-700 uppercase tracking-wider">
+                              SA
+                            </span>
+                          )}
+                          <svg className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // SECTION VIEW — sidebar + content
+  // -------------------------------------------------------------------------
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900">
-          Paramètres
-        </h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Configurez votre plateforme Nexus
-        </p>
+      {/* Header with back button */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={navigateToIndex}
+          className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900">
+            Paramètres
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Configurez votre plateforme Nexus
+          </p>
+        </div>
       </div>
 
       {/* Mobile: horizontal scrollable tabs */}
@@ -1082,7 +1218,7 @@ export default function SettingsPage() {
             return (
               <button
                 key={section.key}
-                onClick={() => setActiveSection(section.key)}
+                onClick={() => navigateToSection(section.key)}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium whitespace-nowrap transition-colors shrink-0",
                   isActive
@@ -1100,7 +1236,6 @@ export default function SettingsPage() {
 
       {/* Layout: Sidebar (desktop) + Content */}
       <div className="flex flex-col gap-6 lg:flex-row">
-        {/* Settings Sidebar — hidden on mobile (replaced by tabs above) */}
         <nav className="hidden lg:block w-64 shrink-0">
           <div className="space-y-4">
             {sectionGroups.map((group) => {
@@ -1121,7 +1256,7 @@ export default function SettingsPage() {
                       return (
                         <li key={section.key}>
                           <button
-                            onClick={() => setActiveSection(section.key)}
+                            onClick={() => navigateToSection(section.key)}
                             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                               isActive
                                 ? "bg-blue-50 text-blue-700"
@@ -1135,11 +1270,11 @@ export default function SettingsPage() {
                                 className="inline-flex h-4 items-center rounded bg-red-100 px-1 text-[8.5px] font-bold text-red-700 uppercase tracking-wider"
                                 title="Réservé aux super-admins"
                               >
-                        SA
-                      </span>
-                    )}
-                  </button>
-                </li>
+                                SA
+                              </span>
+                            )}
+                          </button>
+                        </li>
                       );
                     })}
                   </ul>
@@ -1149,7 +1284,6 @@ export default function SettingsPage() {
           </div>
         </nav>
 
-        {/* Content */}
         <div className="min-w-0 flex-1">
           {sectionContent[effectiveSection]}
         </div>
