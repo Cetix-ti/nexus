@@ -291,10 +291,10 @@ function InfoField({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-1.5 border-b border-slate-100 last:border-0">
+    <div className="grid grid-cols-[110px_1fr] gap-2 py-1.5 border-b border-slate-100 last:border-0">
       <span className="text-slate-400 text-[12px] shrink-0">{label}</span>
       {children ?? (
-        <span className={`text-slate-700 text-right ${mono ? "font-mono text-[12px]" : ""}`}>
+        <span className={`text-slate-700 ${mono ? "font-mono text-[12px]" : "text-[13px]"}`}>
           {value ?? "\u2014"}
         </span>
       )}
