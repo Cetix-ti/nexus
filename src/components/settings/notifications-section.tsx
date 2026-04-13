@@ -139,8 +139,9 @@ interface EventPref {
   sms: boolean;
 }
 
-const initialEvents: { key: string; label: string; prefs: EventPref }[] = [
+const initialEvents: { key: string; label: string; description?: string; prefs: EventPref }[] = [
   { key: "assigned", label: "Nouveau ticket assigné", prefs: { email: true, inapp: true, sms: false } },
+  { key: "assigned_others", label: "Ticket assigné à un autre agent", description: "Désactivez pour ne pas recevoir de notification lorsqu'un ticket créé par un agent est assigné à quelqu'un d'autre", prefs: { email: false, inapp: false, sms: false } },
   { key: "status", label: "Mise à jour de statut", prefs: { email: true, inapp: true, sms: false } },
   { key: "comment", label: "Nouveau commentaire", prefs: { email: true, inapp: true, sms: false } },
   { key: "mention", label: "Mention dans un commentaire", prefs: { email: true, inapp: true, sms: true } },
@@ -148,6 +149,7 @@ const initialEvents: { key: string; label: string; prefs: EventPref }[] = [
   { key: "sla_breach", label: "SLA dépassé", prefs: { email: true, inapp: true, sms: true } },
   { key: "resolved", label: "Ticket résolu", prefs: { email: true, inapp: false, sms: false } },
   { key: "new_client", label: "Nouveau ticket client", prefs: { email: true, inapp: true, sms: false } },
+  { key: "reminder", label: "Rappel de ticket", description: "Notification lorsqu'un rappel configuré sur un ticket arrive à échéance", prefs: { email: true, inapp: true, sms: false } },
   { key: "escalation", label: "Escalade automatique", prefs: { email: true, inapp: true, sms: true } },
   { key: "weekly", label: "Rapport hebdomadaire", prefs: { email: true, inapp: false, sms: false } },
 ];
@@ -305,8 +307,11 @@ export function NotificationsSection() {
               <tbody className="divide-y divide-slate-100">
                 {events.map((e) => (
                   <tr key={e.key} className="hover:bg-slate-50/60">
-                    <td className="px-5 py-3 text-[13px] font-medium text-slate-800">
-                      {e.label}
+                    <td className="px-5 py-3">
+                      <div className="text-[13px] font-medium text-slate-800">{e.label}</div>
+                      {e.description && (
+                        <div className="text-[11px] text-slate-400 mt-0.5">{e.description}</div>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex justify-center">

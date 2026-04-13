@@ -15,6 +15,9 @@ import {
   Zap,
   ChevronRight,
   X,
+  Bell,
+  BellOff,
+  CalendarClock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -115,6 +118,11 @@ export default function TicketDetailPage() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [collaborators, setCollaborators] = useState<{ id: string; userId: string; role: string; user: { id: string; name: string; avatar: string | null } }[]>([]);
   const [allUsers, setAllUsers] = useState<{ id: string; name: string; avatar: string | null }[]>([]);
+  const [reminder, setReminder] = useState<{ id: string; remindAt: string; note: string | null } | null>(null);
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [reminderDate, setReminderDate] = useState("");
+  const [reminderNote, setReminderNote] = useState("");
+  const [reminderSaving, setReminderSaving] = useState(false);
 
   const tickets = useTicketsStore((s) => s.tickets);
   const loadAll = useTicketsStore((s) => s.loadAll);
@@ -142,8 +150,40 @@ export default function TicketDetailPage() {
       })
       .catch(() => {});
 
+    // Load existing reminder
+    fetch(`/api/v1/tickets/${ticket.id}/reminder`, { signal })
+      .then((r) => r.ok ? r.json() : null)
+      .then((r) => { if (!signal.aborted && r) setReminder(r); })
+      .catch(() => {});
+
     return () => controller.abort();
   }, [ticket?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleSetReminder() {
+    if (!ticket || !reminderDate) return;
+    setReminderSaving(true);
+    try {
+      const res = await fetch(`/api/v1/tickets/${ticket.id}/reminder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ remindAt: reminderDate, note: reminderNote || null }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setReminder(data);
+        setReminderOpen(false);
+        setReminderDate("");
+        setReminderNote("");
+      }
+    } catch {}
+    setReminderSaving(false);
+  }
+
+  async function handleDeleteReminder() {
+    if (!ticket) return;
+    await fetch(`/api/v1/tickets/${ticket.id}/reminder`, { method: "DELETE" });
+    setReminder(null);
+  }
 
   if (!ticket) {
     return (
@@ -235,6 +275,80 @@ export default function TicketDetailPage() {
         </button>
         <ChevronRight className="h-3.5 w-3.5 text-gray-300" />
         <span className="text-sm font-mono text-gray-500">{ticket.number}</span>
+
+        <div className="flex-1" />
+
+        {/* Reminder button */}
+        <div className="relative">
+          {reminder ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setReminderOpen(!reminderOpen)}
+                className="flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[12px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200/60 hover:bg-amber-100 transition-colors"
+              >
+                <CalendarClock className="h-3.5 w-3.5" />
+                Rappel : {new Date(reminder.remindAt).toLocaleDateString("fr-CA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+              </button>
+              <button
+                onClick={handleDeleteReminder}
+                className="h-7 w-7 inline-flex items-center justify-center rounded-md text-amber-500 hover:bg-amber-100 hover:text-amber-700 transition-colors"
+                title="Supprimer le rappel"
+              >
+                <BellOff className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setReminderOpen(!reminderOpen)}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            >
+              <Bell className="h-3.5 w-3.5" />
+              Rappel
+            </button>
+          )}
+
+          {/* Reminder popover */}
+          {reminderOpen && (
+            <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl border border-slate-200 bg-white shadow-xl p-4 space-y-3">
+              <h4 className="text-[13px] font-semibold text-slate-900">Configurer un rappel</h4>
+              <div>
+                <label className="text-[12px] text-slate-500 mb-1 block">Date et heure</label>
+                <input
+                  type="datetime-local"
+                  value={reminderDate}
+                  onChange={(e) => setReminderDate(e.target.value)}
+                  min={new Date().toISOString().slice(0, 16)}
+                  className="w-full h-9 rounded-lg border border-slate-200 px-3 text-[13px] text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <div>
+                <label className="text-[12px] text-slate-500 mb-1 block">Note (optionnel)</label>
+                <textarea
+                  value={reminderNote}
+                  onChange={(e) => setReminderNote(e.target.value)}
+                  rows={2}
+                  placeholder="Ex: Relancer le client..."
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  onClick={() => setReminderOpen(false)}
+                  className="px-3 py-1.5 text-[12px] font-medium text-slate-500 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleSetReminder}
+                  disabled={!reminderDate || reminderSaving}
+                  className="px-3 py-1.5 text-[12px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {reminderSaving ? "..." : reminder ? "Modifier" : "Définir le rappel"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col lg:flex-row flex-1 gap-0">

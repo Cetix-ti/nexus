@@ -244,7 +244,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-slate-400 mt-4">
-          Nexus ITSM — Propulsé par Cetix
+          Nexus ITSM - Développé par Cetix
         </p>
       </div>
     </div>
