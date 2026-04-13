@@ -161,18 +161,61 @@ export async function getWazuhAgentPackages(
   return all;
 }
 
-/**
- * Find a Wazuh agent by hostname (case-insensitive).
- * Returns the agent ID or null if not found.
- */
-export async function findWazuhAgentByHostname(
-  hostname: string,
-): Promise<WazuhAgent | null> {
-  const res = await wazuhFetch<WazuhResponse<WazuhAgent>>(
-    `/agents?name=${encodeURIComponent(hostname)}&select=id,name,ip,status,os,group,lastKeepAlive&limit=1`,
-  );
+const AGENT_SELECT = "id,name,ip,status,os,group,lastKeepAlive";
 
-  return res.data.affected_items[0] ?? null;
+/**
+ * Find a Wazuh agent matching an asset using multiple strategies:
+ *  1. IP address (most reliable)
+ *  2. Exact hostname
+ *  3. Partial hostname search (handles client-prefix naming, e.g. "HVAC-SERDC1")
+ *
+ * Returns { agent, matchedBy } or null if no match found.
+ */
+export async function findWazuhAgent(
+  hostname: string,
+  ipAddress?: string | null,
+): Promise<{ agent: WazuhAgent; matchedBy: "ip" | "hostname" | "partial" } | null> {
+  // Strategy 1: match by IP address
+  if (ipAddress) {
+    try {
+      const res = await wazuhFetch<WazuhResponse<WazuhAgent>>(
+        `/agents?ip=${encodeURIComponent(ipAddress)}&select=${AGENT_SELECT}&limit=1`,
+      );
+      if (res.data.affected_items.length > 0) {
+        return { agent: res.data.affected_items[0], matchedBy: "ip" };
+      }
+    } catch {
+      // Continue to next strategy
+    }
+  }
+
+  // Strategy 2: exact hostname match
+  try {
+    const res = await wazuhFetch<WazuhResponse<WazuhAgent>>(
+      `/agents?name=${encodeURIComponent(hostname)}&select=${AGENT_SELECT}&limit=1`,
+    );
+    if (res.data.affected_items.length > 0) {
+      return { agent: res.data.affected_items[0], matchedBy: "hostname" };
+    }
+  } catch {
+    // Continue to next strategy
+  }
+
+  // Strategy 3: partial search (handles prefix like "HVAC-SERDC1" for hostname "SERDC1")
+  try {
+    const res = await wazuhFetch<WazuhResponse<WazuhAgent>>(
+      `/agents?search=${encodeURIComponent(hostname)}&select=${AGENT_SELECT}&limit=5`,
+    );
+    if (res.data.affected_items.length > 0) {
+      // Prefer active agents
+      const active = res.data.affected_items.find((a) => a.status === "active");
+      return { agent: active ?? res.data.affected_items[0], matchedBy: "partial" };
+    }
+  } catch {
+    // No match found
+  }
+
+  return null;
 }
 
 /**

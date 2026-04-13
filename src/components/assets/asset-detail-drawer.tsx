@@ -39,6 +39,13 @@ interface InstalledSoftware {
   installedDate: string | null;
 }
 
+interface SoftwareResponse {
+  agentFound: boolean;
+  matchedBy?: string;
+  wazuhAgentName?: string;
+  packages: InstalledSoftware[];
+}
+
 interface AssetDetailDrawerProps {
   asset: OrgAsset | null;
   onClose: () => void;
@@ -68,6 +75,7 @@ const TYPE_ICONS: Record<AssetType, React.ComponentType<{ className?: string }>>
 
 export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
   const [software, setSoftware] = useState<InstalledSoftware[]>([]);
+  const [agentFound, setAgentFound] = useState<boolean | null>(null);
   const [softwareLoading, setSoftwareLoading] = useState(false);
   const [softwareError, setSoftwareError] = useState<string | null>(null);
   const [softwareSearch, setSoftwareSearch] = useState("");
@@ -75,18 +83,20 @@ export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
   useEffect(() => {
     if (!asset) return;
     setSoftware([]);
+    setAgentFound(null);
     setSoftwareError(null);
     setSoftwareSearch("");
 
-    // Fetch software inventory from Wazuh (matched by hostname)
+    // Fetch software inventory from Wazuh (matched by IP/hostname)
     setSoftwareLoading(true);
     fetch(`/api/v1/assets/${encodeURIComponent(asset.id)}/software`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((s) => {
-        if (Array.isArray(s)) setSoftware(s);
+      .then((data: SoftwareResponse) => {
+        setAgentFound(data.agentFound);
+        if (Array.isArray(data.packages)) setSoftware(data.packages);
       })
       .catch((e) => setSoftwareError(e instanceof Error ? e.message : String(e)))
       .finally(() => setSoftwareLoading(false));
@@ -207,6 +217,15 @@ export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
               ) : softwareError ? (
                 <div className="text-[13px] text-red-600 bg-red-50 rounded-lg px-4 py-3">
                   Erreur : {softwareError}
+                </div>
+              ) : agentFound === false ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-4 text-center">
+                  <p className="text-[13px] font-medium text-amber-800">
+                    Agent Wazuh non trouvé pour cet actif
+                  </p>
+                  <p className="text-[12px] text-amber-700 mt-1">
+                    L&apos;agent Wazuh doit être déployé sur ce poste pour collecter l&apos;inventaire logiciel.
+                  </p>
                 </div>
               ) : software.length === 0 ? (
                 <p className="text-[13px] text-slate-400 text-center py-6">

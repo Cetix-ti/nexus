@@ -61,6 +61,7 @@ export default function PortalAssetDetailPage() {
   const [newNote, setNewNote] = useState("");
   const [posting, setPosting] = useState(false);
   const [software, setSoftware] = useState<InstalledSoftware[]>([]);
+  const [agentFound, setAgentFound] = useState<boolean | null>(null);
   const [softwareLoading, setSoftwareLoading] = useState(false);
   const [softwareSearch, setSoftwareSearch] = useState("");
 
@@ -76,13 +77,14 @@ export default function PortalAssetDetailPage() {
       .then(([a, n]) => {
         setAsset(a);
         if (Array.isArray(n)) setNotes(n);
-        // Load software inventory from Wazuh (matched by hostname)
+        // Load software inventory from Wazuh (matched by IP/hostname)
         if (a) {
           setSoftwareLoading(true);
           fetch(`/api/v1/portal/assets/${assetId}/software`)
-            .then((r) => (r.ok ? r.json() : []))
-            .then((s) => {
-              if (Array.isArray(s)) setSoftware(s);
+            .then((r) => (r.ok ? r.json() : { agentFound: false, packages: [] }))
+            .then((data) => {
+              setAgentFound(data.agentFound ?? null);
+              if (Array.isArray(data.packages)) setSoftware(data.packages);
             })
             .catch(() => {})
             .finally(() => setSoftwareLoading(false));
@@ -200,74 +202,85 @@ export default function PortalAssetDetailPage() {
       </Card>
 
       {/* Logiciels installés (via Wazuh) */}
-      {(software.length > 0 || softwareLoading) && (
-        <Card>
-          <CardContent className="p-6">
-            <h2 className="text-[15px] font-semibold text-slate-900 mb-4 flex items-center gap-2">
-              <Package className="h-4 w-4 text-slate-500" />
-              Logiciels installés
-              {!softwareLoading && software.length > 0 && (
-                <span className="text-[12px] font-normal text-slate-400">
-                  ({software.length})
-                </span>
-              )}
-            </h2>
-
-            {softwareLoading ? (
-              <div className="flex items-center justify-center py-8 gap-2 text-[13px] text-slate-500">
-                <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-                Chargement de l&apos;inventaire logiciel...
-              </div>
-            ) : (
-              <>
-                {software.length > 10 && (
-                  <Input
-                    placeholder="Rechercher un logiciel..."
-                    value={softwareSearch}
-                    onChange={(e) => setSoftwareSearch(e.target.value)}
-                    iconLeft={<Search className="h-4 w-4" />}
-                    className="mb-3"
-                  />
-                )}
-                <div className="rounded-lg border border-slate-200 overflow-hidden">
-                  <table className="w-full text-[13px]">
-                    <thead>
-                      <tr className="bg-slate-50 text-left text-[11px] font-medium uppercase text-slate-400">
-                        <th className="px-4 py-2">Nom</th>
-                        <th className="px-4 py-2 hidden sm:table-cell">Version</th>
-                        <th className="px-4 py-2 hidden md:table-cell">Éditeur</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {software
-                        .filter((s) => {
-                          if (!softwareSearch) return true;
-                          const q = softwareSearch.toLowerCase();
-                          return [s.name, s.version, s.vendor]
-                            .filter(Boolean)
-                            .join(" ")
-                            .toLowerCase()
-                            .includes(q);
-                        })
-                        .map((s, i) => (
-                          <tr key={i} className="hover:bg-slate-50/60">
-                            <td className="px-4 py-2 text-slate-700">{s.name}</td>
-                            <td className="px-4 py-2 text-slate-500 font-mono text-[12px] hidden sm:table-cell">
-                              {s.version ?? "—"}
-                            </td>
-                            <td className="px-4 py-2 text-slate-500 text-[12px] hidden md:table-cell">
-                              {s.vendor ?? "—"}
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
+      <Card>
+        <CardContent className="p-6">
+          <h2 className="text-[15px] font-semibold text-slate-900 mb-4 flex items-center gap-2">
+            <Package className="h-4 w-4 text-slate-500" />
+            Logiciels installés
+            {!softwareLoading && software.length > 0 && (
+              <span className="text-[12px] font-normal text-slate-400">
+                ({software.length})
+              </span>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </h2>
+
+          {softwareLoading ? (
+            <div className="flex items-center justify-center py-8 gap-2 text-[13px] text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+              Chargement de l&apos;inventaire logiciel...
+            </div>
+          ) : agentFound === false ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-4 text-center">
+              <p className="text-[13px] font-medium text-amber-800">
+                Agent Wazuh non trouvé pour cet actif
+              </p>
+              <p className="text-[12px] text-amber-700 mt-1">
+                L&apos;agent Wazuh doit être déployé sur ce poste pour collecter l&apos;inventaire logiciel.
+              </p>
+            </div>
+          ) : software.length === 0 ? (
+            <p className="text-[13px] text-slate-400 text-center py-6">
+              Aucun logiciel trouvé pour cet actif.
+            </p>
+          ) : (
+            <>
+              {software.length > 10 && (
+                <Input
+                  placeholder="Rechercher un logiciel..."
+                  value={softwareSearch}
+                  onChange={(e) => setSoftwareSearch(e.target.value)}
+                  iconLeft={<Search className="h-4 w-4" />}
+                  className="mb-3"
+                />
+              )}
+              <div className="rounded-lg border border-slate-200 overflow-hidden">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="bg-slate-50 text-left text-[11px] font-medium uppercase text-slate-400">
+                      <th className="px-4 py-2">Nom</th>
+                      <th className="px-4 py-2 hidden sm:table-cell">Version</th>
+                      <th className="px-4 py-2 hidden md:table-cell">Éditeur</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {software
+                      .filter((s) => {
+                        if (!softwareSearch) return true;
+                        const q = softwareSearch.toLowerCase();
+                        return [s.name, s.version, s.vendor]
+                          .filter(Boolean)
+                          .join(" ")
+                          .toLowerCase()
+                          .includes(q);
+                      })
+                      .map((s, i) => (
+                        <tr key={i} className="hover:bg-slate-50/60">
+                          <td className="px-4 py-2 text-slate-700">{s.name}</td>
+                          <td className="px-4 py-2 text-slate-500 font-mono text-[12px] hidden sm:table-cell">
+                            {s.version ?? "—"}
+                          </td>
+                          <td className="px-4 py-2 text-slate-500 text-[12px] hidden md:table-cell">
+                            {s.vendor ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Notes */}
       <Card>

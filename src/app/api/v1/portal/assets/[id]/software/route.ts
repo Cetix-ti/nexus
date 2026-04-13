@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
-import { findWazuhAgentByHostname, getWazuhAgentPackages } from "@/lib/integrations/wazuh-client";
+import { findWazuhAgent, getWazuhAgentPackages } from "@/lib/integrations/wazuh-client";
 
 export async function GET(
   _req: Request,
@@ -13,7 +13,7 @@ export async function GET(
   const { id } = await params;
   const asset = await prisma.asset.findFirst({
     where: { id, organizationId: user.organizationId },
-    select: { name: true, assignedContactId: true },
+    select: { name: true, ipAddress: true, assignedContactId: true },
   });
 
   if (!asset) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -26,20 +26,25 @@ export async function GET(
   }
 
   try {
-    const agent = await findWazuhAgentByHostname(asset.name);
-    if (!agent) return NextResponse.json([]);
+    const match = await findWazuhAgent(asset.name, asset.ipAddress);
+    if (!match) {
+      return NextResponse.json({ agentFound: false, packages: [] });
+    }
 
-    const packages = await getWazuhAgentPackages(agent.id);
-    return NextResponse.json(
-      packages.map((p) => ({
+    const packages = await getWazuhAgentPackages(match.agent.id);
+    return NextResponse.json({
+      agentFound: true,
+      matchedBy: match.matchedBy,
+      wazuhAgentName: match.agent.name,
+      packages: packages.map((p) => ({
         name: p.name,
         version: p.version ?? null,
         vendor: p.vendor ?? null,
         architecture: p.architecture ?? null,
         installedDate: p.install_time ?? null,
       })),
-    );
+    });
   } catch {
-    return NextResponse.json([]);
+    return NextResponse.json({ agentFound: false, packages: [] });
   }
 }
