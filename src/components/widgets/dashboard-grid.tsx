@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
 // Grid config
 // ---------------------------------------------------------------------------
 const GRID_COLS = 10;
-const COL_PX = 1; // We use fr units, but need a reference for snapping
 const ROW_PX = 60; // Height of 1 row unit in pixels
+const MAX_ROWS = 12;
 
 export interface DashboardItem {
   id: string;
@@ -36,143 +36,76 @@ interface DashboardGridProps {
   renderWidget: (widgetId: string, w: number, h: number) => React.ReactNode;
 }
 
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
 // ---------------------------------------------------------------------------
-// Resize handle — drag to resize like a window
+// Hook: live resize with grid snapping
+// Updates dimensions in real time during drag for a fluid experience.
 // ---------------------------------------------------------------------------
-function ResizeHandle({ onResizeEnd }: { onResizeEnd: (dw: number, dh: number) => void }) {
+function useLiveResize(
+  axis: "both" | "x" | "y",
+  item: { w: number; h: number },
+  onCommit: (w: number, h: number) => void,
+) {
   const [dragging, setDragging] = useState(false);
-  const startRef = useRef({ x: 0, y: 0 });
-  const deltaRef = useRef({ dx: 0, dy: 0 });
+  const [preview, setPreview] = useState<{ w: number; h: number } | null>(null);
+  const startRef = useRef({ x: 0, y: 0, w: 0, h: 0, colW: 0 });
 
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragging(true);
-    startRef.current = { x: e.clientX, y: e.clientY };
-    deltaRef.current = { dx: 0, dy: 0 };
-
-    const el = e.currentTarget as HTMLElement;
-    el.setPointerCapture(e.pointerId);
-  }, []);
-
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!dragging) return;
-    deltaRef.current = {
-      dx: e.clientX - startRef.current.x,
-      dy: e.clientY - startRef.current.y,
-    };
-  }, [dragging]);
-
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    if (!dragging) return;
-    setDragging(false);
-    const el = e.currentTarget as HTMLElement;
-    el.releasePointerCapture(e.pointerId);
-
-    // Convert pixel delta to grid units
-    // Estimate column width from parent
-    const parent = el.closest("[data-grid-container]");
-    const containerW = parent?.clientWidth || 1000;
-    const colW = containerW / GRID_COLS;
-
-    const dCols = Math.round(deltaRef.current.dx / colW);
-    const dRows = Math.round(deltaRef.current.dy / ROW_PX);
-
-    if (dCols !== 0 || dRows !== 0) {
-      onResizeEnd(dCols, dRows);
-    }
-  }, [dragging, onResizeEnd]);
-
-  return (
-    <div
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      className={cn(
-        "absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-20 touch-none",
-        "after:absolute after:bottom-1 after:right-1 after:w-3 after:h-3",
-        "after:border-b-2 after:border-r-2 after:border-blue-400 after:rounded-br-sm",
-        dragging && "after:border-blue-600",
-      )}
-      title="Glisser pour redimensionner"
-    />
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const el = e.currentTarget as HTMLElement;
+      const container = el.closest("[data-grid-container]") as HTMLElement | null;
+      const colW = (container?.clientWidth || 1000) / GRID_COLS;
+      startRef.current = { x: e.clientX, y: e.clientY, w: item.w, h: item.h, colW };
+      setDragging(true);
+      setPreview({ w: item.w, h: item.h });
+      el.setPointerCapture(e.pointerId);
+    },
+    [item.w, item.h],
   );
-}
 
-// ---------------------------------------------------------------------------
-// Right-edge resize handle (width only)
-// ---------------------------------------------------------------------------
-function ResizeHandleRight({ onResizeEnd }: { onResizeEnd: (dw: number) => void }) {
-  const [dragging, setDragging] = useState(false);
-  const startRef = useRef(0);
-
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragging(true);
-    startRef.current = e.clientX;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, []);
-
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    if (!dragging) return;
-    setDragging(false);
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    const parent = (e.currentTarget as HTMLElement).closest("[data-grid-container]");
-    const colW = (parent?.clientWidth || 1000) / GRID_COLS;
-    const dCols = Math.round((e.clientX - startRef.current) / colW);
-    if (dCols !== 0) onResizeEnd(dCols);
-  }, [dragging, onResizeEnd]);
-
-  return (
-    <div
-      onPointerDown={handlePointerDown}
-      onPointerMove={() => {}}
-      onPointerUp={handlePointerUp}
-      className={cn(
-        "absolute top-8 bottom-4 right-0 w-2 cursor-ew-resize z-20 touch-none",
-        "hover:bg-blue-400/30 transition-colors rounded-r",
-        dragging && "bg-blue-400/40",
-      )}
-    />
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragging) return;
+      const { x, y, w, h, colW } = startRef.current;
+      const dCols = Math.round((e.clientX - x) / colW);
+      const dRows = Math.round((e.clientY - y) / ROW_PX);
+      const nextW = axis === "y" ? w : clamp(w + dCols, 1, GRID_COLS);
+      const nextH = axis === "x" ? h : clamp(h + dRows, 1, MAX_ROWS);
+      setPreview((prev) => {
+        if (prev && prev.w === nextW && prev.h === nextH) return prev;
+        return { w: nextW, h: nextH };
+      });
+    },
+    [dragging, axis],
   );
-}
 
-// ---------------------------------------------------------------------------
-// Bottom-edge resize handle (height only)
-// ---------------------------------------------------------------------------
-function ResizeHandleBottom({ onResizeEnd }: { onResizeEnd: (dh: number) => void }) {
-  const [dragging, setDragging] = useState(false);
-  const startRef = useRef(0);
-
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragging(true);
-    startRef.current = e.clientY;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, []);
-
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    if (!dragging) return;
-    setDragging(false);
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    const dRows = Math.round((e.clientY - startRef.current) / ROW_PX);
-    if (dRows !== 0) onResizeEnd(dRows);
-  }, [dragging, onResizeEnd]);
-
-  return (
-    <div
-      onPointerDown={handlePointerDown}
-      onPointerMove={() => {}}
-      onPointerUp={handlePointerUp}
-      className={cn(
-        "absolute bottom-0 left-4 right-4 h-2 cursor-ns-resize z-20 touch-none",
-        "hover:bg-blue-400/30 transition-colors rounded-b",
-        dragging && "bg-blue-400/40",
-      )}
-    />
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragging) return;
+      const el = e.currentTarget as HTMLElement;
+      el.releasePointerCapture(e.pointerId);
+      setDragging(false);
+      if (preview && (preview.w !== item.w || preview.h !== item.h)) {
+        onCommit(preview.w, preview.h);
+      }
+      setPreview(null);
+    },
+    [dragging, preview, item.w, item.h, onCommit],
   );
+
+  return {
+    dragging,
+    preview,
+    handlers: {
+      onPointerDown: handlePointerDown,
+      onPointerMove: handlePointerMove,
+      onPointerUp: handlePointerUp,
+      onPointerCancel: handlePointerUp,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -193,23 +126,31 @@ function SortableWidget({
     attributes, listeners, setNodeRef, transform, transition, isDragging,
   } = useSortable({ id: item.id, disabled: !editMode });
 
-  // Compute effective column span:
-  // - Mobile: full width
-  // - Laptop + list widget: full width (better readability for ticket lists)
-  // - Otherwise: use the item's configured width
+  // Live resize handlers for corner, right edge, bottom edge
+  const corner = useLiveResize("both", item, onResize);
+  const rightEdge = useLiveResize("x", item, onResize);
+  const bottomEdge = useLiveResize("y", item, onResize);
+
+  // Display dimensions: use preview if any handle is dragging
+  const activePreview =
+    corner.preview ?? rightEdge.preview ?? bottomEdge.preview ?? null;
+  const displayW = activePreview?.w ?? item.w;
+  const displayH = activePreview?.h ?? item.h;
+  const isResizing = corner.dragging || rightEdge.dragging || bottomEdge.dragging;
+
   const shouldExpandOnLaptop = isLaptop && LAPTOP_FULL_WIDTH_WIDGETS.has(item.widgetId);
   const colSpan = isMobile
     ? "1 / -1"
     : shouldExpandOnLaptop
     ? `span ${GRID_COLS}`
-    : `span ${item.w}`;
+    : `span ${displayW}`;
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isResizing ? "none" : transition,
     opacity: isDragging ? 0.3 : 1,
-    zIndex: isDragging ? 50 : undefined,
+    zIndex: isDragging || isResizing ? 50 : undefined,
     gridColumn: colSpan,
-    minHeight: isMobile ? "auto" : `${item.h * ROW_PX}px`,
+    minHeight: isMobile ? "auto" : `${displayH * ROW_PX}px`,
   };
 
   if (!editMode) {
@@ -220,28 +161,35 @@ function SortableWidget({
     );
   }
 
-  const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
-        "relative rounded-xl transition-shadow",
+        "relative rounded-xl bg-white transition-shadow",
         isDragging
           ? "ring-2 ring-blue-500 shadow-2xl"
-          : "ring-2 ring-blue-300/60 hover:ring-blue-400",
+          : isResizing
+          ? "ring-2 ring-blue-500 shadow-lg"
+          : "ring-1 ring-blue-300/60 hover:ring-blue-400 hover:shadow-md",
       )}
     >
       {/* Drag bar — top */}
       <div
         {...attributes}
         {...listeners}
-        className="flex items-center justify-between px-3 py-1 bg-blue-50/80 rounded-t-xl border-b border-blue-200/60 cursor-grab active:cursor-grabbing touch-none select-none"
+        className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-blue-50 to-blue-50/60 rounded-t-xl border-b border-blue-200/60 cursor-grab active:cursor-grabbing touch-none select-none"
       >
         <div className="flex items-center gap-1.5">
-          <Move className="h-3 w-3 text-blue-400" />
-          <span className="text-[10px] text-blue-500">{item.w}×{item.h}</span>
+          <Move className="h-3 w-3 text-blue-500" />
+          <span
+            className={cn(
+              "text-[10px] font-medium tabular-nums tracking-wide",
+              isResizing ? "text-blue-700" : "text-blue-500",
+            )}
+          >
+            {displayW} × {displayH}
+          </span>
         </div>
         <button
           onPointerDown={(e) => e.stopPropagation()}
@@ -252,15 +200,42 @@ function SortableWidget({
         </button>
       </div>
 
-      {/* Content */}
-      <div className="overflow-auto" style={{ maxHeight: `${item.h * ROW_PX - 28}px` }}>
+      {/* Content — dimmed during resize for clearer size feedback */}
+      <div
+        className={cn(
+          "overflow-auto transition-opacity",
+          isResizing && "opacity-40",
+        )}
+        style={{ maxHeight: `${displayH * ROW_PX - 32}px` }}
+      >
         {children}
       </div>
 
-      {/* Resize handles — window-style */}
-      <ResizeHandleRight onResizeEnd={(dw) => onResize(clamp(item.w + dw, 1, GRID_COLS), item.h)} />
-      <ResizeHandleBottom onResizeEnd={(dh) => onResize(item.w, clamp(item.h + dh, 1, 10))} />
-      <ResizeHandle onResizeEnd={(dw, dh) => onResize(clamp(item.w + dw, 1, GRID_COLS), clamp(item.h + dh, 1, 10))} />
+      {/* Resize handles */}
+      <div
+        {...rightEdge.handlers}
+        className={cn(
+          "absolute top-8 bottom-3 right-0 w-2 cursor-ew-resize z-20 touch-none rounded-r transition-colors",
+          rightEdge.dragging ? "bg-blue-500/40" : "hover:bg-blue-400/30",
+        )}
+      />
+      <div
+        {...bottomEdge.handlers}
+        className={cn(
+          "absolute bottom-0 left-3 right-3 h-2 cursor-ns-resize z-20 touch-none rounded-b transition-colors",
+          bottomEdge.dragging ? "bg-blue-500/40" : "hover:bg-blue-400/30",
+        )}
+      />
+      <div
+        {...corner.handlers}
+        className={cn(
+          "absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-30 touch-none rounded-br-lg",
+          "after:absolute after:bottom-1 after:right-1 after:w-2.5 after:h-2.5",
+          "after:border-b-2 after:border-r-2 after:rounded-br-sm after:transition-colors",
+          corner.dragging ? "after:border-blue-700" : "after:border-blue-400 hover:after:border-blue-600",
+        )}
+        title="Glisser pour redimensionner"
+      />
     </div>
   );
 }
@@ -269,9 +244,6 @@ function SortableWidget({
 // Main grid
 // ---------------------------------------------------------------------------
 function useViewport() {
-  // mobile: < 640px — single column
-  // laptop: 640px to 1279px — list widgets go full-width for readability
-  // desktop: >= 1280px — full 10-col layout
   const [vp, setVp] = useState<{ mobile: boolean; laptop: boolean }>({ mobile: false, laptop: false });
   useEffect(() => {
     const check = () => {
@@ -285,7 +257,6 @@ function useViewport() {
   return vp;
 }
 
-// Widgets that benefit from being full-width on laptop screens (lists, tables)
 const LAPTOP_FULL_WIDTH_WIDGETS = new Set([
   "w_dash_recent",
   "w_dash_my",
@@ -308,16 +279,32 @@ export function DashboardGrid({
     onReorder(arrayMove(items, oldIdx, newIdx));
   }
 
+  // Grid background — shows dotted cells in edit mode
+  const gridBgStyle: React.CSSProperties | undefined = editMode && !isMobile
+    ? {
+        backgroundImage: `
+          linear-gradient(to right, rgba(148, 163, 184, 0.25) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(148, 163, 184, 0.18) 1px, transparent 1px)
+        `,
+        backgroundSize: `calc(100% / ${GRID_COLS}) 100%, 100% ${ROW_PX}px`,
+        backgroundPosition: "0 0",
+      }
+    : undefined;
+
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
         <div
           data-grid-container
           className={cn(
-            "grid gap-3 sm:gap-4",
-            editMode && "bg-slate-50/50 rounded-2xl p-4 ring-1 ring-dashed ring-slate-200"
+            "grid gap-3 sm:gap-4 relative",
+            editMode && "bg-slate-50/40 rounded-2xl p-4 ring-1 ring-dashed ring-slate-300/70"
           )}
-          style={{ gridTemplateColumns: isMobile ? "1fr" : `repeat(${GRID_COLS}, 1fr)` }}
+          style={{
+            gridTemplateColumns: isMobile ? "1fr" : `repeat(${GRID_COLS}, 1fr)`,
+            gridAutoRows: isMobile ? "auto" : `${ROW_PX}px`,
+            ...gridBgStyle,
+          }}
         >
           {items.map((item) => (
             <SortableWidget
