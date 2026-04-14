@@ -224,8 +224,29 @@ export default function WidgetEditorPage() {
               <div>
                 <label className="block text-[12px] font-medium text-slate-700 mb-1">Visualisation</label>
                 <Select value={fChart} onValueChange={(v) => setFChart(v as ChartType)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{CHART_TYPES.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}</SelectContent>
+                  <SelectTrigger>
+                    <SelectValue>
+                      {(() => {
+                        const c = CHART_TYPES.find((x) => x.id === fChart);
+                        return c ? (
+                          <span className="flex items-center gap-2">
+                            <span className="text-slate-500">{c.icon}</span>
+                            {c.label}
+                          </span>
+                        ) : null;
+                      })()}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CHART_TYPES.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        <span className="flex items-center gap-2">
+                          <span className="text-slate-500">{c.icon}</span>
+                          {c.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
             </div>
