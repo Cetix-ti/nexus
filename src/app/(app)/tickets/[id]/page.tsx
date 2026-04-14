@@ -24,6 +24,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-editor";
+import { AdvancedRichEditor } from "@/components/ui/advanced-rich-editor";
+import { LinkAssetModal } from "@/components/tickets/link-asset-modal";
 import {
   STATUS_CONFIG,
   PRIORITY_CONFIG,
@@ -123,6 +125,21 @@ export default function TicketDetailPage() {
   const [reminderDate, setReminderDate] = useState("");
   const [reminderNote, setReminderNote] = useState("");
   const [reminderSaving, setReminderSaving] = useState(false);
+  const [editingSubject, setEditingSubject] = useState(false);
+  const [subjectDraft, setSubjectDraft] = useState("");
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [projects, setProjects] = useState<{ id: string; code: string; name: string }[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string; parentId: string | null }[]>([]);
+  // Category selection at 3 levels — local state so React re-renders reliably
+  const [catLevel1, setCatLevel1] = useState<string>("");
+  const [catLevel2, setCatLevel2] = useState<string>("");
+  const [catLevel3, setCatLevel3] = useState<string>("");
+  const [linkedAssets, setLinkedAssets] = useState<{ id: string; name: string; type: string; externalSource: string | null }[]>([]);
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
+  const [userSignature, setUserSignature] = useState<{ signature: string | null; signatureHtml: string | null }>({ signature: null, signatureHtml: null });
+  const [appendSignature, setAppendSignature] = useState(true);
+  const [timelineTab, setTimelineTab] = useState<"messages" | "notes" | "activity">("messages");
 
   const tickets = useTicketsStore((s) => s.tickets);
   const loadAll = useTicketsStore((s) => s.loadAll);
@@ -132,6 +149,16 @@ export default function TicketDetailPage() {
     if (!loaded) loadAll();
   }, [loaded, loadAll]);
   const ticket = tickets.find((t) => t.id === params.id);
+
+  // Direct API patch for fields not in the Zustand Ticket type
+  async function patchTicketField(patch: Record<string, unknown>) {
+    if (!ticket) return;
+    await fetch(`/api/v1/tickets/${ticket.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+  }
 
   // Load collaborators and users list
   useEffect(() => {
@@ -155,9 +182,84 @@ export default function TicketDetailPage() {
       .then((r) => r.ok ? r.json() : null)
       .then((r) => { if (!signal.aborted && r) setReminder(r); })
       .catch(() => {});
+    // Load projects for linking
+    fetch("/api/v1/projects?active=true", { signal })
+      .then((r) => r.ok ? r.json() : [])
+      .then((d) => { if (!signal.aborted) setProjects(Array.isArray(d) ? d.map((p: any) => ({ id: p.id, code: p.code, name: p.name })) : d.data?.map((p: any) => ({ id: p.id, code: p.code, name: p.name })) || []); })
+      .catch(() => {});
+    // Load categories for classification
+    fetch("/api/v1/categories", { signal })
+      .then((r) => r.ok ? r.json() : [])
+      .then((d) => {
+        if (!signal.aborted && Array.isArray(d)) {
+          const cats = d.map((c: any) => ({ id: c.id, name: c.name, parentId: c.parentId }));
+          setCategories(cats);
+          // Reconstruct 3-level selection from the ticket's current categoryId
+          const currentId = (ticket as any).categoryId;
+          if (currentId) {
+            const chain: string[] = [];
+            let cursor = cats.find((c) => c.id === currentId);
+            while (cursor) {
+              chain.unshift(cursor.id);
+              cursor = cursor.parentId ? cats.find((c) => c.id === cursor!.parentId) : undefined;
+              if (chain.length > 5) break; // safety
+            }
+            setCatLevel1(chain[0] || "");
+            setCatLevel2(chain[1] || "");
+            setCatLevel3(chain[2] || "");
+          }
+        }
+      })
+      .catch(() => {});
+    // Load linked assets
+    fetch(`/api/v1/tickets/${ticket.id}/assets`, { signal })
+      .then((r) => r.ok ? r.json() : { data: [] })
+      .then((d) => { if (!signal.aborted) setLinkedAssets(d.data || []); })
+      .catch(() => {});
+    // Load current user's signature
+    fetch("/api/v1/me", { signal })
+      .then((r) => r.ok ? r.json() : null)
+      .then((me) => {
+        if (!signal.aborted && me) {
+          setUserSignature({ signature: me.signature ?? null, signatureHtml: me.signatureHtml ?? null });
+        }
+      })
+      .catch(() => {});
 
     return () => controller.abort();
   }, [ticket?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleLinkAsset(asset: any) {
+    if (!ticket) return;
+    try {
+      const res = await fetch(`/api/v1/tickets/${ticket.id}/assets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assetId: asset.id }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Échec de la liaison : ${err.error || `HTTP ${res.status}`}`);
+        return;
+      }
+      setLinkedAssets((prev) => [...prev, {
+        id: asset.id,
+        name: asset.name,
+        type: asset.type,
+        externalSource: asset.externalSource ?? null,
+      }]);
+    } catch (e) {
+      alert(`Erreur réseau : ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function handleUnlinkAsset(assetId: string) {
+    if (!ticket) return;
+    await fetch(`/api/v1/tickets/${ticket.id}/assets?assetId=${encodeURIComponent(assetId)}`, {
+      method: "DELETE",
+    });
+    setLinkedAssets((prev) => prev.filter((a) => a.id !== assetId));
+  }
 
   async function handleSetReminder() {
     if (!ticket || !reminderDate) return;
@@ -224,10 +326,21 @@ export default function TicketDetailPage() {
     if (!stripHtml(commentText) || sending) return;
     setSending(true);
     try {
+      // Build final content with optional signature
+      let finalContent = commentText;
+      const hasSig = userSignature.signatureHtml || userSignature.signature;
+      if (appendSignature && hasSig) {
+        const escapeHtml = (s: string) =>
+          s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        const sigHtml = userSignature.signatureHtml
+          ?? `<p>${escapeHtml(userSignature.signature ?? "").replace(/\n/g, "<br>")}</p>`;
+        // Separator
+        finalContent = `${commentText}<br><br>--<br>${sigHtml}`;
+      }
       const res = await fetch(`/api/v1/tickets/${ticket!.id}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: commentText, isInternal }),
+        body: JSON.stringify({ content: finalContent, isInternal }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -235,7 +348,7 @@ export default function TicketDetailPage() {
           id: data.data?.id ?? `local-${Date.now()}`,
           kind: "comment",
           authorName: data.data?.authorName ?? "Moi",
-          content: commentText,
+          content: finalContent,
           isInternal,
           createdAt: data.data?.createdAt ?? new Date().toISOString(),
         };
@@ -374,19 +487,90 @@ export default function TicketDetailPage() {
                   </Badge>
                 )}
               </div>
-              <h1 className="text-xl font-bold text-gray-900">{ticket.subject}</h1>
+              {editingSubject ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={subjectDraft}
+                    onChange={(e) => setSubjectDraft(e.target.value)}
+                    autoFocus
+                    className="flex-1 text-xl font-bold text-gray-900 border border-blue-300 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    onKeyDown={async (e) => {
+                      if (e.key === "Enter") {
+                        await updateTicket(ticket!.id, { subject: subjectDraft });
+                        ticket.subject = subjectDraft;
+                        setEditingSubject(false);
+                      }
+                      if (e.key === "Escape") setEditingSubject(false);
+                    }}
+                  />
+                  <button
+                    onClick={async () => {
+                      await updateTicket(ticket!.id, { subject: subjectDraft });
+                      ticket.subject = subjectDraft;
+                      setEditingSubject(false);
+                    }}
+                    className="px-3 py-1.5 text-[12px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                  >
+                    OK
+                  </button>
+                </div>
+              ) : (
+                <h1
+                  className="text-xl font-bold text-gray-900 cursor-pointer hover:text-blue-700 transition-colors"
+                  onClick={() => { setEditingSubject(true); setSubjectDraft(ticket.subject); }}
+                  title="Cliquer pour modifier le titre"
+                >
+                  {ticket.subject}
+                </h1>
+              )}
             </div>
 
             {/* Description */}
             <div className="mb-8 rounded-lg border border-gray-200 bg-white p-5">
-              <h2 className="mb-3 text-sm font-semibold text-gray-500 uppercase tracking-wider">Description</h2>
-              {ticket.description.includes("<") ? (
-                <div
-                  className="text-sm text-gray-700 leading-relaxed prose prose-sm prose-slate max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_em]:italic [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_pre]:bg-slate-100 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:rounded [&_img]:max-w-full [&_img]:rounded-lg"
-                  dangerouslySetInnerHTML={{ __html: ticket.description }}
-                />
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Description</h2>
+                {!editingDescription && (
+                  <button
+                    onClick={() => { setEditingDescription(true); setDescriptionDraft(ticket.description); }}
+                    className="text-[11px] text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Modifier
+                  </button>
+                )}
+              </div>
+              {editingDescription ? (
+                <div className="space-y-3">
+                  <AdvancedRichEditor
+                    value={descriptionDraft}
+                    onChange={setDescriptionDraft}
+                    placeholder="Description du ticket..."
+                    minHeight="200px"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => setEditingDescription(false)}
+                      className="px-3 py-1.5 text-[12px] font-medium text-slate-600 rounded-lg hover:bg-slate-100"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await updateTicket(ticket!.id, { description: descriptionDraft });
+                        ticket.description = descriptionDraft;
+                        setEditingDescription(false);
+                      }}
+                      className="px-3 py-1.5 text-[12px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                    >
+                      Enregistrer
+                    </button>
+                  </div>
+                </div>
               ) : (
-                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{ticket.description}</p>
+                <div
+                  className="tiptap text-sm text-gray-700 leading-relaxed prose prose-sm prose-slate max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_em]:italic [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_pre]:bg-slate-100 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:rounded [&_img]:max-w-full [&_img]:rounded-lg"
+                  dangerouslySetInnerHTML={{ __html: ticket.description || "<p>Aucune description.</p>" }}
+                />
               )}
             </div>
 
@@ -400,14 +584,71 @@ export default function TicketDetailPage() {
             />
             </div>
 
-            {/* Timeline */}
+            {/* Timeline with tabs — separate messages (public) from notes (internal) from activity */}
             <div className="mb-8">
-              <h2 className="mb-4 text-sm font-semibold text-gray-500 uppercase tracking-wider">Activité</h2>
+              <div className="mb-4 flex items-center justify-between">
+                <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50/60 p-1">
+                  <button
+                    onClick={() => setTimelineTab("messages")}
+                    className={cn(
+                      "px-3 py-1.5 text-[12.5px] font-medium rounded-md transition-colors",
+                      timelineTab === "messages" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700",
+                    )}
+                  >
+                    Messages
+                    <span className="ml-1.5 text-[10.5px] text-slate-400 tabular-nums">
+                      {timeline.filter((i) => i.kind === "comment" && !(i as any).isInternal).length}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setTimelineTab("notes")}
+                    className={cn(
+                      "px-3 py-1.5 text-[12.5px] font-medium rounded-md transition-colors",
+                      timelineTab === "notes" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700",
+                    )}
+                  >
+                    Notes internes
+                    <span className="ml-1.5 text-[10.5px] text-slate-400 tabular-nums">
+                      {timeline.filter((i) => i.kind === "comment" && (i as any).isInternal).length}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setTimelineTab("activity")}
+                    className={cn(
+                      "px-3 py-1.5 text-[12.5px] font-medium rounded-md transition-colors",
+                      timelineTab === "activity" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700",
+                    )}
+                  >
+                    Activité
+                    <span className="ml-1.5 text-[10.5px] text-slate-400 tabular-nums">
+                      {timeline.filter((i) => i.kind === "activity").length}
+                    </span>
+                  </button>
+                </div>
+              </div>
+              {(() => {
+                const filteredTimeline = timeline.filter((item) => {
+                  if (timelineTab === "messages") return item.kind === "comment" && !(item as any).isInternal;
+                  if (timelineTab === "notes") return item.kind === "comment" && (item as any).isInternal;
+                  return item.kind === "activity";
+                });
+                if (filteredTimeline.length === 0) {
+                  return (
+                    <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 py-10 text-center">
+                      <p className="text-[13px] text-slate-400">
+                        {timelineTab === "messages" && "Aucun message public pour le moment."}
+                        {timelineTab === "notes" && "Aucune note interne pour le moment."}
+                        {timelineTab === "activity" && "Aucune activité enregistrée."}
+                      </p>
+                    </div>
+                  );
+                }
+                return (
               <div className="relative space-y-0">
                 {/* Vertical line */}
                 <div className="absolute left-[17px] top-2 bottom-2 w-px bg-gray-200" />
 
-                {timeline.map((item) => (
+                {filteredTimeline.map((item) => (
                   <div key={item.id} className="relative flex gap-3 py-3">
                     {item.kind === "comment" ? (
                       <>
@@ -490,6 +731,8 @@ export default function TicketDetailPage() {
                   </div>
                 ))}
               </div>
+                );
+              })()}
             </div>
 
             {/* Add comment */}
@@ -498,7 +741,7 @@ export default function TicketDetailPage() {
                 <h3 className="text-[13px] font-semibold text-slate-700">Répondre au ticket</h3>
                 <div className="flex items-center gap-1 rounded-lg bg-slate-100/80 p-1 ring-1 ring-inset ring-slate-200/60">
                   <button
-                    onClick={() => setIsInternal(false)}
+                    onClick={() => { setIsInternal(false); setTimelineTab("messages"); }}
                     className={cn(
                       "rounded-md px-3 py-1 text-[11.5px] font-medium transition-all",
                       !isInternal
@@ -509,7 +752,7 @@ export default function TicketDetailPage() {
                     Réponse publique
                   </button>
                   <button
-                    onClick={() => setIsInternal(true)}
+                    onClick={() => { setIsInternal(true); setTimelineTab("notes"); }}
                     className={cn(
                       "rounded-md px-3 py-1 text-[11.5px] font-medium transition-all flex items-center gap-1",
                       isInternal
@@ -536,9 +779,22 @@ export default function TicketDetailPage() {
                 minHeight="140px"
               />
               <div className="mt-3 flex items-center justify-between">
-                <p className="text-[11px] text-slate-400">
-                  Astuce : <kbd className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[10px]">⌘ Enter</kbd> pour envoyer
-                </p>
+                <div className="flex items-center gap-3">
+                  <p className="text-[11px] text-slate-400">
+                    Astuce : <kbd className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[10px]">⌘ Enter</kbd> pour envoyer
+                  </p>
+                  {(userSignature.signature || userSignature.signatureHtml) && (
+                    <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={appendSignature}
+                        onChange={(e) => setAppendSignature(e.target.checked)}
+                        className="h-3 w-3 rounded border-slate-300"
+                      />
+                      Inclure ma signature
+                    </label>
+                  )}
+                </div>
                 <Button
                   variant="primary"
                   size="md"
@@ -664,18 +920,22 @@ export default function TicketDetailPage() {
             {/* People */}
             <SidebarSection title="Personnes">
               <SidebarRow label="Assigné à">
-                {ticket.assigneeName ? (
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-5 w-5">
-                      <AvatarFallback className="text-[9px]">
-                        {getInitials(ticket.assigneeName)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="text-sm text-gray-700">{ticket.assigneeName}</span>
-                  </div>
-                ) : (
-                  <span className="text-sm text-gray-400">Non assigné</span>
-                )}
+                <select
+                  value={(ticket as any).assigneeId || ""}
+                  onChange={async (e) => {
+                    const assigneeId = e.target.value || null;
+                    await updateTicket(ticket!.id, { assigneeId });
+                    const u = allUsers.find((u) => u.id === assigneeId);
+                    ticket.assigneeName = u?.name || null;
+                    (ticket as any).assigneeId = assigneeId;
+                  }}
+                  className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-600 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">Non assigné</option>
+                  {allUsers.map((u) => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
               </SidebarRow>
               <SidebarRow label="Demandeur">
                 <div>
@@ -747,53 +1007,44 @@ export default function TicketDetailPage() {
             {/* Projet */}
             <SidebarSection title="Projet">
               {ticket.projectId ? (
-                <button
-                  onClick={() => router.push(`/projects/${ticket.projectId}`)}
-                  className="group w-full text-left rounded-lg border border-gray-200 bg-white p-2.5 hover:border-blue-300 hover:bg-blue-50/30 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <FolderKanban className="h-3.5 w-3.5 text-gray-400" />
-                    <span className="text-sm font-medium text-gray-900 group-hover:text-blue-700">
-                      Voir le projet
-                    </span>
-                  </div>
-                </button>
-              ) : (
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-gray-400">Aucun projet</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => router.push(`/projects?linkTicket=${ticket.id}`)}
+                  <button
+                    onClick={() => router.push(`/projects/${ticket.projectId}`)}
+                    className="group flex items-center gap-2 text-sm font-medium text-gray-900 hover:text-blue-700 transition-colors"
                   >
-                    <FolderKanban className="h-3.5 w-3.5" />
-                    Lier à un projet
-                  </Button>
+                    <FolderKanban className="h-3.5 w-3.5 text-gray-400" />
+                    Voir le projet
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await patchTicketField({ projectId: null });
+                      ticket.projectId = undefined;
+                    }}
+                    className="text-gray-300 hover:text-red-500 transition-colors"
+                    title="Délier du projet"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <select
+                    className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-600 focus:border-blue-500 focus:outline-none"
+                    value=""
+                    onChange={async (e) => {
+                      const projectId = e.target.value;
+                      if (!projectId) return;
+                      await patchTicketField({ projectId });
+                      ticket.projectId = projectId;
+                    }}
+                  >
+                    <option value="">Lier à un projet...</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
+                    ))}
+                  </select>
                 </div>
               )}
-            </SidebarSection>
-
-            {/* Quick time entry button */}
-            <SidebarSection title="Temps">
-              <Button
-                variant="primary"
-                size="sm"
-                className="w-full"
-                onClick={() => {
-                  const billingEl = document.getElementById("ticket-billing");
-                  if (billingEl) {
-                    billingEl.scrollIntoView({ behavior: "smooth" });
-                    // Click the "Ajouter du temps" button after scroll
-                    setTimeout(() => {
-                      const addBtn = billingEl.querySelector<HTMLButtonElement>("button[class*='primary']");
-                      if (addBtn) addBtn.click();
-                    }, 400);
-                  }
-                }}
-              >
-                <Clock className="h-3.5 w-3.5" />
-                Saisie de temps
-              </Button>
             </SidebarSection>
 
             {/* Organization */}
@@ -806,9 +1057,78 @@ export default function TicketDetailPage() {
 
             {/* Classification */}
             <SidebarSection title="Classification">
-              <SidebarRow label="Catégorie">
-                <span className="text-sm text-gray-700">{ticket.categoryName}</span>
-              </SidebarRow>
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-1">Catégorie</label>
+                  <select
+                    value={catLevel1}
+                    onChange={async (e) => {
+                      const id = e.target.value;
+                      setCatLevel1(id);
+                      setCatLevel2("");
+                      setCatLevel3("");
+                      const finalId = id || null;
+                      await patchTicketField({ categoryId: finalId });
+                      const cat = categories.find((c) => c.id === finalId);
+                      (ticket as any).categoryName = cat?.name || "—";
+                      (ticket as any).categoryId = finalId;
+                    }}
+                    className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">Aucune catégorie</option>
+                    {categories.filter((c) => !c.parentId).map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {catLevel1 && categories.some((c) => c.parentId === catLevel1) && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-1">Sous-catégorie</label>
+                    <select
+                      value={catLevel2}
+                      onChange={async (e) => {
+                        const id = e.target.value;
+                        setCatLevel2(id);
+                        setCatLevel3("");
+                        const finalId = id || catLevel1;
+                        await patchTicketField({ categoryId: finalId });
+                        const cat = categories.find((c) => c.id === finalId);
+                        (ticket as any).categoryName = cat?.name || "—";
+                        (ticket as any).categoryId = finalId;
+                      }}
+                      className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="">— Aucune —</option>
+                      {categories.filter((c) => c.parentId === catLevel1).map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {catLevel2 && categories.some((c) => c.parentId === catLevel2) && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-1">Sous-catégorie 2</label>
+                    <select
+                      value={catLevel3}
+                      onChange={async (e) => {
+                        const id = e.target.value;
+                        setCatLevel3(id);
+                        const finalId = id || catLevel2;
+                        await patchTicketField({ categoryId: finalId });
+                        const cat = categories.find((c) => c.id === finalId);
+                        (ticket as any).categoryName = cat?.name || "—";
+                        (ticket as any).categoryId = finalId;
+                      }}
+                      className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="">— Aucune —</option>
+                      {categories.filter((c) => c.parentId === catLevel2).map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
               <SidebarRow label="File">
                 <span className="text-sm text-gray-700">{ticket.queueName}</span>
               </SidebarRow>
@@ -846,6 +1166,16 @@ export default function TicketDetailPage() {
                   <p className="text-xs text-gray-400">
                     Échéance : {format(new Date(ticket.dueAt), "d MMM yyyy 'à' HH:mm")}
                   </p>
+                  <button
+                    onClick={async () => {
+                      if (!confirm("Désactiver le SLA pour ce ticket ?")) return;
+                      await patchTicketField({ dueAt: null, slaPolicyId: null });
+                      ticket.dueAt = null;
+                    }}
+                    className="w-full mt-1 text-[11px] text-red-600 hover:text-red-700 font-medium hover:bg-red-50 rounded-md py-1 transition-colors"
+                  >
+                    Désactiver le SLA
+                  </button>
                 </div>
               </SidebarSection>
             )}
@@ -880,13 +1210,52 @@ export default function TicketDetailPage() {
               </SidebarRow>
             </SidebarSection>
 
-            {/* Related assets placeholder */}
+            {/* Related assets */}
             <SidebarSection title="Actifs liés">
-              <p className="text-xs text-gray-400">Aucun actif lié à ce ticket.</p>
+              {linkedAssets.length > 0 ? (
+                <div className="space-y-1.5">
+                  {linkedAssets.map((a) => (
+                    <div key={a.id} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 group">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[12px] font-medium text-slate-800 font-mono truncate">{a.name}</p>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider">{a.type}{a.externalSource ? ` · ${a.externalSource}` : ""}</p>
+                      </div>
+                      <button
+                        onClick={() => handleUnlinkAsset(a.id)}
+                        className="text-slate-300 hover:text-red-500 transition-colors"
+                        title="Délier"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400">Aucun actif lié.</p>
+              )}
+
+              <button
+                onClick={() => setShowAssetPicker(true)}
+                className="mt-2 text-[11px] font-medium text-blue-600 hover:text-blue-700"
+              >
+                + Lier un actif
+              </button>
             </SidebarSection>
           </div>
         </div>
       </div>
+
+      {/* Asset linking modal */}
+      <LinkAssetModal
+        open={showAssetPicker}
+        onClose={() => setShowAssetPicker(false)}
+        ticketOrgId={(ticket as any)?.organizationId || null}
+        alreadyLinkedIds={linkedAssets.map((a) => a.id)}
+        onLink={async (asset) => {
+          await handleLinkAsset(asset);
+          setShowAssetPicker(false);
+        }}
+      />
     </div>
   );
 }

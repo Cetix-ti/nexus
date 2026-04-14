@@ -179,20 +179,30 @@ function ResizeHandleBottom({ onResizeEnd }: { onResizeEnd: (dh: number) => void
 // Sortable widget wrapper
 // ---------------------------------------------------------------------------
 function SortableWidget({
-  item, editMode, onRemove, onResize, isMobile, children,
+  item, editMode, onRemove, onResize, isMobile, isLaptop, children,
 }: {
   item: DashboardItem;
   editMode: boolean;
   onRemove: () => void;
   onResize: (w: number, h: number) => void;
   isMobile?: boolean;
+  isLaptop?: boolean;
   children: React.ReactNode;
 }) {
   const {
     attributes, listeners, setNodeRef, transform, transition, isDragging,
   } = useSortable({ id: item.id, disabled: !editMode });
 
-  const colSpan = isMobile ? "1 / -1" : `span ${item.w}`;
+  // Compute effective column span:
+  // - Mobile: full width
+  // - Laptop + list widget: full width (better readability for ticket lists)
+  // - Otherwise: use the item's configured width
+  const shouldExpandOnLaptop = isLaptop && LAPTOP_FULL_WIDTH_WIDGETS.has(item.widgetId);
+  const colSpan = isMobile
+    ? "1 / -1"
+    : shouldExpandOnLaptop
+    ? `span ${GRID_COLS}`
+    : `span ${item.w}`;
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -258,21 +268,33 @@ function SortableWidget({
 // ---------------------------------------------------------------------------
 // Main grid
 // ---------------------------------------------------------------------------
-function useIsMobile() {
-  const [mobile, setMobile] = useState(false);
+function useViewport() {
+  // mobile: < 640px — single column
+  // laptop: 640px to 1279px — list widgets go full-width for readability
+  // desktop: >= 1280px — full 10-col layout
+  const [vp, setVp] = useState<{ mobile: boolean; laptop: boolean }>({ mobile: false, laptop: false });
   useEffect(() => {
-    const check = () => setMobile(window.innerWidth < 640);
+    const check = () => {
+      const w = window.innerWidth;
+      setVp({ mobile: w < 640, laptop: w >= 640 && w < 1280 });
+    };
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
-  return mobile;
+  return vp;
 }
+
+// Widgets that benefit from being full-width on laptop screens (lists, tables)
+const LAPTOP_FULL_WIDTH_WIDGETS = new Set([
+  "w_dash_recent",
+  "w_dash_my",
+]);
 
 export function DashboardGrid({
   items, editMode, onReorder, onRemove, onResize, onAddClick, renderWidget,
 }: DashboardGridProps) {
-  const isMobile = useIsMobile();
+  const { mobile: isMobile, laptop: isLaptop } = useViewport();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
@@ -303,6 +325,7 @@ export function DashboardGrid({
               item={item}
               editMode={editMode}
               isMobile={isMobile}
+              isLaptop={isLaptop}
               onRemove={() => onRemove(item.id)}
               onResize={(w, h) => onResize(item.id, w, h)}
             >

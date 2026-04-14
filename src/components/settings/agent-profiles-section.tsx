@@ -119,7 +119,8 @@ export function AgentProfilesSection() {
           role: u.role,
           roleBadge: badgeForRole(u.role),
           gradient: GRADIENTS[i % GRADIENTS.length],
-          signature: `${u.name || `${u.firstName} ${u.lastName}`}\n${u.email}${u.phone ? `\n${u.phone}` : ""}`,
+          signature: u.signature || `${u.name || `${u.firstName} ${u.lastName}`}\n${u.email}${u.phone ? `\n${u.phone}` : ""}`,
+          signatureHtml: u.signatureHtml || null,
         }));
         setAgents(mapped);
       })
@@ -129,7 +130,21 @@ export function AgentProfilesSection() {
   }, []);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
 
-  function handleSave(id: string, patch: Partial<SignatureAgent>) {
+  async function handleSave(id: string, patch: Partial<SignatureAgent>) {
+    // Persist to DB
+    const body: Record<string, unknown> = { id };
+    if (patch.signature !== undefined) body.signature = patch.signature;
+    if (patch.signatureHtml !== undefined) body.signatureHtml = patch.signatureHtml;
+    if ((patch as any).avatar !== undefined) body.avatar = (patch as any).avatar;
+    try {
+      await fetch("/api/v1/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      console.error("Signature save failed:", e);
+    }
     setAgents((prev) =>
       prev.map((a) => (a.id === id ? { ...a, ...patch } : a))
     );
@@ -186,23 +201,9 @@ export function AgentProfilesSection() {
                     >
                       {getInitials(agent.name)}
                     </div>
-                    <div className="flex flex-col items-start gap-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setEditingAgent(agent)}
-                      >
-                        <Camera className="h-3.5 w-3.5" />
-                        Changer la photo
-                      </Button>
-                      <button
-                        onClick={() => setEditingAgent(agent)}
-                        className="text-[11px] font-medium text-red-500 hover:text-red-700 inline-flex items-center gap-1"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        Supprimer
-                      </button>
-                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      La photo se gère depuis le profil de l&apos;agent
+                    </p>
                   </div>
                 </div>
 

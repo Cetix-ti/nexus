@@ -82,10 +82,17 @@ export async function GET() {
       value: priorityRows.find((r) => r.priority === p)?._count.id ?? 0,
     }));
 
-    // Top orgs by open ticket count
+    // Top orgs by open ticket count (exclude internal/MSP org)
+    const internalOrg = await prisma.organization.findFirst({
+      where: { slug: "cetix" },
+      select: { id: true },
+    });
     const orgRows = await prisma.ticket.groupBy({
       by: ["organizationId"],
-      where: { status: { in: OPEN_STATUSES as any } },
+      where: {
+        status: { in: OPEN_STATUSES as any },
+        ...(internalOrg ? { organizationId: { not: internalOrg.id } } : {}),
+      },
       _count: { id: true },
       orderBy: { _count: { id: "desc" } },
       take: 8,

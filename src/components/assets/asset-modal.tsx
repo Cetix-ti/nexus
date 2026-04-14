@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X, Server, Cpu, Network, ShieldCheck, Save, Sparkles, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { X, Server, Cpu, Network, ShieldCheck, Save, Sparkles, Loader2, Search, UserCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -360,11 +360,17 @@ export function AssetModal({ open, onClose, asset, organizationId, onSave }: Ass
                   onChange={(e) => update("rackPosition", e.target.value)}
                 />
               </div>
-              <Input
-                label="Assigné à"
-                placeholder="Nom du contact"
-                value={form.assignedToContactName ?? ""}
-                onChange={(e) => update("assignedToContactName", e.target.value)}
+              <ContactAutocomplete
+                organizationId={organizationId}
+                selectedId={form.assignedContactId}
+                selectedName={form.assignedToContactName}
+                onSelect={(id, name) => {
+                  setForm((f) => ({
+                    ...f,
+                    assignedContactId: id ?? undefined,
+                    assignedToContactName: name ?? undefined,
+                  }));
+                }}
               />
             </>
           )}
@@ -500,6 +506,159 @@ export function AssetModal({ open, onClose, asset, organizationId, onSave }: Ass
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Contact Autocomplete — searches org contacts with debounce
+// ---------------------------------------------------------------------------
+
+interface ContactResult {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  jobTitle: string | null;
+}
+
+function ContactAutocomplete({
+  organizationId,
+  selectedId,
+  selectedName,
+  onSelect,
+}: {
+  organizationId: string;
+  selectedId?: string;
+  selectedName?: string;
+  onSelect: (id: string | null, name: string | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<ContactResult[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const search = useCallback(
+    (q: string) => {
+      if (q.length < 2) {
+        setResults([]);
+        return;
+      }
+      setLoading(true);
+      fetch(
+        `/api/v1/contacts/search?q=${encodeURIComponent(q)}&organizationId=${encodeURIComponent(organizationId)}`,
+      )
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data) => {
+          if (Array.isArray(data)) setResults(data);
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    },
+    [organizationId],
+  );
+
+  function handleInput(val: string) {
+    setQuery(val);
+    setOpen(true);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => search(val), 250);
+  }
+
+  function handleSelect(c: ContactResult) {
+    const name = `${c.firstName} ${c.lastName}`.trim();
+    onSelect(c.id, name);
+    setQuery("");
+    setOpen(false);
+  }
+
+  function handleClear() {
+    onSelect(null, null);
+    setQuery("");
+    setResults([]);
+  }
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+        Assigné à
+      </label>
+
+      {selectedId && selectedName ? (
+        /* Chip showing current selection */
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3.5 py-2.5">
+          <UserCircle className="h-4 w-4 text-slate-400 shrink-0" />
+          <span className="text-[13px] font-medium text-slate-900 flex-1 truncate">
+            {selectedName}
+          </span>
+          <button
+            type="button"
+            onClick={handleClear}
+            className="h-5 w-5 inline-flex items-center justify-center rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : (
+        /* Search input */
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => handleInput(e.target.value)}
+            onFocus={() => { if (query.length >= 2) setOpen(true); }}
+            placeholder="Rechercher un contact..."
+            className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3.5 py-2.5 text-[13px] text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          />
+          {loading && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-slate-400" />
+          )}
+        </div>
+      )}
+
+      {/* Dropdown results */}
+      {open && results.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-52 overflow-y-auto">
+          {results.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => handleSelect(c)}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left hover:bg-slate-50 transition-colors"
+            >
+              <UserCircle className="h-4 w-4 text-slate-400 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-slate-900 truncate">
+                  {c.firstName} {c.lastName}
+                </p>
+                <p className="text-[11px] text-slate-400 truncate">
+                  {c.email}{c.jobTitle ? ` — ${c.jobTitle}` : ""}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {open && query.length >= 2 && results.length === 0 && !loading && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl border border-slate-200 bg-white py-4 shadow-lg text-center">
+          <p className="text-[12px] text-slate-400">Aucun contact trouvé</p>
+        </div>
+      )}
     </div>
   );
 }

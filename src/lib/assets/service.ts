@@ -11,8 +11,43 @@ export async function createAsset(input: any) {
   return prisma.asset.create({ data: input });
 }
 
+// Fields that come from external sync (Atera, etc.).
+// When a user manually edits one of these on a synced asset,
+// it gets added to `fieldOverrides` so the next sync won't overwrite it.
+const EXTERNAL_SYNCABLE_FIELDS = new Set([
+  "name",
+  "type",
+  "status",
+  "manufacturer",
+  "model",
+  "serialNumber",
+  "ipAddress",
+  "macAddress",
+]);
+
 export async function updateAsset(id: string, patch: any) {
-  return prisma.asset.update({ where: { id }, data: patch });
+  // For externally-synced assets, track which syncable fields the user edited
+  // so they are protected from being overwritten on the next sync.
+  const { fieldOverrides: _ignore, ...data } = patch;
+
+  const asset = await prisma.asset.findUnique({
+    where: { id },
+    select: { externalSource: true, fieldOverrides: true },
+  });
+
+  if (asset?.externalSource) {
+    const currentOverrides = new Set(asset.fieldOverrides ?? []);
+    const editedSyncable = Object.keys(data).filter((k) =>
+      EXTERNAL_SYNCABLE_FIELDS.has(k),
+    );
+    for (const f of editedSyncable) currentOverrides.add(f);
+
+    if (editedSyncable.length > 0) {
+      data.fieldOverrides = Array.from(currentOverrides);
+    }
+  }
+
+  return prisma.asset.update({ where: { id }, data });
 }
 
 export async function deleteAsset(id: string) {

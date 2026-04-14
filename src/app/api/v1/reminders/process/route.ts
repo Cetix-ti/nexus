@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email/send";
+import { buildBrandedEmailHtml } from "@/lib/email/branded-template";
 
 /**
  * POST /api/v1/reminders/process
@@ -56,27 +57,33 @@ export async function POST(req: Request) {
         },
       });
 
-      // 2. Send email notification
+      // 2. Send email notification (using branded template)
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      const reminderHtml = buildBrandedEmailHtml({
+        headerGradient: "linear-gradient(135deg,#7C3AED 0%,#A78BFA 100%)",
+        preheader: `Rappel : ticket #${reminder.ticket.number}`,
+        title: `Rappel de ticket`,
+        subtitle: `#${reminder.ticket.number} — ${reminder.ticket.subject}`,
+        bodyHtml: `
+          <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.65;">
+            Bonjour ${reminder.user.firstName},
+          </p>
+          <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:20px;font-size:14px;color:#334155;line-height:1.65;margin-bottom:16px;">
+            <p style="margin:0;font-weight:600;">#${reminder.ticket.number} — ${reminder.ticket.subject}</p>
+            ${reminder.note ? `<p style="margin:8px 0 0;color:#64748B;font-style:italic;">${reminder.note}</p>` : ""}
+          </div>
+          <p style="margin:0;font-size:13px;color:#64748B;">
+            Ce rappel a &eacute;t&eacute; configur&eacute; pour vous notifier aujourd'hui.
+          </p>
+        `,
+        ctaUrl: `${appUrl}/tickets/${reminder.ticket.id}`,
+        ctaLabel: "Voir le billet",
+        ctaColor: "#7C3AED",
+      });
       const emailSent = await sendEmail(
         reminder.user.email,
         `Rappel — Ticket #${reminder.ticket.number} : ${reminder.ticket.subject}`,
-        `
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto;">
-            <h2 style="color: #1e293b; font-size: 18px; margin-bottom: 8px;">Rappel de ticket</h2>
-            <p style="color: #64748b; font-size: 14px; margin-bottom: 16px;">
-              Bonjour ${reminder.user.firstName},
-            </p>
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-              <p style="color: #334155; font-size: 14px; font-weight: 600; margin: 0 0 4px 0;">
-                #${reminder.ticket.number} — ${reminder.ticket.subject}
-              </p>
-              ${reminder.note ? `<p style="color: #64748b; font-size: 13px; margin: 8px 0 0 0; font-style: italic;">${reminder.note}</p>` : ""}
-            </div>
-            <p style="color: #64748b; font-size: 13px;">
-              Ce rappel a été configuré pour vous notifier aujourd'hui. Le ticket est maintenant de retour dans vos listes actives.
-            </p>
-          </div>
-        `,
+        reminderHtml,
       );
 
       if (emailSent) emailed++;

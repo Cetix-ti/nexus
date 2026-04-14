@@ -33,23 +33,29 @@ const AVAILABLE_VARS = [
   "{{priority}}",
   "{{created_at}}",
   "{{resolved_at}}",
+  "{{logo}}",
 ];
 
 export function EditEmailTemplateModal({ open, template, onClose, onSave }: Props) {
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
-  const [tab, setTab] = useState<"visual" | "html" | "preview">("visual");
+  const [htmlBody, setHtmlBody] = useState("");
+  const [tab, setTab] = useState<"visual" | "html" | "preview">("html");
+  const [lastEditedIn, setLastEditedIn] = useState<"visual" | "html">("html");
 
   useEffect(() => {
     if (open) {
+      const initial =
+        template?.body ||
+        "Bonjour {{requester_name}},\n\nVotre ticket {{ticket_id}} a été mis à jour.\n\nCordialement,\nL'équipe support";
       setName(template?.name || "");
       setSubject(template?.subject || "");
-      setBody(
-        template?.body ||
-          "Bonjour {{requester_name}},\n\nVotre ticket {{ticket_id}} a été mis à jour.\n\nCordialement,\nL'équipe support"
-      );
-      setTab("visual");
+      setBody(initial);
+      setHtmlBody(initial);
+      // Default to HTML tab for full control over template markup
+      setTab("html");
+      setLastEditedIn("html");
     }
   }, [open, template]);
 
@@ -64,7 +70,16 @@ export function EditEmailTemplateModal({ open, template, onClose, onSave }: Prop
   if (!open) return null;
 
   function insertVar(v: string) {
-    setBody((b) => b + v);
+    if (tab === "html") {
+      setHtmlBody((b) => b + v);
+    } else {
+      setBody((b) => b + v);
+    }
+  }
+
+  // Get the current body from whichever tab was last edited
+  function getCurrentBody(): string {
+    return lastEditedIn === "html" ? htmlBody : body;
   }
 
   function handleSave() {
@@ -73,7 +88,7 @@ export function EditEmailTemplateModal({ open, template, onClose, onSave }: Prop
       id: template?.id || `tmpl_${Date.now()}`,
       name: name.trim(),
       subject: subject.trim(),
-      body,
+      body: getCurrentBody(),
       updatedAt: "à l'instant",
     });
     onClose();
@@ -174,16 +189,16 @@ export function EditEmailTemplateModal({ open, template, onClose, onSave }: Prop
             {tab === "visual" && (
               <AdvancedRichEditor
                 value={body}
-                onChange={setBody}
+                onChange={(v) => { setBody(v); setLastEditedIn("visual"); }}
                 placeholder="Rédigez le contenu du courriel..."
                 minHeight="280px"
               />
             )}
             {tab === "html" && (
               <textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                rows={14}
+                value={htmlBody}
+                onChange={(e) => { setHtmlBody(e.target.value); setLastEditedIn("html"); }}
+                rows={16}
                 spellCheck={false}
                 className="w-full rounded-lg border border-slate-200 bg-slate-50/40 px-3 py-2 text-[12px] font-mono text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-y"
                 placeholder="<p>Bonjour {{requester_name}},</p>"
@@ -207,7 +222,7 @@ export function EditEmailTemplateModal({ open, template, onClose, onSave }: Prop
                   className="tiptap p-6 text-[14px] text-slate-800 min-h-[280px]"
                   dangerouslySetInnerHTML={{
                     __html:
-                      body ||
+                      getCurrentBody() ||
                       '<p style="color:#94a3b8">Le corps du courriel est vide.</p>',
                   }}
                 />

@@ -13,7 +13,8 @@ import prisma from "@/lib/prisma";
 
 export interface MonitoringEmailConfig {
   mailbox: string;
-  folders: string[]; // Multiple folders to monitor, e.g. ["Inbox/ZABBIX", "Inbox/FORTIGATE"]
+  folders: string[]; // Alert monitoring folders, e.g. ["Inbox/ZABBIX", "Inbox/FORTIGATE"]
+  backupFolders?: string[]; // Backup status emails folders, e.g. ["Inbox/VEEAM"]
 }
 
 interface GraphMessage {
@@ -133,6 +134,7 @@ interface DetectedSource {
   severity: "CRITICAL" | "HIGH" | "WARNING" | "INFO";
   alertGroupKey: string | null;
   isResolution: boolean;
+  hostname: string | null;
 }
 
 function detectSource(subject: string, senderEmail: string, body: string): DetectedSource {
@@ -164,38 +166,81 @@ function detectSource(subject: string, senderEmail: string, body: string): Detec
 
   // Group key for dedup — extract host/service from common patterns
   let alertGroupKey: string | null = null;
+  let extractedHost: string | null = null;
+
   // Zabbix: "Problem: <description> on <host>"
   const zabbixMatch = subject.match(/(?:Problem|Resolved|OK):\s*(.+?)(?:\s+on\s+(.+))?$/i);
   if (zabbixMatch) {
     const desc = zabbixMatch[1]?.trim().slice(0, 80);
     const host = zabbixMatch[2]?.trim().slice(0, 50);
+    if (host) extractedHost = host;
     alertGroupKey = `${sourceType}:${host || "unknown"}:${desc}`.toLowerCase();
   }
-  if (!alertGroupKey) {
-    // Generic: use source + first meaningful part of subject
-    const cleanSubject = subject.replace(/\[.*?\]/g, "").replace(/\d{4}-\d{2}-\d{2}/g, "").trim().slice(0, 80);
-    alertGroupKey = `${sourceType}:${cleanSubject}`.toLowerCase();
+
+  // Atera pattern: "<HOSTNAME> is offline" / "Alert on HOSTNAME" / "[Atera] HOSTNAME: message"
+  if (!extractedHost && sourceType === "atera") {
+    const ateraPatterns = [
+      /^\s*(?:\[[^\]]+\]\s*)?([A-Z][A-Z0-9][A-Z0-9_\-]+)\s*(?:[:-]|is|has|disconnected|offline|online)/i,
+      /\bon\s+([A-Z][A-Z0-9_\-]{2,})/i,
+      /\bdevice\s+([A-Z][A-Z0-9_\-]{2,})/i,
+    ];
+    for (const pattern of ateraPatterns) {
+      const m = subject.match(pattern);
+      if (m && m[1]) { extractedHost = m[1]; break; }
+    }
   }
 
-  return { sourceType, severity, alertGroupKey, isResolution };
+  // Generic: look for uppercase hostname-like tokens
+  if (!extractedHost) {
+    const genericMatch = subject.match(/\b([A-Z]{2,6}[-_][A-Z0-9_\-]{2,})\b/);
+    if (genericMatch) extractedHost = genericMatch[1];
+  }
+
+  if (!alertGroupKey) {
+    const cleanSubject = subject.replace(/\[.*?\]/g, "").replace(/\d{4}-\d{2}-\d{2}/g, "").trim().slice(0, 80);
+    alertGroupKey = `${sourceType}:${extractedHost || "unknown"}:${cleanSubject}`.toLowerCase();
+  }
+
+  return { sourceType, severity, alertGroupKey, isResolution, hostname: extractedHost };
 }
 
 // ---------------------------------------------------------------------------
 // Domain → org matching
 // ---------------------------------------------------------------------------
 
-async function buildDomainMap(): Promise<Map<string, { id: string; name: string }>> {
+interface OrgMaps {
+  domainMap: Map<string, { id: string; name: string }>;
+  clientCodeMap: Map<string, { id: string; name: string }>;
+}
+
+async function buildOrgMaps(): Promise<OrgMaps> {
   const orgs = await prisma.organization.findMany({
-    select: { id: true, name: true, domain: true, domains: true },
+    select: { id: true, name: true, domain: true, domains: true, clientCode: true },
   });
-  const map = new Map<string, { id: string; name: string }>();
+  const domainMap = new Map<string, { id: string; name: string }>();
+  const clientCodeMap = new Map<string, { id: string; name: string }>();
   for (const org of orgs) {
-    if (org.domain) map.set(org.domain.toLowerCase(), { id: org.id, name: org.name });
+    if (org.domain) domainMap.set(org.domain.toLowerCase(), { id: org.id, name: org.name });
     for (const d of org.domains ?? []) {
-      if (d) map.set(d.toLowerCase(), { id: org.id, name: org.name });
+      if (d) domainMap.set(d.toLowerCase(), { id: org.id, name: org.name });
+    }
+    // Map client code prefix (e.g., "BDU" → Baie-D'Urfé)
+    if (org.clientCode) {
+      clientCodeMap.set(org.clientCode.toUpperCase(), { id: org.id, name: org.name });
     }
   }
-  return map;
+  return { domainMap, clientCodeMap };
+}
+
+/** Extract client code prefix from Zabbix host name (e.g., "BDU_SERVER01" → "BDU") */
+function extractClientPrefix(subject: string): string | null {
+  // Look for Zabbix host in "on <HOST>" pattern
+  const hostMatch = subject.match(/\bon\s+([A-Za-z]{2,6})[-_]/i);
+  if (hostMatch) return hostMatch[1].toUpperCase();
+  // Fallback: look for prefix at start of any capitalized word
+  const prefixMatch = subject.match(/\b([A-Z]{2,6})[-_][A-Z]/);
+  if (prefixMatch) return prefixMatch[1];
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +290,7 @@ export async function syncMonitoringAlerts(
   let skipped = 0;
 
   try {
-    const domainMap = await buildDomainMap();
+    const { domainMap, clientCodeMap } = await buildOrgMaps();
 
     // Determine since date
     // sinceDays: undefined = incremental, 0 = all history, N = last N days
@@ -298,8 +343,19 @@ export async function syncMonitoringAlerts(
 
               const detected = detectSource(msg.subject, senderEmail, bodyText);
 
-              // Match org
-              const org = domainMap.get(senderDomain);
+              // Match org: try domain first, then host prefix (from extracted hostname) → client code
+              let org = domainMap.get(senderDomain);
+              if (!org && detected.hostname) {
+                // Extract prefix from hostname: "BDU_SERVER01" → "BDU"
+                const prefixMatch = detected.hostname.match(/^([A-Za-z]{2,6})[-_]/);
+                if (prefixMatch) {
+                  org = clientCodeMap.get(prefixMatch[1].toUpperCase()) ?? undefined;
+                }
+              }
+              if (!org) {
+                const prefix = extractClientPrefix(msg.subject);
+                if (prefix) org = clientCodeMap.get(prefix) ?? undefined;
+              }
 
               // If it's a resolution, try to mark the original alert as resolved
               if (detected.isResolution && detected.alertGroupKey) {

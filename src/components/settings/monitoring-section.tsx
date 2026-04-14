@@ -20,10 +20,11 @@ import { Badge } from "@/components/ui/badge";
 interface Config {
   mailbox: string;
   folders: string[];
+  backupFolders: string[];
 }
 
 export function MonitoringSection() {
-  const [config, setConfig] = useState<Config>({ mailbox: "", folders: [] });
+  const [config, setConfig] = useState<Config>({ mailbox: "", folders: [], backupFolders: [] });
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -36,7 +37,15 @@ export function MonitoringSection() {
   useEffect(() => {
     fetch("/api/v1/settings/monitoring")
       .then((r) => r.json())
-      .then((d) => { if (d.config) setConfig(d.config); })
+      .then((d) => {
+        if (d.config) {
+          setConfig({
+            mailbox: d.config.mailbox ?? "",
+            folders: d.config.folders ?? [],
+            backupFolders: d.config.backupFolders ?? [],
+          });
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -74,25 +83,28 @@ export function MonitoringSection() {
     setSyncing(false);
   }
 
-  function addFolder(f: string) {
-    if (!config.folders.includes(f)) {
-      setConfig((c) => ({ ...c, folders: [...c.folders, f] }));
+  function addFolder(f: string, target: "alerts" | "backups" = "alerts") {
+    const key = target === "alerts" ? "folders" : "backupFolders";
+    if (!config[key].includes(f)) {
+      setConfig((c) => ({ ...c, [key]: [...c[key], f] }));
       setDirty(true); setSaved(false);
     }
   }
 
-  function removeFolder(f: string) {
-    setConfig((c) => ({ ...c, folders: c.folders.filter((x) => x !== f) }));
+  function removeFolder(f: string, target: "alerts" | "backups" = "alerts") {
+    const key = target === "alerts" ? "folders" : "backupFolders";
+    setConfig((c) => ({ ...c, [key]: c[key].filter((x) => x !== f) }));
     setDirty(true); setSaved(false);
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-slate-900">Alertes monitoring</h2>
+        <h2 className="text-lg font-semibold text-slate-900">Surveillance par courriel</h2>
         <p className="text-[13px] text-slate-500 mt-1">
           Connectez les dossiers de la boîte mail qui contiennent les alertes
-          de vos outils de monitoring (Zabbix, Atera, FortiGate, Wazuh, etc.)
+          de monitoring et les rapports de sauvegarde. Ils seront lus et classés
+          automatiquement par Nexus.
         </p>
       </div>
 
@@ -118,17 +130,36 @@ export function MonitoringSection() {
           </Button>
 
           {testResult?.ok && testResult.folders && (
-            <div>
-              <p className="text-[12px] font-medium text-slate-700 mb-2">Cliquez pour ajouter un dossier à surveiller :</p>
-              <div className="flex flex-wrap gap-1.5">
-                {testResult.folders.map((f) => (
-                  <button key={f} type="button" onClick={() => addFolder(f)}
-                    className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-medium ring-1 ring-inset transition-colors cursor-pointer ${
-                      config.folders.includes(f) ? "bg-blue-50 text-blue-700 ring-blue-200" : "bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100"
-                    }`}>
-                    <FolderOpen className="h-3 w-3" />{f}
-                  </button>
-                ))}
+            <div className="space-y-3">
+              <div>
+                <p className="text-[12px] font-medium text-slate-700 mb-2">
+                  Cliquez pour ajouter un dossier aux <strong>alertes monitoring</strong> :
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {testResult.folders.map((f) => (
+                    <button key={"alert-" + f} type="button" onClick={() => addFolder(f, "alerts")}
+                      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-medium ring-1 ring-inset transition-colors cursor-pointer ${
+                        config.folders.includes(f) ? "bg-amber-50 text-amber-700 ring-amber-200" : "bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100"
+                      }`}>
+                      <FolderOpen className="h-3 w-3" />{f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[12px] font-medium text-slate-700 mb-2">
+                  Cliquez pour ajouter un dossier aux <strong>sauvegardes</strong> :
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {testResult.folders.map((f) => (
+                    <button key={"backup-" + f} type="button" onClick={() => addFolder(f, "backups")}
+                      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-medium ring-1 ring-inset transition-colors cursor-pointer ${
+                        config.backupFolders.includes(f) ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100"
+                      }`}>
+                      <FolderOpen className="h-3 w-3" />{f}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -140,20 +171,53 @@ export function MonitoringSection() {
         </CardContent>
       </Card>
 
+      {/* Alert monitoring folders */}
       {config.folders.length > 0 && (
         <Card>
           <CardContent className="p-5 space-y-3">
-            <h3 className="text-[14px] font-semibold text-slate-900 flex items-center gap-2">
-              <FolderOpen className="h-4 w-4 text-slate-500" />
-              Dossiers surveillés
-            </h3>
+            <div>
+              <h3 className="text-[14px] font-semibold text-slate-900 flex items-center gap-2">
+                <Bell className="h-4 w-4 text-amber-600" />
+                Dossiers surveillés pour les alertes monitoring
+              </h3>
+              <p className="text-[12px] text-slate-500 mt-1">
+                Courriels d&apos;alertes (Zabbix, Atera, FortiGate, Wazuh, etc.) — apparaîtront dans la page « Alertes monitoring »
+              </p>
+            </div>
             <div className="space-y-1.5">
               {config.folders.map((f) => (
-                <div key={f} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+                <div key={f} className="flex items-center justify-between rounded-lg border border-amber-200/60 bg-amber-50/40 px-3 py-2">
                   <span className="text-[12.5px] text-slate-700 flex items-center gap-1.5">
-                    <FolderOpen className="h-3.5 w-3.5 text-slate-400" />{f}
+                    <FolderOpen className="h-3.5 w-3.5 text-amber-500" />{f}
                   </span>
-                  <button onClick={() => removeFolder(f)} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => removeFolder(f, "alerts")} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Backup monitoring folders */}
+      {config.backupFolders.length > 0 && (
+        <Card>
+          <CardContent className="p-5 space-y-3">
+            <div>
+              <h3 className="text-[14px] font-semibold text-slate-900 flex items-center gap-2">
+                <FolderOpen className="h-4 w-4 text-emerald-600" />
+                Dossiers surveillés pour les sauvegardes
+              </h3>
+              <p className="text-[12px] text-slate-500 mt-1">
+                Courriels de statut des sauvegardes (Veeam, etc.) — apparaîtront dans la page « Sauvegardes »
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              {config.backupFolders.map((f) => (
+                <div key={f} className="flex items-center justify-between rounded-lg border border-emerald-200/60 bg-emerald-50/40 px-3 py-2">
+                  <span className="text-[12.5px] text-slate-700 flex items-center gap-1.5">
+                    <FolderOpen className="h-3.5 w-3.5 text-emerald-500" />{f}
+                  </span>
+                  <button onClick={() => removeFolder(f, "backups")} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
             </div>

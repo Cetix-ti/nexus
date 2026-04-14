@@ -73,7 +73,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: "Gestion",
     items: [
-      { label: "Organisations", href: "/organizations", icon: Building2 },
+      { label: "Organisations", href: "/organisations", icon: Building2 },
       { label: "Contacts", href: "/contacts", icon: Users },
       { label: "Actifs", href: "/assets", icon: Monitor },
       { label: "Projets", href: "/projects", icon: FolderKanban },
@@ -137,10 +137,15 @@ function NavItemComponent({
 
   const Icon = item.icon;
 
+  // When collapsed and the item has children with a "Kanban" option, point to kanban
+  // (per UX preference: collapsed nav prefers kanban view for Tickets)
+  const kanbanChild = item.children?.find((c) => c.label.toLowerCase() === "kanban");
+  const effectiveHref = collapsed && kanbanChild ? kanbanChild.href : item.href;
+
   return (
     <div>
       <Link
-        href={item.href}
+        href={effectiveHref}
         className={cn(
           "group relative flex items-center gap-3 rounded-lg text-[13.5px] font-medium transition-all duration-150",
           collapsed ? "h-10 w-10 mx-auto justify-center" : "h-10 px-3",

@@ -152,6 +152,24 @@ export async function createTimeEntry(input: {
   });
 }
 
+export async function updateTimeEntry(id: string, patch: any) {
+  const data: Record<string, unknown> = {};
+  if (patch.timeType !== undefined) data.timeType = patch.timeType;
+  if (patch.startedAt !== undefined) data.startedAt = new Date(patch.startedAt);
+  if (patch.endedAt !== undefined) data.endedAt = patch.endedAt ? new Date(patch.endedAt) : null;
+  if (patch.durationMinutes !== undefined) data.durationMinutes = patch.durationMinutes;
+  if (patch.description !== undefined) data.description = patch.description;
+  if (patch.isAfterHours !== undefined) data.isAfterHours = patch.isAfterHours;
+  if (patch.isWeekend !== undefined) data.isWeekend = patch.isWeekend;
+  if (patch.isUrgent !== undefined) data.isUrgent = patch.isUrgent;
+  if (patch.isOnsite !== undefined) data.isOnsite = patch.isOnsite;
+  if (patch.coverageStatus !== undefined) data.coverageStatus = patch.coverageStatus;
+  if (patch.coverageReason !== undefined) data.coverageReason = patch.coverageReason;
+  if (patch.hourlyRate !== undefined) data.hourlyRate = patch.hourlyRate;
+  if (patch.amount !== undefined) data.amount = patch.amount;
+  return prisma.timeEntry.update({ where: { id }, data });
+}
+
 export async function deleteTimeEntry(id: string) {
   return prisma.timeEntry.delete({ where: { id } });
 }

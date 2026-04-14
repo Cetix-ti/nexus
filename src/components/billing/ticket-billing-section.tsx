@@ -77,6 +77,7 @@ export function TicketBillingSection({
 }: TicketBillingSectionProps) {
   const [tab, setTab] = useState<Tab>("time");
   const [showTimeModal, setShowTimeModal] = useState(false);
+  const [editingTimeEntryId, setEditingTimeEntryId] = useState<string | null>(null);
   const [showTravelModal, setShowTravelModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
 
@@ -157,7 +158,7 @@ export function TicketBillingSection({
             </p>
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2">
           <StatCard label="Temps total" value={formatDuration(stats.totalMin)} />
           <StatCard label="Facturable" value={formatDuration(stats.billableMin)} accent="primary" />
           <StatCard label="Inclus contrat" value={formatDuration(stats.includedMin)} accent="success" />
@@ -237,7 +238,12 @@ export function TicketBillingSection({
               coverageStatus: e.coverageStatus,
               coverageReason: e.coverageReason,
             }))}
+            onEdit={(id) => {
+              setEditingTimeEntryId(id);
+              setShowTimeModal(true);
+            }}
             onDelete={async (id) => {
+              if (!confirm("Supprimer cette saisie de temps ?")) return;
               const res = await fetch(
                 `/api/v1/time-entries?id=${encodeURIComponent(id)}`,
                 { method: "DELETE" }
@@ -286,40 +292,50 @@ export function TicketBillingSection({
 
       <AddTimeModal
         open={showTimeModal}
-        onClose={() => setShowTimeModal(false)}
+        onClose={() => { setShowTimeModal(false); setEditingTimeEntryId(null); }}
         ticketId={ticketId}
         ticketNumber={ticketNumber}
         organizationId={organizationId}
         organizationName={organizationName}
         onSave={async (entry) => {
-          // Persistance réelle via /api/v1/time-entries
           try {
-            const res = await fetch("/api/v1/time-entries", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ticketId,
-                organizationId,
-                timeType: entry.timeType,
-                startedAt: entry.startedAt,
-                endedAt: entry.endedAt ?? null,
-                durationMinutes: entry.durationMinutes,
-                description: entry.description,
-                isAfterHours: entry.isAfterHours,
-                isWeekend: entry.isWeekend,
-                isUrgent: entry.isUrgent,
-                isOnsite: entry.isOnsite,
-                coverageStatus: entry.coverageStatus,
-                coverageReason: entry.coverageReason,
-                hourlyRate: entry.hourlyRate ?? null,
-                amount: entry.amount ?? null,
-              }),
-            });
+            const payload = {
+              ticketId,
+              organizationId,
+              timeType: entry.timeType,
+              startedAt: entry.startedAt,
+              endedAt: entry.endedAt ?? null,
+              durationMinutes: entry.durationMinutes,
+              description: entry.description,
+              isAfterHours: entry.isAfterHours,
+              isWeekend: entry.isWeekend,
+              isUrgent: entry.isUrgent,
+              isOnsite: entry.isOnsite,
+              coverageStatus: entry.coverageStatus,
+              coverageReason: entry.coverageReason,
+              hourlyRate: entry.hourlyRate ?? null,
+              amount: entry.amount ?? null,
+            };
+            let res: Response;
+            if (editingTimeEntryId) {
+              res = await fetch("/api/v1/time-entries", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: editingTimeEntryId, ...payload }),
+              });
+            } else {
+              res = await fetch("/api/v1/time-entries", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+            }
             if (!res.ok) {
               const data = await res.json().catch(() => ({}));
               alert(`Échec : ${data.error || res.status}`);
               return;
             }
+            setEditingTimeEntryId(null);
             setReloadTime((k) => k + 1);
           } catch (err) {
             alert(`Erreur réseau : ${err instanceof Error ? err.message : String(err)}`);
@@ -364,10 +380,12 @@ interface EntryRow {
 function EntryList({
   rows,
   empty,
+  onEdit,
   onDelete,
 }: {
   rows: EntryRow[];
   empty: string;
+  onEdit?: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
   if (rows.length === 0) {
@@ -423,12 +441,15 @@ function EntryList({
               {/* Colonne Montant retirée volontairement : confidentialité tarifaire */}
               <td className="px-3 py-3">
                 <div className="flex items-center justify-end gap-1">
+                  {onEdit && (
                   <button
+                    onClick={() => onEdit(r.id)}
                     className="h-7 w-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
                     title="Modifier"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
+                  )}
                   <button
                     onClick={() => onDelete(r.id)}
                     className="h-7 w-7 inline-flex items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"

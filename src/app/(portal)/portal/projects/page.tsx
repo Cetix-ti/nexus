@@ -58,8 +58,12 @@ export default function PortalProjectsPage() {
       setLoading(true);
       setError(null);
       const res = await fetch("/api/v1/portal/projects");
-      if (!res.ok) throw new Error("Erreur lors du chargement des projets");
+      if (res.status === 401) {
+        window.location.href = "/portal/login";
+        return;
+      }
       const json = await res.json();
+      if (!res.ok && !json.data) throw new Error(json.error || "Erreur lors du chargement");
       setProjects(json.data ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");

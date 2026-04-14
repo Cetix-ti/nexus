@@ -131,11 +131,12 @@ async function resolvePortalContact(
 
   if (!contact) return null;
 
-  // Enable portal if not yet enabled (for pre-existing contacts)
-  if (!contact.portalEnabled) {
+  // Enable portal and activate contact for pre-existing contacts
+  // (if they can authenticate via OAuth, they are active)
+  if (!contact.portalEnabled || !contact.isActive) {
     await prisma.contact.update({
       where: { id: contact.id },
-      data: { portalEnabled: true },
+      data: { portalEnabled: true, isActive: true },
     });
   }
 
@@ -392,7 +393,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true;
     },
 
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user, account, trigger }) {
       if (user) {
         token.id = user.id;
         token.email = user.email;
@@ -405,6 +406,50 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.organizationName = (user as any).organizationName;
         token.organizationSlug = (user as any).organizationSlug;
         token.portalRole = (user as any).portalRole;
+
+        // Safety net for OAuth: Auth.js v5 may not preserve custom properties
+        // set on the user object in the signIn callback. If key fields are
+        // missing, re-resolve from DB using the email.
+        // Only runs on initial sign-in (when account is present), not on
+        // subsequent token refreshes.
+        if (
+          account &&
+          account.provider !== "credentials" &&
+          !token.organizationId &&
+          !token.role &&
+          token.email
+        ) {
+          // Check if this is an agent
+          const agentUser = await prisma.user.findUnique({
+            where: { email: (token.email as string).toLowerCase() },
+          });
+          if (agentUser) {
+            token.id = agentUser.id;
+            token.firstName = agentUser.firstName;
+            token.lastName = agentUser.lastName;
+            token.role = agentUser.role;
+          } else {
+            // Try portal contact resolution
+            const portal = await resolvePortalContact(
+              token.email as string,
+              {
+                firstName: (token as any).name?.split(" ")[0],
+                lastName: (token as any).name?.split(" ").slice(1).join(" "),
+              },
+            );
+            if (portal) {
+              token.id = portal.contactId;
+              token.firstName = portal.firstName;
+              token.lastName = portal.lastName;
+              token.role = "CLIENT_USER";
+              token.organizationId = portal.organizationId;
+              token.organizationName = portal.organizationName;
+              token.organizationSlug = portal.organizationSlug;
+              token.portalRole = portal.portalRole;
+            }
+          }
+          console.log("[auth] JWT fallback resolved — role:", token.role, "portalRole:", token.portalRole);
+        }
       }
       return token;
     },

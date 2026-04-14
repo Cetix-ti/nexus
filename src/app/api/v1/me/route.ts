@@ -18,10 +18,12 @@ export async function GET() {
         role: true,
         preferences: true,
         mfaEnabled: true,
+        signature: true,
+        signatureHtml: true,
       },
     });
 
-    return NextResponse.json(user ?? { id: me.id, avatar: null, preferences: null, mfaEnabled: false });
+    return NextResponse.json(user ?? { id: me.id, avatar: null, preferences: null, mfaEnabled: false, signature: null, signatureHtml: null });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 });
   }

@@ -1,15 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { AiChatWidget } from "@/components/ai/ai-chat-widget";
+import { NotificationToasts } from "@/components/layout/notification-toasts";
 import { Topbar } from "@/components/layout/topbar";
 import { useSidebarStore } from "@/stores/sidebar";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { collapsed } = useSidebarStore();
+  const { collapsed, toggle } = useSidebarStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Keyboard shortcut: Ctrl/Cmd+B to toggle sidebar
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        // Avoid triggering while typing in inputs
+        const target = e.target as HTMLElement;
+        if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+          return;
+        }
+        e.preventDefault();
+        toggle();
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [toggle]);
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-slate-50">
@@ -28,7 +46,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col h-screen min-w-0 overflow-hidden">
           <Topbar />
           <main className="flex-1 overflow-y-auto overflow-x-hidden">
-            <div className="px-4 lg:px-8 py-5 lg:py-7 min-w-0 max-w-[1600px] mx-auto">
+            <div className="px-4 lg:px-8 py-5 lg:py-7 min-w-0 max-w-[1800px] mx-auto">
               {children}
             </div>
           </main>
@@ -76,6 +94,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* AI Chat Widget — floating */}
       <AiChatWidget />
+
+      {/* Toast notifications — bottom-right */}
+      <NotificationToasts />
     </div>
   );
 }

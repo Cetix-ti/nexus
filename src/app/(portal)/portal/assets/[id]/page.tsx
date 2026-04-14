@@ -201,6 +201,69 @@ export default function PortalAssetDetailPage() {
         </CardContent>
       </Card>
 
+      {/* Notes */}
+      <Card>
+        <CardContent className="p-6">
+          <h2 className="text-[15px] font-semibold text-slate-900 mb-4 flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 text-slate-500" />
+            Notes
+          </h2>
+
+          {canManage && (
+            <div className="flex gap-2 mb-4">
+              <textarea
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+                placeholder="Ajouter une note..."
+                rows={2}
+                className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handlePostNote}
+                disabled={posting || !newNote.trim()}
+                className="self-end"
+              >
+                {posting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </div>
+          )}
+
+          {notes.length === 0 ? (
+            <p className="text-[13px] text-slate-400 text-center py-8">
+              Aucune note pour cet actif.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {notes.map((n) => (
+                <div
+                  key={n.id}
+                  className="rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3"
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[12px] font-medium text-slate-700 flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      {n.authorName}
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      {new Date(n.createdAt).toLocaleString("fr-CA")}
+                    </span>
+                  </div>
+                  <p className="text-[13px] text-slate-600 whitespace-pre-line">
+                    {n.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Logiciels installés (via Wazuh) */}
       <Card>
         <CardContent className="p-6">
@@ -215,9 +278,14 @@ export default function PortalAssetDetailPage() {
           </h2>
 
           {softwareLoading ? (
-            <div className="flex items-center justify-center py-8 gap-2 text-[13px] text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-              Chargement de l&apos;inventaire logiciel...
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <div className="relative">
+                <div className="h-10 w-10 rounded-full border-[3px] border-slate-200" />
+                <div className="absolute inset-0 h-10 w-10 rounded-full border-[3px] border-blue-500 border-t-transparent animate-spin" />
+              </div>
+              <p className="text-[13px] text-slate-500">
+                Chargement de l&apos;inventaire logiciel...
+              </p>
             </div>
           ) : agentFound === false ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-4 text-center">
@@ -278,69 +346,6 @@ export default function PortalAssetDetailPage() {
                 </table>
               </div>
             </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Notes */}
-      <Card>
-        <CardContent className="p-6">
-          <h2 className="text-[15px] font-semibold text-slate-900 mb-4 flex items-center gap-2">
-            <MessageSquare className="h-4 w-4 text-slate-500" />
-            Notes
-          </h2>
-
-          {canManage && (
-            <div className="flex gap-2 mb-4">
-              <textarea
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                placeholder="Ajouter une note..."
-                rows={2}
-                className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
-              />
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handlePostNote}
-                disabled={posting || !newNote.trim()}
-                className="self-end"
-              >
-                {posting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Send className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            </div>
-          )}
-
-          {notes.length === 0 ? (
-            <p className="text-[13px] text-slate-400 text-center py-8">
-              Aucune note pour cet actif.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {notes.map((n) => (
-                <div
-                  key={n.id}
-                  className="rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3"
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[12px] font-medium text-slate-700 flex items-center gap-1">
-                      <User className="h-3 w-3" />
-                      {n.authorName}
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      {new Date(n.createdAt).toLocaleString("fr-CA")}
-                    </span>
-                  </div>
-                  <p className="text-[13px] text-slate-600 whitespace-pre-line">
-                    {n.body}
-                  </p>
-                </div>
-              ))}
-            </div>
           )}
         </CardContent>
       </Card>

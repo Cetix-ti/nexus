@@ -155,7 +155,7 @@ const sectionGroups: SettingsGroup[] = [
     sections: [
       { key: "integrations", label: "Intégrations", icon: Plug },
       { key: "email_monitoring", label: "Surveillance par courriel", icon: Bell },
-      { key: "api", label: "API", icon: Key },
+      { key: "api", label: "API et webhooks", icon: Key },
       { key: "system", label: "Système", icon: HardDrive, superAdminOnly: true },
     ],
   },
@@ -1059,8 +1059,8 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   portal_domain: <PortalDomainSection />,
   api: (
     <PlaceholderSection
-      title="Clés API"
-      description="Gérez vos clés d'accès à l'API Nexus"
+      title="API et webhooks"
+      description="Gérez vos clés d'accès à l'API Nexus et configurez les webhooks pour recevoir les événements en temps réel"
     />
   ),
   system: <SystemInfoSection />,

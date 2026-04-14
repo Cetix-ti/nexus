@@ -249,9 +249,23 @@ export function OrgPortalSection({ organizationId, organizationName }: Props) {
                     <span className="text-[13px] font-medium text-slate-900">{c.firstName} {c.lastName}</span>
                     <span className="text-[12px] text-slate-400 ml-2">{c.email}</span>
                   </div>
-                  <Badge variant={ROLE_VARIANTS[c.portalAccess?.portalRole ?? ""] ?? "default"} className="text-[10px]">
-                    {ROLE_LABELS[c.portalAccess?.portalRole ?? ""] ?? "Standard"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={ROLE_VARIANTS[c.portalAccess?.portalRole ?? ""] ?? "default"} className="text-[10px]">
+                      {ROLE_LABELS[c.portalAccess?.portalRole ?? ""] ?? "Standard"}
+                    </Badge>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Retirer ${c.firstName} ${c.lastName} des administrateurs du portail ? Ce contact deviendra un utilisateur standard.`)) {
+                          updateContactRole(c, "STANDARD");
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                      Retirer
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

@@ -105,6 +105,22 @@ export async function POST(req: Request) {
   }
 }
 
+export async function PATCH(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return unauthorized();
+  if (!hasMinimumRole(me.role, "TECHNICIAN")) return forbidden();
+  const body = await req.json();
+  const id = body.id;
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  try {
+    const { updateTimeEntry } = await import("@/lib/billing/time-entries-service");
+    const updated = await updateTimeEntry(id, body);
+    return NextResponse.json(updated);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Erreur" }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: Request) {
   const me = await getCurrentUser();
   if (!me) return unauthorized();

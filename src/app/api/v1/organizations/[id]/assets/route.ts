@@ -48,6 +48,7 @@ export async function GET(
     ipAddress: a.ipAddress,
     macAddress: a.macAddress,
     siteName: a.site?.name ?? null,
+    assignedContactId: a.assignedContactId,
     assignedToContactName: a.assignedContact
       ? `${a.assignedContact.firstName} ${a.assignedContact.lastName}`
       : null,
@@ -58,6 +59,8 @@ export async function GET(
     lastLoggedUser: (a.metadata as any)?.lastLoggedUser ?? null,
     isMonitored: !!a.externalSource,
     lastSeenAt: (a.metadata as any)?.lastSeenAt ?? a.updatedAt.toISOString(),
+    lastSyncedAt: a.lastSyncedAt?.toISOString() ?? null,
+    fieldOverrides: a.fieldOverrides,
     tags: [],
     notes: a.notes,
     createdAt: a.createdAt.toISOString(),
@@ -96,6 +99,7 @@ export async function POST(
         ipAddress: body.ipAddress,
         macAddress: body.macAddress,
         notes: body.notes,
+        assignedContactId: body.assignedContactId || null,
       },
     });
 

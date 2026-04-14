@@ -3,9 +3,10 @@ import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
 
 export async function GET(_request: NextRequest) {
+  try {
   const user = await getCurrentPortalUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!user.permissions.canSeeProjects) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!user.permissions.canSeeProjects) return NextResponse.json({ success: true, data: [], meta: { total: 0 } });
 
   const isPortalAdmin = user.portalRole === "ADMIN";
 
@@ -98,4 +99,11 @@ export async function GET(_request: NextRequest) {
     data,
     meta: { total: data.length, organizationId: user.organizationId },
   });
+  } catch (err) {
+    console.error("[portal/projects] Error:", err);
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : "Internal error" },
+      { status: 500 },
+    );
+  }
 }

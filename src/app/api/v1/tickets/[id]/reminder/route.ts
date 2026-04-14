@@ -63,6 +63,51 @@ export async function POST(req: Request, ctx: RouteContext) {
     },
   });
 
+  // Auto-assign ticket to the "Rappel programmé" category ONLY if the ticket
+  // currently has no category. Never overwrites a meaningful category.
+  try {
+    const current = await prisma.ticket.findUnique({
+      where: { id },
+      select: { categoryId: true },
+    });
+    if (current && !current.categoryId) {
+      const REMINDER_CATEGORY_NAME = "Rappel programmé";
+      // Use upsert-like logic: find by unique name, or create
+      let reminderCategory = await prisma.category.findFirst({
+        where: { name: REMINDER_CATEGORY_NAME, parentId: null },
+        select: { id: true },
+      });
+      if (!reminderCategory) {
+        try {
+          reminderCategory = await prisma.category.create({
+            data: {
+              name: REMINDER_CATEGORY_NAME,
+              description: "Tickets avec un rappel configuré",
+              icon: "bell",
+              sortOrder: 9999,
+            },
+            select: { id: true },
+          });
+        } catch {
+          // Another concurrent request may have created it — retry find
+          reminderCategory = await prisma.category.findFirst({
+            where: { name: REMINDER_CATEGORY_NAME, parentId: null },
+            select: { id: true },
+          });
+        }
+      }
+      if (reminderCategory) {
+        await prisma.ticket.update({
+          where: { id },
+          data: { categoryId: reminderCategory.id },
+        });
+      }
+    }
+  } catch (err) {
+    console.error("[reminder] Auto-categorization failed:", err);
+    // Don't fail the reminder creation if categorization fails
+  }
+
   return NextResponse.json(reminder, { status: 201 });
 }
 

@@ -19,6 +19,9 @@ import {
   Zap,
   Server,
   Monitor,
+  X,
+  Save,
+  ExternalLink,
 } from "lucide-react";
 import {
   DndContext,
@@ -118,6 +121,31 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hours / 24)}j`;
 }
 
+/**
+ * Extract the hostname/endpoint name from an alert.
+ * Priority: alertGroupKey (server-parsed) → subject patterns.
+ */
+function extractHostname(alert: MonAlert): string | null {
+  // Try alertGroupKey first (format "source:host:desc" from email-sync)
+  if (alert.alertGroupKey) {
+    const parts = alert.alertGroupKey.split(":");
+    if (parts.length >= 3 && parts[1] && parts[1] !== "unknown") {
+      return parts[1].toUpperCase();
+    }
+  }
+  const subject = alert.subject || "";
+  // Zabbix: "Problem: X on HOSTNAME"
+  const onMatch = subject.match(/\bon\s+([A-Za-z0-9][A-Za-z0-9_\-\.]{2,})/i);
+  if (onMatch) return onMatch[1].toUpperCase();
+  // Atera: "HOSTNAME is offline" / "[Atera] HOSTNAME ..."
+  const ateraMatch = subject.match(/^\s*(?:\[[^\]]+\]\s*)?([A-Z][A-Z0-9][A-Z0-9_\-]+)/);
+  if (ateraMatch) return ateraMatch[1];
+  // Generic: any prefix-hostname token
+  const prefixMatch = subject.match(/\b([A-Z]{2,6}[-_][A-Z0-9_\-]{2,})\b/);
+  if (prefixMatch) return prefixMatch[1];
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -135,6 +163,7 @@ export default function MonitoringPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [pageSize, setPageSize] = useState(15);
   const [currentPage, setCurrentPage] = useState(0);
+  const [openedAlert, setOpenedAlert] = useState<MonAlert | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -282,6 +311,7 @@ export default function MonitoringPage() {
           alerts={filtered}
           onStageChange={updateStage}
           onCreateTicket={createTicket}
+          onOpenDetail={(a) => setOpenedAlert(a)}
         />
         </div>
       )}
@@ -368,6 +398,19 @@ export default function MonitoringPage() {
         </Card>
         </div>
       )}
+
+      {/* Alert detail modal */}
+      {openedAlert && (
+        <AlertDetailModal
+          alert={openedAlert}
+          onClose={() => setOpenedAlert(null)}
+          onCreateTicket={createTicket}
+          onUpdated={(updated) => {
+            setAlerts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+            setOpenedAlert(updated);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -424,10 +467,12 @@ function MonitoringKanban({
   alerts,
   onStageChange,
   onCreateTicket,
+  onOpenDetail,
 }: {
   alerts: MonAlert[];
   onStageChange: (id: string, stage: string) => void;
   onCreateTicket: (id: string) => void;
+  onOpenDetail: (a: MonAlert) => void;
 }) {
   const [localAlerts, setLocalAlerts] = useState(alerts);
   const [dragging, setDragging] = useState<MonAlert | null>(null);
@@ -497,10 +542,13 @@ function MonitoringKanban({
                     const sev = SEVERITY_CONFIG[a.severity] ?? SEVERITY_CONFIG.WARNING;
                     const SrcIcon = SOURCE_ICONS[a.sourceType] ?? Bell;
                     const logo = a.organizationName ? orgLogos[a.organizationName] : null;
+                    const hostname = extractHostname(a);
 
                     return (
                       <DraggableAlertCard key={a.id} alert={a}>
-                        <div className="rounded-[14px] bg-white border border-slate-200/70 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_24px_-6px_rgba(0,0,0,0.1)] hover:-translate-y-[2px] transition-all duration-200 ease-out cursor-grab active:cursor-grabbing">
+                        <div
+                          onClick={() => onOpenDetail(a)}
+                          className="rounded-[14px] bg-white border border-slate-200/70 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_24px_-6px_rgba(0,0,0,0.1)] hover:-translate-y-[2px] transition-all duration-200 ease-out cursor-pointer">
                           {/* Severity accent */}
                           <div
                             className="absolute left-0 top-3 bottom-3 w-[3px] rounded-full"
@@ -508,7 +556,7 @@ function MonitoringKanban({
                           />
                           <div className="relative pl-4 pr-3.5 py-3">
                             {/* Row 1: source + severity */}
-                            <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <div className="flex items-center justify-between gap-2 mb-2">
                               <div className="flex items-center gap-1.5">
                                 <SrcIcon className={cn("h-3 w-3", cfg.color)} strokeWidth={2.5} />
                                 <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">
@@ -518,26 +566,44 @@ function MonitoringKanban({
                               <Badge variant={sev.variant} className="text-[9px]">{sev.label}</Badge>
                             </div>
 
-                            {/* Row 2: subject */}
-                            <p className="text-[13px] font-semibold leading-[1.35] text-slate-900 line-clamp-2 mb-2.5">
+                            {/* Row 2: hostname + org logo/name (merged for compactness) */}
+                            <div className="flex items-center gap-2 mb-2">
+                              {logo ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={logo} alt="" className="h-[22px] w-[22px] rounded object-contain bg-white ring-1 ring-slate-200/80 shrink-0" />
+                              ) : a.organizationName ? (
+                                <div className="h-[22px] w-[22px] rounded bg-slate-100 ring-1 ring-slate-200/80 flex items-center justify-center shrink-0">
+                                  <span className="text-[8px] font-bold text-slate-500">
+                                    {a.organizationName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="h-[22px] w-[22px] rounded bg-slate-100 ring-1 ring-slate-200/80 flex items-center justify-center shrink-0">
+                                  <Server className="h-3 w-3 text-slate-400" />
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                {hostname ? (
+                                  <p className="text-[13px] font-semibold text-slate-900 font-mono tracking-tight truncate leading-tight">
+                                    {hostname}
+                                  </p>
+                                ) : (
+                                  <p className="text-[12.5px] font-semibold text-slate-900 truncate leading-tight">
+                                    {a.organizationName ?? "Endpoint inconnu"}
+                                  </p>
+                                )}
+                                {hostname && a.organizationName && (
+                                  <p className="text-[10.5px] text-slate-500 truncate mt-0.5">
+                                    {a.organizationName}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Row 3: subject */}
+                            <p className="text-[11.5px] text-slate-600 line-clamp-2 mb-2">
                               {a.subject}
                             </p>
-
-                            {/* Row 3: org logo + name */}
-                            {a.organizationName && (
-                              <div className="flex items-center gap-2 mb-2">
-                                {logo ? (
-                                  <img src={logo} alt="" className="h-[18px] w-[18px] rounded object-contain bg-white ring-1 ring-slate-200/80 shrink-0" />
-                                ) : (
-                                  <div className="h-[18px] w-[18px] rounded bg-slate-100 ring-1 ring-slate-200/80 flex items-center justify-center shrink-0">
-                                    <span className="text-[7px] font-bold text-slate-500">
-                                      {a.organizationName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
-                                    </span>
-                                  </div>
-                                )}
-                                <span className="text-[11.5px] text-slate-600 truncate">{a.organizationName}</span>
-                              </div>
-                            )}
 
                             {/* Row 4: footer */}
                             <div className="flex items-center justify-between">
@@ -585,5 +651,174 @@ function MonitoringKanban({
         )}
       </DragOverlay>
     </DndContext>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Alert Detail Modal — lets user add notes, see/create linked ticket
+// ---------------------------------------------------------------------------
+
+function AlertDetailModal({
+  alert,
+  onClose,
+  onCreateTicket,
+  onUpdated,
+}: {
+  alert: MonAlert;
+  onClose: () => void;
+  onCreateTicket: (id: string) => void;
+  onUpdated: (a: MonAlert) => void;
+}) {
+  const [notes, setNotes] = useState(alert.notes ?? "");
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [creatingTicket, setCreatingTicket] = useState(false);
+
+  async function handleSaveNotes() {
+    setSavingNotes(true);
+    try {
+      const res = await fetch(`/api/v1/monitoring/alerts/${alert.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+      if (res.ok) {
+        onUpdated({ ...alert, notes });
+      }
+    } finally {
+      setSavingNotes(false);
+    }
+  }
+
+  async function handleCreateTicket() {
+    setCreatingTicket(true);
+    try {
+      await onCreateTicket(alert.id);
+    } finally {
+      setCreatingTicket(false);
+    }
+  }
+
+  const sev = SEVERITY_CONFIG[alert.severity] ?? SEVERITY_CONFIG.WARNING;
+  const stage = STAGE_CONFIG[alert.stage] ?? STAGE_CONFIG.TRIAGE;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4 sm:p-6"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-2xl my-4 rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <Badge variant={sev.variant} className="text-[10px]">{sev.label}</Badge>
+              <span className={cn("text-[10.5px] px-2 py-0.5 rounded-md", stage.bg, stage.color)}>
+                {stage.label}
+              </span>
+              <span className="text-[11px] text-slate-400 uppercase tracking-wide">
+                {alert.sourceType}
+              </span>
+            </div>
+            <h2 className="text-[16px] font-semibold text-slate-900 leading-snug">
+              {alert.subject}
+            </h2>
+            {alert.organizationName && (
+              <p className="text-[12.5px] text-slate-500 mt-1">{alert.organizationName}</p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-5 max-h-[calc(100vh-250px)] overflow-y-auto">
+          {/* Body preview */}
+          {alert.body && (
+            <div>
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                Détails
+              </h3>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-[13px] text-slate-700 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                {alert.body.slice(0, 2000)}
+              </div>
+            </div>
+          )}
+
+          {/* Source + timing */}
+          <div className="grid grid-cols-2 gap-4 text-[12.5px]">
+            <div>
+              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Expéditeur</p>
+              <p className="text-slate-700 mt-1">{alert.senderEmail}</p>
+            </div>
+            <div>
+              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Reçu</p>
+              <p className="text-slate-700 mt-1">
+                {new Date(alert.receivedAt).toLocaleString("fr-CA")}
+              </p>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                Notes
+              </h3>
+              {notes !== (alert.notes ?? "") && (
+                <Button variant="primary" size="sm" onClick={handleSaveNotes} disabled={savingNotes}>
+                  {savingNotes ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                  Enregistrer
+                </Button>
+              )}
+            </div>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              placeholder="Ajoutez des notes sur cette alerte…"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-y"
+            />
+          </div>
+
+          {/* Ticket link or creation */}
+          <div>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+              Ticket lié
+            </h3>
+            {alert.ticketId ? (
+              <a
+                href={`/tickets/${alert.ticketId}`}
+                className="group flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-3 hover:border-blue-300 hover:bg-blue-50/40 transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Ticket className="h-4 w-4 text-blue-600" />
+                  <span className="text-[13px] font-medium text-slate-900 group-hover:text-blue-700">
+                    Ouvrir le ticket lié pour ajouter du temps
+                  </span>
+                </div>
+                <ExternalLink className="h-3.5 w-3.5 text-slate-400 group-hover:text-blue-600" />
+              </a>
+            ) : (
+              <Button variant="outline" size="sm" onClick={handleCreateTicket} disabled={creatingTicket}>
+                {creatingTicket ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ticket className="h-3.5 w-3.5" />}
+                Créer un ticket à partir de cette alerte
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-slate-200 px-6 py-4 flex items-center justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Fermer</Button>
+        </div>
+      </div>
+    </div>
   );
 }

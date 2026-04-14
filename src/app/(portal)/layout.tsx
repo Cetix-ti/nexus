@@ -1,14 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import {
   Home,
   Ticket,
-  PlusCircle,
   ChevronDown,
   LogOut,
   User,
@@ -19,7 +19,8 @@ import {
   Monitor,
   Users,
   DollarSign,
-  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { PortalImpersonationBanner } from "@/components/portal/impersonation-banner";
@@ -51,139 +52,6 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-/** Measures how many nav items fit, puts the rest in a "Plus" dropdown */
-function OverflowNav({
-  items,
-  pathname,
-}: {
-  items: NavItem[];
-  pathname: string;
-}) {
-  const navRef = useRef<HTMLElement>(null);
-  const moreRef = useRef<HTMLDivElement>(null);
-  const [visibleCount, setVisibleCount] = useState(items.length);
-  const [moreOpen, setMoreOpen] = useState(false);
-
-  const measure = useCallback(() => {
-    const nav = navRef.current;
-    if (!nav) return;
-    const children = Array.from(nav.children) as HTMLElement[];
-    if (children.length === 0) return;
-
-    // Temporarily show all items to measure
-    children.forEach((c) => c.style.removeProperty("display"));
-    const navRight = nav.getBoundingClientRect().right;
-    // Reserve space for the "More" button (~44px)
-    const moreWidth = 48;
-    let count = items.length;
-
-    for (let i = children.length - 1; i >= 0; i--) {
-      // Skip the "more" button itself (last child when rendered)
-      if (children[i].dataset.more === "true") continue;
-      const rect = children[i].getBoundingClientRect();
-      if (rect.right + moreWidth > navRight && count > 1) {
-        count = i;
-      }
-    }
-    setVisibleCount(count);
-  }, [items.length]);
-
-  useEffect(() => {
-    measure();
-    const nav = navRef.current;
-    if (!nav) return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(nav);
-    return () => ro.disconnect();
-  }, [measure, items.length]);
-
-  const shown = items.slice(0, visibleCount);
-  const overflowed = items.slice(visibleCount);
-  const hasOverflow = overflowed.length > 0;
-  const overflowActive = overflowed.some((item) =>
-    item.href === "/portal"
-      ? pathname === "/portal"
-      : pathname.startsWith(item.href)
-  );
-
-  return (
-    <nav
-      ref={navRef}
-      className="hidden md:flex items-center gap-1 min-w-0 flex-1 overflow-hidden"
-    >
-      {shown.map((item) => {
-        const isActive =
-          item.href === "/portal"
-            ? pathname === "/portal"
-            : pathname.startsWith(item.href);
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap shrink-0 transition-colors",
-              isActive
-                ? "bg-blue-50 text-[#2563EB]"
-                : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
-            )}
-          >
-            <item.icon className="h-4 w-4 shrink-0" />
-            {item.label}
-          </Link>
-        );
-      })}
-      {hasOverflow && (
-        <div className="relative shrink-0" ref={moreRef} data-more="true">
-          <button
-            onClick={() => setMoreOpen(!moreOpen)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors",
-              overflowActive
-                ? "bg-blue-50 text-[#2563EB]"
-                : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
-            )}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-            <span className="hidden lg:inline">Plus</span>
-          </button>
-          {moreOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-30"
-                onClick={() => setMoreOpen(false)}
-              />
-              <div className="absolute left-0 top-full mt-1 z-40 w-48 rounded-xl border border-neutral-200 bg-white py-1.5 shadow-lg">
-                {overflowed.map((item) => {
-                  const isActive =
-                    item.href === "/portal"
-                      ? pathname === "/portal"
-                      : pathname.startsWith(item.href);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMoreOpen(false)}
-                      className={cn(
-                        "flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium transition-colors",
-                        isActive
-                          ? "bg-blue-50 text-[#2563EB]"
-                          : "text-neutral-700 hover:bg-neutral-50"
-                      )}
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </nav>
-  );
-}
-
 export default function PortalLayout({
   children,
 }: {
@@ -195,6 +63,7 @@ export default function PortalLayout({
   const visibleNav = navItems.filter((item) => !item.adminOnly || isAdmin);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const isLoginPage = pathname === "/portal/login";
 
@@ -206,7 +75,6 @@ export default function PortalLayout({
   const displayEmail = user?.email || "";
   const orgName = organizationName || "Portail client";
   const accentGradient = "from-blue-500 to-blue-700";
-  const orgInitial = (orgName || "N").charAt(0).toUpperCase();
 
   // Branding: load MSP branding + org logo
   const [brand, setBrand] = useState<{
@@ -221,7 +89,6 @@ export default function PortalLayout({
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => { if (data) setBrand(data); })
       .catch(() => {});
-    // Load the client org's own logo
     fetch("/api/v1/portal/dashboard")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -232,153 +99,215 @@ export default function PortalLayout({
 
   return (
     <div
-      className="min-h-screen flex flex-col bg-[#F9FAFB]"
+      className="min-h-screen flex bg-[#F9FAFB]"
       style={
         brand?.primaryColor
-          ? ({
-              ["--portal-primary" as string]: brand.primaryColor,
-            } as React.CSSProperties)
+          ? ({ ["--portal-primary" as string]: brand.primaryColor } as React.CSSProperties)
           : undefined
       }
     >
       <PortalImpersonationBanner />
-      {/* Bandeau de branding (couleur principale du tenant si définie, sinon gradient legacy) */}
+
+      {/* ================================================================ */}
+      {/* SIDEBAR — desktop                                                */}
+      {/* ================================================================ */}
+      <aside
+        className={cn(
+          "hidden md:flex flex-col fixed inset-y-0 left-0 z-30 bg-white border-r border-neutral-200 transition-all duration-200",
+          sidebarCollapsed ? "w-[72px]" : "w-[260px]",
+        )}
+      >
+        {/* Logo area */}
+        <div className="flex items-center gap-3 px-4 h-16 border-b border-neutral-100 shrink-0">
+          {!sidebarCollapsed ? (
+            <Link href="/portal" className="flex items-center gap-2.5 min-w-0">
+              <Image
+                src="/images/cetix-logo-email.png"
+                alt="Cetix"
+                width={120}
+                height={36}
+                className="h-8 w-auto"
+                priority
+              />
+            </Link>
+          ) : (
+            <Link href="/portal" className="mx-auto">
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-white text-[11px] font-bold">
+                C
+              </div>
+            </Link>
+          )}
+        </div>
+
+        {/* Org badge */}
+        {!sidebarCollapsed && (
+          <div className="px-4 py-3 border-b border-neutral-100">
+            <div className="flex items-center gap-2.5">
+              {orgLogo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={orgLogo}
+                  alt={orgName}
+                  className="h-8 w-8 rounded-lg object-contain bg-white ring-1 ring-slate-200 shrink-0"
+                />
+              ) : (
+                <div
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm shrink-0 text-white text-[12px] font-bold",
+                    accentGradient,
+                  )}
+                  style={brand?.primaryColor ? { background: brand.primaryColor } : undefined}
+                >
+                  {(orgName || "N").charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-neutral-900 truncate leading-tight">
+                  {orgName}
+                </p>
+                <p className="text-[10.5px] text-neutral-400 uppercase tracking-wider font-medium">
+                  Portail client
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+          {visibleNav.map((item) => {
+            const isActive =
+              item.href === "/portal"
+                ? pathname === "/portal"
+                : pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                title={sidebarCollapsed ? item.label : undefined}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-[14px] font-medium transition-colors",
+                  sidebarCollapsed && "justify-center px-2.5",
+                  isActive
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900",
+                )}
+              >
+                <item.icon className="h-[18px] w-[18px] shrink-0" />
+                {!sidebarCollapsed && <span>{item.label}</span>}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Collapse toggle */}
+        <button
+          onClick={() => setSidebarCollapsed((v) => !v)}
+          className="flex items-center justify-center h-10 mx-2.5 mb-1 rounded-lg text-neutral-400 hover:bg-neutral-50 hover:text-neutral-600 transition-colors"
+        >
+          {sidebarCollapsed ? (
+            <PanelLeft className="h-4 w-4" />
+          ) : (
+            <PanelLeftClose className="h-4 w-4" />
+          )}
+        </button>
+
+        {/* User section at bottom */}
+        <div className="border-t border-neutral-100 p-2.5">
+          <div className="relative">
+            <button
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              className={cn(
+                "w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-neutral-50 transition-colors",
+                sidebarCollapsed && "justify-center px-2",
+              )}
+            >
+              <div
+                className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br text-white text-[10.5px] font-semibold shrink-0",
+                  accentGradient,
+                )}
+              >
+                {getInitials(displayName)}
+              </div>
+              {!sidebarCollapsed && (
+                <>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12px] font-medium text-neutral-900 truncate">
+                      {displayName}
+                    </p>
+                    <p className="text-[10px] text-neutral-400 truncate">
+                      {displayEmail}
+                    </p>
+                  </div>
+                  <ChevronDown className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
+                </>
+              )}
+            </button>
+
+            {userMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setUserMenuOpen(false)} />
+                <div className="absolute bottom-full left-0 mb-1 z-40 w-56 rounded-xl border border-neutral-200 bg-white py-1.5 shadow-lg">
+                  <div className="px-4 py-3 border-b border-neutral-100">
+                    <p className="text-[13px] font-semibold text-neutral-900">{displayName}</p>
+                    <p className="text-[11.5px] text-neutral-500 truncate">{displayEmail}</p>
+                  </div>
+                  <Link
+                    href="/portal"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-2.5 px-4 py-2 text-[13px] text-neutral-700 hover:bg-neutral-50"
+                  >
+                    <User className="h-4 w-4 text-neutral-400" />
+                    Mon profil
+                  </Link>
+                  <div className="px-4 py-2 border-t border-neutral-100">
+                    <p className="text-[10.5px] font-medium text-neutral-400 uppercase tracking-wider mb-1.5">Langue</p>
+                    <LanguageSelector />
+                  </div>
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      signOut({ callbackUrl: "/portal/login" });
+                    }}
+                    className="w-full text-left flex items-center gap-2.5 px-4 py-2 text-[13px] text-red-600 hover:bg-red-50"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Se deconnecter
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      {/* ================================================================ */}
+      {/* MOBILE HEADER                                                    */}
+      {/* ================================================================ */}
       <div
         className={cn(
-          "h-1 w-full",
-          !brand?.primaryColor && "bg-gradient-to-r",
-          !brand?.primaryColor && accentGradient
+          "flex-1 flex flex-col min-w-0 transition-all duration-200",
+          sidebarCollapsed ? "md:ml-[72px]" : "md:ml-[260px]",
         )}
-        style={
-          brand?.primaryColor
-            ? { backgroundColor: brand.primaryColor }
-            : undefined
-        }
-      />
+      >
+        {/* Accent bar */}
+        <div
+          className={cn(
+            "h-1 w-full",
+            !brand?.primaryColor && "bg-gradient-to-r",
+            !brand?.primaryColor && accentGradient,
+          )}
+          style={brand?.primaryColor ? { backgroundColor: brand.primaryColor } : undefined}
+        />
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-neutral-200">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="flex h-16 items-center justify-between">
-            {/* Logo + Org */}
-            <div className="flex items-center gap-3 sm:gap-6 min-w-0 flex-1">
-              <Link href="/portal" className="flex items-center gap-3">
-                {orgLogo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={orgLogo}
-                    alt={orgName}
-                    className="h-10 w-10 rounded-xl object-contain bg-white ring-1 ring-slate-200 shadow-sm"
-                  />
-                ) : brand?.logo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={brand.logo}
-                    alt={brand.companyName || orgName}
-                    className="h-10 w-10 rounded-xl object-contain bg-white ring-1 ring-slate-200 shadow-sm"
-                  />
-                ) : (
-                  <div
-                    className={cn(
-                      "flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm",
-                      accentGradient
-                    )}
-                    style={
-                      brand?.primaryColor
-                        ? { background: brand.primaryColor }
-                        : undefined
-                    }
-                  >
-                    <span className="text-[14px] font-bold text-white">
-                      {orgInitial}
-                    </span>
-                  </div>
-                )}
-                <div className="flex flex-col">
-                  <span className="text-[15px] font-semibold text-neutral-900 leading-tight">
-                    {brand?.companyName || orgName}
-                  </span>
-                  <span className="text-[10.5px] text-neutral-400 leading-tight mt-0.5 uppercase tracking-wider font-medium">
-                    Portail client
-                  </span>
-                </div>
-              </Link>
-
-              {/* Desktop Navigation — overflow-aware */}
-              <OverflowNav items={visibleNav} pathname={pathname} />
-            </div>
-
-            {/* User Menu */}
+        {/* Mobile top bar */}
+        <header className="md:hidden sticky top-0 z-40 bg-white border-b border-neutral-200">
+          <div className="flex h-14 items-center justify-between px-4">
             <div className="flex items-center gap-3">
-              <div className="relative hidden md:block">
-                <button
-                  onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm hover:bg-neutral-50 transition-colors"
-                >
-                  <div
-                    className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br text-white text-[10.5px] font-semibold shadow-sm",
-                      accentGradient
-                    )}
-                  >
-                    {getInitials(displayName)}
-                  </div>
-                  <span className="font-medium text-neutral-700 text-[13px]">
-                    {displayName}
-                  </span>
-                  <ChevronDown className="h-3.5 w-3.5 text-neutral-400" />
-                </button>
-
-                {userMenuOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-30"
-                      onClick={() => setUserMenuOpen(false)}
-                    />
-                    <div className="absolute right-0 top-full mt-1 z-40 w-64 rounded-xl border border-neutral-200 bg-white py-1.5 shadow-lg">
-                      <div className="px-4 py-3 border-b border-neutral-100">
-                        <p className="text-[13px] font-semibold text-neutral-900">
-                          {displayName}
-                        </p>
-                        <p className="text-[11.5px] text-neutral-500 truncate">
-                          {displayEmail}
-                        </p>
-                        <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-200/60">
-                          <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                          {orgName}
-                        </div>
-                      </div>
-                      <Link
-                        href="/portal"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2 text-[13px] text-neutral-700 hover:bg-neutral-50"
-                      >
-                        <User className="h-4 w-4 text-neutral-400" />
-                        Mon profil
-                      </Link>
-                      <div className="px-4 py-2 border-t border-neutral-100">
-                        <p className="text-[10.5px] font-medium text-neutral-400 uppercase tracking-wider mb-1.5">Langue</p>
-                        <LanguageSelector />
-                      </div>
-                      <button
-                        onClick={() => {
-                          setUserMenuOpen(false);
-                          signOut({ callbackUrl: "/portal/login" });
-                        }}
-                        className="w-full text-left flex items-center gap-2.5 px-4 py-2 text-[13px] text-red-600 hover:bg-red-50"
-                      >
-                        <LogOut className="h-4 w-4" />
-                        Se déconnecter
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Mobile menu button */}
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="md:hidden flex items-center justify-center h-9 w-9 rounded-lg hover:bg-neutral-100 transition-colors"
+                className="flex items-center justify-center h-9 w-9 rounded-lg hover:bg-neutral-100 transition-colors"
               >
                 {mobileMenuOpen ? (
                   <X className="h-5 w-5 text-neutral-600" />
@@ -386,78 +315,104 @@ export default function PortalLayout({
                   <Menu className="h-5 w-5 text-neutral-600" />
                 )}
               </button>
+              <Image
+                src="/images/cetix-logo-email.png"
+                alt="Cetix"
+                width={100}
+                height={30}
+                className="h-6 w-auto"
+              />
             </div>
-          </div>
-        </div>
-
-        {/* Mobile Navigation */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-neutral-100 bg-white">
-            <div className="mx-auto max-w-6xl px-4 py-3 space-y-1">
-              {visibleNav.map((item) => {
-                const isActive =
-                  item.href === "/portal"
-                    ? pathname === "/portal"
-                    : pathname.startsWith(item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-blue-50 text-[#2563EB]"
-                        : "text-neutral-600 hover:bg-neutral-50"
-                    )}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-              <div className="border-t border-neutral-100 pt-2 mt-2">
-                <div className="flex items-center gap-3 px-3 py-2">
-                  <div
-                    className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br text-white text-[10.5px] font-semibold",
-                      accentGradient
-                    )}
-                  >
-                    {getInitials(displayName)}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-neutral-900">
-                      {displayName}
-                    </p>
-                    <p className="text-xs text-neutral-500">{displayEmail}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    signOut({ callbackUrl: "/portal/login" });
-                  }}
-                  className="w-full text-left flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-600 hover:bg-red-50"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Se déconnecter
-                </button>
+            <div className="flex items-center gap-2">
+              <div
+                className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br text-white text-[10.5px] font-semibold",
+                  accentGradient,
+                )}
+              >
+                {getInitials(displayName)}
               </div>
             </div>
           </div>
-        )}
-      </header>
 
-      {/* Main Content */}
-      <main className="flex-1">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8">{children}</div>
-      </main>
+          {/* Mobile nav panel */}
+          {mobileMenuOpen && (
+            <div className="border-t border-neutral-100 bg-white">
+              <div className="px-4 py-3 space-y-1">
+                {/* Org badge */}
+                <div className="flex items-center gap-2.5 mb-3 pb-3 border-b border-neutral-100">
+                  {orgLogo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={orgLogo} alt={orgName} className="h-8 w-8 rounded-lg object-contain ring-1 ring-slate-200" />
+                  ) : (
+                    <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br text-white text-[12px] font-bold", accentGradient)}>
+                      {(orgName || "N").charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-[13px] font-semibold text-neutral-900">{orgName}</p>
+                    <p className="text-[10px] text-neutral-400 uppercase tracking-wider">Portail client</p>
+                  </div>
+                </div>
 
-      {/* Footer */}
-      <footer className="border-t border-neutral-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4" />
-      </footer>
+                {visibleNav.map((item) => {
+                  const isActive =
+                    item.href === "/portal"
+                      ? pathname === "/portal"
+                      : pathname.startsWith(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-blue-50 text-blue-700"
+                          : "text-neutral-600 hover:bg-neutral-50",
+                      )}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+                <div className="border-t border-neutral-100 pt-2 mt-2">
+                  <div className="flex items-center gap-3 px-3 py-2">
+                    <div className={cn("flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br text-white text-[10.5px] font-semibold", accentGradient)}>
+                      {getInitials(displayName)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-neutral-900">{displayName}</p>
+                      <p className="text-xs text-neutral-500">{displayEmail}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      signOut({ callbackUrl: "/portal/login" });
+                    }}
+                    className="w-full text-left flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-600 hover:bg-red-50"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Se deconnecter
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </header>
+
+        {/* Main Content */}
+        <main className="flex-1">
+          <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8">{children}</div>
+        </main>
+
+        {/* Footer */}
+        <footer className="border-t border-neutral-200 bg-white">
+          <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4" />
+        </footer>
+      </div>
     </div>
   );
 }

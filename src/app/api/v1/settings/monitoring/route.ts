@@ -23,6 +23,7 @@ export async function PUT(req: Request) {
   await setMonitoringConfig({
     mailbox: body.mailbox,
     folders: Array.isArray(body.folders) ? body.folders : [],
+    backupFolders: Array.isArray(body.backupFolders) ? body.backupFolders : [],
   });
   return NextResponse.json({ ok: true });
 }

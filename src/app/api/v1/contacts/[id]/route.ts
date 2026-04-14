@@ -40,9 +40,8 @@ export async function PATCH(
   if (body.jobTitle !== undefined) data.jobTitle = body.jobTitle;
   if (body.isVIP !== undefined) data.isVIP = body.isVIP;
   if (body.isActive !== undefined) data.isActive = body.isActive;
-  if (body.notes !== undefined) data.notes = body.notes;
 
-  if (Object.keys(data).length === 0) {
+  if (Object.keys(data).length === 0 && !body.portalAccess) {
     return NextResponse.json({ error: "Aucun champ à mettre à jour" }, { status: 400 });
   }
 
@@ -52,6 +51,61 @@ export async function PATCH(
       data,
       include: { organization: { select: { id: true, name: true } } },
     });
+
+    // Sync portal access if provided
+    if (body.portalAccess && updated.organizationId) {
+      const pa = body.portalAccess;
+      await prisma.portalAccessUser.upsert({
+        where: { contactId: id },
+        update: {
+          portalRole: pa.portalRole || "STANDARD",
+          canAccessPortal: pa.canAccessPortal ?? true,
+          canSeeOwnTickets: pa.canSeeOwnTickets ?? true,
+          canSeeAllOrgTickets: pa.canSeeAllOrgTickets ?? false,
+          canCreateTickets: pa.canCreateTickets ?? true,
+          canSeeProjects: pa.canSeeProjects ?? false,
+          canSeeProjectDetails: pa.canSeeProjectDetails ?? false,
+          canSeeProjectTasks: pa.canSeeProjectTasks ?? false,
+          canSeeProjectLinkedTickets: pa.canSeeProjectLinkedTickets ?? false,
+          canSeeReports: pa.canSeeReports ?? false,
+          canSeeBillingReports: pa.canSeeBillingReports ?? false,
+          canSeeTimeReports: pa.canSeeTimeReports ?? false,
+          canSeeHourBankBalance: pa.canSeeHourBankBalance ?? false,
+          canSeeDocuments: pa.canSeeDocuments ?? false,
+          canSeeTeamMembers: pa.canSeeTeamMembers ?? false,
+          canSeeOwnAssets: pa.canSeeOwnAssets ?? true,
+          canSeeAllOrgAssets: pa.canSeeAllOrgAssets ?? false,
+          canManageAssets: pa.canManageAssets ?? false,
+          canManageContacts: pa.canManageContacts ?? false,
+        },
+        create: {
+          organizationId: updated.organizationId,
+          contactId: id,
+          name: `${updated.firstName} ${updated.lastName}`,
+          email: updated.email,
+          portalRole: pa.portalRole || "STANDARD",
+          canAccessPortal: pa.canAccessPortal ?? true,
+          canSeeOwnTickets: pa.canSeeOwnTickets ?? true,
+          canSeeAllOrgTickets: pa.canSeeAllOrgTickets ?? false,
+          canCreateTickets: pa.canCreateTickets ?? true,
+          canSeeProjects: pa.canSeeProjects ?? false,
+          canSeeProjectDetails: pa.canSeeProjectDetails ?? false,
+          canSeeProjectTasks: pa.canSeeProjectTasks ?? false,
+          canSeeProjectLinkedTickets: pa.canSeeProjectLinkedTickets ?? false,
+          canSeeReports: pa.canSeeReports ?? false,
+          canSeeBillingReports: pa.canSeeBillingReports ?? false,
+          canSeeTimeReports: pa.canSeeTimeReports ?? false,
+          canSeeHourBankBalance: pa.canSeeHourBankBalance ?? false,
+          canSeeDocuments: pa.canSeeDocuments ?? false,
+          canSeeTeamMembers: pa.canSeeTeamMembers ?? false,
+          canSeeOwnAssets: pa.canSeeOwnAssets ?? true,
+          canSeeAllOrgAssets: pa.canSeeAllOrgAssets ?? false,
+          canManageAssets: pa.canManageAssets ?? false,
+          canManageContacts: pa.canManageContacts ?? false,
+        },
+      });
+    }
+
     return NextResponse.json(updated);
   } catch (err) {
     return NextResponse.json(

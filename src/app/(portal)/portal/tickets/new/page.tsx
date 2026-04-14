@@ -32,23 +32,24 @@ export default function PortalNewTicketPage() {
   const [files, setFiles] = useState<string[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [categories, setCategories] = useState<{ value: string; label: string }[]>([]);
+  const [allCategories, setAllCategories] = useState<{ id: string; name: string; parentId: string | null }[]>([]);
+  const [catLevel1, setCatLevel1] = useState("");
+  const [catLevel2, setCatLevel2] = useState("");
+  const [catLevel3, setCatLevel3] = useState("");
 
   // Fetch categories from database
   useEffect(() => {
     fetch("/api/v1/categories")
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setCategories(
-            data
-              .filter((c: any) => !c.parentId)
-              .map((c: any) => ({ value: c.name, label: c.name })),
-          );
-        }
+        if (Array.isArray(data)) setAllCategories(data);
       })
       .catch(() => {});
   }, []);
+
+  const rootCategories = allCategories.filter((c) => !c.parentId);
+  const subCategories1 = catLevel1 ? allCategories.filter((c) => c.parentId === catLevel1) : [];
+  const subCategories2 = catLevel2 ? allCategories.filter((c) => c.parentId === catLevel2) : [];
 
   async function handleSubmit() {
     if (!subject.trim()) return;
@@ -61,7 +62,11 @@ export default function PortalNewTicketPage() {
           subject,
           description,
           organizationName,
-          category,
+          category: (() => {
+            // Use the most specific selected category
+            const catId = catLevel3 || catLevel2 || catLevel1;
+            return allCategories.find((c) => c.id === catId)?.name || category;
+          })(),
           priority,
           type: "incident",
           source: "portal",
@@ -105,7 +110,7 @@ export default function PortalNewTicketPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6">
       <button
         onClick={() => router.back()}
         className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
@@ -125,7 +130,7 @@ export default function PortalNewTicketPage() {
       </div>
 
       <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-        <div className="p-6 space-y-5">
+        <div className="p-6 sm:p-8 space-y-6">
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1.5">
               Sujet <span className="text-red-500">*</span>
@@ -139,23 +144,57 @@ export default function PortalNewTicketPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                Catégorie
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full rounded-lg border border-neutral-200 bg-[#F9FAFB] px-3.5 py-2.5 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 appearance-none"
-              >
-                <option value="">Sélectionner une catégorie...</option>
-                {categories.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  Catégorie
+                </label>
+                <select
+                  value={catLevel1}
+                  onChange={(e) => { setCatLevel1(e.target.value); setCatLevel2(""); setCatLevel3(""); }}
+                  className="w-full rounded-lg border border-neutral-200 bg-[#F9FAFB] px-3.5 py-2.5 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 appearance-none"
+                >
+                  <option value="">Sélectionner...</option>
+                  {rootCategories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              {subCategories1.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    Sous-catégorie
+                  </label>
+                  <select
+                    value={catLevel2}
+                    onChange={(e) => { setCatLevel2(e.target.value); setCatLevel3(""); }}
+                    className="w-full rounded-lg border border-neutral-200 bg-[#F9FAFB] px-3.5 py-2.5 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 appearance-none"
+                  >
+                    <option value="">Sélectionner...</option>
+                    {subCategories1.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {subCategories2.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    Sous-catégorie 2
+                  </label>
+                  <select
+                    value={catLevel3}
+                    onChange={(e) => setCatLevel3(e.target.value)}
+                    className="w-full rounded-lg border border-neutral-200 bg-[#F9FAFB] px-3.5 py-2.5 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 appearance-none"
+                  >
+                    <option value="">Sélectionner...</option>
+                    {subCategories2.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div>
@@ -184,7 +223,7 @@ export default function PortalNewTicketPage() {
               value={description}
               onChange={setDescription}
               placeholder="Donnez le plus de détails possible : messages d'erreur, étapes pour reproduire, ce que vous avez déjà essayé. Vous pouvez coller des images directement."
-              minHeight="180px"
+              minHeight="220px"
             />
           </div>
 

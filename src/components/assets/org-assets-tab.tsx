@@ -244,9 +244,10 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
           throw new Error(json.error || `HTTP ${res.status}`);
         }
         const fetched = (json.data || []) as OrgAsset[];
+        const meta = json.meta || {};
         const now = new Date().toISOString();
         setAssets((prev) => {
-          // Remplace les assets existants provenant d'Atera, ajoute les nouveaux
+          // Replace Atera assets with fresh data (from live sync or DB cache)
           const withoutAtera = prev.filter((a) => a.source !== "atera");
           return [...fetched, ...withoutAtera];
         });
@@ -262,14 +263,22 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
               : i
           )
         );
-        setSyncMessage(
-          `Atera : ${fetched.length} actif${fetched.length > 1 ? "s" : ""} synchronisé${fetched.length > 1 ? "s" : ""} (${mapping.externalName})`
-        );
+        if (meta.fromCache) {
+          setSyncMessage(
+            `Atera hors ligne — ${fetched.length} actif${fetched.length > 1 ? "s" : ""} chargé${fetched.length > 1 ? "s" : ""} depuis le cache local`
+          );
+        } else {
+          setSyncMessage(
+            `Atera : ${fetched.length} actif${fetched.length > 1 ? "s" : ""} synchronisé${fetched.length > 1 ? "s" : ""} (${mapping.externalName})`
+          );
+        }
         setTimeout(() => setSyncMessage(null), 5000);
       } catch (err) {
+        // Network error or invalid JSON — keep existing assets in state
         setSyncMessage(
           `Erreur Atera : ${err instanceof Error ? err.message : String(err)}`
         );
+        setTimeout(() => setSyncMessage(null), 8000);
       }
       return;
     }
@@ -279,21 +288,6 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
       `Le connecteur « ${provider} » n'est pas encore branché à une API réelle.`
     );
     setTimeout(() => setSyncMessage(null), 5000);
-    return;
-
-    // Code mort conservé pour signature TypeScript du chemin original
-    // eslint-disable-next-line no-unreachable
-    setIntegrations((prev) =>
-      prev.map((i) =>
-        i.provider === provider
-          ? { ...i, isConnected: true, lastSyncAt: new Date().toISOString(), syncedAssetCount: i.syncedAssetCount }
-          : i
-      )
-    );
-    setSyncMessage(
-      `Synchronisé depuis ${ASSET_SOURCE_LABELS[provider]}.`
-    );
-    setTimeout(() => setSyncMessage(null), 4000);
   }
 
   async function handleConnect(provider: AssetSource) {
@@ -333,7 +327,52 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
     );
   }
 
-  function handleSave(asset: OrgAsset) {
+  async function handleSave(asset: OrgAsset) {
+    // Persist to DB
+    const isNew = !assets.some((a) => a.id === asset.id);
+    try {
+      if (isNew) {
+        const res = await fetch(
+          `/api/v1/organizations/${encodeURIComponent(organizationId)}/assets`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(asset),
+          },
+        );
+        if (res.ok) {
+          const created = await res.json();
+          asset = { ...asset, id: created.id };
+        }
+      } else {
+        const res = await fetch(`/api/v1/assets/${encodeURIComponent(asset.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: asset.name,
+            type: (asset.type as string).toUpperCase(),
+            status: (asset.status as string).toUpperCase(),
+            manufacturer: asset.manufacturer || null,
+            model: asset.model || null,
+            serialNumber: asset.serialNumber || null,
+            ipAddress: asset.ipAddress || null,
+            macAddress: asset.macAddress || null,
+            notes: asset.notes || null,
+            assignedContactId: asset.assignedContactId || null,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          console.error("Asset update failed:", err);
+          return; // Don't update local state on failure
+        }
+      }
+    } catch (e) {
+      console.error("Asset save failed:", e);
+      return; // Don't update local state on failure
+    }
+
+    // Update local state only on success
     setAssets((prev) => {
       const idx = prev.findIndex((a) => a.id === asset.id);
       if (idx === -1) return [asset, ...prev];
@@ -343,7 +382,12 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
     });
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string) {
+    try {
+      await fetch(`/api/v1/assets/${encodeURIComponent(id)}`, { method: "DELETE" });
+    } catch (e) {
+      console.error("Asset delete failed:", e);
+    }
     setAssets((prev) => prev.filter((a) => a.id !== id));
   }
 

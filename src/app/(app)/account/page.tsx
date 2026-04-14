@@ -8,6 +8,7 @@ import {
   User,
   Shield,
   Bell,
+  Mail,
   Settings as SettingsIcon,
   Loader2,
   Save,
@@ -571,15 +572,120 @@ function MfaSection() {
   );
 }
 
-function NotificationsTab() {
+interface EventPref {
+  email: boolean;
+  inapp: boolean;
+}
+
+const USER_EVENTS: { key: string; label: string; description?: string; prefs: EventPref }[] = [
+  { key: "assigned", label: "Nouveau ticket assigné", prefs: { email: true, inapp: true } },
+  { key: "assigned_others", label: "Ticket assigné à un autre agent", description: "Désactivez pour ne pas recevoir de notification lorsqu'un ticket créé par un agent est assigné à quelqu'un d'autre", prefs: { email: false, inapp: false } },
+  { key: "status", label: "Mise à jour de statut", prefs: { email: true, inapp: true } },
+  { key: "comment", label: "Nouveau commentaire", prefs: { email: true, inapp: true } },
+  { key: "mention", label: "Mention dans un commentaire", prefs: { email: true, inapp: true } },
+  { key: "sla_warn", label: "SLA bientôt expiré", prefs: { email: true, inapp: true } },
+  { key: "sla_breach", label: "SLA dépassé", prefs: { email: true, inapp: true } },
+  { key: "resolved", label: "Ticket résolu", prefs: { email: true, inapp: false } },
+  { key: "new_client", label: "Nouveau ticket client", prefs: { email: true, inapp: true } },
+  { key: "reminder", label: "Rappel de ticket", description: "Notification lorsqu'un rappel configuré sur un ticket arrive à échéance", prefs: { email: true, inapp: true } },
+  { key: "escalation", label: "Escalade automatique", prefs: { email: true, inapp: true } },
+  { key: "weekly", label: "Rapport hebdomadaire", prefs: { email: true, inapp: false } },
+];
+
+function UserToggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
-    <Card title="Préférences de notifications">
-      <p className="text-[13px] text-slate-500">
-        Les préférences de notifications (e-mail, in-app, fréquence des
-        digests) seront bientôt disponibles ici. Pour le moment, toutes les
-        notifications par défaut sont activées.
-      </p>
-    </Card>
+    <button
+      type="button"
+      onClick={onChange}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors ${checked ? "bg-blue-600" : "bg-slate-300"}`}
+    >
+      <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${checked ? "translate-x-[18px]" : "translate-x-0.5"} translate-y-0.5`} />
+    </button>
+  );
+}
+
+function NotificationsTab() {
+  const [events, setEvents] = useState(USER_EVENTS);
+  const [inappEnabled, setInappEnabled] = useState(true);
+  const [emailEnabled, setEmailEnabled] = useState(true);
+
+  function toggleEvent(key: string, channel: keyof EventPref) {
+    setEvents((prev) => prev.map((e) => (e.key === key ? { ...e, prefs: { ...e.prefs, [channel]: !e.prefs[channel] } } : e)));
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Global channel toggles — per-user */}
+      <Card title="Canaux de notification">
+        <p className="text-[13px] text-slate-500 mb-4">
+          Choisissez les canaux par lesquels vous souhaitez être notifié.
+        </p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between py-2.5 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-violet-50 flex items-center justify-center text-violet-600">
+                <Bell className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-slate-900">Notifications dans l&apos;app</p>
+                <p className="text-[12px] text-slate-500">Affichez les pop-ups dans la barre de notifications</p>
+              </div>
+            </div>
+            <UserToggle checked={inappEnabled} onChange={() => setInappEnabled(!inappEnabled)} />
+          </div>
+          <div className="flex items-center justify-between py-2.5">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                <Mail className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-slate-900">Email</p>
+                <p className="text-[12px] text-slate-500">Recevez les notifications par courriel</p>
+              </div>
+            </div>
+            <UserToggle checked={emailEnabled} onChange={() => setEmailEnabled(!emailEnabled)} />
+          </div>
+        </div>
+      </Card>
+
+      {/* Per-event preferences */}
+      <Card title="Préférences par événement">
+        <p className="text-[13px] text-slate-500 mb-4">
+          Choisissez par quels canaux chaque type d&apos;événement vous est diffusé.
+        </p>
+        <div className="overflow-x-auto -mx-6">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/50">
+                <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Événement</th>
+                <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500 w-20">Email</th>
+                <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500 w-20 pr-6">In-app</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {events.map((e) => (
+                <tr key={e.key} className="hover:bg-slate-50/60">
+                  <td className="px-6 py-3">
+                    <div className="text-[13px] font-medium text-slate-800">{e.label}</div>
+                    {e.description && <div className="text-[11px] text-slate-400 mt-0.5">{e.description}</div>}
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex justify-center">
+                      <UserToggle checked={e.prefs.email} onChange={() => toggleEvent(e.key, "email")} />
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 pr-6">
+                    <div className="flex justify-center">
+                      <UserToggle checked={e.prefs.inapp} onChange={() => toggleEvent(e.key, "inapp")} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
   );
 }
 

@@ -108,6 +108,8 @@ model User {
   isActive       Boolean   @default(true) @map("is_active")
   locale         String    @default("fr") // fr | en
   preferences    Json?     @db.JsonB
+  signature      String?   @db.Text
+  signatureHtml  String?   @map("signature_html") @db.Text
 
   // MFA (TOTP)
   mfaEnabled     Boolean   @default(false) @map("mfa_enabled")
@@ -569,6 +571,8 @@ model Asset {
   macAddress     String?      @map("mac_address")
   notes          String?      @db.Text
   metadata       Json?
+  fieldOverrides String[]     @default([]) @map("field_overrides")
+  lastSyncedAt   DateTime?    @map("last_synced_at")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 

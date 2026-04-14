@@ -61,7 +61,7 @@ export function AddTimeModal({
   const [date, setDate] = useState(todayISODate());
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
-  const [manualMode, setManualMode] = useState(false);
+  const [manualMode, setManualMode] = useState(true);
   const [manualMinutes, setManualMinutes] = useState(60);
   const [description, setDescription] = useState("");
   const [isOnsite, setIsOnsite] = useState(false);
@@ -194,18 +194,7 @@ export function AddTimeModal({
       createdAt: now,
       updatedAt: now,
     };
-    try {
-      const res = await fetch("/api/v1/time-entries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(entry),
-      });
-      if (!res.ok) {
-        throw new Error(`Erreur ${res.status}`);
-      }
-    } catch {
-      // Allow onSave to proceed even if API fails, so UI stays responsive
-    }
+    // The parent (TicketBillingSection) handles the API call via onSave
     onSave(entry);
     reset();
     onClose();

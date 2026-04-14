@@ -342,6 +342,7 @@ export default function ContactsPage() {
                           email: contact.email,
                           phone: contact.phone,
                           organization: contact.organization,
+                          organizationId: contact.organizationId,
                           jobTitle: contact.jobTitle,
                           isVIP: contact.vip,
                         })

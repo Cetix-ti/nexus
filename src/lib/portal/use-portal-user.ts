@@ -48,6 +48,36 @@ const DEFAULT_PERMISSIONS: PortalPermissions = {
   canManageContacts: false,
 };
 
+/**
+ * Derive granular permissions from the portal role.
+ * Mirrors the server-side role presets used in PortalAccessUser creation.
+ */
+function permissionsFromRole(role: string): PortalPermissions {
+  const isAdmin = role === "admin";
+  const isManager = role === "manager" || isAdmin;
+  return {
+    portalRole: role as PortalPermissions["portalRole"],
+    canAccessPortal: true,
+    canSeeOwnTickets: true,
+    canSeeAllOrgTickets: isManager,
+    canCreateTickets: true,
+    canSeeProjects: isManager,
+    canSeeProjectDetails: isManager,
+    canSeeProjectTasks: isAdmin,
+    canSeeProjectLinkedTickets: isAdmin,
+    canSeeReports: isManager,
+    canSeeBillingReports: isAdmin,
+    canSeeTimeReports: isAdmin,
+    canSeeHourBankBalance: isAdmin,
+    canSeeDocuments: isManager,
+    canSeeTeamMembers: isManager,
+    canSeeOwnAssets: true,
+    canSeeAllOrgAssets: isManager,
+    canManageAssets: isAdmin,
+    canManageContacts: isAdmin,
+  };
+}
+
 export interface UsePortalUserResult {
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -122,10 +152,7 @@ export function usePortalUser(): UsePortalUserResult {
       },
       organizationId: u.organizationId || null,
       organizationName: u.organizationName || null,
-      permissions: {
-        ...DEFAULT_PERMISSIONS,
-        portalRole: u.portalRole ?? "standard",
-      },
+      permissions: permissionsFromRole(u.portalRole ?? "standard"),
     };
   }, [session, status, impersonating]);
 }

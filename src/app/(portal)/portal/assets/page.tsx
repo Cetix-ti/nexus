@@ -62,7 +62,13 @@ export default function PortalAssetsPage() {
 
   useEffect(() => {
     fetch("/api/v1/portal/assets")
-      .then((r) => (r.ok ? r.json() : []))
+      .then((r) => {
+        if (r.status === 401) {
+          window.location.href = "/portal/login";
+          return [];
+        }
+        return r.ok ? r.json() : [];
+      })
       .then((d) => { if (Array.isArray(d)) setAssets(d); })
       .catch(() => {})
       .finally(() => setLoading(false));

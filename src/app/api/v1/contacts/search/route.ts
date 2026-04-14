@@ -8,16 +8,20 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get("q")?.trim();
+    const organizationId = searchParams.get("organizationId");
     if (!q || q.length < 2) return NextResponse.json([]);
 
+    const where: any = {
+      OR: [
+        { firstName: { contains: q, mode: "insensitive" } },
+        { lastName: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+      ],
+    };
+    if (organizationId) where.organizationId = organizationId;
+
     const contacts = await prisma.contact.findMany({
-      where: {
-        OR: [
-          { firstName: { contains: q, mode: "insensitive" } },
-          { lastName: { contains: q, mode: "insensitive" } },
-          { email: { contains: q, mode: "insensitive" } },
-        ],
-      },
+      where,
       include: {
         organization: { select: { id: true, name: true, logo: true } },
         portalAccess: { select: { portalRole: true } },

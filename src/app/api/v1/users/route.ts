@@ -39,6 +39,8 @@ const userUpdateSchema = z
     // Data URI base64 (image/*) ou null pour supprimer.
     // Limite ~700 Ko encodé (~512 Ko binaire).
     avatar: z.string().max(700_000).nullable().optional(),
+    signature: z.string().max(5000).nullable().optional(),
+    signatureHtml: z.string().max(20000).nullable().optional(),
   })
   .refine((d) => Object.keys(d).length > 1, {
     message: "no fields to update",
@@ -61,6 +63,8 @@ function serializeUser(u: {
   phone: string | null;
   isActive: boolean;
   lastLoginAt: Date | null;
+  signature?: string | null;
+  signatureHtml?: string | null;
 }) {
   return {
     id: u.id,
@@ -73,6 +77,8 @@ function serializeUser(u: {
     phone: u.phone,
     isActive: u.isActive,
     lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
+    signature: u.signature ?? null,
+    signatureHtml: u.signatureHtml ?? null,
   };
 }
 

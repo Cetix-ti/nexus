@@ -25,6 +25,7 @@ export interface EditContactModalContact {
   email: string;
   phone: string;
   organization: string;
+  organizationId?: string;
   jobTitle: string;
   isVIP: boolean;
 }
@@ -111,6 +112,32 @@ export function EditContactModal({
       setEmailPref(true);
       setSmsPref(false);
       setPhonePref(true);
+
+      // Load existing portal permissions for this contact
+      fetch(`/api/v1/contacts/${contact.id}/portal-access`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => {
+          if (data) {
+            setPortalPerms({
+              canAccessPortal: data.canAccessPortal ?? false,
+              portalRole: data.portalRole === "ADMIN" ? "admin" : data.portalRole === "MANAGER" ? "manager" : "viewer",
+              canSeeOwnTickets: data.canSeeOwnTickets ?? true,
+              canSeeAllOrganizationTickets: data.canSeeAllOrgTickets ?? false,
+              canCreateTickets: data.canCreateTickets ?? true,
+              canSeeProjects: data.canSeeProjects ?? false,
+              canSeeProjectDetails: data.canSeeProjectDetails ?? false,
+              canSeeProjectTasks: data.canSeeProjectTasks ?? false,
+              canSeeProjectLinkedTickets: data.canSeeProjectLinkedTickets ?? false,
+              canSeeReports: data.canSeeReports ?? false,
+              canSeeBillingReports: data.canSeeBillingReports ?? false,
+              canSeeTimeReports: data.canSeeTimeReports ?? false,
+              canSeeHourBankBalance: data.canSeeHourBankBalance ?? false,
+              canSeeDocuments: data.canSeeDocuments ?? false,
+              canSeeTeamMembers: data.canSeeTeamMembers ?? false,
+            });
+          }
+        })
+        .catch(() => {});
     }
   }, [contact]);
 
@@ -140,6 +167,7 @@ export function EditContactModal({
     e.preventDefault();
     setSaveError(null);
     try {
+      const ROLE_MAP: Record<string, string> = { admin: "ADMIN", manager: "MANAGER", viewer: "STANDARD" };
       const res = await fetch(`/api/v1/contacts/${contact?.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -150,7 +178,23 @@ export function EditContactModal({
           phone,
           jobTitle,
           isVIP: vip,
-          notes,
+          portalAccess: {
+            canAccessPortal: portalPerms.canAccessPortal,
+            portalRole: ROLE_MAP[portalPerms.portalRole] || "STANDARD",
+            canSeeOwnTickets: portalPerms.canSeeOwnTickets,
+            canSeeAllOrgTickets: portalPerms.canSeeAllOrganizationTickets,
+            canCreateTickets: portalPerms.canCreateTickets,
+            canSeeProjects: portalPerms.canSeeProjects,
+            canSeeProjectDetails: portalPerms.canSeeProjectDetails,
+            canSeeProjectTasks: portalPerms.canSeeProjectTasks,
+            canSeeProjectLinkedTickets: portalPerms.canSeeProjectLinkedTickets,
+            canSeeReports: portalPerms.canSeeReports,
+            canSeeBillingReports: portalPerms.canSeeBillingReports,
+            canSeeTimeReports: portalPerms.canSeeTimeReports,
+            canSeeHourBankBalance: portalPerms.canSeeHourBankBalance,
+            canSeeDocuments: portalPerms.canSeeDocuments,
+            canSeeTeamMembers: portalPerms.canSeeTeamMembers,
+          },
         }),
       });
       if (!res.ok) {

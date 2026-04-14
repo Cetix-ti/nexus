@@ -101,6 +101,7 @@ export interface OrgAsset {
   warrantyExpiry?: string;
   endOfLifeDate?: string;
   purchaseCost?: number;
+  assignedContactId?: string;
   assignedToContactName?: string;
   lastLoggedUser?: string;
   isMonitored: boolean;
