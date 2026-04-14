@@ -26,6 +26,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-editor";
 import { AdvancedRichEditor } from "@/components/ui/advanced-rich-editor";
 import { LinkAssetModal } from "@/components/tickets/link-asset-modal";
+import { LinkProjectModal } from "@/components/tickets/link-project-modal";
 import {
   STATUS_CONFIG,
   PRIORITY_CONFIG,
@@ -137,6 +138,8 @@ export default function TicketDetailPage() {
   const [catLevel3, setCatLevel3] = useState<string>("");
   const [linkedAssets, setLinkedAssets] = useState<{ id: string; name: string; type: string; externalSource: string | null }[]>([]);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const [linkedProjectName, setLinkedProjectName] = useState<string | null>(null);
   const [userSignature, setUserSignature] = useState<{ signature: string | null; signatureHtml: string | null }>({ signature: null, signatureHtml: null });
   const [appendSignature, setAppendSignature] = useState(true);
   const [timelineTab, setTimelineTab] = useState<"messages" | "notes" | "activity">("messages");
@@ -185,7 +188,18 @@ export default function TicketDetailPage() {
     // Load projects for linking
     fetch("/api/v1/projects?active=true", { signal })
       .then((r) => r.ok ? r.json() : [])
-      .then((d) => { if (!signal.aborted) setProjects(Array.isArray(d) ? d.map((p: any) => ({ id: p.id, code: p.code, name: p.name })) : d.data?.map((p: any) => ({ id: p.id, code: p.code, name: p.name })) || []); })
+      .then((d) => {
+        if (signal.aborted) return;
+        const list = Array.isArray(d)
+          ? d.map((p: any) => ({ id: p.id, code: p.code, name: p.name }))
+          : d.data?.map((p: any) => ({ id: p.id, code: p.code, name: p.name })) || [];
+        setProjects(list);
+        // Resolve current linked project name if any
+        if (ticket?.projectId) {
+          const cur = list.find((p: any) => p.id === ticket.projectId);
+          if (cur) setLinkedProjectName(`${cur.code} — ${cur.name}`);
+        }
+      })
       .catch(() => {});
     // Load categories for classification
     fetch("/api/v1/categories", { signal })
@@ -1007,43 +1021,43 @@ export default function TicketDetailPage() {
             {/* Projet */}
             <SidebarSection title="Projet">
               {ticket.projectId ? (
-                <div className="flex items-center justify-between gap-2">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <button
+                      onClick={() => router.push(`/projects/${ticket.projectId}`)}
+                      className="group flex items-center gap-2 text-[12.5px] font-medium text-gray-900 hover:text-blue-700 transition-colors min-w-0 flex-1"
+                    >
+                      <FolderKanban className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                      <span className="truncate text-left">{linkedProjectName ?? "Voir le projet"}</span>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm("Délier ce ticket du projet ?")) return;
+                        await patchTicketField({ projectId: null });
+                        ticket.projectId = undefined;
+                        setLinkedProjectName(null);
+                      }}
+                      className="text-slate-300 hover:text-red-500 transition-colors shrink-0"
+                      title="Délier du projet"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   <button
-                    onClick={() => router.push(`/projects/${ticket.projectId}`)}
-                    className="group flex items-center gap-2 text-sm font-medium text-gray-900 hover:text-blue-700 transition-colors"
+                    onClick={() => setShowProjectPicker(true)}
+                    className="text-[11px] font-medium text-blue-600 hover:text-blue-700"
                   >
-                    <FolderKanban className="h-3.5 w-3.5 text-gray-400" />
-                    Voir le projet
-                  </button>
-                  <button
-                    onClick={async () => {
-                      await patchTicketField({ projectId: null });
-                      ticket.projectId = undefined;
-                    }}
-                    className="text-gray-300 hover:text-red-500 transition-colors"
-                    title="Délier du projet"
-                  >
-                    <X className="h-3 w-3" />
+                    Changer de projet
                   </button>
                 </div>
               ) : (
-                <div>
-                  <select
-                    className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-600 focus:border-blue-500 focus:outline-none"
-                    value=""
-                    onChange={async (e) => {
-                      const projectId = e.target.value;
-                      if (!projectId) return;
-                      await patchTicketField({ projectId });
-                      ticket.projectId = projectId;
-                    }}
-                  >
-                    <option value="">Lier à un projet...</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
-                    ))}
-                  </select>
-                </div>
+                <button
+                  onClick={() => setShowProjectPicker(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-slate-300 bg-slate-50/50 hover:bg-blue-50/40 hover:border-blue-300 transition-colors px-3 py-2 text-[12px] font-medium text-slate-600 hover:text-blue-700 w-full justify-center"
+                >
+                  <FolderKanban className="h-3.5 w-3.5" />
+                  Lier à un projet
+                </button>
               )}
             </SidebarSection>
 
@@ -1254,6 +1268,23 @@ export default function TicketDetailPage() {
         onLink={async (asset) => {
           await handleLinkAsset(asset);
           setShowAssetPicker(false);
+        }}
+      />
+
+      {/* Project linking modal */}
+      <LinkProjectModal
+        open={showProjectPicker}
+        onClose={() => setShowProjectPicker(false)}
+        ticketOrgId={(ticket as any)?.organizationId || null}
+        ticketOrgName={ticket?.organizationName || null}
+        currentProjectId={ticket?.projectId || null}
+        onLink={async (project) => {
+          await patchTicketField({ projectId: project.id });
+          if (ticket) {
+            ticket.projectId = project.id;
+            setLinkedProjectName(`${project.code} — ${project.name}`);
+          }
+          setShowProjectPicker(false);
         }}
       />
     </div>
