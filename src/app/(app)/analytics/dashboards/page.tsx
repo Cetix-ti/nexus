@@ -39,6 +39,25 @@ import {
   PanelLeftOpen,
   Trash2,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  LineChart, Line,
+  AreaChart, Area,
+  PieChart as RePieChart, Pie, Cell,
+  ScatterChart as ReScatterChart, Scatter,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+  Sankey, Tooltip as ReTooltip,
+  XAxis, YAxis, CartesianGrid,
+} from "recharts";
+
+const PIE_PALETTE = [
+  "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
+  "#EC4899", "#14B8A6", "#F97316", "#6366F1", "#84CC16",
+];
+function pickPieColors(baseColor: string, count: number): string[] {
+  const palette = [baseColor, ...PIE_PALETTE];
+  return Array.from({ length: count }, (_, i) => palette[i % palette.length]);
+}
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1194,6 +1213,82 @@ function QueryWidgetRenderer({ widgetId }: { widgetId: string }) {
               </div>
             ))}
           </div>
+        ) : widget.chartType === "line" ? (
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={result} margin={{ top: 5, right: 10, left: 0, bottom: 15 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 10 }} />
+              <ReTooltip />
+              <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : widget.chartType === "area" ? (
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={result} margin={{ top: 5, right: 10, left: 0, bottom: 15 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 10 }} />
+              <ReTooltip />
+              <Area type="monotone" dataKey="value" stroke={color} fill={color} fillOpacity={0.25} />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : widget.chartType === "pie" || widget.chartType === "donut" ? (
+          <ResponsiveContainer width="100%" height={200}>
+            <RePieChart>
+              <Pie
+                data={result}
+                dataKey="value"
+                nameKey="label"
+                cx="50%"
+                cy="50%"
+                outerRadius={70}
+                innerRadius={widget.chartType === "donut" ? 40 : 0}
+                label={(e: any) => `${e.label}`}
+                labelLine={false}
+              >
+                {result.map((_, i) => (
+                  <Cell key={i} fill={pickPieColors(color, result.length)[i]} />
+                ))}
+              </Pie>
+              <ReTooltip />
+            </RePieChart>
+          </ResponsiveContainer>
+        ) : widget.chartType === "scatter" ? (
+          <ResponsiveContainer width="100%" height={200}>
+            <ReScatterChart margin={{ top: 5, right: 10, left: 0, bottom: 15 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="x" tick={{ fontSize: 10 }} />
+              <YAxis dataKey="y" tick={{ fontSize: 10 }} />
+              <ReTooltip cursor={{ strokeDasharray: "3 3" }} />
+              <Scatter data={result.map((r, i) => ({ x: i + 1, y: r.value, label: r.label }))} fill={color} />
+            </ReScatterChart>
+          </ResponsiveContainer>
+        ) : widget.chartType === "radar" ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <RadarChart data={result}>
+              <PolarGrid stroke="#e2e8f0" />
+              <PolarAngleAxis dataKey="label" tick={{ fontSize: 10 }} />
+              <PolarRadiusAxis tick={{ fontSize: 9 }} />
+              <Radar dataKey="value" stroke={color} fill={color} fillOpacity={0.4} />
+              <ReTooltip />
+            </RadarChart>
+          </ResponsiveContainer>
+        ) : widget.chartType === "sankey" ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <Sankey
+              data={{
+                nodes: [{ name: "Total" }, ...result.map((r) => ({ name: r.label }))],
+                links: result.map((r, i) => ({ source: 0, target: i + 1, value: r.value || 1 })),
+              }}
+              nodePadding={20}
+              nodeWidth={12}
+              link={{ stroke: color, strokeOpacity: 0.4 }}
+              node={{ stroke: color, fill: color } as any}
+            >
+              <ReTooltip />
+            </Sankey>
+          </ResponsiveContainer>
         ) : (
           <div className="space-y-1">
             {result.map((r, i) => (

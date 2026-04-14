@@ -5,7 +5,19 @@ import Link from "next/link";
 import {
   Plus, Pencil, Trash2, Eye, Copy, X, Save, BarChart3, Hash, List,
   Table, Activity, ArrowLeft, Filter, Loader2, Play,
+  LineChart as LineChartIcon, AreaChart as AreaChartIcon, PieChart as PieChartIcon,
+  Donut, ScatterChart, Radar as RadarIcon, Network,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  LineChart, Line,
+  AreaChart, Area,
+  PieChart, Pie, Cell,
+  ScatterChart as ReScatterChart, Scatter,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+  Sankey, Tooltip as ReTooltip,
+  XAxis, YAxis, CartesianGrid,
+} from "recharts";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +28,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 // ===========================================================================
 // Types
 // ===========================================================================
-type ChartType = "number" | "bar" | "horizontal_bar" | "progress" | "table" | "list";
+type ChartType =
+  | "number"
+  | "bar"
+  | "horizontal_bar"
+  | "progress"
+  | "table"
+  | "list"
+  | "line"
+  | "area"
+  | "pie"
+  | "donut"
+  | "scatter"
+  | "radar"
+  | "sankey";
 interface FieldDef { name: string; label: string; type: string; groupable: boolean; aggregable: boolean }
 interface DatasetDef { id: string; label: string; fields: FieldDef[]; defaultDateField: string }
 interface QueryFilter { field: string; operator: string; value: string }
@@ -52,9 +77,30 @@ const CHART_TYPES: { id: ChartType; label: string; icon: React.ReactNode }[] = [
   { id: "progress", label: "Jauge", icon: <Activity className="h-4 w-4" /> },
   { id: "bar", label: "Barres verticales", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "horizontal_bar", label: "Barres horizontales", icon: <List className="h-4 w-4" /> },
+  { id: "line", label: "Courbe", icon: <LineChartIcon className="h-4 w-4" /> },
+  { id: "area", label: "Aire", icon: <AreaChartIcon className="h-4 w-4" /> },
+  { id: "pie", label: "Graphique circulaire", icon: <PieChartIcon className="h-4 w-4" /> },
+  { id: "donut", label: "Anneau", icon: <Donut className="h-4 w-4" /> },
+  { id: "scatter", label: "Nuage de points", icon: <ScatterChart className="h-4 w-4" /> },
+  { id: "radar", label: "Radar", icon: <RadarIcon className="h-4 w-4" /> },
+  { id: "sankey", label: "Diagramme de Sankey", icon: <Network className="h-4 w-4" /> },
   { id: "table", label: "Tableau", icon: <Table className="h-4 w-4" /> },
   { id: "list", label: "Liste", icon: <List className="h-4 w-4" /> },
 ];
+
+// Palette for pie / donut — rotates hues based on the widget's base color.
+function generatePieColors(baseColor: string, count: number): string[] {
+  // Fixed palette that works well alongside most brand colors
+  const palette = [
+    baseColor,
+    "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
+    "#EC4899", "#14B8A6", "#F97316", "#6366F1", "#84CC16",
+  ];
+  const out: string[] = [];
+  for (let i = 0; i < count; i++) out.push(palette[i % palette.length]);
+  return out;
+}
+
 const AGGREGATES = [
   { id: "count", label: "Compter" },
   { id: "sum", label: "Somme" },
@@ -432,6 +478,126 @@ function WidgetPreview({ results, chartType, color, name, aggregate }: {
             <span className="text-[10px] font-bold text-slate-700 tabular-nums w-16 text-right">{r.value.toLocaleString("fr-CA")}</span>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (chartType === "line") {
+    return (
+      <div className="py-2">
+        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} />
+            <ReTooltip />
+            <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 3 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  if (chartType === "area") {
+    return (
+      <div className="py-2">
+        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        <ResponsiveContainer width="100%" height={220}>
+          <AreaChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} />
+            <ReTooltip />
+            <Area type="monotone" dataKey="value" stroke={color} fill={color} fillOpacity={0.25} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  if (chartType === "pie" || chartType === "donut") {
+    const pieColors = generatePieColors(color, results.length);
+    return (
+      <div className="py-2">
+        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        <ResponsiveContainer width="100%" height={220}>
+          <PieChart>
+            <Pie
+              data={results}
+              dataKey="value"
+              nameKey="label"
+              cx="50%"
+              cy="50%"
+              outerRadius={80}
+              innerRadius={chartType === "donut" ? 45 : 0}
+              label={(e: any) => `${e.label} (${e.value})`}
+              labelLine={false}
+            >
+              {results.map((_, i) => (
+                <Cell key={i} fill={pieColors[i % pieColors.length]} />
+              ))}
+            </Pie>
+            <ReTooltip />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  if (chartType === "scatter") {
+    const scatterData = results.map((r, i) => ({ x: i + 1, y: r.value, label: r.label }));
+    return (
+      <div className="py-2">
+        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        <ResponsiveContainer width="100%" height={220}>
+          <ReScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="x" name="Index" tick={{ fontSize: 10 }} />
+            <YAxis dataKey="y" name="Valeur" tick={{ fontSize: 10 }} />
+            <ReTooltip cursor={{ strokeDasharray: "3 3" }} />
+            <Scatter data={scatterData} fill={color} />
+          </ReScatterChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  if (chartType === "radar") {
+    return (
+      <div className="py-2">
+        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        <ResponsiveContainer width="100%" height={240}>
+          <RadarChart data={results}>
+            <PolarGrid stroke="#e2e8f0" />
+            <PolarAngleAxis dataKey="label" tick={{ fontSize: 10 }} />
+            <PolarRadiusAxis tick={{ fontSize: 9 }} />
+            <Radar dataKey="value" stroke={color} fill={color} fillOpacity={0.4} />
+            <ReTooltip />
+          </RadarChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  if (chartType === "sankey") {
+    // Simple 2-level Sankey: all results flow from a virtual "Total" source into each label
+    const nodes = [{ name: "Total" }, ...results.map((r) => ({ name: r.label }))];
+    const links = results.map((r, i) => ({ source: 0, target: i + 1, value: r.value || 1 }));
+    return (
+      <div className="py-2">
+        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        <ResponsiveContainer width="100%" height={240}>
+          <Sankey
+            data={{ nodes, links }}
+            nodePadding={20}
+            nodeWidth={12}
+            link={{ stroke: color, strokeOpacity: 0.4 }}
+            node={{ stroke: color, fill: color } as any}
+          >
+            <ReTooltip />
+          </Sankey>
+        </ResponsiveContainer>
       </div>
     );
   }
