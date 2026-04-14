@@ -691,8 +691,50 @@ export default function FinancesPage() {
                 <span className="text-[12px] text-slate-400 ml-auto">{filteredInvoices.length} factures</span>
               </div>
 
+              {/* Mobile card list */}
+              <div className="sm:hidden space-y-2">
+                {filteredInvoices.map((inv) => (
+                  <Card key={inv.id} className="p-3">
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-900 tabular-nums text-[13px]">{inv.docNumber || "—"}</p>
+                        <p className="text-[12px] text-blue-700 font-semibold truncate">{inv.customerName}</p>
+                      </div>
+                      <Badge variant={inv.status === "Paid" ? "success" : inv.status === "Overdue" ? "danger" : "warning"} className="text-[10px] shrink-0">
+                        {inv.status === "Paid" ? "Payée" : inv.status === "Overdue" ? "En retard" : "Ouverte"}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 text-[11.5px]">
+                      <div>
+                        <span className="text-slate-400">Montant</span>
+                        <p className="font-medium text-slate-800 tabular-nums">{fmtMoney(inv.totalAmount)}</p>
+                      </div>
+                      <div>
+                        <span className="text-slate-400">Solde</span>
+                        <p className={cn("font-medium tabular-nums", inv.balance > 0 ? "text-amber-700" : "text-slate-400")}>{fmtMoney(inv.balance)}</p>
+                      </div>
+                      {inv.txnDate && (
+                        <div>
+                          <span className="text-slate-400">Date</span>
+                          <p className="text-slate-600 tabular-nums">{fmtDate(inv.txnDate)}</p>
+                        </div>
+                      )}
+                      {inv.dueDate && (
+                        <div>
+                          <span className="text-slate-400">Échéance</span>
+                          <p className="text-slate-600 tabular-nums">{fmtDate(inv.dueDate)}</p>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+                {filteredInvoices.length === 0 && (
+                  <Card className="p-8 text-center text-sm text-slate-400">Aucune facture trouvée</Card>
+                )}
+              </div>
+
               {/* Invoices table */}
-              <Card className="overflow-hidden">
+              <Card className="overflow-hidden hidden sm:block">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>

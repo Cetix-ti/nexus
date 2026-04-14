@@ -47,14 +47,14 @@ export function PriorityChart({ data }: PriorityChartProps) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
-      <div className="mb-6">
-        <h3 className="text-base font-semibold text-neutral-900">
+    <div className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-6 shadow-sm">
+      <div className="mb-4 sm:mb-6">
+        <h3 className="text-[14px] sm:text-base font-semibold text-neutral-900">
           Tickets par priorité
         </h3>
-        <p className="text-sm text-neutral-500">Répartition actuelle</p>
+        <p className="text-[12px] sm:text-sm text-neutral-500">Répartition actuelle</p>
       </div>
-      <div className="h-[280px] relative">
+      <div className="h-[220px] sm:h-[280px] relative">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie

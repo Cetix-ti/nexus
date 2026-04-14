@@ -257,6 +257,13 @@ export async function createTicket(input: {
   // Auto-calculate SLA due date for the new ticket
   enforceSlaForTicket(t.id).catch(() => {});
 
+  // Notify the assignee by email (fire-and-forget)
+  if (t.assigneeId) {
+    import("@/lib/email/ticket-notifications")
+      .then((m) => m.notifyTicketCreated(t.id))
+      .catch(() => {});
+  }
+
   // Run automation rules (fire-and-forget)
   runAutomations("ticket_created", {
     id: t.id,

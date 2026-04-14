@@ -32,19 +32,19 @@ export function KpiCard({
   return (
     <div
       className={cn(
-        "group relative rounded-xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-all duration-200 hover:border-slate-300 hover:shadow-[0_4px_12px_rgba(15,23,42,0.06)]",
+        "group relative rounded-xl border border-slate-200/80 bg-white p-3.5 sm:p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-all duration-200 hover:border-slate-300 hover:shadow-[0_4px_12px_rgba(15,23,42,0.06)]",
         warning && "border-amber-200/80",
         className
       )}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2 sm:gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-slate-500 truncate">
             {label}
           </p>
           <p
             className={cn(
-              "mt-2.5 text-[28px] font-semibold leading-none tracking-[-0.025em] tabular-nums text-slate-900",
+              "mt-1.5 sm:mt-2.5 text-[22px] sm:text-[28px] font-semibold leading-none tracking-[-0.025em] tabular-nums text-slate-900",
               warning && "text-amber-600"
             )}
           >
@@ -53,12 +53,12 @@ export function KpiCard({
         </div>
         <div
           className={cn(
-            "shrink-0 flex h-9 w-9 items-center justify-center rounded-lg ring-1 ring-inset transition-transform duration-200 group-hover:scale-105",
+            "shrink-0 flex h-7 w-7 sm:h-9 sm:w-9 items-center justify-center rounded-lg ring-1 ring-inset transition-transform duration-200 group-hover:scale-105",
             iconBg,
             "ring-current/10"
           )}
         >
-          <Icon className={cn("h-[18px] w-[18px]", iconColor)} strokeWidth={2.25} />
+          <Icon className={cn("h-[14px] w-[14px] sm:h-[18px] sm:w-[18px]", iconColor)} strokeWidth={2.25} />
         </div>
       </div>
       {trend && (

@@ -401,7 +401,33 @@ export default function MySpacePage() {
             </Link>
           </div>
 
-          <Card className="overflow-hidden">
+          {/* Mobile cards */}
+          <div className="sm:hidden space-y-2">
+            {(data?.recentTimeEntries ?? []).map((e) => (
+              <Card key={e.id} onClick={() => router.push(`/tickets/${e.ticketId}`)} className="p-3 cursor-pointer hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/tickets/${e.ticketId}`} className="text-[12px] text-blue-600 hover:underline font-medium">#{e.ticketNumber}</Link>
+                    <p className="text-[12px] text-slate-700 truncate">{e.ticketSubject}</p>
+                  </div>
+                  <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{fmtDate(e.date)}</span>
+                </div>
+                {e.description && <p className="text-[11.5px] text-slate-600 mb-1.5 line-clamp-2">{e.description}</p>}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <div className={cn("h-2 w-2 rounded-full", COVERAGE_COLORS[e.coverageStatus] ?? "bg-slate-300")} />
+                    <span className="text-[11px] text-slate-600">{COVERAGE_LABELS[e.coverageStatus] ?? e.coverageStatus}</span>
+                  </div>
+                  <span className="text-[12px] font-semibold tabular-nums text-slate-800">
+                    {Math.round(e.durationMinutes / 6) / 10}h
+                  </span>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <Card className="overflow-hidden hidden sm:block">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>

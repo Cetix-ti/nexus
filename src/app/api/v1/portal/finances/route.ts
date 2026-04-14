@@ -6,6 +6,10 @@ export async function GET() {
   try {
     const user = await getCurrentPortalUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Only portal admins/managers with canSeeBillingReports can view finances
+    if (!user.permissions.canSeeBillingReports && user.portalRole !== "ADMIN") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const orgId = user.organizationId;
 

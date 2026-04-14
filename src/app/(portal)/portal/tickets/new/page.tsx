@@ -55,21 +55,18 @@ export default function PortalNewTicketPage() {
     if (!subject.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/v1/tickets", {
+      const res = await fetch("/api/v1/portal/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           subject,
           description,
-          organizationName,
           category: (() => {
             // Use the most specific selected category
             const catId = catLevel3 || catLevel2 || catLevel1;
             return allCategories.find((c) => c.id === catId)?.name || category;
           })(),
           priority,
-          type: "incident",
-          source: "portal",
         }),
       });
       if (res.ok) {

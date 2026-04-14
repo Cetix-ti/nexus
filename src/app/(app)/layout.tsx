@@ -68,8 +68,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Mobile content */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="px-4 py-4 min-w-0">{children}</div>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50">
+          <div className="px-3 py-3 min-w-0">{children}</div>
         </main>
 
         {/* Mobile sidebar overlay */}

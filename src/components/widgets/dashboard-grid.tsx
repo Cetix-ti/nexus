@@ -314,7 +314,7 @@ export function DashboardGrid({
         <div
           data-grid-container
           className={cn(
-            "grid gap-4",
+            "grid gap-3 sm:gap-4",
             editMode && "bg-slate-50/50 rounded-2xl p-4 ring-1 ring-dashed ring-slate-200"
           )}
           style={{ gridTemplateColumns: isMobile ? "1fr" : `repeat(${GRID_COLS}, 1fr)` }}

@@ -95,6 +95,9 @@ export async function GET(req: Request) {
   const includeInactive = url.searchParams.get("includeInactive") === "true";
   const includeSystem = url.searchParams.get("includeSystem") === "true";
 
+  // Lightweight list — exclude heavy fields (avatar, signature*)
+  // to keep the payload small. Fetch individual user for full data.
+  const includeAvatar = url.searchParams.get("includeAvatar") === "true";
   const users = await prisma.user.findMany({
     where: {
       ...(role
@@ -106,9 +109,33 @@ export async function GET(req: Request) {
         : { email: { not: "freshservice-import@cetix.ca" } }),
     },
     orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      role: true,
+      phone: true,
+      isActive: true,
+      lastLoginAt: true,
+      ...(includeAvatar ? { avatar: true } : {}),
+    },
   });
 
-  return NextResponse.json(users.map(serializeUser));
+  return NextResponse.json(
+    users.map((u) => ({
+      id: u.id,
+      email: u.email,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      name: `${u.firstName} ${u.lastName}`.trim(),
+      role: u.role,
+      avatar: (u as any).avatar ?? null,
+      phone: u.phone,
+      isActive: u.isActive,
+      lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
+    })),
+  );
 }
 
 export async function POST(req: Request) {

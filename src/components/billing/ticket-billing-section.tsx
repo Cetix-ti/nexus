@@ -396,7 +396,49 @@ function EntryList({
     );
   }
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200/80">
+    <>
+    {/* Mobile card list */}
+    <div className="sm:hidden space-y-2">
+      {rows.map((r) => (
+        <div key={r.id} className="rounded-lg border border-slate-200 bg-white p-3">
+          <div className="flex items-start justify-between gap-2 mb-1.5">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <span className="text-[14px] leading-none">{r.icon}</span>
+              <span className="text-[12.5px] font-medium text-slate-700 truncate">{r.label}</span>
+            </div>
+            <span className="text-[11px] text-slate-400 whitespace-nowrap shrink-0">
+              {format(new Date(r.date), "dd MMM")}
+            </span>
+          </div>
+          {r.description && (
+            <p className="text-[12px] text-slate-600 mb-1.5 break-words">{r.description}</p>
+          )}
+          <div className="flex items-center justify-between flex-wrap gap-1.5">
+            <div className="flex items-center gap-1.5">
+              <Avatar className="h-4 w-4"><AvatarFallback className="text-[8px]">{getInitials(r.agent)}</AvatarFallback></Avatar>
+              <span className="text-[11px] text-slate-500 truncate">{r.agent}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] font-semibold text-slate-800 tabular-nums">{r.metric}</span>
+              <CoverageBadge status={r.coverageStatus} reason={r.coverageReason} />
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-1 mt-2 pt-2 border-t border-slate-100">
+            {onEdit && (
+              <button onClick={() => onEdit(r.id)} className="text-[11px] text-slate-500 hover:text-blue-600 px-2 py-0.5">
+                Modifier
+              </button>
+            )}
+            <button onClick={() => onDelete(r.id)} className="text-[11px] text-red-500 hover:text-red-700 px-2 py-0.5">
+              Supprimer
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    {/* Desktop table */}
+    <div className="hidden sm:block overflow-hidden rounded-xl border border-slate-200/80">
       <div className="overflow-x-auto"><table className="w-full text-[13px]">
         <thead className="bg-slate-50/70">
           <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -464,5 +506,6 @@ function EntryList({
         </tbody>
       </table></div>
     </div>
+    </>
   );
 }

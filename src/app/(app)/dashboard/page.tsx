@@ -100,7 +100,7 @@ export default function DashboardPage() {
     switch (widgetId) {
       case "w_dash_kpis":
         return (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6 p-2">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-6 p-1 sm:p-2">
             <KpiCard label="Tickets ouverts" value={data.stats.openTickets} icon={Ticket} iconColor="text-blue-600" iconBg="bg-blue-50" />
             <KpiCard label="Non assignés" value={data.stats.unassigned} icon={Users} iconColor="text-orange-600" iconBg="bg-orange-50" warning={data.stats.unassigned > 0} />
             <KpiCard label="En retard" value={data.stats.overdue} icon={AlertTriangle} iconColor="text-red-600" iconBg="bg-red-50" warning={data.stats.overdue > 0} />
@@ -134,7 +134,8 @@ export default function DashboardPage() {
             {greeting}{firstName ? `, ${firstName}` : ""}. Voici l&apos;état du service desk.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* Edit mode is hidden on mobile — not practical with touch */}
+        <div className="hidden sm:flex items-center gap-2">
           <Button variant={editMode ? "primary" : "outline"} size="sm" onClick={() => setEditMode(!editMode)}>
             <LayoutDashboard className="h-3.5 w-3.5" />
             {editMode ? "Terminer" : "Éditer"}

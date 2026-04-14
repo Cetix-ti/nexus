@@ -240,7 +240,57 @@ export default function OrganizationsPage() {
       {!loaded ? (
         <PageLoader variant="table" rows={8} label="Chargement des organisations…" />
       ) : (
-      <Card className="overflow-hidden">
+      <>
+      {/* Mobile card list */}
+      <div className="sm:hidden space-y-2">
+        {filtered.length === 0 ? (
+          <Card className="p-8 text-center text-sm text-gray-400">Aucune organisation trouvée.</Card>
+        ) : (
+          filtered.map((org) => (
+            <Link key={org.id} href={`/organisations/${encodeURIComponent(org.slug || org.name)}`}>
+              <Card className="p-3.5 hover:shadow-md transition-shadow">
+                <div className="flex items-center gap-3">
+                  {org.logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={org.logo} alt={org.name} className="h-11 w-11 shrink-0 rounded-lg object-contain bg-white ring-1 ring-slate-200" />
+                  ) : (
+                    <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-base font-bold text-white", org.color)}>
+                      {org.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-gray-900 truncate">{org.name}</p>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant={billingModeBadgeVariant(org.billingMode)} className="text-[10px]">
+                        {CONTRACT_TYPE_LABELS[org.billingMode]}
+                      </Badge>
+                      <Badge variant={contractBadgeVariant(org.contractStatus)} className="text-[10px]">
+                        {org.contractStatus}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1.5 text-[11px] text-gray-500">
+                      <span>{org.contacts} contact{org.contacts > 1 ? "s" : ""}</span>
+                      <span>·</span>
+                      <span>{org.sites} site{org.sites > 1 ? "s" : ""}</span>
+                      {org.openTickets > 0 && (
+                        <>
+                          <span>·</span>
+                          <span className="text-blue-600 font-medium">{org.openTickets} billet{org.openTickets > 1 ? "s" : ""}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          ))
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <Card className="overflow-hidden hidden sm:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -377,6 +427,7 @@ export default function OrganizationsPage() {
           </table>
         </div>
       </Card>
+      </>
       )}
 
       <EditOrgModal

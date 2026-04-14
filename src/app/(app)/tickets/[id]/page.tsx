@@ -810,8 +810,8 @@ export default function TicketDetailPage() {
           </div>
         </div>
 
-        {/* Right: Sidebar */}
-        <div className="w-full lg:w-80 flex-shrink-0 overflow-y-auto bg-gray-50/50">
+        {/* Right: Sidebar — on mobile, appears BEFORE main content via order; collapsible on small screens */}
+        <div className="w-full lg:w-80 flex-shrink-0 overflow-y-auto bg-gray-50/50 order-first lg:order-none">
           <div className="p-5 space-y-5">
             {/* Status & Priority */}
             <SidebarSection title="Détails">

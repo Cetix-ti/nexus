@@ -29,10 +29,10 @@ const TYPE_MAP: Record<string, string> = {
   workstation: "WORKSTATION",
   laptop: "LAPTOP",
   printer: "PRINTER",
-  network: "NETWORK_DEVICE",
-  switch: "NETWORK_DEVICE",
-  router: "NETWORK_DEVICE",
-  firewall: "NETWORK_DEVICE",
+  network: "NETWORK",
+  switch: "NETWORK",
+  router: "NETWORK",
+  firewall: "NETWORK",
 };
 
 // Prisma DB enum → frontend UI type labels
@@ -41,7 +41,7 @@ const DB_TYPE_TO_UI: Record<string, string> = {
   LAPTOP: "laptop",
   SERVER: "windows_server",
   VIRTUAL_MACHINE: "server_virtual",
-  NETWORK_DEVICE: "network_switch",
+  NETWORK: "network_switch",
   PRINTER: "printer",
   MOBILE: "laptop",
   OTHER: "workstation",

@@ -383,12 +383,18 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
   }
 
   async function handleDelete(id: string) {
+    if (!confirm("Supprimer définitivement cet actif ? Cette action est irréversible.")) return;
     try {
-      await fetch(`/api/v1/assets/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const res = await fetch(`/api/v1/assets/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        alert("Erreur lors de la suppression de l'actif.");
+        return;
+      }
+      setAssets((prev) => prev.filter((a) => a.id !== id));
     } catch (e) {
       console.error("Asset delete failed:", e);
+      alert("Erreur réseau lors de la suppression.");
     }
-    setAssets((prev) => prev.filter((a) => a.id !== id));
   }
 
   function openCreate() {

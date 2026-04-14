@@ -27,7 +27,7 @@ export async function GET(
     LAPTOP: "laptop",
     SERVER: "windows_server",
     VIRTUAL_MACHINE: "server_virtual",
-    NETWORK_DEVICE: "network_switch",
+    NETWORK: "network_switch",
     PRINTER: "printer",
     MOBILE: "laptop",
     OTHER: "workstation",
@@ -87,24 +87,70 @@ export async function POST(
       );
     }
 
-    const asset = await prisma.asset.create({
-      data: {
-        organizationId: id,
-        name: body.name,
-        type: (body.type as string).toUpperCase() as any,
-        status: body.status ? (body.status as string).toUpperCase() as any : "ACTIVE",
-        manufacturer: body.manufacturer,
-        model: body.model,
-        serialNumber: body.serialNumber,
-        ipAddress: body.ipAddress,
-        macAddress: body.macAddress,
-        notes: body.notes,
-        assignedContactId: body.assignedContactId || null,
-      },
-    });
+    // Map UI asset types to DB enum
+    const UI_TO_DB_TYPE: Record<string, string> = {
+      workstation: "WORKSTATION",
+      laptop: "LAPTOP",
+      server_physical: "SERVER",
+      server_virtual: "VIRTUAL_MACHINE",
+      windows_server: "SERVER",
+      linux_server: "SERVER",
+      hypervisor: "SERVER",
+      nas: "SERVER",
+      san: "SERVER",
+      network_switch: "NETWORK",
+      router: "NETWORK",
+      firewall: "NETWORK",
+      wifi_ap: "NETWORK",
+      ups: "PERIPHERAL",
+      printer: "PRINTER",
+      ip_phone: "PERIPHERAL",
+      monitoring_appliance: "NETWORK",
+      tape_library: "PERIPHERAL",
+      cloud_resource: "CLOUD_RESOURCE",
+    };
+    const rawType = String(body.type || "").toLowerCase();
+    const dbType = UI_TO_DB_TYPE[rawType] || rawType.toUpperCase();
 
-    return NextResponse.json(asset, { status: 201 });
-  } catch {
+    // Store UI-specific type in metadata for round-trip
+    const metadata: Record<string, unknown> = {};
+    if (UI_TO_DB_TYPE[rawType]) metadata.uiType = rawType;
+    if (body.os) metadata.os = body.os;
+    if (body.osVersion) metadata.osVersion = body.osVersion;
+    if (body.cpuModel) metadata.cpuModel = body.cpuModel;
+    if (body.cpuCores) metadata.cpuCores = body.cpuCores;
+    if (body.ramGb) metadata.ramGb = body.ramGb;
+    if (body.storageGb) metadata.storageGb = body.storageGb;
+    if (body.fqdn) metadata.fqdn = body.fqdn;
+    if (body.rackPosition) metadata.rackPosition = body.rackPosition;
+    if (body.assetTag) metadata.assetTag = body.assetTag;
+
+    try {
+      const asset = await prisma.asset.create({
+        data: {
+          organizationId: id,
+          name: body.name,
+          type: dbType as any,
+          status: body.status ? (body.status as string).toUpperCase() as any : "ACTIVE",
+          manufacturer: body.manufacturer || null,
+          model: body.model || null,
+          serialNumber: body.serialNumber || null,
+          ipAddress: body.ipAddress || null,
+          macAddress: body.macAddress || null,
+          notes: body.notes || null,
+          assignedContactId: body.assignedContactId || null,
+          purchaseDate: body.purchaseDate ? new Date(body.purchaseDate) : null,
+          warrantyExpiry: body.warrantyExpiry ? new Date(body.warrantyExpiry) : null,
+          metadata: Object.keys(metadata).length > 0 ? (metadata as any) : undefined,
+        },
+      });
+      return NextResponse.json(asset, { status: 201 });
+    } catch (err) {
+      console.error("[assets POST] create failed:", err);
+      return NextResponse.json({ error: "Type d'actif invalide ou données incorrectes" }, { status: 422 });
+    }
+  } catch (err) {
+    console.error("[assets POST]", err);
     return NextResponse.json({ error: "Corps de requête invalide" }, { status: 400 });
   }
 }

@@ -54,20 +54,22 @@ export async function POST(
   }
 
   // Comment.authorId references User, but portal users are Contacts.
-  // Find or create a lightweight User record for this portal contact.
+  // Find or create a lightweight SHADOW User record for this portal contact.
+  // CRITICAL: shadow users must be isActive=false so getCurrentUser() blocks
+  // them — they cannot authenticate as agents. They also have no password.
   let authorUser = await prisma.user.findUnique({
     where: { email: user.email },
   });
 
   if (!authorUser) {
-    // Create a minimal CLIENT_USER record so the comment FK is satisfied
     authorUser = await prisma.user.create({
       data: {
         email: user.email,
         firstName: user.name.split(" ")[0] || "Utilisateur",
         lastName: user.name.split(" ").slice(1).join(" ") || "",
         role: "CLIENT_USER",
-        isActive: true,
+        isActive: false, // shadow — cannot authenticate as agent
+        externalSource: "portal_shadow",
       },
     });
   }

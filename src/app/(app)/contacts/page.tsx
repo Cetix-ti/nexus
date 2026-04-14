@@ -33,6 +33,10 @@ import { PORTAL_ROLE_LABELS, type ClientPortalPermissions } from "@/lib/projects
 
 // Portal roles are determined from the portalEnabled field returned by the API
 
+function getInitials(firstName: string, lastName: string): string {
+  return `${(firstName || "")[0] ?? ""}${(lastName || "")[0] ?? ""}`.toUpperCase();
+}
+
 function portalRoleBadgeVariant(role?: ClientPortalPermissions["portalRole"]): "danger" | "warning" | "primary" | "default" {
   if (role === "admin") return "danger";
   if (role === "manager") return "warning";
@@ -239,7 +243,66 @@ export default function ContactsPage() {
       {!loaded ? (
         <PageLoader variant="table" rows={8} label="Chargement des contacts…" />
       ) : (
-      <Card className="overflow-hidden">
+      <>
+      {/* Mobile card list */}
+      <div className="sm:hidden space-y-2">
+        {filtered.length === 0 ? (
+          <Card className="p-8 text-center text-sm text-gray-400">Aucun contact trouvé.</Card>
+        ) : (
+          filtered.map((contact) => (
+            <Card key={contact.id} className="p-3.5">
+              <div className="flex items-start gap-3">
+                <div
+                  className={cn(
+                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white",
+                    contact.color,
+                  )}
+                >
+                  {getInitials(contact.firstName, contact.lastName)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    {contact.vip && <Star className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+                    <p className="font-semibold text-gray-900 truncate">{contact.firstName} {contact.lastName}</p>
+                  </div>
+                  <p className="text-[12px] text-gray-500 truncate">{contact.email}</p>
+                  <Link
+                    href={`/organisations/${encodeURIComponent(contact.organization || contact.organizationId || "")}`}
+                    className="text-[12px] text-blue-600 hover:underline truncate block"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {contact.organization}
+                  </Link>
+                  {contact.jobTitle && (
+                    <p className="text-[11px] text-gray-400 truncate mt-0.5">{contact.jobTitle}</p>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <button
+                    onClick={() =>
+                      setEditingContact({
+                        id: contact.id,
+                        name: `${contact.firstName} ${contact.lastName}`,
+                        email: contact.email,
+                        phone: contact.phone,
+                        jobTitle: contact.jobTitle ?? undefined,
+                        organization: contact.organization,
+                        isVIP: contact.vip,
+                      })
+                    }
+                    className="text-slate-400 hover:text-blue-600 p-1"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <Card className="overflow-hidden hidden sm:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -365,6 +428,7 @@ export default function ContactsPage() {
           </table>
         </div>
       </Card>
+      </>
       )}
 
       <EditContactModal

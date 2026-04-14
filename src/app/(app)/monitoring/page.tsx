@@ -126,6 +126,12 @@ function timeAgo(iso: string): string {
  * Priority: alertGroupKey (server-parsed) → subject patterns.
  */
 function extractHostname(alert: MonAlert): string | null {
+  const subject = alert.subject || "";
+
+  // Atera: "Alerte; (Organisation > HOSTNAME) Problème"
+  const ateraParens = subject.match(/\(\s*[^>()]+>\s*([A-Za-z0-9][A-Za-z0-9_\-\.]+)\s*\)/);
+  if (ateraParens) return ateraParens[1].toUpperCase();
+
   // Try alertGroupKey first (format "source:host:desc" from email-sync)
   if (alert.alertGroupKey) {
     const parts = alert.alertGroupKey.split(":");
@@ -133,16 +139,27 @@ function extractHostname(alert: MonAlert): string | null {
       return parts[1].toUpperCase();
     }
   }
-  const subject = alert.subject || "";
+
   // Zabbix: "Problem: X on HOSTNAME"
   const onMatch = subject.match(/\bon\s+([A-Za-z0-9][A-Za-z0-9_\-\.]{2,})/i);
   if (onMatch) return onMatch[1].toUpperCase();
-  // Atera: "HOSTNAME is offline" / "[Atera] HOSTNAME ..."
-  const ateraMatch = subject.match(/^\s*(?:\[[^\]]+\]\s*)?([A-Z][A-Z0-9][A-Z0-9_\-]+)/);
-  if (ateraMatch) return ateraMatch[1];
-  // Generic: any prefix-hostname token
+  // Generic: any prefix-hostname token like BDU-LAP-01 or VDSA_SRV_02
   const prefixMatch = subject.match(/\b([A-Z]{2,6}[-_][A-Z0-9_\-]{2,})\b/);
   if (prefixMatch) return prefixMatch[1];
+  // Fallback: uppercase word with digits (e.g. "PCMAN1", "SRV01")
+  const upperWord = subject.match(/\b([A-Z][A-Z0-9]{3,})\b/);
+  if (upperWord) return upperWord[1];
+  return null;
+}
+
+/**
+ * Extract organization name from Atera subjects like
+ * "Alerte; (Ville de Sainte-Adèle > VDSA-LAP-15) Problème"
+ */
+function extractOrgFromSubject(alert: MonAlert): string | null {
+  const subject = alert.subject || "";
+  const match = subject.match(/\(\s*([^>()]+?)\s*>\s*[^()]+\)/);
+  if (match && match[1]) return match[1].trim();
   return null;
 }
 
@@ -316,9 +333,48 @@ export default function MonitoringPage() {
         </div>
       )}
 
-      {/* Table view — always shown on mobile, toggle on desktop */}
+      {/* Mobile card view — always visible on mobile */}
+      <div className="sm:hidden space-y-2">
+        {filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map((a) => {
+          const sev = SEVERITY_CONFIG[a.severity] ?? SEVERITY_CONFIG.WARNING;
+          const stageCfg = STAGE_CONFIG[a.stage] ?? STAGE_CONFIG.TRIAGE;
+          const SrcIcon = SOURCE_ICONS[a.sourceType] ?? Bell;
+          const extractedOrgName = extractOrgFromSubject(a);
+          const displayOrgName = a.organizationName || extractedOrgName;
+          const hostname = extractHostname(a);
+          return (
+            <Card key={a.id} onClick={() => setOpenedAlert(a)} className={cn("p-3 cursor-pointer hover:shadow-md transition-shadow", a.isResolved && "opacity-50")}>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex items-center gap-1.5">
+                  <SrcIcon className="h-3 w-3 text-slate-400" />
+                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{a.sourceType}</span>
+                </div>
+                <Badge variant={sev.variant} className="text-[9px]">{sev.label}</Badge>
+              </div>
+              {hostname && (
+                <p className="text-[13px] font-semibold text-slate-900 font-mono tracking-tight mb-0.5">{hostname}</p>
+              )}
+              {displayOrgName && (
+                <p className="text-[11.5px] text-slate-600 mb-1.5">{displayOrgName}</p>
+              )}
+              <p className="text-[11.5px] text-slate-600 line-clamp-2 mb-2">{a.subject}</p>
+              <div className="flex items-center justify-between">
+                <span className={cn("text-[10.5px] px-2 py-0.5 rounded-md", stageCfg.bg, stageCfg.color)}>
+                  {stageCfg.label}
+                </span>
+                <span className="text-[10px] text-slate-400">{timeAgo(a.receivedAt)}</span>
+              </div>
+            </Card>
+          );
+        })}
+        {filtered.length === 0 && (
+          <Card className="p-8 text-center text-sm text-slate-400">Aucune alerte.</Card>
+        )}
+      </div>
+
+      {/* Desktop table view */}
       {(viewMode === "table" || true) && (
-        <div className={viewMode === "kanban" ? "sm:hidden" : ""}>
+        <div className={cn("hidden sm:block", viewMode === "kanban" && "sm:hidden")}>
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -541,7 +597,10 @@ function MonitoringKanban({
                   {stageAlerts.slice(0, 30).map((a) => {
                     const sev = SEVERITY_CONFIG[a.severity] ?? SEVERITY_CONFIG.WARNING;
                     const SrcIcon = SOURCE_ICONS[a.sourceType] ?? Bell;
-                    const logo = a.organizationName ? orgLogos[a.organizationName] : null;
+                    // Resolve org name: DB first, then extract from subject (Atera)
+                    const extractedOrgName = extractOrgFromSubject(a);
+                    const displayOrgName = a.organizationName || extractedOrgName;
+                    const logo = displayOrgName ? orgLogos[displayOrgName] : null;
                     const hostname = extractHostname(a);
 
                     return (
@@ -571,10 +630,10 @@ function MonitoringKanban({
                               {logo ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={logo} alt="" className="h-[22px] w-[22px] rounded object-contain bg-white ring-1 ring-slate-200/80 shrink-0" />
-                              ) : a.organizationName ? (
+                              ) : displayOrgName ? (
                                 <div className="h-[22px] w-[22px] rounded bg-slate-100 ring-1 ring-slate-200/80 flex items-center justify-center shrink-0">
                                   <span className="text-[8px] font-bold text-slate-500">
-                                    {a.organizationName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                                    {displayOrgName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
                                   </span>
                                 </div>
                               ) : (
@@ -589,12 +648,12 @@ function MonitoringKanban({
                                   </p>
                                 ) : (
                                   <p className="text-[12.5px] font-semibold text-slate-900 truncate leading-tight">
-                                    {a.organizationName ?? "Endpoint inconnu"}
+                                    {displayOrgName ?? "Endpoint inconnu"}
                                   </p>
                                 )}
-                                {hostname && a.organizationName && (
+                                {hostname && displayOrgName && (
                                   <p className="text-[10.5px] text-slate-500 truncate mt-0.5">
-                                    {a.organizationName}
+                                    {displayOrgName}
                                   </p>
                                 )}
                               </div>

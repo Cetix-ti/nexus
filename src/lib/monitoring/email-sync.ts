@@ -168,16 +168,23 @@ function detectSource(subject: string, senderEmail: string, body: string): Detec
   let alertGroupKey: string | null = null;
   let extractedHost: string | null = null;
 
+  // Atera: "Alerte; (Organisation > HOSTNAME) Problème"
+  // This is the most specific Atera pattern — try first
+  const ateraParensMatch = subject.match(/\(\s*[^>()]+>\s*([A-Za-z0-9][A-Za-z0-9_\-\.]+)\s*\)/);
+  if (ateraParensMatch) {
+    extractedHost = ateraParensMatch[1];
+  }
+
   // Zabbix: "Problem: <description> on <host>"
   const zabbixMatch = subject.match(/(?:Problem|Resolved|OK):\s*(.+?)(?:\s+on\s+(.+))?$/i);
   if (zabbixMatch) {
     const desc = zabbixMatch[1]?.trim().slice(0, 80);
     const host = zabbixMatch[2]?.trim().slice(0, 50);
-    if (host) extractedHost = host;
-    alertGroupKey = `${sourceType}:${host || "unknown"}:${desc}`.toLowerCase();
+    if (host && !extractedHost) extractedHost = host;
+    alertGroupKey = `${sourceType}:${extractedHost || "unknown"}:${desc}`.toLowerCase();
   }
 
-  // Atera pattern: "<HOSTNAME> is offline" / "Alert on HOSTNAME" / "[Atera] HOSTNAME: message"
+  // Other Atera patterns if not matched above
   if (!extractedHost && sourceType === "atera") {
     const ateraPatterns = [
       /^\s*(?:\[[^\]]+\]\s*)?([A-Z][A-Z0-9][A-Z0-9_\-]+)\s*(?:[:-]|is|has|disconnected|offline|online)/i,
@@ -211,6 +218,7 @@ function detectSource(subject: string, senderEmail: string, body: string): Detec
 interface OrgMaps {
   domainMap: Map<string, { id: string; name: string }>;
   clientCodeMap: Map<string, { id: string; name: string }>;
+  nameMap: Map<string, { id: string; name: string }>;
 }
 
 async function buildOrgMaps(): Promise<OrgMaps> {
@@ -219,6 +227,7 @@ async function buildOrgMaps(): Promise<OrgMaps> {
   });
   const domainMap = new Map<string, { id: string; name: string }>();
   const clientCodeMap = new Map<string, { id: string; name: string }>();
+  const nameMap = new Map<string, { id: string; name: string }>();
   for (const org of orgs) {
     if (org.domain) domainMap.set(org.domain.toLowerCase(), { id: org.id, name: org.name });
     for (const d of org.domains ?? []) {
@@ -228,8 +237,16 @@ async function buildOrgMaps(): Promise<OrgMaps> {
     if (org.clientCode) {
       clientCodeMap.set(org.clientCode.toUpperCase(), { id: org.id, name: org.name });
     }
+    // Map org name (normalized) → org (for Atera subjects with org name in parens)
+    nameMap.set(org.name.toLowerCase().trim(), { id: org.id, name: org.name });
   }
-  return { domainMap, clientCodeMap };
+  return { domainMap, clientCodeMap, nameMap };
+}
+
+/** Extract organization name from an Atera-style subject line */
+function extractOrgNameFromSubject(subject: string): string | null {
+  const match = subject.match(/\(\s*([^>()]+?)\s*>\s*[^()]+\)/);
+  return match && match[1] ? match[1].trim() : null;
 }
 
 /** Extract client code prefix from Zabbix host name (e.g., "BDU_SERVER01" → "BDU") */
@@ -290,7 +307,7 @@ export async function syncMonitoringAlerts(
   let skipped = 0;
 
   try {
-    const { domainMap, clientCodeMap } = await buildOrgMaps();
+    const { domainMap, clientCodeMap, nameMap } = await buildOrgMaps();
 
     // Determine since date
     // sinceDays: undefined = incremental, 0 = all history, N = last N days
@@ -343,10 +360,17 @@ export async function syncMonitoringAlerts(
 
               const detected = detectSource(msg.subject, senderEmail, bodyText);
 
-              // Match org: try domain first, then host prefix (from extracted hostname) → client code
+              // Match org: try multiple strategies in order
               let org = domainMap.get(senderDomain);
+              // Atera: org name in parens "(Organisation > HOST)"
+              if (!org) {
+                const orgFromSubject = extractOrgNameFromSubject(msg.subject);
+                if (orgFromSubject) {
+                  org = nameMap.get(orgFromSubject.toLowerCase().trim()) ?? undefined;
+                }
+              }
+              // Zabbix: extract client code from hostname prefix
               if (!org && detected.hostname) {
-                // Extract prefix from hostname: "BDU_SERVER01" → "BDU"
                 const prefixMatch = detected.hostname.match(/^([A-Za-z]{2,6})[-_]/);
                 if (prefixMatch) {
                   org = clientCodeMap.get(prefixMatch[1].toUpperCase()) ?? undefined;

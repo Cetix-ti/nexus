@@ -43,9 +43,10 @@ export function TicketCard({ ticket, onClick }: TicketCardProps) {
   const PriorityCfg = PRIORITY_ICONS[ticket.priority];
   const PriorityIcon = PriorityCfg.Icon;
   const orgLogo = useOrgLogosStore((s) => s.logos[ticket.organizationName]);
-  const assigneeAvatar = ticket.assigneeName
-    ? useAgentAvatarsStore((s) => s.avatars[ticket.assigneeName!])
-    : null;
+  // Always subscribe; nullify in the selector if no assignee (avoid conditional hook)
+  const assigneeAvatar = useAgentAvatarsStore((s) =>
+    ticket.assigneeName ? s.avatars[ticket.assigneeName] : null
+  );
   const isNew =
     Date.now() - new Date(ticket.createdAt).getTime() < 60 * 60 * 1000;
 

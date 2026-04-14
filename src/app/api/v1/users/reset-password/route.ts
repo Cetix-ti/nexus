@@ -18,6 +18,12 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 export async function POST(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // ALL password reset modes require admin — this endpoint is NOT for
+  // self-serve password reset (that's /request + /confirm). Otherwise
+  // any authenticated user could reset another user's password.
+  if (!hasMinimumRole(me.role, "SUPERVISOR")) {
+    return NextResponse.json({ error: "Permissions insuffisantes" }, { status: 403 });
+  }
 
   const body = await req.json();
   const userId = body.userId;

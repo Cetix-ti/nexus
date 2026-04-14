@@ -114,3 +114,21 @@ export function hasMinimumRole(
 ): boolean {
   return getRoleLevel(userRole) <= getRoleLevel(minimumRole);
 }
+
+/**
+ * Returns true if the role is a staff role (MSP side), false for CLIENT_* roles.
+ */
+export function isStaffRole(role: UserRole): boolean {
+  return !role.startsWith("CLIENT_") && role !== "READ_ONLY";
+}
+
+/**
+ * Require the current user to be staff (not a CLIENT_* role).
+ * Returns the user if staff, null otherwise (caller should return 403).
+ */
+export async function getCurrentStaff(): Promise<AuthUser | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+  if (user.role.startsWith("CLIENT_")) return null;
+  return user;
+}

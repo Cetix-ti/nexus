@@ -68,14 +68,14 @@ export function RecentTickets({
 }: RecentTicketsProps) {
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between p-5 pb-3">
-        <h3 className="text-base font-semibold text-neutral-900">{title}</h3>
+      <div className="flex items-center justify-between p-4 sm:p-5 pb-3">
+        <h3 className="text-[14px] sm:text-base font-semibold text-neutral-900">{title}</h3>
         <Link
           href="/tickets"
-          className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+          className="flex items-center gap-1 text-[12px] sm:text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
         >
           Voir tout
-          <ArrowRight className="h-3.5 w-3.5" />
+          <ArrowRight className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
         </Link>
       </div>
       <div className="divide-y divide-neutral-100">
@@ -83,7 +83,7 @@ export function RecentTickets({
           <Link
             key={ticket.id}
             href={`/tickets/${ticket.id}`}
-            className="flex items-center gap-3 px-5 py-3 hover:bg-neutral-50 transition-colors cursor-pointer"
+            className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-2.5 sm:py-3 hover:bg-neutral-50 transition-colors cursor-pointer"
           >
             <span
               className={cn(
@@ -91,10 +91,10 @@ export function RecentTickets({
                 priorityDot[ticket.priority]
               )}
             />
-            <span className="text-sm font-mono text-neutral-400 shrink-0">
+            <span className="text-[11.5px] sm:text-sm font-mono text-neutral-400 shrink-0">
               #{ticket.number}
             </span>
-            <span className="text-sm font-medium text-neutral-900 truncate min-w-0 flex-1">
+            <span className="text-[12.5px] sm:text-sm font-medium text-neutral-900 truncate min-w-0 flex-1">
               {ticket.subject}
             </span>
             {showAssignee && ticket.assignee && (
@@ -105,10 +105,10 @@ export function RecentTickets({
             <Badge variant="outline" className="shrink-0 hidden sm:inline-flex text-[11px]">
               {ticket.organization}
             </Badge>
-            <Badge variant={statusVariant[ticket.status]} className="shrink-0 text-[11px]">
+            <Badge variant={statusVariant[ticket.status]} className="shrink-0 text-[10px] sm:text-[11px]">
               {STATUS_LABELS[ticket.status] ?? ticket.status}
             </Badge>
-            <span className="text-xs text-neutral-400 shrink-0 w-16 text-right">
+            <span className="text-[10px] sm:text-xs text-neutral-400 shrink-0 w-12 sm:w-16 text-right">
               {timeAgo(ticket.createdAt)}
             </span>
           </Link>

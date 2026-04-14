@@ -317,7 +317,48 @@ export default function AssetsPage() {
       {!loaded ? (
         <PageLoader variant="table" rows={8} label="Chargement des actifs…" />
       ) : (
-      <Card>
+      <>
+      {/* Mobile card list */}
+      <div className="sm:hidden space-y-2">
+        {filtered.length === 0 ? (
+          <Card className="p-8 text-center text-sm text-neutral-400">Aucun actif trouvé.</Card>
+        ) : (
+          filtered.map((asset) => {
+            const typeConf = TYPE_CONFIG[asset.type];
+            const statusConf = STATUS_CONFIG[asset.status];
+            const TypeIcon = typeConf.icon;
+            return (
+              <Link key={asset.id} href={`/assets/${asset.id}`}>
+                <Card className="p-3.5 hover:shadow-md transition-shadow">
+                  <div className="flex items-start gap-3">
+                    <div className={cn("h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0", typeConf.color)}>
+                      <TypeIcon className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="font-semibold text-neutral-900 truncate font-mono text-[13px]">{asset.name}</p>
+                        <Badge variant={statusConf.variant} className="text-[10px] shrink-0">{statusConf.label}</Badge>
+                      </div>
+                      <p className="text-[11.5px] text-neutral-500 truncate">
+                        {typeConf.label}{asset.manufacturer ? ` · ${asset.manufacturer}` : ""}{asset.model ? ` ${asset.model}` : ""}
+                      </p>
+                      <p className="text-[11px] text-neutral-400 truncate">{asset.organization}</p>
+                      <div className="flex items-center gap-2 mt-1 text-[11px] text-neutral-500">
+                        {asset.ip && <code className="bg-neutral-100 px-1.5 py-0.5 rounded">{asset.ip}</code>}
+                        {asset.cpuModel && <span className="flex items-center gap-0.5"><Cpu className="h-2.5 w-2.5" />{asset.cpuModel.split(" ").slice(0, 2).join(" ")}</span>}
+                        {asset.ramGb && <span className="flex items-center gap-0.5"><MemoryStick className="h-2.5 w-2.5" />{asset.ramGb} Go</span>}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              </Link>
+            );
+          })
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <Card className="hidden sm:block">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -508,6 +549,7 @@ export default function AssetsPage() {
           )}
         </div>
       </Card>
+      </>
       )}
     </div>
   );
