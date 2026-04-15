@@ -81,7 +81,9 @@ export async function GET(req: Request) {
           assigneeId: true,
           assignee: { select: { firstName: true, lastName: true } },
         },
-        orderBy: { priority: "desc" },
+        // L'enum TicketPriority est déclaré CRITICAL → HIGH → MEDIUM → LOW.
+        // ASC trie donc les plus prioritaires en premier (CRITICAL d'abord).
+        orderBy: { priority: "asc" },
       },
     },
     orderBy: { startsAt: "asc" },

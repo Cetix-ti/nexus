@@ -52,7 +52,19 @@ export const useTicketsStore = create<TicketsState>()((set, get) => ({
       });
       if (!res.ok) throw new Error("Erreur lors de la mise à jour du ticket");
       const updated = (await res.json()) as Ticket;
-      set((s) => ({ tickets: s.tickets.map((t) => (t.id === id ? updated : t)) }));
+      // Si le ticket est dans le store (tickets clients), on le remplace
+      // en place. Sinon (ex: ticket interne qui n'est pas chargé par
+      // défaut), on l'INJECTE dans le store pour que les vues partagées
+      // (kanban inline assignee, etc.) reflètent la mise à jour. Pas
+      // d'effet de bord sur les listes qui filtrent par isInternal.
+      set((s) => {
+        const exists = s.tickets.some((t) => t.id === id);
+        return {
+          tickets: exists
+            ? s.tickets.map((t) => (t.id === id ? updated : t))
+            : [updated, ...s.tickets],
+        };
+      });
     } catch (err) {
       console.error("updateTicket failed", err);
     }

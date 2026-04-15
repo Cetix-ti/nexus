@@ -320,7 +320,7 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
     if (!ok) return;
     // L'id peut être un id-occurrence "xxx@ISO" — le endpoint gère déjà
     // la normalisation. La suppression affecte toute la série.
-    const res = await fetch(`/api/v1/calendar-events/${e.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/v1/calendar-events/${encodeURIComponent(e.id)}`, { method: "DELETE" });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       alert(err.error || "Suppression impossible");
@@ -747,7 +747,7 @@ function LinkedTicketsSection({
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/calendar-events/${eventId}/linked-tickets`);
+      const res = await fetch(`/api/v1/calendar-events/${encodeURIComponent(eventId)}/linked-tickets`);
       if (!res.ok) return;
       const d = await res.json();
       setLinked(d.linked ?? []);
@@ -763,7 +763,7 @@ function LinkedTicketsSection({
 
   async function addTickets(ids: string[]) {
     if (ids.length === 0) return;
-    const res = await fetch(`/api/v1/calendar-events/${eventId}/linked-tickets`, {
+    const res = await fetch(`/api/v1/calendar-events/${encodeURIComponent(eventId)}/linked-tickets`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ticketIds: ids }),
@@ -776,7 +776,7 @@ function LinkedTicketsSection({
 
   async function removeTicket(ticketId: string) {
     const res = await fetch(
-      `/api/v1/calendar-events/${eventId}/linked-tickets?ticketId=${ticketId}`,
+      `/api/v1/calendar-events/${encodeURIComponent(eventId)}/linked-tickets?ticketId=${encodeURIComponent(ticketId)}`,
       { method: "DELETE" },
     );
     if (res.ok) load();
@@ -1318,16 +1318,30 @@ function CreateEventModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const today = defaultDate.toISOString().slice(0, 10);
+  // Date par défaut pour la création — exprimée en LOCAL pour rester
+  // alignée avec ce que l'agent voit dans la grille.
+  const today = (() => {
+    const d = defaultDate;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
   const isEdit = !!editing;
 
   // Extrait les composantes date/heure d'une ISO string pour initialiser.
   function splitIso(iso: string): { date: string; time: string } {
+    // IMPORTANT : on retourne la date ET l'heure dans le fuseau LOCAL.
+    // Le bug précédent mixait `toISOString()` (UTC) pour la date et
+    // `getHours()` (local) pour l'heure, donc dès qu'un événement croisait
+    // minuit UTC, l'init du formulaire était décalée d'un jour. Au save,
+    // `new Date(\`${date}T${time}:00\`)` reconstruisait une date local
+    // shiftée de ~24h → l'utilisateur voyait l'événement disparaitre / pas
+    // de changement quand il modifiait juste l'heure de fin.
     const d = new Date(iso);
-    const date = d.toISOString().slice(0, 10);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
     const h = String(d.getHours()).padStart(2, "0");
     const m = String(d.getMinutes()).padStart(2, "0");
-    return { date, time: `${h}:${m}` };
+    return { date: `${yyyy}-${mm}-${dd}`, time: `${h}:${m}` };
   }
   const initStart = editing ? splitIso(editing.startsAt) : { date: today, time: "09:00" };
   const initEnd = editing ? splitIso(editing.endsAt) : { date: today, time: "10:00" };
@@ -1507,7 +1521,12 @@ function CreateEventModal({
     setSaving(true);
     setError(null);
     try {
-      const url = isEdit ? `/api/v1/calendar-events/${editing.id}` : "/api/v1/calendar-events";
+      // encodeURIComponent : un id de récurrence "xxx@2026-04-15T13:00:00.000Z"
+      // contient `:` et `@` qui sans encodage peuvent embrouiller certains
+      // routeurs / proxies. Le PATCH normalise déjà l'id côté serveur.
+      const url = isEdit
+        ? `/api/v1/calendar-events/${encodeURIComponent(editing.id)}`
+        : "/api/v1/calendar-events";
       const res = await fetch(url, {
         method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },

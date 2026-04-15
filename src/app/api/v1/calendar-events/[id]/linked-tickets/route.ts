@@ -54,7 +54,8 @@ export async function GET(
       organizationId: true,
       assignee: { select: { firstName: true, lastName: true } },
     },
-    orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+    // ASC car l'enum TicketPriority est CRITICAL → ... → LOW.
+    orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
   });
 
   let clientOnSite: typeof linked = [];
@@ -78,7 +79,7 @@ export async function GET(
         calendarEventId: true,
         assignee: { select: { firstName: true, lastName: true } },
       },
-      orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+      orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
       take: 100,
     });
   }

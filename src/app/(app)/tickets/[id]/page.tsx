@@ -214,14 +214,30 @@ export default function TicketDetailPage() {
   }, [loaded, ticketFromStore, directTicket, directAttempted, params.id]);
   const ticket = ticketFromStore ?? directTicket;
 
-  // Direct API patch for fields not in the Zustand Ticket type
+  // Direct API patch for fields not in the Zustand Ticket type.
+  // On récupère le ticket complet renvoyé par la PATCH et on met à jour
+  // soit le store (si le ticket y est) soit l'état direct (cas des tickets
+  // internes qui ne sont jamais chargés dans le store) — sinon l'UI reste
+  // figée jusqu'à un reload manuel.
   async function patchTicketField(patch: Record<string, unknown>) {
     if (!ticket) return;
-    await fetch(`/api/v1/tickets/${ticket.id}`, {
+    const res = await fetch(`/api/v1/tickets/${ticket.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
+    if (!res.ok) return;
+    const updated = (await res.json().catch(() => null)) as import("@/lib/mock-data").Ticket | null;
+    if (!updated) return;
+    if (ticketFromStore) {
+      // Réinjecte le ticket à jour dans le store Zustand pour que toutes les
+      // vues qui dépendent du store (kanban, liste) se rafraîchissent.
+      useTicketsStore.setState((s) => ({
+        tickets: s.tickets.map((t) => (t.id === updated.id ? updated : t)),
+      }));
+    } else {
+      setDirectTicket(updated);
+    }
   }
 
   // Load collaborators and users list

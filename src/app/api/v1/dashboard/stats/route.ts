@@ -106,12 +106,24 @@ export async function GET() {
       tickets: r._count.id,
     }));
 
-    // Recent tickets (last 8)
+    // Tickets récents NON ASSIGNÉS (pour le widget « Tickets récents non
+    // assignés » du dashboard). Filtre serveur-side sur assigneeId null
+    // pour ne pas dépendre d'un take=8 puis d'un filtre client-side qui
+    // pourrait n'afficher rien si les 8 derniers sont tous assignés.
+    // Exclut les tickets internes (admin Cetix) pour cohérence avec la
+    // séparation client/interne.
     const recentRows = await prisma.ticket.findMany({
-      where: { status: { in: OPEN_STATUSES as any } },
-      include: { organization: true },
+      where: {
+        status: { in: OPEN_STATUSES as any },
+        assigneeId: null,
+        isInternal: false,
+      },
+      include: {
+        organization: true,
+        assignee: { select: { firstName: true, lastName: true } },
+      },
       orderBy: { createdAt: "desc" },
-      take: 8,
+      take: 12,
     });
     const recentTickets = recentRows.map((t) => ({
       id: t.id,
@@ -120,17 +132,22 @@ export async function GET() {
       organization: t.organization?.name || "—",
       status: t.status.toLowerCase(),
       priority: t.priority.toLowerCase(),
+      assigneeName: t.assignee
+        ? `${t.assignee.firstName} ${t.assignee.lastName}`
+        : null,
+      isInternal: t.isInternal,
       createdAt: t.createdAt.toISOString(),
     }));
 
-    // My tickets (assigned to current user)
+    // My tickets (assigned to current user) — pleine largeur dans le
+    // dashboard, donc on en affiche un peu plus (12 au lieu de 8).
     let myTickets: any[] = [];
     if (myUserId) {
       const myRows = await prisma.ticket.findMany({
         where: { assigneeId: myUserId, status: { in: OPEN_STATUSES as any } },
         include: { organization: true },
         orderBy: { createdAt: "desc" },
-        take: 8,
+        take: 12,
       });
       myTickets = myRows.map((t) => ({
         id: t.id,
@@ -139,6 +156,7 @@ export async function GET() {
         organization: t.organization?.name || "—",
         status: t.status.toLowerCase(),
         priority: t.priority.toLowerCase(),
+        isInternal: t.isInternal,
         createdAt: t.createdAt.toISOString(),
       }));
     }

@@ -171,11 +171,10 @@ export default function DashboardPage() {
             <CalendarBoard embedded />
           </div>
         );
-      case "w_dash_unassigned": {
-        // Tickets récents NON assignés — priorisés pour attribution rapide.
-        const unassigned = (data.recentTickets ?? []).filter((t: { assigneeName?: string | null }) => !t.assigneeName);
-        return <RecentTickets tickets={unassigned} title="Tickets récents non assignés" />;
-      }
+      case "w_dash_unassigned":
+        // Tickets récents NON assignés — l'API les filtre serveur-side
+        // (assigneeId=null + isInternal=false), donc on passe directement.
+        return <RecentTickets tickets={data.recentTickets} title="Tickets récents non assignés" />;
       case "w_dash_my":
         return <RecentTickets tickets={data.myTickets} title="Mes tickets" showAssignee={false} />;
       case "w_dash_orgs":
