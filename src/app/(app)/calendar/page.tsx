@@ -496,7 +496,12 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
           event={detailEvent}
           onClose={() => setDetailEvent(null)}
           onEdit={() => {
+            // IMPORTANT : on ferme le drawer de détail en même temps qu'on
+            // ouvre la modal d'édition. Sans ça, le drawer restait visible
+            // par-dessus l'éditeur (même z-index que la modal, mais rendu
+            // plus tard dans le JSX → stacking au-dessus).
             setEditEvent(detailEvent);
+            setDetailEvent(null);
           }}
           onDelete={() => handleDeleteEvent(detailEvent)}
         />
@@ -531,7 +536,7 @@ function EventDetailDrawer({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md my-4 rounded-2xl bg-white shadow-2xl"
+        className="relative w-full max-w-2xl my-4 rounded-2xl bg-white shadow-2xl min-h-[360px]"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -544,7 +549,7 @@ function EventDetailDrawer({
           <X className="h-4 w-4" />
         </button>
         <div
-          className="border-b border-slate-200 px-5 py-4 pr-14 rounded-t-2xl"
+          className="border-b border-slate-200 px-7 py-5 pr-16 rounded-t-2xl"
           style={{ borderLeftWidth: 4, borderLeftColor: event.calendar.color }}
         >
           <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
@@ -553,10 +558,10 @@ function EventDetailDrawer({
             {" · "}
             {event.kind}
           </div>
-          <h2 className="mt-1 text-[16px] font-semibold text-slate-900">{event.title}</h2>
+          <h2 className="mt-1.5 text-[18px] font-semibold text-slate-900">{event.title}</h2>
         </div>
 
-        <div className="p-5 space-y-3 text-[13px]">
+        <div className="p-7 space-y-4 text-[13px]">
           <div>
             <p className="text-[11px] font-medium text-slate-500">Quand</p>
             <p className="text-slate-700 tabular-nums">
@@ -696,7 +701,7 @@ function EventDetailDrawer({
           )}
         </div>
 
-        <div className="border-t border-slate-200 px-5 py-3 flex items-center justify-between gap-2">
+        <div className="border-t border-slate-200 px-7 py-4 flex items-center justify-between gap-2">
           <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-600 hover:bg-red-50">
             <X className="h-3.5 w-3.5" />
             Supprimer
