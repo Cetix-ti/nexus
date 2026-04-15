@@ -143,6 +143,26 @@ export function startBackgroundJobs() {
       }
     },
   });
+
+  scheduleJob({
+    name: "renewal-notifications",
+    // 1 h — les échéances ne bougent pas à la minute. Suffisant pour
+    // détecter les franchissements de milestones (30j, 14j, 7j, 1j, jour-J).
+    intervalMs: Number(process.env.RENEWAL_NOTIF_INTERVAL_MS) || 3_600_000,
+    isRunning: false,
+    lastRun: null,
+    lastError: null,
+    consecutiveErrors: 0,
+    run: async () => {
+      const { runRenewalNotifications } = await import("@/lib/calendar/renewal-notifications");
+      const result = await runRenewalNotifications();
+      if (result.created > 0) {
+        console.log(
+          `[renewals] +${result.created} notifications créées (${result.checked} renouvellements inspectés)`,
+        );
+      }
+    },
+  });
 }
 
 /** Pour une endpoint /api/v1/admin/jobs/status qui pourrait être câblée plus tard. */

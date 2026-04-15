@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
 
+/** Strip the "@occurrenceStartISO" suffix that the API adds to recurring
+ *  event occurrences — DB operations doivent cibler l'event-source. */
+function normalizeEventId(raw: string): string {
+  const at = raw.indexOf("@");
+  return at >= 0 ? raw.slice(0, at) : raw;
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -11,7 +18,8 @@ export async function PATCH(
   if (me.role.startsWith("CLIENT_")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const { id } = await params;
+  const { id: rawId } = await params;
+  const id = normalizeEventId(rawId);
   const body = await req.json();
 
   const data: Record<string, unknown> = {};
@@ -42,7 +50,8 @@ export async function DELETE(
   if (me.role.startsWith("CLIENT_")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const { id } = await params;
+  const { id: rawId } = await params;
+  const id = normalizeEventId(rawId);
   await prisma.calendarEvent.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

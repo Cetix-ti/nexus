@@ -36,8 +36,29 @@ export async function GET(req: Request) {
     if (ids.length > 0) where.calendarId = { in: ids };
   }
 
-  const events = await prisma.calendarEvent.findMany({
-    where,
+  // Pour les événements récurrents, on charge TOUS les events dont la
+  // recurrence pourrait produire une occurrence dans la fenêtre (donc on
+  // enlève la borne `endsAt >= from` et on la remplace par une logique
+  // "start ≤ to et (recurrence active OU endsAt >= from)")
+  const recurrentOr = [
+    { recurrence: { in: ["weekly", "monthly", "yearly"] } },
+  ];
+  const finalWhere = where.AND
+    ? ({
+        ...where,
+        // Conserve les conditions déjà appliquées, mais élargit : un
+        // event récurrent peut avoir un startsAt très ancien mais
+        // générer des occurrences dans la fenêtre.
+        OR: [
+          { AND: where.AND as any },
+          ...recurrentOr,
+        ],
+        AND: undefined,
+      } as any)
+    : where;
+
+  const raw = await prisma.calendarEvent.findMany({
+    where: finalWhere,
     include: {
       calendar: { select: { id: true, name: true, kind: true, color: true } },
       owner: { select: { id: true, firstName: true, lastName: true, avatar: true } },
@@ -47,7 +68,78 @@ export async function GET(req: Request) {
     orderBy: { startsAt: "asc" },
   });
 
-  return NextResponse.json(events);
+  // Étend les occurrences récurrentes dans la fenêtre [from, to].
+  const fromDate = fromStr ? new Date(fromStr) : new Date(Date.now() - 30 * 24 * 3600 * 1000);
+  const toDate = toStr ? new Date(toStr) : new Date(Date.now() + 90 * 24 * 3600 * 1000);
+  const expanded = expandRecurrences(raw, fromDate, toDate);
+
+  return NextResponse.json(expanded);
+}
+
+// ---------------------------------------------------------------------------
+// Expand recurring events in a time window. Chaque occurrence générée a un
+// id préfixé "`{eventId}@{occurrenceStartISO}`" pour rester unique, et les
+// champs startsAt/endsAt décalés sur la bonne date.
+// Règles simples : weekly = même jour de semaine, monthly = même jour du
+// mois, yearly = même date. On n'implémente pas les RRULE iCal complets
+// (BYDAY, INTERVAL>1, etc.) — suffisant pour les cas typiques d'un MSP.
+// ---------------------------------------------------------------------------
+type EventWithRelations = Awaited<
+  ReturnType<typeof prisma.calendarEvent.findMany>
+>[number] & {
+  calendar?: unknown;
+  owner?: unknown;
+  organization?: unknown;
+  meeting?: unknown;
+};
+
+function expandRecurrences(
+  events: EventWithRelations[],
+  from: Date,
+  to: Date,
+): EventWithRelations[] {
+  const out: EventWithRelations[] = [];
+  for (const e of events) {
+    if (!e.recurrence) {
+      // Non récurrent — inclus seulement si chevauche la fenêtre.
+      if (e.startsAt <= to && e.endsAt >= from) out.push(e);
+      continue;
+    }
+    const recEnd = e.recurrenceEndDate ?? to;
+    const stopAt = recEnd < to ? recEnd : to;
+    const durationMs = e.endsAt.getTime() - e.startsAt.getTime();
+
+    let cursor = new Date(e.startsAt);
+    // Safety cap — évite une boucle infinie si les dates sont bizarres.
+    let iter = 0;
+    while (cursor <= stopAt && iter < 5000) {
+      iter++;
+      const occStart = new Date(cursor);
+      const occEnd = new Date(cursor.getTime() + durationMs);
+      if (occEnd >= from && occStart <= to) {
+        out.push({
+          ...e,
+          id: `${e.id}@${occStart.toISOString()}`,
+          startsAt: occStart,
+          endsAt: occEnd,
+        } as EventWithRelations);
+      }
+      // Avance
+      if (e.recurrence === "weekly") {
+        cursor = new Date(cursor);
+        cursor.setDate(cursor.getDate() + 7);
+      } else if (e.recurrence === "monthly") {
+        cursor = new Date(cursor);
+        cursor.setMonth(cursor.getMonth() + 1);
+      } else if (e.recurrence === "yearly") {
+        cursor = new Date(cursor);
+        cursor.setFullYear(cursor.getFullYear() + 1);
+      } else {
+        break;
+      }
+    }
+  }
+  return out.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 }
 
 /** POST — create an event */
