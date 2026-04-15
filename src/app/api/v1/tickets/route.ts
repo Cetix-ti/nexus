@@ -24,6 +24,9 @@ export async function GET(req: Request) {
     assigneeId,
     projectId: url.searchParams.get("projectId") || undefined,
     limit,
+    // includeMonitoring=true pour que le dashboard "Alertes monitoring"
+    // puisse les récupérer. Par défaut exclus des vues tickets classiques.
+    includeMonitoring: url.searchParams.get("includeMonitoring") === "true",
   });
   return NextResponse.json(tickets);
 }

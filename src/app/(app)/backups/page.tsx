@@ -43,6 +43,7 @@ interface VeeamAlert {
   jobName: string;
   status: "SUCCESS" | "WARNING" | "FAILED";
   senderEmail: string;
+  senderName: string | null;
   senderDomain: string;
   subject: string;
   bodySnippet: string;
@@ -312,7 +313,7 @@ export default function BackupsPage() {
       // Search
       if (search) {
         const q = search.toLowerCase();
-        const hay = [a.jobName, a.organizationName, a.senderEmail, a.subject]
+        const hay = [a.jobName, a.organizationName, a.senderEmail, a.senderName, a.subject]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -679,9 +680,6 @@ export default function BackupsPage() {
                   <th className="px-4 py-3 font-medium text-slate-500">
                     Statut
                   </th>
-                  <th className="px-4 py-3 font-medium text-slate-500 min-w-[350px]">
-                    Tâche
-                  </th>
                   {view.type !== "org" && (
                     <th className="px-4 py-3 font-medium text-slate-500">
                       Client
@@ -689,6 +687,9 @@ export default function BackupsPage() {
                   )}
                   <th className="px-4 py-3 font-medium text-slate-500">
                     Expéditeur
+                  </th>
+                  <th className="px-4 py-3 font-medium text-slate-500 min-w-[350px]">
+                    Tâche Veeam
                   </th>
                   <th className="px-4 py-3 font-medium text-slate-500">
                     Reçu
@@ -724,14 +725,6 @@ export default function BackupsPage() {
                           </Badge>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <p className="text-[13px] font-medium text-slate-900 truncate max-w-[500px]">
-                          {a.jobName}
-                        </p>
-                        <p className="text-[11px] text-slate-400 truncate max-w-[500px]">
-                          {a.subject}
-                        </p>
-                      </td>
                       {view.type !== "org" && (
                         <td className="px-4 py-3 text-[12.5px]">
                           {a.organizationName ? (
@@ -758,8 +751,29 @@ export default function BackupsPage() {
                           )}
                         </td>
                       )}
-                      <td className="px-4 py-3 text-[12px] font-mono text-slate-500">
-                        {a.senderEmail}
+                      <td className="px-4 py-3 text-[12.5px]">
+                        {a.senderName ? (
+                          <>
+                            <p className="font-medium text-slate-700 truncate max-w-[220px]">
+                              {a.senderName}
+                            </p>
+                            <p className="text-[11px] font-mono text-slate-400 truncate max-w-[220px]">
+                              {a.senderEmail}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="font-mono text-[12px] text-slate-500 truncate max-w-[220px]">
+                            {a.senderEmail}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-[13px] font-medium text-slate-900 truncate max-w-[500px]">
+                          {a.jobName}
+                        </p>
+                        <p className="text-[11px] text-slate-400 truncate max-w-[500px]">
+                          {a.subject}
+                        </p>
                       </td>
                       <td className="px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">
                         {fmtDate(a.receivedAt)}
@@ -1115,6 +1129,43 @@ function AiDailySummary() {
         .ai-summary-content .success {
           color: #059669;
           font-weight: 600;
+        }
+
+        /* Section "Avertissements à surveiller" — discrète, moins prominente
+           que le tableau d'échecs. Ton sur ton ambre pâle, typo plus petite. */
+        .ai-summary-content .warnings-section {
+          margin-top: 14px;
+          padding: 10px 14px;
+          background: #fffbeb;
+          border-left: 3px solid #f59e0b;
+          border-radius: 0 6px 6px 0;
+        }
+        .ai-summary-content .warnings-title {
+          margin: 0 0 6px 0;
+          font-size: 11.5px;
+          font-weight: 600;
+          color: #92400e;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .ai-summary-content .warnings-list {
+          margin: 0;
+          padding-left: 18px;
+          font-size: 12px;
+          color: #78350f;
+          list-style: disc;
+        }
+        .ai-summary-content .warnings-list li {
+          margin-bottom: 3px;
+          line-height: 1.5;
+        }
+        .ai-summary-content .warn-client {
+          font-weight: 600;
+          color: #78350f;
+        }
+        .ai-summary-content .warn-job {
+          color: #92400e;
+          font-size: 11.5px;
         }
         .ai-summary-content ul,
         .ai-summary-content ol {

@@ -131,10 +131,72 @@ async function resolveFolderId(mailbox: string, folderPath: string): Promise<str
 
 interface DetectedSource {
   sourceType: string;
+  messageKind: "ALERT" | "NOTIFICATION";
   severity: "CRITICAL" | "HIGH" | "WARNING" | "INFO";
   alertGroupKey: string | null;
   isResolution: boolean;
   hostname: string | null;
+}
+
+/**
+ * Classifie un message comme vraie alerte opérationnelle ou simple
+ * notification système. Les NOTIFICATION sont persistées (pour traçabilité)
+ * mais cachées du dashboard par défaut.
+ *
+ * Patterns reconnus comme NOTIFICATION :
+ *   - Commentaires sur tâches d'automatisation Atera (email envoyé à chaque
+ *     commentaire fait par un tech)
+ *   - Invitations / partages d'automatisation
+ *   - Digests / résumés périodiques Zabbix
+ *   - Newsletters, welcome emails, notifs de login, reset password
+ */
+function classifyMessageKind(subject: string, body: string): "ALERT" | "NOTIFICATION" {
+  const s = subject.toLowerCase();
+  const b = body.slice(0, 500).toLowerCase();
+  const text = `${s}\n${b}`;
+
+  // Atera — commentaires sur tâches d'automatisation
+  if (
+    /commentaires?\s+sur\s+les?\s+t[âa]ches?\s+d[’']?automatisation/i.test(text) ||
+    /(it\s+)?automation\s+profile\s+comment/i.test(text) ||
+    /task\s+comment/i.test(text) ||
+    /a\s+comment(\s+has\s+been)?\s+(added|posted)\s+to/i.test(text)
+  ) {
+    return "NOTIFICATION";
+  }
+
+  // Atera — updates sur profils d'automatisation (Upgrade to Windows 11, etc.)
+  // Ces sujets contiennent typiquement "(select endpoint manually)" ou le
+  // nom d'un profil d'automatisation connu suivi de tags.
+  if (
+    /\(select\s+endpoint\s+manually\)/i.test(text) ||
+    /it\s+automation\s+profile\b/i.test(text) ||
+    /automation\s+profile\s+(was|has\s+been)\s+(updated|created|shared)/i.test(text)
+  ) {
+    return "NOTIFICATION";
+  }
+
+  // Digests Zabbix/autres — "daily report", "weekly summary"
+  if (
+    /daily\s+(report|summary|digest)/i.test(text) ||
+    /weekly\s+(report|summary|digest)/i.test(text) ||
+    /r[ée]sum[ée]\s+(quotidien|hebdomadaire)/i.test(text)
+  ) {
+    return "NOTIFICATION";
+  }
+
+  // Newsletter / marketing / compte
+  if (
+    /\b(welcome|bienvenue)\b/i.test(s) ||
+    /\bnewsletter\b/i.test(s) ||
+    /password\s+(reset|change)/i.test(s) ||
+    /new\s+login\s+(detected|from)/i.test(s) ||
+    /(account|compte)\s+(created|activated)/i.test(s)
+  ) {
+    return "NOTIFICATION";
+  }
+
+  return "ALERT";
 }
 
 function detectSource(subject: string, senderEmail: string, body: string): DetectedSource {
@@ -148,6 +210,8 @@ function detectSource(subject: string, senderEmail: string, body: string): Detec
   else if (text.includes("fortigate") || text.includes("fortinet") || text.includes("fortimail")) sourceType = "fortigate";
   else if (text.includes("wazuh")) sourceType = "wazuh";
   else if (text.includes("bitdefender")) sourceType = "bitdefender";
+
+  const messageKind = classifyMessageKind(subject, body);
 
   // Severity
   let severity: DetectedSource["severity"] = "WARNING";
@@ -208,7 +272,45 @@ function detectSource(subject: string, senderEmail: string, body: string): Detec
     alertGroupKey = `${sourceType}:${extractedHost || "unknown"}:${cleanSubject}`.toLowerCase();
   }
 
-  return { sourceType, severity, alertGroupKey, isResolution, hostname: extractedHost };
+  return { sourceType, messageKind, severity, alertGroupKey, isResolution, hostname: extractedHost };
+}
+
+/**
+ * Cherche TOUS les tokens qui ressemblent à un hostname "CODECLIENT-XXX"
+ * (ex: "HVAC-SRV01", "BDU_FS02") dans le sujet ET le corps. Uppercase
+ * obligatoire pour le préfixe — évite les faux positifs du type "on host"
+ * ou "on server".
+ *
+ * Priorité donnée au format Zabbix "Host: HOSTNAME" dans le body — c'est
+ * la ligne la plus fiable puisque c'est là que le template Zabbix met le
+ * vrai nom d'hôte, même quand le sujet utilise un placeholder.
+ */
+function extractAllClientCodePrefixes(subject: string, body: string): string[] {
+  const codes: string[] = [];
+  const seen = new Set<string>();
+
+  // 1) Priorité : la ligne "Host: XYZ" du body Zabbix.
+  const zabbixHost = body.match(/^\s*Host:\s*([A-Z][A-Z0-9_\-\.]+)\s*$/im);
+  if (zabbixHost) {
+    const name = zabbixHost[1];
+    const prefixMatch = name.match(/^([A-Z]{2,8})[-_]/);
+    if (prefixMatch && !seen.has(prefixMatch[1])) {
+      seen.add(prefixMatch[1]);
+      codes.push(prefixMatch[1]);
+    }
+  }
+
+  // 2) Tous les autres tokens "CODE-XXX" dans sujet + body.
+  const text = `${subject}\n${body.slice(0, 2000)}`;
+  const re = /\b([A-Z]{2,8})[-_][A-Z0-9]{1,}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (!seen.has(m[1])) {
+      seen.add(m[1]);
+      codes.push(m[1]);
+    }
+  }
+  return codes;
 }
 
 // ---------------------------------------------------------------------------
@@ -249,13 +351,14 @@ function extractOrgNameFromSubject(subject: string): string | null {
   return match && match[1] ? match[1].trim() : null;
 }
 
-/** Extract client code prefix from Zabbix host name (e.g., "BDU_SERVER01" → "BDU") */
+/** Extract client code prefix from Zabbix host name (e.g., "BDU_SERVER01" → "BDU").
+ *  Uppercase-only pour éviter de matcher "on server", "on host", etc. */
 function extractClientPrefix(subject: string): string | null {
-  // Look for Zabbix host in "on <HOST>" pattern
-  const hostMatch = subject.match(/\bon\s+([A-Za-z]{2,6})[-_]/i);
-  if (hostMatch) return hostMatch[1].toUpperCase();
-  // Fallback: look for prefix at start of any capitalized word
-  const prefixMatch = subject.match(/\b([A-Z]{2,6})[-_][A-Z]/);
+  // Cherche un hostname "CODE-XXX" après "on " ou "host "
+  const hostMatch = subject.match(/\b(?:on|host|device)\s+([A-Z]{2,8})[-_]/);
+  if (hostMatch) return hostMatch[1];
+  // Fallback : préfixe au début d'un token qui ressemble à un hostname
+  const prefixMatch = subject.match(/\b([A-Z]{2,8})[-_][A-Z0-9]/);
   if (prefixMatch) return prefixMatch[1];
   return null;
 }
@@ -309,6 +412,18 @@ export async function syncMonitoringAlerts(
   try {
     const { domainMap, clientCodeMap, nameMap } = await buildOrgMaps();
 
+    // Agent qui sera le "créateur" des tickets auto-générés par la
+    // synchro monitoring. Pris parmi les admins/techs actifs. Si aucun
+    // agent n'existe, on ne crée pas de ticket (mais on persiste quand
+    // même l'alerte brute).
+    const syncAgent = await prisma.user.findFirst({
+      where: {
+        role: { in: ["SUPER_ADMIN", "MSP_ADMIN", "TECHNICIAN"] },
+        isActive: true,
+      },
+      select: { id: true },
+    });
+
     // Determine since date
     // sinceDays: undefined = incremental, 0 = all history, N = last N days
     const sinceDays = options?.sinceDays;
@@ -360,7 +475,7 @@ export async function syncMonitoringAlerts(
 
               const detected = detectSource(msg.subject, senderEmail, bodyText);
 
-              // Match org: try multiple strategies in order
+              // Match org: plusieurs stratégies en cascade.
               let org = domainMap.get(senderDomain);
               // Atera: org name in parens "(Organisation > HOST)"
               if (!org) {
@@ -369,11 +484,24 @@ export async function syncMonitoringAlerts(
                   org = nameMap.get(orgFromSubject.toLowerCase().trim()) ?? undefined;
                 }
               }
-              // Zabbix: extract client code from hostname prefix
+              // Zabbix/Atera : extract client code from hostname prefix
               if (!org && detected.hostname) {
-                const prefixMatch = detected.hostname.match(/^([A-Za-z]{2,6})[-_]/);
+                const prefixMatch = detected.hostname.match(/^([A-Za-z]{2,8})[-_]/);
                 if (prefixMatch) {
                   org = clientCodeMap.get(prefixMatch[1].toUpperCase()) ?? undefined;
+                }
+              }
+              // Cherche TOUS les hostnames "CODE-xxx" dans le sujet + le body.
+              // Utile quand le hostname est dans le corps de l'alerte
+              // (ex: Zabbix met "Host: HVAC-SRV01" dans le body).
+              if (!org) {
+                const allPrefixes = extractAllClientCodePrefixes(msg.subject, bodyText);
+                for (const prefix of allPrefixes) {
+                  const match = clientCodeMap.get(prefix);
+                  if (match) {
+                    org = match;
+                    break;
+                  }
                 }
               }
               if (!org) {
@@ -381,7 +509,10 @@ export async function syncMonitoringAlerts(
                 if (prefix) org = clientCodeMap.get(prefix) ?? undefined;
               }
 
-              // If it's a resolution, try to mark the original alert as resolved
+              // Si c'est une résolution : marquer l'alerte originale ET son
+              // ticket comme résolus. Ne pas créer de nouvelle alerte ni
+              // de nouveau ticket : le message de résolution n'est qu'un
+              // événement qui met à jour l'existant.
               if (detected.isResolution && detected.alertGroupKey) {
                 const openAlert = await prisma.monitoringAlert.findFirst({
                   where: {
@@ -389,23 +520,85 @@ export async function syncMonitoringAlerts(
                     isResolved: false,
                   },
                   orderBy: { receivedAt: "desc" },
-                  select: { id: true },
+                  select: { id: true, ticketId: true },
                 });
                 if (openAlert) {
                   await prisma.monitoringAlert.update({
                     where: { id: openAlert.id },
-                    data: { isResolved: true, resolvedAt: new Date(msg.receivedDateTime), stage: "RESOLVED" },
+                    data: {
+                      isResolved: true,
+                      resolvedAt: new Date(msg.receivedDateTime),
+                      stage: "RESOLVED",
+                    },
                   });
+                  // Close the linked ticket too.
+                  if (openAlert.ticketId) {
+                    await prisma.ticket.update({
+                      where: { id: openAlert.ticketId },
+                      data: {
+                        status: "RESOLVED",
+                        resolvedAt: new Date(msg.receivedDateTime),
+                        monitoringStage: "RESOLVED",
+                      },
+                    });
+                  }
                   resolved++;
+                }
+                // On ne crée PAS d'alerte persistée pour un message de
+                // résolution — évite le bruit dans le dashboard.
+                skipped++;
+                continue;
+              }
+
+              // Dedup par alertGroupKey : si une alerte non-résolue du
+              // même groupe existe déjà (ex: "zabbix:mrvl_mv-dc-01:disk space"),
+              // on append un commentaire au ticket existant au lieu de
+              // recréer un doublon dans le kanban.
+              if (
+                detected.messageKind === "ALERT" &&
+                detected.alertGroupKey &&
+                !detected.isResolution
+              ) {
+                const existingOpen = await prisma.monitoringAlert.findFirst({
+                  where: {
+                    alertGroupKey: detected.alertGroupKey,
+                    isResolved: false,
+                  },
+                  orderBy: { receivedAt: "desc" },
+                  select: { id: true, ticketId: true },
+                });
+                if (existingOpen) {
+                  // Bump le timestamp et ajoute un commentaire résumé sur
+                  // le ticket existant. L'alerte dupliquée n'est pas
+                  // persistée — évite la pollution du dashboard.
+                  if (existingOpen.ticketId && syncAgent) {
+                    try {
+                      await prisma.comment.create({
+                        data: {
+                          ticketId: existingOpen.ticketId,
+                          authorId: syncAgent.id,
+                          body: `Répétition de l'alerte (${detected.sourceType.toUpperCase()}) reçue le ${new Date(msg.receivedDateTime).toLocaleString("fr-CA")}.\nSujet : ${msg.subject}`,
+                          isInternal: true,
+                        },
+                      });
+                    } catch {
+                      /* non bloquant */
+                    }
+                  }
+                  skipped++;
+                  continue;
                 }
               }
 
-              // Always store the alert (even resolutions, for history)
-              await prisma.monitoringAlert.create({
+              // Toujours persister l'enregistrement (même les notifications
+              // système et les résolutions), mais les notifications seront
+              // filtrées du dashboard par défaut via messageKind.
+              const alertRow = await prisma.monitoringAlert.create({
                 data: {
                   organizationId: org?.id ?? null,
                   organizationName: org?.name ?? null,
                   sourceType: detected.sourceType,
+                  messageKind: detected.messageKind,
                   severity: detected.severity,
                   stage: detected.isResolution ? "RESOLVED" : "TRIAGE",
                   subject: msg.subject,
@@ -419,6 +612,54 @@ export async function syncMonitoringAlerts(
                   alertGroupKey: detected.alertGroupKey,
                 },
               });
+
+              // Auto-création d'un ticket pour chaque ALERT (jamais pour
+              // les NOTIFICATION ni les messages de résolution). Chaque
+              // alerte EST un ticket dès son arrivée : saisies de temps,
+              // commentaires, assignation, etc. — tout l'outillage ticket
+              // devient disponible directement depuis la tuile kanban.
+              if (
+                detected.messageKind === "ALERT" &&
+                !detected.isResolution &&
+                org?.id &&
+                syncAgent
+              ) {
+                try {
+                  const ticket = await prisma.ticket.create({
+                    data: {
+                      organizationId: org.id,
+                      creatorId: syncAgent.id,
+                      subject: `[Monitoring] ${msg.subject}`,
+                      description:
+                        `Alerte ${detected.sourceType.toUpperCase()} reçue le ${new Date(msg.receivedDateTime).toLocaleString("fr-CA")}.\n\n` +
+                        `Expéditeur : ${senderEmail}\n` +
+                        (detected.hostname ? `Hôte : ${detected.hostname}\n` : "") +
+                        `\n${bodyText.slice(0, 2000)}`,
+                      status: "NEW",
+                      priority:
+                        detected.severity === "CRITICAL"
+                          ? "CRITICAL"
+                          : detected.severity === "HIGH"
+                          ? "HIGH"
+                          : "MEDIUM",
+                      type: "ALERT",
+                      source: "MONITORING",
+                      monitoringStage: "TRIAGE",
+                    },
+                    select: { id: true },
+                  });
+                  await prisma.monitoringAlert.update({
+                    where: { id: alertRow.id },
+                    data: { ticketId: ticket.id },
+                  });
+                } catch (err) {
+                  // Non bloquant : l'alerte est déjà persistée, le ticket
+                  // pourra être créé à la main depuis l'UI si besoin.
+                  errors.push(
+                    `Auto-ticket ${alertRow.id}: ${err instanceof Error ? err.message : String(err)}`,
+                  );
+                }
+              }
               created++;
             } catch (err) {
               errors.push(`${msg.id}: ${err instanceof Error ? err.message : String(err)}`);

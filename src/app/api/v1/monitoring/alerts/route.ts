@@ -12,11 +12,16 @@ export async function GET(req: Request) {
     const sourceType = searchParams.get("sourceType");
     const orgId = searchParams.get("organizationId");
     const resolved = searchParams.get("resolved");
+    // includeNotifications=true : inclut aussi les notifications système
+    // (commentaires d'automatisation Atera, digests Zabbix, etc.) dans la
+    // réponse. Par défaut elles sont cachées du dashboard opérationnel.
+    const includeNotifications = searchParams.get("includeNotifications") === "true";
 
     const since = new Date();
     since.setDate(since.getDate() - days);
 
     const where: any = { receivedAt: { gte: since } };
+    if (!includeNotifications) where.messageKind = "ALERT";
     if (stage) where.stage = stage;
     if (sourceType) where.sourceType = sourceType;
     if (orgId) where.organizationId = orgId;
@@ -24,7 +29,7 @@ export async function GET(req: Request) {
     if (resolved === "false") where.isResolved = false;
 
     // Fetch real monitoring alerts
-    const [alerts, stageStats, sourceStats] = await Promise.all([
+    const [alertsRaw, stageStats, sourceStats] = await Promise.all([
       prisma.monitoringAlert.findMany({
         where,
         orderBy: { receivedAt: "desc" },
@@ -88,9 +93,43 @@ export async function GET(req: Request) {
       assigneeName: t.assignee ? `${t.assignee.firstName} ${t.assignee.lastName}` : null,
     }));
 
+    // Hydrate : pour chaque MonitoringAlert qui a un ticketId, on va
+    // chercher le numéro + l'assigné du ticket — nécessaire pour afficher
+    // "INC-1234" dans la tuile kanban et faire sauter le bouton "+ Ticket".
+    const alertTicketIds = alertsRaw
+      .map((a) => a.ticketId)
+      .filter((x): x is string => !!x);
+    const alertTickets = alertTicketIds.length
+      ? await prisma.ticket.findMany({
+          where: { id: { in: alertTicketIds } },
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            assignee: { select: { firstName: true, lastName: true } },
+          },
+        })
+      : [];
+    const alertTicketMap = new Map(alertTickets.map((t) => [t.id, t]));
+    const alerts = alertsRaw.map((a) => {
+      const t = a.ticketId ? alertTicketMap.get(a.ticketId) : undefined;
+      return {
+        ...a,
+        ticketNumber: t?.number ?? null,
+        ticketStatus: t?.status ?? null,
+        assigneeName: t?.assignee
+          ? `${t.assignee.firstName} ${t.assignee.lastName}`.trim()
+          : null,
+      };
+    });
+
     // Merge: put real alerts first, then ticket-sourced alerts (dedup by ticketId)
-    const existingTicketIds = new Set(alerts.filter((a) => a.ticketId).map((a) => a.ticketId));
-    const uniqueTicketAlerts = ticketAlerts.filter((ta) => !existingTicketIds.has(ta.ticketId));
+    const existingTicketIds = new Set(
+      alerts.filter((a) => a.ticketId).map((a) => a.ticketId),
+    );
+    const uniqueTicketAlerts = ticketAlerts.filter(
+      (ta) => !existingTicketIds.has(ta.ticketId),
+    );
 
     const merged = [...alerts, ...uniqueTicketAlerts];
 

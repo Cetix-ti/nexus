@@ -24,6 +24,7 @@ const detailIncludes = {
     orderBy: { createdAt: "asc" as const },
   },
   ticketTags: { include: { tag: true } },
+  approvals: { orderBy: { createdAt: "asc" as const } },
 };
 
 const listIncludes = {
@@ -33,6 +34,7 @@ const listIncludes = {
   category: true,
   queue: true,
   ticketTags: { include: { tag: true } },
+  approvals: { orderBy: { createdAt: "asc" as const } },
 };
 
 type PrismaTicketDetail = Prisma.TicketGetPayload<{ include: typeof detailIncludes }>;
@@ -92,6 +94,7 @@ function flattenDetail(t: PrismaTicketDetail): UiTicket {
     impact: priorityToUi(t.impact),
     type: typeToUi(t.type),
     source: sourceToUi(t.source),
+    organizationId: t.organizationId,
     organizationName: t.organization?.name || "—",
     requesterName: t.requester
       ? `${t.requester.firstName} ${t.requester.lastName}`
@@ -136,6 +139,17 @@ function flattenDetail(t: PrismaTicketDetail): UiTicket {
       };
     }),
     projectId: t.projectId ?? undefined,
+    approvalStatus: (t.approvalStatus?.toLowerCase() as UiTicket["approvalStatus"]) ?? undefined,
+    approvers: (t.approvals ?? []).map((a) => ({
+      id: a.id,
+      contactId: a.approverId,
+      name: a.approverName,
+      email: a.approverEmail,
+      role: (a.role as "primary" | "secondary") ?? "primary",
+      status: (a.status?.toLowerCase() as "pending" | "approved" | "rejected") ?? "pending",
+      decidedAt: a.decidedAt?.toISOString(),
+      comment: a.comment ?? undefined,
+    })),
   };
 }
 
@@ -151,6 +165,7 @@ function flattenList(t: PrismaTicketList): UiTicket {
     impact: priorityToUi(t.impact),
     type: typeToUi(t.type),
     source: sourceToUi(t.source),
+    organizationId: t.organizationId,
     organizationName: t.organization?.name || "—",
     requesterName: t.requester
       ? `${t.requester.firstName} ${t.requester.lastName}`
@@ -173,6 +188,17 @@ function flattenList(t: PrismaTicketList): UiTicket {
     comments: [],
     activities: [],
     projectId: t.projectId ?? undefined,
+    approvalStatus: (t.approvalStatus?.toLowerCase() as UiTicket["approvalStatus"]) ?? undefined,
+    approvers: (t.approvals ?? []).map((a) => ({
+      id: a.id,
+      contactId: a.approverId,
+      name: a.approverName,
+      email: a.approverEmail,
+      role: (a.role as "primary" | "secondary") ?? "primary",
+      status: (a.status?.toLowerCase() as "pending" | "approved" | "rejected") ?? "pending",
+      decidedAt: a.decidedAt?.toISOString(),
+      comment: a.comment ?? undefined,
+    })),
   };
 }
 
@@ -187,6 +213,14 @@ export async function listTickets(options?: {
   assigneeId?: string;
   projectId?: string;
   limit?: number;
+  /**
+   * Par défaut, les tickets de monitoring (source=MONITORING ou type=ALERT)
+   * sont EXCLUS des listes tickets classiques — ils vivent dans leur propre
+   * dashboard "Alertes monitoring" pour ne pas polluer les vues utilisateur
+   * prioritaires (demandes clients, incidents manuels, etc.).
+   * `includeMonitoring: true` pour les endpoints qui veulent vraiment tout.
+   */
+  includeMonitoring?: boolean;
 }): Promise<UiTicket[]> {
   const where: Prisma.TicketWhereInput = {};
   if (options?.organizationId) where.organizationId = options.organizationId;
@@ -197,6 +231,14 @@ export async function listTickets(options?: {
     where.OR = [
       { subject: { contains: options.search, mode: "insensitive" } },
       { description: { contains: options.search, mode: "insensitive" } },
+    ];
+  }
+  // Exclure les tickets monitoring sauf si explicitement demandé.
+  if (!options?.includeMonitoring) {
+    where.AND = [
+      ...((where.AND as Prisma.TicketWhereInput[] | undefined) ?? []),
+      { source: { not: "MONITORING" } },
+      { type: { not: "ALERT" } },
     ];
   }
   const rows = await prisma.ticket.findMany({

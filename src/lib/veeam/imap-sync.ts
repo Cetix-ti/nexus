@@ -21,6 +21,7 @@ interface ParsedVeeamAlert {
   jobName: string;
   status: VeeamStatus;
   senderEmail: string;
+  senderName: string | null;
   senderDomain: string;
   subject: string;
   bodySnippet: string;
@@ -86,16 +87,20 @@ function parseSenderDomain(email: string): string {
 
 function parseVeeamEmail(mail: any): ParsedVeeamAlert | null {
   const subject = mail.subject ?? "";
-  const from = mail.from?.value?.[0]?.address ?? "";
+  const fromValue = mail.from?.value?.[0];
+  const from = fromValue?.address ?? "";
   if (!from) return null;
 
   const body = mail.text ?? "";
   const bodySnippet = body.slice(0, 500);
 
+  const rawName = typeof fromValue?.name === "string" ? fromValue.name.trim() : "";
+
   return {
     jobName: extractJobName(subject),
     status: parseVeeamStatus(subject, body),
     senderEmail: from.toLowerCase(),
+    senderName: rawName && rawName !== from ? rawName : null,
     senderDomain: parseSenderDomain(from),
     subject,
     bodySnippet,
@@ -242,6 +247,7 @@ export async function syncVeeamAlerts(config?: VeeamImapConfig | null): Promise<
               jobName: alert.jobName,
               status: alert.status,
               senderEmail: alert.senderEmail,
+              senderName: alert.senderName,
               senderDomain: alert.senderDomain,
               subject: alert.subject,
               bodySnippet: alert.bodySnippet,

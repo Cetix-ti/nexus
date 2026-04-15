@@ -20,6 +20,7 @@ interface ParsedVeeamAlert {
   jobName: string;
   status: VeeamStatus;
   senderEmail: string;
+  senderName: string | null;
   senderDomain: string;
   subject: string;
   bodySnippet: string;
@@ -299,11 +300,13 @@ function parseGraphMessage(msg: GraphMessage): ParsedVeeamAlert | null {
 
   const subject = msg.subject ?? "";
   const body = msg.bodyPreview ?? "";
+  const rawName = (msg.from?.emailAddress?.name ?? "").trim();
 
   return {
     jobName: extractJobName(subject),
     status: parseVeeamStatus(subject, body),
     senderEmail: from.toLowerCase(),
+    senderName: rawName && rawName !== from ? rawName : null,
     senderDomain: parseSenderDomain(from),
     subject,
     bodySnippet: body.slice(0, 500),
@@ -506,6 +509,7 @@ export async function syncVeeamAlerts(
               jobName: alert.jobName,
               status: alert.status,
               senderEmail: alert.senderEmail,
+              senderName: alert.senderName,
               senderDomain: alert.senderDomain,
               subject: alert.subject,
               bodySnippet: alert.bodySnippet,

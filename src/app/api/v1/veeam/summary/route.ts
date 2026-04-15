@@ -51,37 +51,64 @@ interface OrgProblems {
 // Build the HTML table server-side (no AI dependency for layout)
 // ---------------------------------------------------------------------------
 
-function buildTableHtml(orgProblems: OrgProblems[]): string {
-  if (orgProblems.length === 0) return "";
-
-  let rows = "";
+/**
+ * Table principale : UNIQUEMENT les jobs en échec (status FAILED).
+ * Les warnings sont rendus séparément via `buildWarningsSection` pour
+ * ne pas leur donner la même importance visuelle qu'un vrai échec.
+ */
+function buildFailedTableHtml(orgProblems: OrgProblems[]): string {
+  const rows: string[] = [];
   for (const org of orgProblems) {
-    const jobs = org.jobs;
-    if (jobs.length === 0) continue;
+    const failedJobs = org.jobs.filter((j) => j.status === "FAILED");
+    if (failedJobs.length === 0) continue;
 
-    for (let i = 0; i < jobs.length; i++) {
-      const j = jobs[i];
-      const statusClass =
-        j.status === "FAILED" ? "status-failed" : "status-warning";
-      const statusLabel =
-        j.status === "FAILED" ? "Échec" : "Avertissement";
-
-      rows += "<tr>";
-      // Only emit client cell on first row, with rowspan
+    for (let i = 0; i < failedJobs.length; i++) {
+      const j = failedJobs[i];
+      let row = "<tr>";
       if (i === 0) {
-        rows += `<td${jobs.length > 1 ? ` rowspan="${jobs.length}"` : ""} class="client-cell">${escHtml(org.client)}</td>`;
+        row += `<td${failedJobs.length > 1 ? ` rowspan="${failedJobs.length}"` : ""} class="client-cell">${escHtml(org.client)}</td>`;
       }
-      rows += `<td class="server-cell">${escHtml(j.server)}</td>`;
-      rows += `<td>${escHtml(j.job)}</td>`;
-      rows += `<td class="${statusClass}">${statusLabel}</td>`;
-      rows += "</tr>";
+      row += `<td class="server-cell">${escHtml(j.server)}</td>`;
+      row += `<td>${escHtml(j.job)}</td>`;
+      row += `<td class="status-failed">Échec</td>`;
+      row += "</tr>";
+      rows.push(row);
     }
   }
 
+  if (rows.length === 0) return "";
+
   return `<table>
 <thead><tr><th>Client</th><th>Serveur</th><th>Tâche</th><th>Statut</th></tr></thead>
-<tbody>${rows}</tbody>
+<tbody>${rows.join("")}</tbody>
 </table>`;
+}
+
+/**
+ * Section secondaire — avertissements. Rendus sous forme de liste
+ * compacte avec un style discret (classe `.warnings-section`).
+ */
+function buildWarningsSection(orgProblems: OrgProblems[]): string {
+  const items: string[] = [];
+  for (const org of orgProblems) {
+    const warns = org.jobs.filter((j) => j.status === "WARNING");
+    if (warns.length === 0) continue;
+    const jobList = warns
+      .map((j) => `<span class="warn-job">${escHtml(j.server)} — ${escHtml(j.job)}</span>`)
+      .join(", ");
+    items.push(
+      `<li><span class="warn-client">${escHtml(org.client)}</span> : ${jobList}</li>`
+    );
+  }
+  if (items.length === 0) return "";
+  const count = orgProblems.reduce(
+    (acc, o) => acc + o.jobs.filter((j) => j.status === "WARNING").length,
+    0
+  );
+  return `<div class="warnings-section">
+<h4 class="warnings-title">Avertissements à surveiller (${count})</h4>
+<ul class="warnings-list">${items.join("")}</ul>
+</div>`;
 }
 
 function escHtml(s: string): string {
@@ -168,8 +195,11 @@ async function generateAndCacheSummary() {
     org.jobs.sort((a, b) => (a.status === "FAILED" ? -1 : 1) - (b.status === "FAILED" ? -1 : 1));
   }
 
-  // Build the table HTML deterministically (no AI needed)
-  const tableHtml = buildTableHtml(orgProblems);
+  // Build the table HTML deterministically (no AI needed).
+  // Séparation : table principale = FAILED uniquement, warnings = section
+  // discrète en dessous.
+  const tableHtml = buildFailedTableHtml(orgProblems);
+  const warningsHtml = buildWarningsSection(orgProblems);
 
   // Ask AI only for the summary text and recommendation
   let summaryParagraph = "";
@@ -197,8 +227,8 @@ async function generateAndCacheSummary() {
             {
               role: "system",
               content: `Tu es un assistant MSP. Génère exactement 2 choses en JSON (pas de markdown, juste du JSON brut):
-1. "summary": un paragraphe de résumé (2-3 phrases max) mentionnant le nombre d'échecs/warnings et les clients les plus critiques. Ne mentionne PAS les succès.
-2. "recommendation": un paragraphe court d'actions recommandées pour les techniciens (vérifier les logs, relancer les jobs, etc.)
+1. "summary": un paragraphe de résumé (2-3 phrases max). Concentre-toi sur les ÉCHECS (FAILED) et les clients les plus critiques — ce sont les priorités. Mentionne les avertissements (WARNING) seulement à la fin, brièvement ("X avertissements mineurs à surveiller"). Ne mentionne PAS les succès.
+2. "recommendation": un paragraphe court d'actions recommandées. Les échecs sont la priorité n°1 (vérifier logs, relancer jobs). Les warnings sont à traiter plus tard.
 
 Ton professionnel et direct. Français.`,
             },
@@ -231,10 +261,12 @@ Ton professionnel et direct. Français.`,
     summaryParagraph = `${totalFailed} échec${totalFailed > 1 ? "s" : ""} et ${totalWarning} avertissement${totalWarning > 1 ? "s" : ""} détecté${totalFailed + totalWarning > 1 ? "s" : ""} sur ${alerts.length} alertes dans les dernières 24 heures.`;
   }
 
-  // Assemble final HTML
+  // Assemble final HTML : résumé → table FAILED → avertissements (discrets)
+  // → recommandation.
   const html = [
     `<p class="summary">${escHtml(summaryParagraph)}</p>`,
     tableHtml,
+    warningsHtml,
     recommendationParagraph
       ? `<p class="recommendation">${escHtml(recommendationParagraph)}</p>`
       : "",

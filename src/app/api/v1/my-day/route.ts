@@ -20,50 +20,98 @@ export async function GET() {
     category: { select: { name: true } },
   } as const;
 
-  const [createdTickets, dueToday, scheduledTickets, timeEntries] =
-    await Promise.all([
-      // 1. Tickets I created today
-      prisma.ticket.findMany({
-        where: {
-          creatorId: me.id,
-          createdAt: { gte: todayStart, lte: todayEnd },
-        },
-        include: ticketInclude,
-        orderBy: { createdAt: "desc" },
-      }),
+  // Exclut les tickets auto-générés par la synchro monitoring — ils
+  // apparaissent dans "/monitoring" uniquement, jamais dans "Ma journée".
+  // Ces tickets ont typiquement creatorId = premier admin (donc Bruno),
+  // ce qui les ferait polluer "Créés aujourd'hui" sinon.
+  const excludeMonitoring = {
+    source: { not: "MONITORING" as const },
+    type: { not: "ALERT" as const },
+  };
 
-      // 2. My tickets due today
-      prisma.ticket.findMany({
-        where: {
-          assigneeId: me.id,
-          dueAt: { gte: todayStart, lte: todayEnd },
-          status: {
-            notIn: ["CLOSED", "RESOLVED"],
-          },
-        },
-        include: ticketInclude,
-        orderBy: { dueAt: "asc" },
-      }),
+  const [
+    createdTickets,
+    dueToday,
+    scheduledTickets,
+    timeEntries,
+    // Nouveau : tickets assignés à moi et touchés aujourd'hui
+    // (création ou mise à jour) — on filtrera ensuite ceux sans saisie.
+    assignedToday,
+    // Nouveau : TOUS les onsite du jour (tous agents) pour coordination
+    // des déplacements entre techs.
+    allOnsiteToday,
+  ] = await Promise.all([
+    // 1. Tickets I created today (hors monitoring)
+    prisma.ticket.findMany({
+      where: {
+        creatorId: me.id,
+        createdAt: { gte: todayStart, lte: todayEnd },
+        ...excludeMonitoring,
+      },
+      include: ticketInclude,
+      orderBy: { createdAt: "desc" },
+    }),
 
-      // 3. Tickets I planned / scheduled
-      prisma.ticket.findMany({
-        where: {
-          assigneeId: me.id,
-          status: "SCHEDULED",
+    // 2. My tickets due today (hors monitoring)
+    prisma.ticket.findMany({
+      where: {
+        assigneeId: me.id,
+        dueAt: { gte: todayStart, lte: todayEnd },
+        status: {
+          notIn: ["CLOSED", "RESOLVED"],
         },
-        include: ticketInclude,
-        orderBy: { dueAt: "asc" },
-      }),
+        ...excludeMonitoring,
+      },
+      include: ticketInclude,
+      orderBy: { dueAt: "asc" },
+    }),
 
-      // 4. All my time entries today
-      prisma.timeEntry.findMany({
-        where: {
-          agentId: me.id,
-          startedAt: { gte: todayStart, lte: todayEnd },
-        },
-        orderBy: { startedAt: "desc" },
-      }),
-    ]);
+    // 3. Tickets I planned / scheduled (hors monitoring)
+    prisma.ticket.findMany({
+      where: {
+        assigneeId: me.id,
+        status: "SCHEDULED",
+        ...excludeMonitoring,
+      },
+      include: ticketInclude,
+      orderBy: { dueAt: "asc" },
+    }),
+
+    // 4. All my time entries today (incluent monitoring — un tech peut
+    //    légitimement saisir du temps sur un ticket monitoring)
+    prisma.timeEntry.findMany({
+      where: {
+        agentId: me.id,
+        startedAt: { gte: todayStart, lte: todayEnd },
+      },
+      orderBy: { startedAt: "desc" },
+    }),
+
+    // 5. Tickets assignés à moi et actifs aujourd'hui, hors monitoring.
+    //    (les alertes monitoring sont gérées dans leur propre dashboard)
+    prisma.ticket.findMany({
+      where: {
+        assigneeId: me.id,
+        status: { notIn: ["CLOSED", "RESOLVED", "CANCELLED"] },
+        OR: [
+          { createdAt: { gte: todayStart, lte: todayEnd } },
+          { updatedAt: { gte: todayStart, lte: todayEnd } },
+        ],
+        ...excludeMonitoring,
+      },
+      include: ticketInclude,
+      orderBy: { updatedAt: "desc" },
+    }),
+
+    // 6. Tous les onsite du jour (tous agents). Sert la modale de coordination.
+    prisma.timeEntry.findMany({
+      where: {
+        isOnsite: true,
+        startedAt: { gte: todayStart, lte: todayEnd },
+      },
+      orderBy: { startedAt: "desc" },
+    }),
+  ]);
 
   // ---- Hydrate time entries with ticket info ----
   const teTicketIds = Array.from(
@@ -147,6 +195,72 @@ export async function GET() {
   // ---- Build onsite/travel entries ----
   const onsiteEntries = hydratedTimeEntries.filter((te) => te.isOnsite);
 
+  // ---- Build "allOnsiteToday" (tous agents, pour la modale de coordination) ----
+  // Hydrate les tickets + les agents pour afficher qui a déjà comptabilisé
+  // un déplacement chez quel client aujourd'hui.
+  const allOnsiteTicketIds = Array.from(
+    new Set(allOnsiteToday.map((te) => te.ticketId)),
+  );
+  const allOnsiteAgentIds = Array.from(
+    new Set(allOnsiteToday.map((te) => te.agentId)),
+  );
+  const [allOnsiteTickets, allOnsiteAgents] = await Promise.all([
+    allOnsiteTicketIds.length
+      ? prisma.ticket.findMany({
+          where: { id: { in: allOnsiteTicketIds } },
+          select: {
+            id: true,
+            number: true,
+            subject: true,
+            organization: { select: { name: true } },
+          },
+        })
+      : Promise.resolve([] as Array<{
+          id: string;
+          number: number;
+          subject: string;
+          organization: { name: string } | null;
+        }>),
+    allOnsiteAgentIds.length
+      ? prisma.user.findMany({
+          where: { id: { in: allOnsiteAgentIds } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : Promise.resolve(
+          [] as Array<{ id: string; firstName: string; lastName: string }>,
+        ),
+  ]);
+  const allOnsiteTicketMap = new Map(allOnsiteTickets.map((t) => [t.id, t]));
+  const allOnsiteAgentMap = new Map(allOnsiteAgents.map((a) => [a.id, a]));
+
+  const allOnsiteHydrated = allOnsiteToday.map((te) => {
+    const t = allOnsiteTicketMap.get(te.ticketId);
+    const a = allOnsiteAgentMap.get(te.agentId);
+    return {
+      id: te.id,
+      agentId: te.agentId,
+      agentName: a ? `${a.firstName} ${a.lastName}`.trim() : "—",
+      isMine: te.agentId === me.id,
+      ticketId: te.ticketId,
+      ticketNumber: t ? `INC-${1000 + t.number}` : "—",
+      ticketSubject: t?.subject ?? "—",
+      organizationName: t?.organization?.name ?? "—",
+      durationMinutes: te.durationMinutes,
+      startedAt: te.startedAt.toISOString(),
+      endedAt: te.endedAt?.toISOString() ?? null,
+      description: te.description,
+      isAfterHours: te.isAfterHours,
+    };
+  });
+
+  // ---- Tickets assignés aujourd'hui SANS saisie de temps de ma part ----
+  // L'idée : montrer la "todo" du jour — tickets actifs sur lesquels je
+  // n'ai pas encore saisi de temps.
+  const myWorkedTicketIds = new Set(workedMap.keys());
+  const assignedNoTime = assignedToday.filter(
+    (t) => !myWorkedTicketIds.has(t.id),
+  );
+
   // ---- Stats ----
   const totalMinutes = timeEntries.reduce(
     (s, te) => s + te.durationMinutes,
@@ -206,6 +320,8 @@ export async function GET() {
     dueToday: dueToday.map(formatTicket),
     scheduledTickets: scheduledTickets.map(formatTicket),
     createdTickets: createdTickets.map(formatTicket),
+    assignedNoTime: assignedNoTime.map(formatTicket),
+    allOnsiteToday: allOnsiteHydrated,
     onsiteEntries,
     timeEntries: hydratedTimeEntries,
   });

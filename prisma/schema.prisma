@@ -1206,6 +1206,11 @@ model MonitoringAlert {
 
   // Alert identification
   sourceType       String                @map("source_type")       // zabbix, atera, fortigate, wazuh, other
+  // messageKind : distingue une vraie alerte ("ALERT") d'une notification
+  // système envoyée par le RMM (commentaires sur tâches d'automatisation
+  // Atera, newsletters Zabbix, etc.). Les NOTIFICATION sont masquées du
+  // dashboard par défaut pour ne pas polluer la vue opérationnelle.
+  messageKind      String                @default("ALERT") @map("message_kind")
   severity         MonitoringAlertSeverity @default(WARNING)
   stage            MonitoringAlertStage   @default(TRIAGE)
   subject          String
@@ -1238,6 +1243,7 @@ model MonitoringAlert {
   @@index([sourceType])
   @@index([alertGroupKey])
   @@index([isResolved])
+  @@index([messageKind, receivedAt])
   @@map("monitoring_alerts")
 }
 
@@ -1345,6 +1351,7 @@ model VeeamBackupAlert {
   jobName          String   @map("job_name")
   status           VeeamJobStatus
   senderEmail      String   @map("sender_email")
+  senderName       String?  @map("sender_name")
   senderDomain     String   @map("sender_domain")
   subject          String
   bodySnippet      String   @default("") @map("body_snippet") @db.Text

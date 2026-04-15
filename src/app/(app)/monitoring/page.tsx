@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Bell,
   RefreshCw,
@@ -123,16 +124,17 @@ function timeAgo(iso: string): string {
 
 /**
  * Extract the hostname/endpoint name from an alert.
- * Priority: alertGroupKey (server-parsed) → subject patterns.
+ * Ordre : alertGroupKey → patterns sujet → patterns body (Zabbix "Host:").
  */
 function extractHostname(alert: MonAlert): string | null {
   const subject = alert.subject || "";
+  const body = alert.body || "";
 
   // Atera: "Alerte; (Organisation > HOSTNAME) Problème"
   const ateraParens = subject.match(/\(\s*[^>()]+>\s*([A-Za-z0-9][A-Za-z0-9_\-\.]+)\s*\)/);
   if (ateraParens) return ateraParens[1].toUpperCase();
 
-  // Try alertGroupKey first (format "source:host:desc" from email-sync)
+  // alertGroupKey (parsé à l'ingestion, format "source:host:desc")
   if (alert.alertGroupKey) {
     const parts = alert.alertGroupKey.split(":");
     if (parts.length >= 3 && parts[1] && parts[1] !== "unknown") {
@@ -143,9 +145,20 @@ function extractHostname(alert: MonAlert): string | null {
   // Zabbix: "Problem: X on HOSTNAME"
   const onMatch = subject.match(/\bon\s+([A-Za-z0-9][A-Za-z0-9_\-\.]{2,})/i);
   if (onMatch) return onMatch[1].toUpperCase();
-  // Generic: any prefix-hostname token like BDU-LAP-01 or VDSA_SRV_02
-  const prefixMatch = subject.match(/\b([A-Z]{2,6}[-_][A-Z0-9_\-]{2,})\b/);
-  if (prefixMatch) return prefixMatch[1];
+
+  // Zabbix body: ligne "Host: HOSTNAME" — c'est le format standard du
+  // template Zabbix, le sujet peut être générique ({#FSLABEL}) mais le
+  // body porte toujours le vrai hostname.
+  const zabbixBodyHost = body.match(/^\s*Host:\s*([A-Za-z0-9][A-Za-z0-9_\-\.]+)\s*$/m);
+  if (zabbixBodyHost) return zabbixBodyHost[1].toUpperCase();
+
+  // Generic: prefix-hostname token like BDU-LAP-01 ou VDSA_SRV_02
+  // Cherche d'abord dans le sujet, puis le body.
+  const prefixInSubject = subject.match(/\b([A-Z]{2,8}[-_][A-Z0-9_\-]{2,})\b/);
+  if (prefixInSubject) return prefixInSubject[1];
+  const prefixInBody = body.match(/\b([A-Z]{2,8}[-_][A-Z0-9_\-]{2,})\b/);
+  if (prefixInBody) return prefixInBody[1];
+
   // Fallback: uppercase word with digits (e.g. "PCMAN1", "SRV01")
   const upperWord = subject.match(/\b([A-Z][A-Z0-9]{3,})\b/);
   if (upperWord) return upperWord[1];
@@ -170,6 +183,7 @@ function extractOrgFromSubject(alert: MonAlert): string | null {
 type ViewMode = "table" | "kanban";
 
 export default function MonitoringPage() {
+  const router = useRouter();
   const [alerts, setAlerts] = useState<MonAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -181,6 +195,18 @@ export default function MonitoringPage() {
   const [pageSize, setPageSize] = useState(15);
   const [currentPage, setCurrentPage] = useState(0);
   const [openedAlert, setOpenedAlert] = useState<MonAlert | null>(null);
+
+  // Navigue vers la page ticket complète (saisies de temps avec profil
+  // de facturation, déplacements, commentaires riches, SLA, approbations,
+  // etc.). Fallback sur le détail d'alerte brut pour les alertes sans
+  // ticket lié (NOTIFICATION ou alertes legacy avant backfill).
+  function openAlertOrTicket(a: MonAlert) {
+    if (a.ticketId) {
+      router.push(`/tickets/${a.ticketId}`);
+      return;
+    }
+    setOpenedAlert(a);
+  }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -328,7 +354,7 @@ export default function MonitoringPage() {
           alerts={filtered}
           onStageChange={updateStage}
           onCreateTicket={createTicket}
-          onOpenDetail={(a) => setOpenedAlert(a)}
+          onOpenDetail={openAlertOrTicket}
         />
         </div>
       )}
@@ -343,7 +369,7 @@ export default function MonitoringPage() {
           const displayOrgName = a.organizationName || extractedOrgName;
           const hostname = extractHostname(a);
           return (
-            <Card key={a.id} onClick={() => setOpenedAlert(a)} className={cn("p-3 cursor-pointer hover:shadow-md transition-shadow", a.isResolved && "opacity-50")}>
+            <Card key={a.id} onClick={() => openAlertOrTicket(a)} className={cn("p-3 cursor-pointer hover:shadow-md transition-shadow", a.isResolved && "opacity-50")}>
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="flex items-center gap-1.5">
                   <SrcIcon className="h-3 w-3 text-slate-400" />
@@ -455,7 +481,8 @@ export default function MonitoringPage() {
         </div>
       )}
 
-      {/* Alert detail modal */}
+      {/* Alert detail modal — fallback pour les alertes sans ticket lié
+          (rares : NOTIFICATION, alertes legacy avant backfill). */}
       {openedAlert && (
         <AlertDetailModal
           alert={openedAlert}
@@ -467,6 +494,7 @@ export default function MonitoringPage() {
           }}
         />
       )}
+
     </div>
   );
 }
@@ -664,20 +692,16 @@ function MonitoringKanban({
                               {a.subject}
                             </p>
 
-                            {/* Row 4: footer */}
+                            {/* Row 4: footer — plus de bouton "+ Ticket" :
+                                chaque alerte EST un ticket dès son ingestion. */}
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] text-slate-400">{timeAgo(a.receivedAt)}</span>
                               <div className="flex items-center gap-1">
-                                {a.ticketId ? (
-                                  <Badge variant="primary" className="text-[8px]">Ticket</Badge>
-                                ) : (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); onCreateTicket(a.id); }}
-                                    className="h-5 px-1.5 rounded text-[9px] text-blue-600 hover:bg-blue-50 font-medium"
-                                  >
-                                    + Ticket
-                                  </button>
-                                )}
+                                {a.ticketNumber ? (
+                                  <span className="text-[9.5px] font-mono text-slate-500">
+                                    INC-{1000 + a.ticketNumber}
+                                  </span>
+                                ) : null}
                                 {a.assigneeName && (
                                   <span className="text-[10px] text-slate-500">{a.assigneeName}</span>
                                 )}
