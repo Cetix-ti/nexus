@@ -385,9 +385,10 @@ function NewProjectModal({
   const [orgId, setOrgId] = useState("");
   const [type, setType] = useState<string>("internal");
   const [description, setDescription] = useState("");
+  const [isInternal, setIsInternal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([]);
+  const [orgs, setOrgs] = useState<{ id: string; name: string; isInternal?: boolean }[]>([]);
   const [projectTypes, setProjectTypes] = useState<{ key: string; label: string }[]>([]);
 
   useEffect(() => {
@@ -426,6 +427,7 @@ function NewProjectModal({
           description,
           status: "planning",
           startDate: new Date().toISOString().split("T")[0],
+          isInternal,
         }),
       });
       if (!res.ok) {
@@ -500,6 +502,20 @@ function NewProjectModal({
               className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
             />
           </div>
+          <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3 cursor-pointer hover:bg-slate-50 transition-colors">
+            <input
+              type="checkbox"
+              checked={isInternal}
+              onChange={(e) => setIsInternal(e.target.checked)}
+              className="mt-0.5"
+            />
+            <div>
+              <p className="text-[13px] font-medium text-slate-900">Projet interne (Cetix)</p>
+              <p className="mt-0.5 text-[11.5px] text-slate-500">
+                Le projet sera exclu des vues clients et apparaîtra dans « Projets internes ».
+              </p>
+            </div>
+          </label>
           {error && (
             <p className="text-[12px] text-red-600">{error}</p>
           )}
