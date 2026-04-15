@@ -60,7 +60,16 @@ interface CalendarEvent {
   organization: { id: string; name: string } | null;
   meeting: { id: string; status: string } | null;
   renewalType: string | null;
+  renewalAmount: number | null;
+  renewalNotifyDaysBefore: number | null;
+  renewalExternalRef: string | null;
   leaveType: string | null;
+  recurrence: "weekly" | "monthly" | "yearly" | null;
+  recurrenceEndDate: string | null;
+  internalTicketId: string | null;
+  internalProjectId: string | null;
+  internalTicket: { id: string; number: number; subject: string; status: string } | null;
+  internalProject: { id: string; code: string; name: string; status: string } | null;
 }
 
 const KIND_ICONS = {
@@ -146,21 +155,60 @@ export default function CalendarPage() {
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [visibleCalendarIds, setVisibleCalendarIds] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<ViewMode>("month");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "month";
+    const saved = window.localStorage.getItem("calendar.viewMode");
+    return (saved === "week" || saved === "day" || saved === "month") ? saved : "month";
+  });
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
 
-  // Load calendars
+  // Persiste le mode de vue à chaque changement.
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("calendar.viewMode", viewMode);
+    }
+  }, [viewMode]);
+
+  // Load calendars + restaure la sélection visible depuis localStorage si présente.
   useEffect(() => {
     fetch("/api/v1/calendars")
       .then((r) => (r.ok ? r.json() : []))
       .then((arr: Calendar[]) => {
         setCalendars(arr);
-        setVisibleCalendarIds(new Set(arr.map((c) => c.id)));
+        const ids = arr.map((c) => c.id);
+        let initial: Set<string> = new Set(ids);
+        if (typeof window !== "undefined") {
+          try {
+            const saved = window.localStorage.getItem("calendar.visibleIds");
+            if (saved) {
+              const parsed = JSON.parse(saved) as string[];
+              if (Array.isArray(parsed)) {
+                // Garde uniquement les ids qui existent encore (un calendrier
+                // peut avoir été supprimé depuis la dernière session).
+                const filtered = parsed.filter((id) => ids.includes(id));
+                if (filtered.length > 0) initial = new Set(filtered);
+              }
+            }
+          } catch {}
+        }
+        setVisibleCalendarIds(initial);
       })
       .catch(() => {});
   }, []);
+
+  // Persiste la sélection visible à chaque changement.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (visibleCalendarIds.size === 0) return; // ne pas écraser avant init
+    try {
+      window.localStorage.setItem(
+        "calendar.visibleIds",
+        JSON.stringify(Array.from(visibleCalendarIds)),
+      );
+    } catch {}
+  }, [visibleCalendarIds]);
 
   // Fenêtre temporelle selon la vue
   const { windowStart, windowEnd } = useMemo(() => {
@@ -516,9 +564,70 @@ function EventDetailDrawer({
                   <span className="text-amber-700 font-medium">Type :</span> {event.renewalType}
                 </p>
               )}
+              {typeof event.renewalAmount === "number" && (
+                <p className="text-[12px]">
+                  <span className="text-amber-700 font-medium">Montant :</span> {event.renewalAmount.toFixed(2)} CAD
+                </p>
+              )}
+              {event.renewalExternalRef && (
+                <p className="text-[12px]">
+                  <span className="text-amber-700 font-medium">Réf :</span> {event.renewalExternalRef}
+                </p>
+              )}
+              {typeof event.renewalNotifyDaysBefore === "number" && (
+                <p className="text-[11px] text-amber-700">
+                  Notification J-{event.renewalNotifyDaysBefore}
+                </p>
+              )}
               {event.description && (
                 <p className="text-[12px] text-amber-900 whitespace-pre-wrap">{event.description}</p>
               )}
+            </div>
+          )}
+
+          {event.internalTicket && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2">
+              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-blue-700">
+                Ticket interne lié
+              </p>
+              <Link
+                href={`/tickets/${event.internalTicket.id}`}
+                className="mt-1 block text-[12.5px] text-blue-700 hover:underline truncate"
+              >
+                #{event.internalTicket.number} — {event.internalTicket.subject}
+              </Link>
+            </div>
+          )}
+
+          {event.internalProject && (
+            <div className="rounded-lg border border-violet-200 bg-violet-50/50 px-3 py-2">
+              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-violet-700">
+                Projet interne lié
+              </p>
+              <Link
+                href={`/projects/${event.internalProject.id}`}
+                className="mt-1 block text-[12.5px] text-violet-700 hover:underline truncate"
+              >
+                {event.internalProject.code} — {event.internalProject.name}
+              </Link>
+            </div>
+          )}
+
+          {event.recurrence && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-600">
+                Récurrence
+              </p>
+              <p className="text-[12px] text-slate-700">
+                {event.recurrence === "weekly" && "Toutes les semaines"}
+                {event.recurrence === "monthly" && "Tous les mois"}
+                {event.recurrence === "yearly" && "Tous les ans"}
+                {event.recurrenceEndDate && (
+                  <span className="text-slate-500 ml-1.5">
+                    jusqu&apos;au {new Date(event.recurrenceEndDate).toLocaleDateString("fr-CA")}
+                  </span>
+                )}
+              </p>
             </div>
           )}
 
@@ -687,12 +796,18 @@ function TimeGrid({
     return { top, height };
   }
 
+  // Vue semaine : 7 colonnes étroites sont illisibles sur mobile.
+  // On force une largeur minimale par colonne et on rend le tout
+  // scrollable horizontalement à l'intérieur de la Card.
+  const minColWidth = days.length > 1 ? 90 : 0; // jour-vue : pas de min, semaine : 90px/col
   return (
     <Card className="overflow-hidden">
+     <div className="overflow-x-auto" style={{ minWidth: 0 }}>
+      <div style={{ minWidth: minColWidth ? `${48 + days.length * minColWidth}px` : undefined }}>
       {/* Header avec les noms de jour */}
       <div
         className="grid bg-slate-50/60 border-b border-slate-200"
-        style={{ gridTemplateColumns: `48px repeat(${days.length}, minmax(0, 1fr))` }}
+        style={{ gridTemplateColumns: `48px repeat(${days.length}, minmax(${minColWidth}px, 1fr))` }}
       >
         <div /> {/* spacer pour la col des heures */}
         {days.map((d) => {
@@ -718,7 +833,7 @@ function TimeGrid({
       {/* All-day band */}
       <div
         className="grid border-b border-slate-200 bg-slate-50/30"
-        style={{ gridTemplateColumns: `48px repeat(${days.length}, minmax(0, 1fr))` }}
+        style={{ gridTemplateColumns: `48px repeat(${days.length}, minmax(${minColWidth}px, 1fr))` }}
       >
         <div className="px-2 py-1 text-[9.5px] text-slate-400 uppercase tracking-wider text-right">
           jour
@@ -752,7 +867,7 @@ function TimeGrid({
         <div
           className="grid relative"
           style={{
-            gridTemplateColumns: `48px repeat(${days.length}, minmax(0, 1fr))`,
+            gridTemplateColumns: `48px repeat(${days.length}, minmax(${minColWidth}px, 1fr))`,
             height: gridHeight,
           }}
         >
@@ -825,6 +940,8 @@ function TimeGrid({
           })}
         </div>
       </div>
+      </div>
+     </div>
     </Card>
   );
 }
@@ -885,12 +1002,29 @@ function CreateEventModal({
   const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<Array<{ id: string; name: string }>>([]);
   const [ownerId, setOwnerId] = useState<string>(editing?.ownerId ?? "");
+  const [internalTickets, setInternalTickets] = useState<Array<{ id: string; number: number; subject: string }>>([]);
+  const [internalProjects, setInternalProjects] = useState<Array<{ id: string; code: string; name: string }>>([]);
+  const [internalTicketId, setInternalTicketId] = useState<string>(editing?.internalTicketId ?? "");
+  const [internalProjectId, setInternalProjectId] = useState<string>(editing?.internalProjectId ?? "");
 
   useEffect(() => {
     fetch("/api/v1/users")
       .then((r) => (r.ok ? r.json() : []))
       .then((arr: Array<{ id: string; name: string; firstName: string; lastName: string }>) => {
         setUsers(arr.map((u) => ({ id: u.id, name: u.name || `${u.firstName} ${u.lastName}` })));
+      })
+      .catch(() => {});
+    // Pré-charge tickets + projets internes pour le sélecteur de lien.
+    fetch("/api/v1/tickets?internal=true&limit=200")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((arr: Array<{ id: string; number: number; subject: string }>) => {
+        if (Array.isArray(arr)) setInternalTickets(arr);
+      })
+      .catch(() => {});
+    fetch("/api/v1/projects?internal=true")
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((d: { data?: Array<{ id: string; code: string; name: string }> }) => {
+        setInternalProjects(d.data ?? []);
       })
       .catch(() => {});
   }, []);
@@ -942,6 +1076,8 @@ function CreateEventModal({
           renewalAmount: kind === "RENEWAL" && renewalAmount ? Number(renewalAmount) : undefined,
           renewalNotifyDaysBefore: kind === "RENEWAL" && renewalNotifyDays ? Number(renewalNotifyDays) : undefined,
           renewalExternalRef: kind === "RENEWAL" ? (renewalExternalRef || undefined) : undefined,
+          internalTicketId: internalTicketId || null,
+          internalProjectId: internalProjectId || null,
         }),
       });
       if (!res.ok) {
@@ -1065,6 +1201,36 @@ function CreateEventModal({
               </p>
             </div>
           )}
+
+          <div className="grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+            <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+              Lier à une ressource interne (optionnel)
+            </p>
+            <div>
+              <label className="text-[11px] font-medium text-slate-500">Ticket interne</label>
+              <Select value={internalTicketId || "_none"} onValueChange={(v) => setInternalTicketId(v === "_none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Aucun</SelectItem>
+                  {internalTickets.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>#{t.number} — {t.subject}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-[11px] font-medium text-slate-500">Projet interne</label>
+              <Select value={internalProjectId || "_none"} onValueChange={(v) => setInternalProjectId(v === "_none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Aucun</SelectItem>
+                  {internalProjects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.code} — {p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
 
           <div>
             <label className="text-[11px] font-medium text-slate-500">Récurrence</label>

@@ -96,7 +96,13 @@ const NAV_SECTIONS: NavSection[] = [
     // internes, agendas agents, renouvellements) — aucun client ne doit
     // y accéder.
     items: [
-      { label: "Calendrier", href: "/calendar", icon: CalendarDays, minRole: "TECHNICIAN" },
+      {
+        label: "Calendrier",
+        href: "/calendar",
+        icon: CalendarDays,
+        minRole: "TECHNICIAN",
+        children: [{ label: "Rencontres", href: "/calendar/meetings" }],
+      },
       { label: "Tickets internes", href: "/internal-tickets", icon: Ticket, minRole: "TECHNICIAN" },
       { label: "Projets internes", href: "/internal-projects", icon: FolderKanban, minRole: "TECHNICIAN" },
     ],

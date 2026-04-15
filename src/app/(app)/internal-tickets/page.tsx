@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, Briefcase, Loader2, Plus } from "lucide-react";
+import { Search, Briefcase, Loader2, Plus, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +22,7 @@ import type { Ticket } from "@/lib/mock-data";
 export default function InternalTicketsPage() {
   const router = useRouter();
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [timeStats, setTimeStats] = useState<Record<string, { totalMinutes: number; entries: number }>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -31,11 +32,33 @@ export default function InternalTicketsPage() {
     setLoading(true);
     fetch("/api/v1/tickets?internal=true&limit=200")
       .then((r) => (r.ok ? r.json() : []))
-      .then((arr: Ticket[]) => setTickets(Array.isArray(arr) ? arr : []))
+      .then(async (arr: Ticket[]) => {
+        const list = Array.isArray(arr) ? arr : [];
+        setTickets(list);
+        // Récupère le temps logué agrégé par ticket pour la colonne "Temps".
+        if (list.length > 0) {
+          const ids = list.map((t) => t.id).join(",");
+          try {
+            const r = await fetch(`/api/v1/time-entries/aggregate?ticketIds=${encodeURIComponent(ids)}`);
+            if (r.ok) {
+              const d = await r.json();
+              setTimeStats(d.byTicket ?? {});
+            }
+          } catch {}
+        } else {
+          setTimeStats({});
+        }
+      })
       .catch(() => setTickets([]))
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
+
+  // Total temps logué sur la sélection courante (footer + KPI implicite).
+  const totalMinutes = useMemo(() => {
+    return Object.values(timeStats).reduce((s, v) => s + (v.totalMinutes ?? 0), 0);
+  }, [timeStats]);
+  const totalHoursStr = `${Math.floor(totalMinutes / 60)}h${String(totalMinutes % 60).padStart(2, "0")}`;
 
   const filtered = useMemo(() => {
     let list = tickets;
@@ -62,10 +85,19 @@ export default function InternalTicketsPage() {
             Activités administratives et projets Cetix (séparés des tickets clients).
           </p>
         </div>
-        <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
-          <Plus className="h-3.5 w-3.5" />
-          Nouveau ticket interne
-        </Button>
+        <div className="flex items-center gap-3">
+          {!loading && tickets.length > 0 && (
+            <div className="flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 h-8 text-[11.5px] text-slate-700">
+              <Clock className="h-3 w-3 text-slate-500" />
+              <span className="tabular-nums font-medium">{totalHoursStr}</span>
+              <span className="text-slate-500">cumulés</span>
+            </div>
+          )}
+          <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            Nouveau ticket interne
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -113,6 +145,7 @@ export default function InternalTicketsPage() {
                 <th className="px-4 py-2.5 text-left">Statut</th>
                 <th className="px-4 py-2.5 text-left">Priorité</th>
                 <th className="px-4 py-2.5 text-left">Assigné</th>
+                <th className="px-4 py-2.5 text-right">Temps</th>
                 <th className="px-4 py-2.5 text-left">Créé</th>
               </tr>
             </thead>
@@ -139,6 +172,20 @@ export default function InternalTicketsPage() {
                   </td>
                   <td className="px-4 py-3 text-[12px] text-slate-600">{t.priority}</td>
                   <td className="px-4 py-3 text-[12px] text-slate-600">{t.assigneeName ?? "—"}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {timeStats[t.id]?.totalMinutes ? (
+                      <span
+                        className="inline-flex items-center gap-1 text-[11.5px] font-medium text-slate-700"
+                        title={`${timeStats[t.id].entries} entrée(s) de temps`}
+                      >
+                        <Clock className="h-3 w-3 text-slate-400" />
+                        {Math.floor(timeStats[t.id].totalMinutes / 60)}h
+                        {String(timeStats[t.id].totalMinutes % 60).padStart(2, "0")}
+                      </span>
+                    ) : (
+                      <span className="text-[11.5px] text-slate-300">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-[12px] text-slate-500 tabular-nums">
                     {formatDistanceToNow(new Date(t.createdAt), { addSuffix: true, locale: fr })}
                   </td>

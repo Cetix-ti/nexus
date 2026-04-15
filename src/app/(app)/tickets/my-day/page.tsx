@@ -16,7 +16,14 @@ import {
   CalendarCheck,
   Wrench,
   Car,
+  Calendar as CalIcon,
+  Users as UsersIcon,
+  Key,
+  Plane,
+  MapPin,
+  User,
 } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -164,8 +171,21 @@ const TIME_TYPE_LABELS: Record<string, string> = {
 // Page
 // ---------------------------------------------------------------------------
 
+interface DayCalendarEvent {
+  id: string;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  kind: string;
+  location: string | null;
+  meeting: { id: string; status: string } | null;
+  calendar: { name: string; color: string };
+}
+
 export default function MyDayPage() {
   const [data, setData] = useState<MyDayData | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<DayCalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [quickViewTicket, setQuickViewTicket] = useState<FullTicket | null>(null);
   const [quickViewLoading, setQuickViewLoading] = useState<string | null>(null);
@@ -182,6 +202,22 @@ export default function MyDayPage() {
       .then((d) => setData(d))
       .catch((e) => console.error("my-day load failed", e))
       .finally(() => setLoading(false));
+
+    // Charge les événements du calendrier de la journée (today 00:00 → 23:59).
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date();
+    dayEnd.setHours(23, 59, 59, 999);
+    const qs = new URLSearchParams({
+      from: dayStart.toISOString(),
+      to: dayEnd.toISOString(),
+    });
+    fetch(`/api/v1/calendar-events?${qs}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((arr: DayCalendarEvent[]) => {
+        if (Array.isArray(arr)) setCalendarEvents(arr);
+      })
+      .catch(() => {});
   }, []);
 
   // Total de temps saisi aujourd'hui (heures/minutes — pas de $).
@@ -353,6 +389,58 @@ export default function MyDayPage() {
           )}
         </Section>
       </div>
+
+      {/* ================================================================ */}
+      {/* Mon agenda du jour — calendrier + rencontres                     */}
+      {/* ================================================================ */}
+      {calendarEvents.length > 0 && (
+        <Section
+          title="Mon agenda du jour"
+          subtitle="Événements et rencontres planifiés aujourd'hui"
+          count={calendarEvents.length}
+          icon={<CalIcon className="h-4 w-4" />}
+          accentClass="text-slate-600"
+          accentBg="bg-slate-100 ring-1 ring-inset ring-slate-200/60"
+        >
+          <div className="divide-y divide-slate-100">
+            {calendarEvents.map((ev) => {
+              const Icon =
+                ev.kind === "MEETING" ? UsersIcon :
+                ev.kind === "RENEWAL" ? Key :
+                ev.kind === "LEAVE" ? Plane :
+                ev.kind === "WORK_LOCATION" ? MapPin :
+                ev.kind === "PERSONAL" ? User :
+                CalIcon;
+              const href = ev.meeting ? `/calendar/meetings/${ev.meeting.id}` : "/calendar";
+              return (
+                <Link
+                  key={ev.id}
+                  href={href}
+                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50/80 transition-colors"
+                >
+                  <span
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md shrink-0"
+                    style={{ backgroundColor: ev.calendar.color + "22", color: ev.calendar.color }}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium text-slate-900 truncate">{ev.title}</p>
+                    {ev.location && (
+                      <p className="text-[11px] text-slate-500 truncate">{ev.location}</p>
+                    )}
+                  </div>
+                  <span className="text-[11.5px] tabular-nums text-slate-500 shrink-0">
+                    {ev.allDay
+                      ? "Toute la journée"
+                      : `${new Date(ev.startsAt).toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })} – ${new Date(ev.endsAt).toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })}`}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </Section>
+      )}
 
       {/* ================================================================ */}
       {/* 3bis. Assignés sans saisie de temps — "todo du jour"             */}
