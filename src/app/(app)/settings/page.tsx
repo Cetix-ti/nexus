@@ -108,7 +108,6 @@ const sectionGroups: SettingsGroup[] = [
       { key: "tags", label: "Tags", icon: Layers },
       { key: "sla", label: "SLA", icon: ShieldCheck },
       { key: "kanban_boards", label: "Tableaux Kanban", icon: LayoutGrid },
-      { key: "kanban_columns", label: "Colonnes Kanban", icon: LayoutGrid },
       { key: "project_types", label: "Types de projet", icon: FolderKanban },
     ],
   },
@@ -153,7 +152,7 @@ const sectionGroups: SettingsGroup[] = [
     iconBg: "bg-rose-50 ring-rose-200/60",
     sections: [
       { key: "integrations", label: "Intégrations", icon: Plug },
-      { key: "email_monitoring", label: "Surveillance par courriel", icon: Bell },
+      { key: "email_monitoring", label: "Synchronisation des alertes", icon: Bell },
       { key: "api", label: "API et webhooks", icon: Key },
       { key: "system", label: "Système", icon: HardDrive, superAdminOnly: true },
     ],
@@ -1072,8 +1071,26 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   categories: <CategoriesSection />,
   queues: <QueuesSection />,
   tags: <TagsSection />,
-  kanban_boards: <KanbanBoardsSection />,
-  kanban_columns: <KanbanColumnsSection />,
+  // Kanban : la config des colonnes est empilée sous la liste des tableaux
+  // — un seul endroit pour tout configurer (pas d'onglet séparé pour les
+  // colonnes). Le mapping "kanban_columns" est conservé comme alias pour
+  // que les deep-links existants ne cassent pas.
+  kanban_boards: (
+    <>
+      <KanbanBoardsSection />
+      <div className="mt-10 pt-10 border-t border-slate-200">
+        <KanbanColumnsSection />
+      </div>
+    </>
+  ),
+  kanban_columns: (
+    <>
+      <KanbanBoardsSection />
+      <div className="mt-10 pt-10 border-t border-slate-200">
+        <KanbanColumnsSection />
+      </div>
+    </>
+  ),
   billing_profiles: <BillingProfilesSection />,
   contracts: <ContractsSection />,
   project_types: <ProjectTypesSection />,

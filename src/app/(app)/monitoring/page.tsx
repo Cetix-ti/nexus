@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Bell,
@@ -195,6 +196,12 @@ export default function MonitoringPage() {
   const [pageSize, setPageSize] = useState(15);
   const [currentPage, setCurrentPage] = useState(0);
   const [openedAlert, setOpenedAlert] = useState<MonAlert | null>(null);
+  // Feedback du bouton Synchroniser — sans ça, le kanban restait vide
+  // sans explication si la config monitoring n'était pas posée ou si la
+  // mailbox ne renvoyait rien.
+  const [syncFeedback, setSyncFeedback] = useState<
+    { type: "success" | "info" | "warning" | "error"; message: string } | null
+  >(null);
 
   // Navigue vers la page ticket complète (saisies de temps avec profil
   // de facturation, déplacements, commentaires riches, SLA, approbations,
@@ -221,9 +228,52 @@ export default function MonitoringPage() {
 
   async function handleSync() {
     setSyncing(true);
-    await fetch("/api/v1/monitoring/sync", { method: "POST" }).catch(() => {});
-    setSyncing(false);
-    load();
+    setSyncFeedback(null);
+    try {
+      const res = await fetch("/api/v1/monitoring/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // sinceDays: fenêtre basée sur le filtre "X jours" courant — sinon
+        // le premier sync repart du dernier alerte vu (ce qui peut ne
+        // rien ramener si la table est vide ou que la config n'est pas
+        // encore calée, d'où le Kanban vide sans feedback).
+        body: JSON.stringify({ sinceDays: days }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = Array.isArray(data?.errors) && data.errors[0] ? data.errors[0] : (data?.error || `HTTP ${res.status}`);
+        setSyncFeedback({ type: "error", message: `Synchronisation échouée : ${msg}` });
+      } else {
+        const fetched = data?.fetched ?? 0;
+        const created = data?.created ?? 0;
+        const resolved = data?.resolved ?? 0;
+        const errs = Array.isArray(data?.errors) ? data.errors : [];
+        if (errs.length > 0 && created === 0 && fetched === 0) {
+          setSyncFeedback({
+            type: "warning",
+            message: `Aucune alerte reçue — ${errs[0]}. Vérifie la boîte monitoring dans Paramètres → Surveillance par courriel.`,
+          });
+        } else if (fetched === 0) {
+          setSyncFeedback({
+            type: "info",
+            message: `Aucun nouveau courriel d'alerte depuis le dernier sync (${days} j).`,
+          });
+        } else {
+          setSyncFeedback({
+            type: "success",
+            message: `${fetched} courriel(s) vu(s) · +${created} alerte(s) · ${resolved} résolue(s).`,
+          });
+        }
+      }
+    } catch (e) {
+      setSyncFeedback({
+        type: "error",
+        message: `Erreur réseau : ${e instanceof Error ? e.message : String(e)}`,
+      });
+    } finally {
+      setSyncing(false);
+      load();
+    }
   }
 
   async function updateStage(alertId: string, stage: string) {
@@ -308,6 +358,47 @@ export default function MonitoringPage() {
           </Button>
         </div>
       </div>
+
+      {/* Feedback de synchro — visible seulement après un clic Synchroniser.
+          Succès vert, info grise, warning ambre, error rouge. */}
+      {syncFeedback && (
+        <div
+          className={cn(
+            "flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-[12.5px]",
+            syncFeedback.type === "success" && "border-emerald-200 bg-emerald-50 text-emerald-800",
+            syncFeedback.type === "info" && "border-slate-200 bg-slate-50 text-slate-700",
+            syncFeedback.type === "warning" && "border-amber-200 bg-amber-50 text-amber-900",
+            syncFeedback.type === "error" && "border-red-200 bg-red-50 text-red-800",
+          )}
+        >
+          <div className="flex items-start gap-2">
+            {syncFeedback.type === "error" || syncFeedback.type === "warning" ? (
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            ) : (
+              <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            )}
+            <div>
+              <p className="whitespace-pre-wrap">{syncFeedback.message}</p>
+              {(syncFeedback.type === "warning" || syncFeedback.type === "error") && (
+                <Link
+                  href="/settings?section=email_monitoring"
+                  className="mt-0.5 inline-block underline font-medium"
+                >
+                  Ouvrir les paramètres de surveillance
+                </Link>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSyncFeedback(null)}
+            className="text-current opacity-60 hover:opacity-100 text-[11px]"
+            aria-label="Fermer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex items-center gap-2">

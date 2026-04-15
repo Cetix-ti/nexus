@@ -100,7 +100,7 @@ export function MonitoringSection() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-slate-900">Surveillance par courriel</h2>
+        <h2 className="text-lg font-semibold text-slate-900">Synchronisation des alertes</h2>
         <p className="text-[13px] text-slate-500 mt-1">
           Connectez les dossiers de la boîte mail qui contiennent les alertes
           de monitoring et les rapports de sauvegarde. Ils seront lus et classés
