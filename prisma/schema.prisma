@@ -291,6 +291,8 @@ model Ticket {
   approvals      TicketApproval[]
   collaborators  TicketCollaborator[]
   reminders      TicketReminder[]
+  // Events calendrier qui pointent vers ce ticket interne (suivi visuel).
+  linkedCalendarEvents CalendarEvent[] @relation("CalendarEventInternalTicket")
 
   @@index([organizationId, status])
   @@index([assigneeId])
@@ -1529,6 +1531,8 @@ model Project {
   tasks             ProjectTask[]
   tickets           Ticket[]
   shares            SharedResource[] @relation("SharedProject")
+  // Events calendrier qui pointent vers ce projet interne.
+  linkedCalendarEvents CalendarEvent[] @relation("CalendarEventInternalProject")
 
   @@index([organizationId])
   @@index([status])
@@ -1750,10 +1754,16 @@ model CalendarEvent {
   // Et symétriquement : si l'event est supprimé, le Meeting aussi (sinon
   // un Meeting orphelin sans trace dans le calendrier).
   meeting      Meeting?     @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  // Liens vers tickets/projets internes (suivi visuel dans le calendrier).
+  // SetNull → si la ressource liée est supprimée, l'event reste mais perd son lien.
+  internalTicket  Ticket?  @relation("CalendarEventInternalTicket", fields: [internalTicketId], references: [id], onDelete: SetNull)
+  internalProject Project? @relation("CalendarEventInternalProject", fields: [internalProjectId], references: [id], onDelete: SetNull)
 
   @@index([calendarId, startsAt])
   @@index([ownerId, startsAt])
   @@index([kind, startsAt])
+  @@index([internalTicketId])
+  @@index([internalProjectId])
   @@map("calendar_events")
 }
 

@@ -163,6 +163,26 @@ export function startBackgroundJobs() {
       }
     },
   });
+
+  scheduleJob({
+    name: "meeting-reminders",
+    // 5 min — fenêtre de 30 min, on doit ticker assez souvent pour ne pas
+    // rater le passage. Idempotent côté job (1 notif par meeting+user).
+    intervalMs: Number(process.env.MEETING_REMINDER_INTERVAL_MS) || 300_000,
+    isRunning: false,
+    lastRun: null,
+    lastError: null,
+    consecutiveErrors: 0,
+    run: async () => {
+      const { runMeetingReminders } = await import("@/lib/calendar/meeting-reminders");
+      const result = await runMeetingReminders();
+      if (result.created > 0) {
+        console.log(
+          `[meeting-reminders] +${result.created} rappels (${result.checked} rencontres dans la fenêtre)`,
+        );
+      }
+    },
+  });
 }
 
 /** Pour une endpoint /api/v1/admin/jobs/status qui pourrait être câblée plus tard. */

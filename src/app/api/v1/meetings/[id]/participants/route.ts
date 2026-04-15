@@ -63,6 +63,13 @@ export async function POST(
       data: toCreate.map((userId) => ({ meetingId: id, userId, role })),
       skipDuplicates: true,
     });
+    // Notification d'invitation aux nouveaux participants (best-effort).
+    try {
+      const { notifyMeetingInvite } = await import("@/lib/calendar/meeting-reminders");
+      await notifyMeetingInvite(id, toCreate, me.id);
+    } catch (e) {
+      console.warn("[meeting-invite] notification failed:", e);
+    }
   }
 
   const participants = await prisma.meetingParticipant.findMany({

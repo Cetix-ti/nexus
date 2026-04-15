@@ -75,7 +75,7 @@ export async function PATCH(
     "title", "description", "kind", "allDay", "ownerId", "location",
     "organizationId", "renewalType", "renewalAmount", "renewalNotifyDaysBefore",
     "renewalExternalRef", "leaveType", "leaveApproved", "recurrence",
-    "internalTicketId", "internalProjectId", "status",
+    "internalTicketId", "internalProjectId", "calendarId", "status",
   ];
   for (const k of allow) if (k in body) data[k] = body[k];
   if (typeof data.title === "string") {

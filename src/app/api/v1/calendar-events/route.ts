@@ -58,6 +58,8 @@ export async function GET(req: Request) {
       owner: { select: { id: true, firstName: true, lastName: true, avatar: true } },
       organization: { select: { id: true, name: true, clientCode: true, slug: true } },
       meeting: { select: { id: true, status: true } },
+      internalTicket: { select: { id: true, number: true, subject: true, status: true } },
+      internalProject: { select: { id: true, code: true, name: true, status: true } },
     },
     orderBy: { startsAt: "asc" },
   });
@@ -205,6 +207,18 @@ export async function POST(req: Request) {
       },
     });
     meetingId = m.id;
+    // Notifie les participants qu'ils ont été invités (best-effort).
+    const inviteeIds = Array.isArray(body.participantIds)
+      ? body.participantIds.filter((uid: string) => uid && uid !== me.id)
+      : [];
+    if (inviteeIds.length > 0) {
+      try {
+        const { notifyMeetingInvite } = await import("@/lib/calendar/meeting-reminders");
+        await notifyMeetingInvite(m.id, inviteeIds, me.id);
+      } catch (e) {
+        console.warn("[meeting-invite] notification failed:", e);
+      }
+    }
   }
 
   const created = await prisma.calendarEvent.create({
