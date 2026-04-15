@@ -150,9 +150,13 @@ const HOUR_HEIGHT = 48;     // px par heure
 type ViewMode = "month" | "week" | "day";
 
 // ---------------------------------------------------------------------------
-// Page
+// CalendarBoard — UI réutilisable du calendrier (header + sidebar + grille
+// + modales). Exporté nommé pour être embarqué dans le Tableau de bord sans
+// dupliquer les ~800 lignes de logique. La version "page" standalone
+// rajoute simplement une balise h1 et des marges — voir `CalendarPage`
+// à la toute fin du fichier.
 // ---------------------------------------------------------------------------
-export default function CalendarPage() {
+export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {}) {
   const router = useRouter();
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -319,9 +323,11 @@ export default function CalendarPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
-            Calendrier
-          </h1>
+          {!embedded && (
+            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
+              Calendrier
+            </h1>
+          )}
           <div className="flex items-center gap-1">
             <button
               onClick={() => step(-1)}
@@ -1500,4 +1506,13 @@ function CreateEventModal({
       </div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Page standalone /calendar — rend simplement CalendarBoard en pleine page.
+// La vraie logique est dans CalendarBoard (importable ailleurs, notamment
+// dans le Tableau de bord).
+// ---------------------------------------------------------------------------
+export default function CalendarPage() {
+  return <CalendarBoard />;
 }

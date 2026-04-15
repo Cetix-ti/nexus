@@ -205,7 +205,7 @@ export default function ProjectsPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">
-              Projets
+              Projets clients
             </h1>
             <span className="inline-flex h-6 items-center rounded-full bg-slate-100 px-2.5 text-[11.5px] font-semibold text-slate-600 tabular-nums">
               {projects.length}

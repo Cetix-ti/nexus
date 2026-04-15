@@ -9,11 +9,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { TicketVolumeChart } from "@/components/dashboard/ticket-volume-chart";
-import { PriorityChart } from "@/components/dashboard/priority-chart";
 import { RecentTickets } from "@/components/dashboard/recent-tickets";
 import { OrgChart } from "@/components/dashboard/org-chart";
 import { DashboardGrid, type DashboardItem } from "@/components/widgets/dashboard-grid";
 import { WidgetSidebar } from "@/components/widgets/widget-sidebar";
+import { CalendarBoard } from "@/app/(app)/calendar/page";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -40,11 +40,17 @@ const EMPTY: DashboardData = {
 };
 
 // Layout persistence
-const LAYOUT_KEY = "nexus:dashboard:layout";
+// v2 = bump après retrait du widget "priorité" + ajout du widget "calendrier".
+// Les layouts en localStorage antérieurs pointent vers les anciens IDs ;
+// le loader ci-dessous les migre.
+const LAYOUT_KEY = "nexus:dashboard:layout:v2";
+const LEGACY_LAYOUT_KEY = "nexus:dashboard:layout";
 const DEFAULT_ITEMS: DashboardItem[] = [
   { id: "d_kpis", widgetId: "w_dash_kpis", w: 10, h: 2 },
+  // Le calendrier prend la vedette — il occupe toute la largeur en haut
+  // du dashboard. Hauteur généreuse pour afficher une vue mois complète.
+  { id: "d_calendar", widgetId: "w_dash_calendar", w: 10, h: 10 },
   { id: "d_volume", widgetId: "w_dash_volume", w: 5, h: 4 },
-  { id: "d_priority", widgetId: "w_dash_priority", w: 5, h: 4 },
   { id: "d_recent", widgetId: "w_dash_recent", w: 5, h: 5 },
   { id: "d_my", widgetId: "w_dash_my", w: 5, h: 5 },
   { id: "d_orgs", widgetId: "w_dash_orgs", w: 10, h: 4 },
@@ -52,24 +58,45 @@ const DEFAULT_ITEMS: DashboardItem[] = [
 
 function loadLayout(): DashboardItem[] {
   try {
-    const r = localStorage.getItem(LAYOUT_KEY);
-    if (r) {
-      const parsed = JSON.parse(r) as DashboardItem[];
-      // Migrate old widget IDs
-      return parsed.map((item) => {
-        if (item.widgetId === "kpis") return { ...item, widgetId: "w_dash_kpis" };
-        if (item.widgetId === "ticket_volume") return { ...item, widgetId: "w_dash_volume" };
-        if (item.widgetId === "priority_chart") return { ...item, widgetId: "w_dash_priority" };
-        if (item.widgetId === "recent_tickets") return { ...item, widgetId: "w_dash_recent" };
-        if (item.widgetId === "my_tickets") return { ...item, widgetId: "w_dash_my" };
-        if (item.widgetId === "org_chart") return { ...item, widgetId: "w_dash_orgs" };
-        return item;
-      });
+    // v2 d'abord.
+    let raw = localStorage.getItem(LAYOUT_KEY);
+    if (!raw) raw = localStorage.getItem(LEGACY_LAYOUT_KEY);
+    if (!raw) return DEFAULT_ITEMS;
+    const parsed = JSON.parse(raw) as DashboardItem[];
+    // Retire le widget "priorité" retiré du dashboard par défaut ; l'utilisateur
+    // peut le re-ajouter via la sidebar s'il en veut vraiment un.
+    const filtered = parsed.filter(
+      (it) => it.widgetId !== "w_dash_priority" && it.widgetId !== "priority_chart",
+    );
+    // Migre les anciens IDs.
+    const migrated = filtered.map((item) => {
+      if (item.widgetId === "kpis") return { ...item, widgetId: "w_dash_kpis" };
+      if (item.widgetId === "ticket_volume") return { ...item, widgetId: "w_dash_volume" };
+      if (item.widgetId === "recent_tickets") return { ...item, widgetId: "w_dash_recent" };
+      if (item.widgetId === "my_tickets") return { ...item, widgetId: "w_dash_my" };
+      if (item.widgetId === "org_chart") return { ...item, widgetId: "w_dash_orgs" };
+      return item;
+    });
+    // Garantit qu'on a un widget calendrier — ajoute-le en haut s'il manque.
+    const hasCalendar = migrated.some((it) => it.widgetId === "w_dash_calendar");
+    if (!hasCalendar) {
+      // On le glisse juste après les KPIs s'ils existent, sinon en premier.
+      const kpiIdx = migrated.findIndex((it) => it.widgetId === "w_dash_kpis");
+      const calItem: DashboardItem = { id: "d_calendar", widgetId: "w_dash_calendar", w: 10, h: 10 };
+      if (kpiIdx >= 0) migrated.splice(kpiIdx + 1, 0, calItem);
+      else migrated.unshift(calItem);
     }
+    return migrated;
   } catch {}
   return DEFAULT_ITEMS;
 }
-function saveLayout(items: DashboardItem[]) { try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(items)); } catch {} }
+function saveLayout(items: DashboardItem[]) {
+  try {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(items));
+    // Nettoie l'ancienne clé pour éviter qu'elle ne revive en mode fallback.
+    localStorage.removeItem(LEGACY_LAYOUT_KEY);
+  } catch {}
+}
 
 export default function DashboardPage() {
   const { data: session } = useSession();
@@ -111,8 +138,14 @@ export default function DashboardPage() {
         );
       case "w_dash_volume":
         return <TicketVolumeChart data={data.ticketVolume} />;
-      case "w_dash_priority":
-        return <PriorityChart data={data.ticketsByPriority} />;
+      case "w_dash_calendar":
+        // Calendrier complet (mois/semaine/jour, création, édition, filtres).
+        // On l'embarque en mode compact : pas de h1 "Calendrier" dupliqué.
+        return (
+          <div className="p-2">
+            <CalendarBoard embedded />
+          </div>
+        );
       case "w_dash_recent":
         return <RecentTickets tickets={data.recentTickets} title="Tickets récents" />;
       case "w_dash_my":

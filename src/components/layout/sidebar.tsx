@@ -55,6 +55,10 @@ function hasNavAccess(userRole: string, minRole?: string): boolean {
 }
 
 const NAV_SECTIONS: NavSection[] = [
+  // Vue principale (sans label de section) — ce qu'un agent ouvre 90% du temps.
+  // Le Calendrier est maintenant intégré au Tableau de bord, donc il n'a
+  // plus son entrée propre ici (la page /calendar reste accessible via
+  // deep-link, et /calendar/meetings garde son entrée dans Équipe).
   {
     items: [
       { label: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
@@ -71,12 +75,12 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    label: "Gestion",
+    label: "Clients",
     items: [
+      { label: "Projets clients", href: "/projects", icon: FolderKanban },
       { label: "Organisations", href: "/organisations", icon: Building2 },
       { label: "Contacts", href: "/contacts", icon: Users },
       { label: "Actifs", href: "/assets", icon: Monitor },
-      { label: "Projets", href: "/projects", icon: FolderKanban },
       { label: "Planificateur", href: "/scheduling", icon: CalendarDays },
       { label: "Préfacturation", href: "/billing", icon: Receipt, minRole: "SUPERVISOR" },
       { label: "Finances", href: "/finances", icon: DollarSign, minRole: "SUPERVISOR" },
@@ -90,19 +94,19 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    label: "Personnel",
+    items: [
+      { label: "Mon espace", href: "/my-space", icon: UserCircle },
+    ],
+  },
+  {
     label: "Équipe",
     // TECHNICIAN+ : exclut les CLIENT_ADMIN / CLIENT_USER / READ_ONLY. La
     // section Équipe contient des données opérationnelles Cetix (rencontres
-    // internes, agendas agents, renouvellements) — aucun client ne doit
-    // y accéder.
+    // internes, tickets admin, projets admin) — aucun client ne doit y
+    // accéder.
     items: [
-      {
-        label: "Calendrier",
-        href: "/calendar",
-        icon: CalendarDays,
-        minRole: "TECHNICIAN",
-        children: [{ label: "Rencontres", href: "/calendar/meetings" }],
-      },
+      { label: "Rencontres", href: "/calendar/meetings", icon: CalendarDays, minRole: "TECHNICIAN" },
       { label: "Tickets internes", href: "/internal-tickets", icon: Ticket, minRole: "TECHNICIAN" },
       { label: "Projets internes", href: "/internal-projects", icon: FolderKanban, minRole: "TECHNICIAN" },
     ],
@@ -122,12 +126,6 @@ const NAV_SECTIONS: NavSection[] = [
           { label: "Sources & Variables", href: "/analytics/data" },
         ],
       },
-    ],
-  },
-  {
-    label: "Personnel",
-    items: [
-      { label: "Mon espace", href: "/my-space", icon: UserCircle },
     ],
   },
   {
