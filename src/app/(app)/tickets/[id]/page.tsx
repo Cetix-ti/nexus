@@ -868,6 +868,31 @@ export default function TicketDetailPage() {
         {/* Right: Sidebar — on mobile, appears BEFORE main content via order; collapsible on small screens */}
         <div className="w-full lg:w-80 flex-shrink-0 overflow-y-auto bg-gray-50/50 order-first lg:order-none">
           <div className="p-5 space-y-5">
+            {/* Tags opérationnels — rencontre source pour les tickets internes */}
+            {(ticket as { meetingId?: string }).meetingId && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2">
+                <p className="text-[10.5px] font-semibold uppercase tracking-wider text-blue-700">
+                  Issu d&apos;une rencontre
+                </p>
+                <a
+                  href={`/calendar/meetings/${(ticket as { meetingId?: string }).meetingId}`}
+                  className="mt-0.5 inline-flex items-center gap-1 text-[12px] text-blue-700 hover:underline"
+                >
+                  ← Voir la fiche de réunion
+                </a>
+              </div>
+            )}
+            {(ticket as { isInternal?: boolean }).isInternal && (
+              <div className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2">
+                <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-700">
+                  Ticket interne
+                </p>
+                <p className="mt-0.5 text-[12px] text-slate-600">
+                  Administratif / Cetix — exclu des vues clients.
+                </p>
+              </div>
+            )}
+
             {/* Status & Priority */}
             <SidebarSection title="Détails">
               <SidebarRow label="Statut">

@@ -91,10 +91,14 @@ const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: "Équipe",
+    // TECHNICIAN+ : exclut les CLIENT_ADMIN / CLIENT_USER / READ_ONLY. La
+    // section Équipe contient des données opérationnelles Cetix (rencontres
+    // internes, agendas agents, renouvellements) — aucun client ne doit
+    // y accéder.
     items: [
-      { label: "Calendrier", href: "/calendar", icon: CalendarDays },
-      { label: "Tickets internes", href: "/internal-tickets", icon: Ticket },
-      { label: "Projets internes", href: "/internal-projects", icon: FolderKanban },
+      { label: "Calendrier", href: "/calendar", icon: CalendarDays, minRole: "TECHNICIAN" },
+      { label: "Tickets internes", href: "/internal-tickets", icon: Ticket, minRole: "TECHNICIAN" },
+      { label: "Projets internes", href: "/internal-projects", icon: FolderKanban, minRole: "TECHNICIAN" },
     ],
   },
   {

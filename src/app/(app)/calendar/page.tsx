@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   ChevronLeft,
   ChevronRight,
@@ -15,6 +16,8 @@ import {
   Users as UsersIcon,
   RefreshCcw,
   Loader2,
+  X,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -235,15 +238,30 @@ export default function CalendarPage() {
     });
   }
 
+  const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
+  const [editEvent, setEditEvent] = useState<CalendarEvent | null>(null);
+
   async function handleEventClick(e: CalendarEvent) {
     if (e.kind === "MEETING" && e.meetingId) {
       router.push(`/calendar/meetings/${e.meetingId}`);
       return;
     }
-    // TODO: event detail drawer — v1 : juste une alert
-    alert(
-      `${e.title}\n${new Date(e.startsAt).toLocaleString("fr-CA")} → ${new Date(e.endsAt).toLocaleString("fr-CA")}\n\n${e.description ?? ""}`,
-    );
+    setDetailEvent(e);
+  }
+
+  async function handleDeleteEvent(e: CalendarEvent) {
+    const ok = window.confirm(`Supprimer définitivement « ${e.title} » ?`);
+    if (!ok) return;
+    // L'id peut être un id-occurrence "xxx@ISO" — le endpoint gère déjà
+    // la normalisation. La suppression affecte toute la série.
+    const res = await fetch(`/api/v1/calendar-events/${e.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || "Suppression impossible");
+      return;
+    }
+    setDetailEvent(null);
+    reloadEvents();
   }
 
   return (
@@ -374,12 +392,165 @@ export default function CalendarPage() {
           calendars={calendars}
           defaultDate={cursor}
           onClose={() => setShowCreate(false)}
-          onCreated={() => {
+          onSaved={() => {
             setShowCreate(false);
             reloadEvents();
           }}
         />
       )}
+
+      {editEvent && (
+        <CreateEventModal
+          calendars={calendars}
+          defaultDate={cursor}
+          editing={editEvent}
+          onClose={() => setEditEvent(null)}
+          onSaved={() => {
+            setEditEvent(null);
+            setDetailEvent(null);
+            reloadEvents();
+          }}
+        />
+      )}
+
+      {detailEvent && (
+        <EventDetailDrawer
+          event={detailEvent}
+          onClose={() => setDetailEvent(null)}
+          onEdit={() => {
+            setEditEvent(detailEvent);
+          }}
+          onDelete={() => handleDeleteEvent(detailEvent)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Event detail drawer — affiche un event non-MEETING avec actions modifier/supprimer
+// ---------------------------------------------------------------------------
+function EventDetailDrawer({
+  event,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  event: CalendarEvent;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const Icon = KIND_ICONS[event.kind] ?? CalIcon;
+  const dur = Math.round((new Date(event.endsAt).getTime() - new Date(event.startsAt).getTime()) / 60_000);
+  const orgLink = event.organization
+    ? `/organisations/${encodeURIComponent((event.organization as { clientCode?: string; slug?: string }).clientCode || (event.organization as { slug?: string }).slug || event.organizationId || "")}`
+    : null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4 sm:p-6"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-md my-4 rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="border-b border-slate-200 px-5 py-4 rounded-t-2xl"
+          style={{ borderLeftWidth: 4, borderLeftColor: event.calendar.color }}
+        >
+          <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+            <Icon className="h-3 w-3" />
+            {event.calendar.name}
+            {" · "}
+            {event.kind}
+          </div>
+          <h2 className="mt-1 text-[16px] font-semibold text-slate-900">{event.title}</h2>
+        </div>
+
+        <div className="p-5 space-y-3 text-[13px]">
+          <div>
+            <p className="text-[11px] font-medium text-slate-500">Quand</p>
+            <p className="text-slate-700 tabular-nums">
+              {event.allDay
+                ? new Date(event.startsAt).toLocaleDateString("fr-CA", { dateStyle: "full" })
+                : `${new Date(event.startsAt).toLocaleString("fr-CA", { dateStyle: "medium", timeStyle: "short" })} → ${new Date(event.endsAt).toLocaleString("fr-CA", { timeStyle: "short" })}`}
+              {!event.allDay && <span className="text-slate-400 ml-1.5">({dur} min)</span>}
+            </p>
+          </div>
+
+          {event.owner && (
+            <div>
+              <p className="text-[11px] font-medium text-slate-500">Concerne</p>
+              <p className="text-slate-700">
+                {event.owner.firstName} {event.owner.lastName}
+              </p>
+            </div>
+          )}
+
+          {event.location && (
+            <div>
+              <p className="text-[11px] font-medium text-slate-500">Emplacement</p>
+              <p className="text-slate-700">{event.location}</p>
+            </div>
+          )}
+
+          {event.organization && (
+            <div>
+              <p className="text-[11px] font-medium text-slate-500">Client</p>
+              {orgLink ? (
+                <Link href={orgLink} className="text-blue-600 hover:underline">
+                  {event.organization.name}
+                </Link>
+              ) : (
+                <p className="text-slate-700">{event.organization.name}</p>
+              )}
+            </div>
+          )}
+
+          {event.kind === "RENEWAL" && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 space-y-1.5">
+              {event.renewalType && (
+                <p className="text-[12px]">
+                  <span className="text-amber-700 font-medium">Type :</span> {event.renewalType}
+                </p>
+              )}
+              {event.description && (
+                <p className="text-[12px] text-amber-900 whitespace-pre-wrap">{event.description}</p>
+              )}
+            </div>
+          )}
+
+          {event.kind === "LEAVE" && event.leaveType && (
+            <div>
+              <p className="text-[11px] font-medium text-slate-500">Type de congé</p>
+              <p className="text-slate-700">{event.leaveType}</p>
+            </div>
+          )}
+
+          {event.description && event.kind !== "RENEWAL" && (
+            <div>
+              <p className="text-[11px] font-medium text-slate-500">Description</p>
+              <p className="text-slate-700 whitespace-pre-wrap">{event.description}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-slate-200 px-5 py-3 flex items-center justify-between gap-2">
+          <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-600 hover:bg-red-50">
+            <X className="h-3.5 w-3.5" />
+            Supprimer
+          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>Fermer</Button>
+            <Button variant="primary" size="sm" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5" />
+              Modifier
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -659,38 +830,61 @@ function TimeGrid({
 }
 
 // ---------------------------------------------------------------------------
-// Create event modal (simple v1)
+// Modal création / édition d'un événement
+// `editing` = null → création ; sinon on pré-remplit et on PATCH.
 // ---------------------------------------------------------------------------
 function CreateEventModal({
   calendars,
   defaultDate,
+  editing,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   calendars: Calendar[];
   defaultDate: Date;
+  editing?: CalendarEvent | null;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
 }) {
   const today = defaultDate.toISOString().slice(0, 10);
-  const [calendarId, setCalendarId] = useState(calendars[0]?.id ?? "");
-  const [title, setTitle] = useState("");
-  const [kind, setKind] = useState<CalendarEvent["kind"]>("OTHER");
-  const [startDate, setStartDate] = useState(today);
-  const [startTime, setStartTime] = useState("09:00");
-  const [endDate, setEndDate] = useState(today);
-  const [endTime, setEndTime] = useState("10:00");
-  const [allDay, setAllDay] = useState(false);
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [recurrence, setRecurrence] = useState<"none" | "weekly" | "monthly" | "yearly">("none");
-  const [renewalAmount, setRenewalAmount] = useState("");
+  const isEdit = !!editing;
+
+  // Extrait les composantes date/heure d'une ISO string pour initialiser.
+  function splitIso(iso: string): { date: string; time: string } {
+    const d = new Date(iso);
+    const date = d.toISOString().slice(0, 10);
+    const h = String(d.getHours()).padStart(2, "0");
+    const m = String(d.getMinutes()).padStart(2, "0");
+    return { date, time: `${h}:${m}` };
+  }
+  const initStart = editing ? splitIso(editing.startsAt) : { date: today, time: "09:00" };
+  const initEnd = editing ? splitIso(editing.endsAt) : { date: today, time: "10:00" };
+
+  const [calendarId, setCalendarId] = useState(editing?.calendarId ?? calendars[0]?.id ?? "");
+  const [title, setTitle] = useState(editing?.title ?? "");
+  const [kind, setKind] = useState<CalendarEvent["kind"]>(editing?.kind ?? "OTHER");
+  const [startDate, setStartDate] = useState(initStart.date);
+  const [startTime, setStartTime] = useState(initStart.time);
+  const [endDate, setEndDate] = useState(initEnd.date);
+  const [endTime, setEndTime] = useState(initEnd.time);
+  const [allDay, setAllDay] = useState(editing?.allDay ?? false);
+  const [description, setDescription] = useState(editing?.description ?? "");
+  const [location, setLocation] = useState(editing?.location ?? "");
+  const [recurrence, setRecurrence] = useState<"none" | "weekly" | "monthly" | "yearly">(
+    (editing as { recurrence?: "weekly" | "monthly" | "yearly" } | undefined)?.recurrence ?? "none",
+  );
+  const [renewalAmount, setRenewalAmount] = useState(
+    editing?.renewalType ? String((editing as { renewalAmount?: number }).renewalAmount ?? "") : "",
+  );
   const [renewalNotifyDays, setRenewalNotifyDays] = useState("14");
-  const [renewalType, setRenewalType] = useState("");
-  const [renewalExternalRef, setRenewalExternalRef] = useState("");
+  const [renewalType, setRenewalType] = useState(editing?.renewalType ?? "");
+  const [renewalExternalRef, setRenewalExternalRef] = useState(
+    (editing as { renewalExternalRef?: string } | undefined)?.renewalExternalRef ?? "",
+  );
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<Array<{ id: string; name: string }>>([]);
-  const [ownerId, setOwnerId] = useState<string>("");
+  const [ownerId, setOwnerId] = useState<string>(editing?.ownerId ?? "");
 
   useEffect(() => {
     fetch("/api/v1/users")
@@ -702,38 +896,48 @@ function CreateEventModal({
   }, []);
 
   // Synchronise le kind avec la nature du calendrier sélectionné
+  // (uniquement en mode création — en édition on respecte le kind existant).
   useEffect(() => {
+    if (isEdit) return;
     const cal = calendars.find((c) => c.id === calendarId);
     if (!cal) return;
     if (cal.kind === "RENEWALS") setKind("RENEWAL");
     else if (cal.kind === "LEAVE") setKind("LEAVE");
-    // GENERAL et CUSTOM : laisse l'utilisateur choisir
-  }, [calendarId, calendars]);
+  }, [calendarId, calendars, isEdit]);
 
   async function submit() {
     if (!calendarId || !title.trim()) return;
+
+    // Validation fin > début
+    const startsDate = allDay
+      ? new Date(startDate)
+      : new Date(`${startDate}T${startTime}:00`);
+    const endsDate = allDay
+      ? new Date(endDate + "T23:59:59")
+      : new Date(`${endDate}T${endTime}:00`);
+    if (endsDate <= startsDate) {
+      setError("La fin doit être après le début.");
+      return;
+    }
+
     setSaving(true);
+    setError(null);
     try {
-      const startsAt = allDay
-        ? new Date(startDate).toISOString()
-        : new Date(`${startDate}T${startTime}:00`).toISOString();
-      const endsAt = allDay
-        ? new Date(endDate + "T23:59:59").toISOString()
-        : new Date(`${endDate}T${endTime}:00`).toISOString();
-      const res = await fetch("/api/v1/calendar-events", {
-        method: "POST",
+      const url = isEdit ? `/api/v1/calendar-events/${editing.id}` : "/api/v1/calendar-events";
+      const res = await fetch(url, {
+        method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           calendarId,
           title,
           kind,
-          startsAt,
-          endsAt,
+          startsAt: startsDate.toISOString(),
+          endsAt: endsDate.toISOString(),
           allDay,
           description: description || undefined,
           location: location || undefined,
           ownerId: ownerId || undefined,
-          recurrence: recurrence !== "none" ? recurrence : undefined,
+          recurrence: recurrence !== "none" ? recurrence : null,
           renewalType: kind === "RENEWAL" ? (renewalType || undefined) : undefined,
           renewalAmount: kind === "RENEWAL" && renewalAmount ? Number(renewalAmount) : undefined,
           renewalNotifyDaysBefore: kind === "RENEWAL" && renewalNotifyDays ? Number(renewalNotifyDays) : undefined,
@@ -742,10 +946,12 @@ function CreateEventModal({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.error || `Erreur ${res.status}`);
+        setError(err.error || `Erreur ${res.status}`);
         return;
       }
-      onCreated();
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur réseau");
     } finally {
       setSaving(false);
     }
@@ -755,7 +961,9 @@ function CreateEventModal({
     <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4 sm:p-6" onClick={onClose}>
       <div className="relative w-full max-w-lg my-4 rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="border-b border-slate-200 px-5 py-4">
-          <h2 className="text-[15px] font-semibold text-slate-900">Nouvel événement</h2>
+          <h2 className="text-[15px] font-semibold text-slate-900">
+            {isEdit ? "Modifier l'événement" : "Nouvel événement"}
+          </h2>
         </div>
         <div className="p-5 space-y-3">
           <div>
@@ -879,12 +1087,27 @@ function CreateEventModal({
               className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
+
+          {error && (
+            <p className="text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+              {error}
+            </p>
+          )}
         </div>
         <div className="border-t border-slate-200 px-5 py-3 flex items-center justify-end gap-2">
           <Button variant="outline" onClick={onClose}>Annuler</Button>
           <Button variant="primary" onClick={submit} loading={saving} disabled={!title.trim() || !calendarId}>
-            <Briefcase className="h-3.5 w-3.5" />
-            Créer
+            {isEdit ? (
+              <>
+                <Pencil className="h-3.5 w-3.5" />
+                Enregistrer
+              </>
+            ) : (
+              <>
+                <Briefcase className="h-3.5 w-3.5" />
+                Créer
+              </>
+            )}
           </Button>
         </div>
       </div>
