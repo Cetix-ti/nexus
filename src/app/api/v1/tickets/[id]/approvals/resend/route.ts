@@ -27,6 +27,7 @@ export async function POST(
     select: {
       id: true,
       number: true,
+      isInternal: true,
       subject: true,
       description: true,
       organization: { select: { name: true } },
@@ -49,7 +50,9 @@ export async function POST(
   }
 
   const subject = `Relance — Approbation demandée : ${ticket.subject}`;
-  const ticketNumber = `INC-${1000 + ticket.number}`;
+  const { getClientTicketPrefix, formatTicketNumber } = await import("@/lib/tenant-settings/service");
+  const clientPrefix = await getClientTicketPrefix();
+  const ticketNumber = formatTicketNumber(ticket.number, !!ticket.isInternal, clientPrefix);
   const requesterName = ticket.requester
     ? `${ticket.requester.firstName} ${ticket.requester.lastName}`.trim()
     : "—";

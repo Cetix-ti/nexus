@@ -729,6 +729,7 @@ function EventDetailDrawer({
 interface LinkedTicketRow {
   id: string;
   number: number;
+  displayNumber?: string;
   subject: string;
   status: string;
   priority: string;
@@ -842,7 +843,7 @@ function LinkedTicketsSection({
                   {t.priority}
                 </span>
                 <span className="text-[11px] font-mono text-slate-500 shrink-0">
-                  {t.isInternal ? "INT" : "INC"}-{1000 + t.number}
+                  {t.displayNumber ?? `${t.isInternal ? "INT" : "TK"}-${1000 + t.number}`}
                 </span>
                 <span className="text-[12.5px] text-slate-700 truncate flex-1 hover:text-blue-600 hover:underline">
                   {t.subject}
@@ -937,7 +938,7 @@ function OnSiteTicketPicker({
                     className="shrink-0"
                   />
                   <span className="text-[11px] font-mono text-slate-500 shrink-0">
-                    INC-{1000 + t.number}
+                    {t.displayNumber ?? `${t.isInternal ? "INT" : "TK"}-${1000 + t.number}`}
                   </span>
                   <span className="text-[12.5px] text-slate-800 truncate flex-1">
                     {t.subject}

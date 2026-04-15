@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import type { Ticket as UiTicket, TicketType as UiTicketType } from "@/lib/mock-data";
 import { enforceSlaForTicket } from "@/lib/sla/service";
 import { runAutomations } from "@/lib/automations/service";
+import { getClientTicketPrefix, formatTicketNumber } from "@/lib/tenant-settings/service";
 
 // ----------------------------------------------------------------------------
 // Mappers — convert Prisma row (relational) → UI Ticket shape (denormalized).
@@ -82,10 +83,10 @@ export function typeToDb(t: string): string {
   return mapped ?? upper;
 }
 
-function flattenDetail(t: PrismaTicketDetail): UiTicket {
+function flattenDetail(t: PrismaTicketDetail, clientPrefix: string): UiTicket {
   return {
     id: t.id,
-    number: `${t.isInternal ? "INT" : "INC"}-${1000 + t.number}`,
+    number: formatTicketNumber(t.number, !!t.isInternal, clientPrefix),
     subject: t.subject,
     description: t.description,
     status: statusToUi(t.status),
@@ -157,10 +158,10 @@ function flattenDetail(t: PrismaTicketDetail): UiTicket {
   };
 }
 
-function flattenList(t: PrismaTicketList): UiTicket {
+function flattenList(t: PrismaTicketList, clientPrefix: string): UiTicket {
   return {
     id: t.id,
-    number: `${t.isInternal ? "INT" : "INC"}-${1000 + t.number}`,
+    number: formatTicketNumber(t.number, !!t.isInternal, clientPrefix),
     subject: t.subject,
     description: t.description,
     status: statusToUi(t.status),
@@ -265,7 +266,8 @@ export async function listTickets(options?: {
     orderBy: { createdAt: "desc" },
     take: options?.limit ?? 100,
   });
-  return rows.map(flattenList);
+  const clientPrefix = await getClientTicketPrefix();
+  return rows.map((t) => flattenList(t, clientPrefix));
 }
 
 export async function getTicket(id: string): Promise<UiTicket | null> {
@@ -274,7 +276,9 @@ export async function getTicket(id: string): Promise<UiTicket | null> {
     where: { OR: [{ id }, { number: parseInt(id) || -1 }] },
     include: detailIncludes,
   });
-  return t ? flattenDetail(t) : null;
+  if (!t) return null;
+  const clientPrefix = await getClientTicketPrefix();
+  return flattenDetail(t, clientPrefix);
 }
 
 export async function createTicket(input: {
@@ -344,7 +348,8 @@ export async function createTicket(input: {
     isOverdue: t.isOverdue,
   }).catch(() => {});
 
-  return flattenDetail(t);
+  const clientPrefix = await getClientTicketPrefix();
+  return flattenDetail(t, clientPrefix);
 }
 
 export async function updateTicket(
@@ -492,7 +497,8 @@ export async function updateTicket(
     }
   }
 
-  return flattenDetail(t);
+  const clientPrefix = await getClientTicketPrefix();
+  return flattenDetail(t, clientPrefix);
 }
 
 export async function deleteTicket(id: string): Promise<void> {

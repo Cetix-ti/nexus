@@ -52,5 +52,12 @@ export async function PATCH(req: Request) {
   if (body.autoCloseDays !== undefined) patch.autoCloseDays = Math.max(1, Math.floor(body.autoCloseDays));
 
   const updated = await setSetting("tickets", patch);
+  // Invalide le cache en mémoire du préfixe — sinon, les vues qui lisent
+  // getClientTicketPrefix() continueraient à afficher l'ancien préfixe
+  // jusqu'à 60s après un changement.
+  if (patch.numberingPrefix !== undefined) {
+    const { invalidateTicketPrefixCache } = await import("@/lib/tenant-settings/service");
+    invalidateTicketPrefixCache();
+  }
   return NextResponse.json(updated);
 }

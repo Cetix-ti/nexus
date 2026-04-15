@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
+import { getClientTicketPrefix, formatTicketNumber } from "@/lib/tenant-settings/service";
 
 export async function GET(
   _req: Request,
@@ -61,12 +62,15 @@ export async function GET(
     }
   }
 
+  const clientPrefix = await getClientTicketPrefix();
+
   return NextResponse.json({
     success: true,
     data: {
       id: ticket.id,
       number: ticket.number,
-      displayNumber: `INC-${1000 + ticket.number}`,
+      // Portail client : org est toujours non-interne → préfixe client.
+      displayNumber: formatTicketNumber(ticket.number, false, clientPrefix),
       subject: ticket.subject,
       description: ticket.description,
       status: ticket.status,

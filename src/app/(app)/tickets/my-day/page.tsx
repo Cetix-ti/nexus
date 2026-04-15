@@ -186,6 +186,7 @@ interface DayCalendarEvent {
   linkedTickets?: Array<{
     id: string;
     number: number;
+    displayNumber?: string;
     subject: string;
     priority: string;
     status: string;
@@ -471,7 +472,7 @@ export default function MyDayPage() {
                             className="flex items-center gap-2 text-[11.5px] text-slate-600 hover:text-blue-700"
                           >
                             <span className="font-mono text-slate-400 shrink-0">
-                              {t.isInternal ? "INT" : "INC"}-{1000 + t.number}
+                              {t.displayNumber ?? `${t.isInternal ? "INT" : "TK"}-${1000 + t.number}`}
                             </span>
                             <span className="truncate">{t.subject}</span>
                           </Link>

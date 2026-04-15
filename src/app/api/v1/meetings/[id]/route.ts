@@ -33,7 +33,18 @@ export async function GET(
     },
   });
   if (!meeting) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(meeting);
+  // Préfixe client-tickets lu depuis les tenant-settings (cache 60s). Pour
+  // les tickets internes, on force INT-. On expose displayNumber pour que
+  // le client n'ait plus à deviner le préfixe lui-même.
+  const { getClientTicketPrefix, formatTicketNumber } = await import("@/lib/tenant-settings/service");
+  const clientPrefix = await getClientTicketPrefix();
+  return NextResponse.json({
+    ...meeting,
+    generatedTickets: meeting.generatedTickets.map((t) => ({
+      ...t,
+      displayNumber: formatTicketNumber(t.number, !!t.isInternal, clientPrefix),
+    })),
+  });
 }
 
 async function assertCanMutateMeeting(

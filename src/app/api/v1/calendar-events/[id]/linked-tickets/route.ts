@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { getClientTicketPrefix, formatTicketNumber } from "@/lib/tenant-settings/service";
 
 /**
  * Normalise un id d'occurrence récurrente "xxx@ISO" vers l'event-source.
@@ -84,7 +85,18 @@ export async function GET(
     });
   }
 
-  return NextResponse.json({ linked, clientOnSite });
+  // Attache un displayNumber (TK-xxxx / INT-xxxx) à chaque ticket pour
+  // que le front n'ait plus à deviner le préfixe. Le préfixe client est
+  // configurable via /settings (tenant-setting tickets.numberingPrefix).
+  const clientPrefix = await getClientTicketPrefix();
+  const withDisplay = <T extends { number: number; isInternal?: boolean | null }>(t: T) => ({
+    ...t,
+    displayNumber: formatTicketNumber(t.number, !!t.isInternal, clientPrefix),
+  });
+  return NextResponse.json({
+    linked: linked.map(withDisplay),
+    clientOnSite: clientOnSite.map(withDisplay),
+  });
 }
 
 /**

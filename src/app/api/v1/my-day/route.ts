@@ -126,18 +126,24 @@ export async function GET() {
           subject: true,
           status: true,
           priority: true,
+          isInternal: true,
           organization: { select: { name: true } },
         },
       })
     : [];
   const ticketMap = new Map(teTickets.map((t) => [t.id, t]));
 
+  // Préfixe client configurable via /settings (tenant-setting
+  // tickets.numberingPrefix). Les tickets internes utilisent toujours INT-.
+  const { getClientTicketPrefix, formatTicketNumber } = await import("@/lib/tenant-settings/service");
+  const clientPrefix = await getClientTicketPrefix();
+
   function hydrateTimeEntry(te: (typeof timeEntries)[number]) {
     const ticket = ticketMap.get(te.ticketId);
     return {
       id: te.id,
       ticketId: te.ticketId,
-      ticketNumber: ticket ? `INC-${1000 + ticket.number}` : "—",
+      ticketNumber: ticket ? formatTicketNumber(ticket.number, !!ticket.isInternal, clientPrefix) : "—",
       ticketSubject: ticket?.subject ?? "—",
       ticketStatus: ticket?.status?.toLowerCase() ?? "—",
       ticketPriority: ticket?.priority?.toLowerCase() ?? "—",
@@ -212,6 +218,7 @@ export async function GET() {
             id: true,
             number: true,
             subject: true,
+            isInternal: true,
             organization: { select: { name: true } },
           },
         })
@@ -219,6 +226,7 @@ export async function GET() {
           id: string;
           number: number;
           subject: string;
+          isInternal: boolean;
           organization: { name: string } | null;
         }>),
     allOnsiteAgentIds.length
@@ -242,7 +250,7 @@ export async function GET() {
       agentName: a ? `${a.firstName} ${a.lastName}`.trim() : "—",
       isMine: te.agentId === me.id,
       ticketId: te.ticketId,
-      ticketNumber: t ? `INC-${1000 + t.number}` : "—",
+      ticketNumber: t ? formatTicketNumber(t.number, !!t.isInternal, clientPrefix) : "—",
       ticketSubject: t?.subject ?? "—",
       organizationName: t?.organization?.name ?? "—",
       durationMinutes: te.durationMinutes,
@@ -284,7 +292,7 @@ export async function GET() {
   function formatTicket(t: (typeof createdTickets)[number]) {
     return {
       id: t.id,
-      number: `INC-${1000 + t.number}`,
+      number: formatTicketNumber(t.number, !!(t as { isInternal?: boolean }).isInternal, clientPrefix),
       subject: t.subject,
       status: t.status.toLowerCase(),
       priority: t.priority.toLowerCase(),

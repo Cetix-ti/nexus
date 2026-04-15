@@ -69,7 +69,11 @@ export async function GET(req: Request) {
       take: 200,
     });
 
-    // Map tickets to alert-like shape for the frontend
+    // Map tickets to alert-like shape for the frontend. displayNumber
+    // format ici avec le même helper que le reste des vues pour rester
+    // cohérent (TK- / INT-).
+    const { getClientTicketPrefix: _getCP, formatTicketNumber: _fmt } = await import("@/lib/tenant-settings/service");
+    const _cp = await _getCP();
     const ticketAlerts = monitoringTickets.map((t) => ({
       id: `ticket_${t.id}`,
       ticketId: t.id,
@@ -89,13 +93,15 @@ export async function GET(req: Request) {
       alertGroupKey: null,
       isTicket: true,
       ticketNumber: t.number,
+      ticketDisplayNumber: _fmt(t.number, !!t.isInternal, _cp),
       ticketStatus: t.status,
       assigneeName: t.assignee ? `${t.assignee.firstName} ${t.assignee.lastName}` : null,
     }));
 
     // Hydrate : pour chaque MonitoringAlert qui a un ticketId, on va
     // chercher le numéro + l'assigné du ticket — nécessaire pour afficher
-    // "INC-1234" dans la tuile kanban et faire sauter le bouton "+ Ticket".
+    // "TK-1234" (ou "INT-1234") dans la tuile kanban et faire sauter le
+    // bouton "+ Ticket".
     const alertTicketIds = alertsRaw
       .map((a) => a.ticketId)
       .filter((x): x is string => !!x);
@@ -106,16 +112,22 @@ export async function GET(req: Request) {
             id: true,
             number: true,
             status: true,
+            isInternal: true,
             assignee: { select: { firstName: true, lastName: true } },
           },
         })
       : [];
     const alertTicketMap = new Map(alertTickets.map((t) => [t.id, t]));
+    const { getClientTicketPrefix, formatTicketNumber } = await import("@/lib/tenant-settings/service");
+    const clientPrefix = await getClientTicketPrefix();
     const alerts = alertsRaw.map((a) => {
       const t = a.ticketId ? alertTicketMap.get(a.ticketId) : undefined;
       return {
         ...a,
         ticketNumber: t?.number ?? null,
+        ticketDisplayNumber: t
+          ? formatTicketNumber(t.number, !!t.isInternal, clientPrefix)
+          : null,
         ticketStatus: t?.status ?? null,
         assigneeName: t?.assignee
           ? `${t.assignee.firstName} ${t.assignee.lastName}`.trim()

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
+import { getClientTicketPrefix, formatTicketNumber } from "@/lib/tenant-settings/service";
 
 /** GET — list pending approvals for the current portal user */
 export async function GET() {
@@ -33,6 +34,9 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
 
+  // Portail client : tickets toujours non-internes (filtre business).
+  const clientPrefix = await getClientTicketPrefix();
+
   return NextResponse.json({
     success: true,
     data: approvals.map((a) => ({
@@ -46,7 +50,7 @@ export async function GET() {
       ticket: {
         id: a.ticket.id,
         number: a.ticket.number,
-        displayNumber: `INC-${1000 + a.ticket.number}`,
+        displayNumber: formatTicketNumber(a.ticket.number, false, clientPrefix),
         subject: a.ticket.subject,
         description: a.ticket.description.slice(0, 300),
         status: a.ticket.status,

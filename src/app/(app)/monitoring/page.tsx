@@ -699,7 +699,7 @@ function MonitoringKanban({
                               <div className="flex items-center gap-1">
                                 {a.ticketNumber ? (
                                   <span className="text-[9.5px] font-mono text-slate-500">
-                                    INC-{1000 + a.ticketNumber}
+                                    {(a as { ticketDisplayNumber?: string }).ticketDisplayNumber ?? `TK-${1000 + a.ticketNumber}`}
                                   </span>
                                 ) : null}
                                 {a.assigneeName && (

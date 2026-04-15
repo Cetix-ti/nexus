@@ -609,12 +609,17 @@ function TicketSettingsCard() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input
-            label="Préfixe de numérotation"
-            value={numberingPrefix}
-            onChange={(e) => setNumberingPrefix(e.target.value)}
-            disabled={!loaded}
-          />
+          <div>
+            <Input
+              label="Préfixe de numérotation (tickets clients)"
+              value={numberingPrefix}
+              onChange={(e) => setNumberingPrefix(e.target.value)}
+              disabled={!loaded}
+            />
+            <p className="mt-1 text-[11.5px] text-slate-500">
+              Ex: <code className="font-mono">TK-</code>. Les tickets internes utilisent toujours <code className="font-mono">INT-</code> (non configurable).
+            </p>
+          </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-neutral-700">
               Priorité par défaut

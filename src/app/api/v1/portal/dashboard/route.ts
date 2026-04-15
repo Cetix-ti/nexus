@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
+import { getClientTicketPrefix, formatTicketNumber } from "@/lib/tenant-settings/service";
 
 export async function GET() {
   try {
@@ -51,6 +52,11 @@ export async function GET() {
     select: { logo: true },
   });
 
+  // Portail client : l'org courante n'est jamais interne (filtre business).
+  // On force isInternal=false côté format → préfixe client configurable
+  // via /settings (par défaut "TK-").
+  const clientPrefix = await getClientTicketPrefix();
+
   return NextResponse.json({
     stats: {
       totalTickets,
@@ -61,7 +67,7 @@ export async function GET() {
     orgLogo: orgData?.logo ?? null,
     recentTickets: recentTickets.map((t) => ({
       id: t.id,
-      number: `INC-${1000 + t.number}`,
+      number: formatTicketNumber(t.number, false, clientPrefix),
       subject: t.subject,
       status: t.status.toLowerCase(),
       priority: t.priority.toLowerCase(),

@@ -92,7 +92,24 @@ export async function GET(req: Request) {
   // Étend les occurrences récurrentes dans la fenêtre [from, to].
   const expanded = expandRecurrences(raw, fromDate, toDate);
 
-  return NextResponse.json(expanded);
+  // Enrichit chaque linkedTicket avec un displayNumber formaté avec le
+  // bon préfixe (TK- pour client, INT- pour interne) — évite que le
+  // front ait à reconstruire le numéro à partir de raw+isInternal.
+  const { getClientTicketPrefix, formatTicketNumber } = await import("@/lib/tenant-settings/service");
+  const clientPrefix = await getClientTicketPrefix();
+  const enriched = expanded.map((e) => {
+    const linked = (e as { linkedTickets?: Array<{ number: number; isInternal: boolean }> }).linkedTickets;
+    if (!linked) return e;
+    return {
+      ...e,
+      linkedTickets: linked.map((t) => ({
+        ...t,
+        displayNumber: formatTicketNumber(t.number, !!t.isInternal, clientPrefix),
+      })),
+    };
+  });
+
+  return NextResponse.json(enriched);
 }
 
 // ---------------------------------------------------------------------------

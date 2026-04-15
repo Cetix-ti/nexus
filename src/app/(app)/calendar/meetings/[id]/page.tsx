@@ -67,7 +67,7 @@ interface Meeting {
   createdBy: { id: string; firstName: string; lastName: string; avatar: string | null };
   agenda: AgendaItem[];
   participants: Participant[];
-  generatedTickets: Array<{ id: string; number: number; subject: string; status: string; priority: string; isInternal?: boolean }>;
+  generatedTickets: Array<{ id: string; number: number; displayNumber?: string; subject: string; status: string; priority: string; isInternal?: boolean }>;
 }
 
 interface Suggestion {
@@ -486,17 +486,20 @@ export default function MeetingPage() {
               </h3>
               <div className="space-y-1">
                 {meeting.generatedTickets.map((t) => {
-                  // Tickets générés depuis une rencontre = toujours internes.
-                  // Route vers /internal-tickets/ pour que la sidebar reste cohérente.
+                  // Tickets générés depuis une rencontre = route vers
+                  // /internal-tickets/ si isInternal pour que la sidebar
+                  // reste sur "Tickets internes". Le numéro affiché vient
+                  // du serveur (displayNumber avec le bon préfixe).
                   const href = t.isInternal ? `/internal-tickets/${t.id}` : `/tickets/${t.id}`;
-                  const prefix = t.isInternal ? "INT" : "INC";
                   return (
                     <Link
                       key={t.id}
                       href={href}
                       className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50"
                     >
-                      <span className="text-[11px] font-mono text-blue-600">{prefix}-{1000 + t.number}</span>
+                      <span className="text-[11px] font-mono text-blue-600">
+                        {t.displayNumber ?? `${t.isInternal ? "INT" : "TK"}-${1000 + t.number}`}
+                      </span>
                       <span className="text-[12.5px] text-slate-700 truncate flex-1">{t.subject}</span>
                       <Badge variant="default" className="text-[9.5px]">{t.status}</Badge>
                     </Link>
