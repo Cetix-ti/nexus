@@ -1203,12 +1203,14 @@ function TimeGrid({
         })}
       </div>
 
-      {/* All-day band */}
+      {/* All-day band. min-h-[32px] + py-1.5 donne assez d'espace pour ne
+          pas que le label "jour" de la colonne des heures touche la
+          première ligne 06:00 de la grille horaire (bug de chevauchement). */}
       <div
         className="grid border-b border-slate-200 bg-slate-50/30"
         style={{ gridTemplateColumns: `48px repeat(${days.length}, minmax(${minColWidth}px, 1fr))` }}
       >
-        <div className="px-2 py-1 text-[9.5px] text-slate-400 uppercase tracking-wider text-right">
+        <div className="px-2 py-1.5 text-[9.5px] text-slate-400 uppercase tracking-wider text-right self-center">
           jour
         </div>
         {days.map((d) => {
@@ -1223,8 +1225,10 @@ function TimeGrid({
         })}
       </div>
 
-      {/* Hour grid */}
-      <div className="overflow-y-auto" style={{ maxHeight: "calc(100vh - 300px)" }}>
+      {/* Hour grid — un padding-top de 8px évite que le premier label
+          "06:00" (qui est positionné avec top=0) se colle au bandeau
+          all-day au-dessus. */}
+      <div className="overflow-y-auto pt-2" style={{ maxHeight: "calc(100vh - 300px)" }}>
         <div
           className="grid relative"
           style={{
@@ -1232,13 +1236,16 @@ function TimeGrid({
             height: gridHeight,
           }}
         >
-          {/* Colonne des heures */}
+          {/* Colonne des heures. On ne soustrait plus -6 au premier
+              label (sinon "06:00" dépasse vers le haut et chevauche le
+              bandeau all-day). Chaque label reste aligné sur le trait
+              horizontal de son heure. */}
           <div className="relative">
             {Array.from({ length: totalHours }, (_, i) => (
               <div
                 key={i}
-                className="absolute right-2 text-[10px] text-slate-400 tabular-nums"
-                style={{ top: i * HOUR_HEIGHT - 6 }}
+                className="absolute right-2 text-[10px] text-slate-400 tabular-nums leading-none"
+                style={{ top: i === 0 ? 0 : i * HOUR_HEIGHT - 6 }}
               >
                 {String(DAY_START_HOUR + i).padStart(2, "0")}:00
               </div>

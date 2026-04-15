@@ -167,6 +167,30 @@ export function startBackgroundJobs() {
   });
 
   scheduleJob({
+    name: "location-sync",
+    // 2 min — pull du calendrier partagé "Localisation" sur billets@cetix.ca.
+    // Le push Nexus → Outlook est synchrone via les endpoints, donc pas
+    // besoin d'un tick rapide ici.
+    intervalMs: Number(process.env.LOCATION_SYNC_INTERVAL_MS) || 120_000,
+    isRunning: false,
+    lastRun: null,
+    lastError: null,
+    consecutiveErrors: 0,
+    run: async () => {
+      const { pullOutlookLocations } = await import("@/lib/calendar/location-sync");
+      const result = await pullOutlookLocations();
+      if (result.created > 0 || result.updated > 0 || result.deleted > 0 || result.undecoded > 0) {
+        console.log(
+          `[location-sync] +${result.created} / ~${result.updated} / -${result.deleted} / ?${result.undecoded} (${result.fetched} Outlook events vus)`,
+        );
+      }
+      if (result.errors.length > 0) {
+        console.warn(`[location-sync] erreurs:`, result.errors.slice(0, 5));
+      }
+    },
+  });
+
+  scheduleJob({
     name: "meeting-reminders",
     // 5 min — fenêtre de 30 min, on doit ticker assez souvent pour ne pas
     // rater le passage. Idempotent côté job (1 notif par meeting+user).

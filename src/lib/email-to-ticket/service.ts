@@ -478,6 +478,26 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
           const domain = actualEmail.split("@")[1] || "";
           let org = domainMap.get(domain);
 
+          // Heuristique "code client dans le sujet" : si le courriel
+          // contient un bloc [CODE] matchant un clientCode de la DB, on
+          // préfère cette org même si le sender est cetix.ca. Ça gère
+          // les cas "Bruno transfère une alerte Bitdefender [DLSN_...]
+          // à billets@cetix.ca" où la logique de base attribuerait le
+          // ticket à Cetix (interne) au lieu du vrai client.
+          const bracketMatch = rawSubject.match(/\[([A-Z]{2,8})(?:[_\-][^\]]*)?\]/);
+          if (bracketMatch) {
+            const code = bracketMatch[1].toUpperCase();
+            const byCode = await prisma.organization.findFirst({
+              where: { clientCode: { equals: code, mode: "insensitive" }, isInternal: false },
+              select: { id: true, name: true },
+            });
+            if (byCode) {
+              // Prend le dessus sur le match par domaine.
+              org = { id: byCode.id, name: byCode.name };
+              if (!domainMap.has(domain)) domainMap.set(domain, org);
+            }
+          }
+
           // Si on ne trouve PAS d'org pour le vrai expéditeur d'un courriel
           // transféré, on ne doit PAS attribuer le ticket au forwarder (ex:
           // Cetix). Sinon un courriel externe (jdoe@vdsa.ca) transféré par

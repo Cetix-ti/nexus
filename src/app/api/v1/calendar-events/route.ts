@@ -296,5 +296,24 @@ export async function POST(req: Request) {
     },
   });
 
+  // Multi-agents : body.agentIds[] — on remplit la table de jointure.
+  // Fallback : si seul ownerId est fourni, on le copie dans agents pour
+  // rester cohérent entre single et multi-agent.
+  const agentIds: string[] = Array.isArray(body.agentIds) ? body.agentIds : [];
+  if (agentIds.length === 0 && body.ownerId) agentIds.push(body.ownerId);
+  if (agentIds.length > 0) {
+    await prisma.calendarEventAgent.createMany({
+      data: agentIds.map((userId: string) => ({ eventId: created.id, userId })),
+      skipDuplicates: true,
+    });
+  }
+
+  // Synchro Outlook pour les WORK_LOCATION : best-effort en arrière-plan.
+  if (created.kind === "WORK_LOCATION") {
+    import("@/lib/calendar/location-sync")
+      .then(({ pushEventToOutlook }) => pushEventToOutlook(created.id))
+      .catch((e) => console.warn("[location-sync] push failed:", e));
+  }
+
   return NextResponse.json(created, { status: 201 });
 }

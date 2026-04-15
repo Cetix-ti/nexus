@@ -144,6 +144,7 @@ model User {
   createdCalendars    Calendar[]
   ownedCalendarEvents CalendarEvent[]      @relation("CalendarEventOwner")
   createdCalendarEvents CalendarEvent[]    @relation("CalendarEventCreator")
+  calendarEventAgents   CalendarEventAgent[] @relation("CalendarEventAgentUser")
   createdMeetings     Meeting[]            @relation("MeetingCreator")
   meetingAgendaItems  MeetingAgendaItem[]
   meetingParticipations MeetingParticipant[]
@@ -1772,6 +1773,26 @@ model CalendarEvent {
   internalTicketId  String?  @map("internal_ticket_id")
   internalProjectId String?  @map("internal_project_id")
 
+  // --- Synchronisation Outlook (calendrier partagé "Localisation") ---
+  // Outlook event id (immuable côté Graph) → permet d'éviter les
+  // doublons lors de la synchro bidirectionnelle.
+  outlookEventId    String?  @unique @map("outlook_event_id")
+  /// Nom ou id du calendrier Outlook source (ex: "Localisation").
+  outlookCalendarId String?  @map("outlook_calendar_id")
+  /// Titre brut d'origine dans Outlook (ex: "MG/VG MRVL") — conservé
+  /// même après décodage, utile pour re-tenter un match manuel.
+  rawTitle          String?  @map("raw_title")
+  /// "OK" | "UNDECODED" | "ERROR" | "PENDING"
+  /// OK = décodé et synchronisé. UNDECODED = impossible de mapper le
+  /// titre (agents/client inconnus). ERROR = sync Graph a échoué.
+  syncStatus        String?  @map("sync_status")
+  syncError         String?  @map("sync_error")
+  /// Dernière synchro Graph → Nexus (pour ignorer les updates anciens).
+  lastSyncedAt      DateTime? @map("last_synced_at")
+  /// Hash de dernière version vue pour éviter d'écraser une édition
+  /// Nexus plus récente avec un import Outlook obsolète.
+  outlookEtag       String?  @map("outlook_etag")
+
   createdById String?  @map("created_by_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -1795,12 +1816,34 @@ model CalendarEvent {
   // leur vie propre (juste délié).
   linkedTickets Ticket[] @relation("CalendarEventLinkedTickets")
 
+  /// Multi-agent : ownerId seul limite à une personne — pour "MG/VG MRVL"
+  /// qui désigne 2 agents, on passe par cette table de jointure.
+  /// Le ownerId reste pour backward-compat (premier agent).
+  agents CalendarEventAgent[]
+
   @@index([calendarId, startsAt])
   @@index([ownerId, startsAt])
   @@index([kind, startsAt])
   @@index([internalTicketId])
   @@index([internalProjectId])
+  @@index([outlookEventId])
   @@map("calendar_events")
+}
+
+/// Jointure événement calendrier ↔ agent (pour les WORK_LOCATION
+/// multi-agents typiquement). Cascade au delete d'event. On peut
+/// encore lire un agent unique via event.ownerId mais ce n'est plus
+/// obligatoire.
+model CalendarEventAgent {
+  eventId String @map("event_id")
+  userId  String @map("user_id")
+
+  event   CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user    User          @relation("CalendarEventAgentUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+  @@index([userId])
+  @@map("calendar_event_agents")
 }
 
 // ============================================================================

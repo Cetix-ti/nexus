@@ -91,6 +91,25 @@ export async function PATCH(
     where: { id },
     data,
   });
+
+  // Multi-agents : si agentIds[] est fourni, on remplace la jointure.
+  if (Array.isArray(body.agentIds)) {
+    await prisma.calendarEventAgent.deleteMany({ where: { eventId: id } });
+    if (body.agentIds.length > 0) {
+      await prisma.calendarEventAgent.createMany({
+        data: body.agentIds.map((userId: string) => ({ eventId: id, userId })),
+        skipDuplicates: true,
+      });
+    }
+  }
+
+  // Push synchro Outlook (WORK_LOCATION uniquement).
+  if (updated.kind === "WORK_LOCATION") {
+    import("@/lib/calendar/location-sync")
+      .then(({ pushEventToOutlook }) => pushEventToOutlook(id))
+      .catch((e) => console.warn("[location-sync] push failed:", e));
+  }
+
   return NextResponse.json(updated);
 }
 
@@ -108,6 +127,20 @@ export async function DELETE(
   const forbidden = await assertCanMutate(id, me);
   if (forbidden === "Not found") return NextResponse.json({ error: forbidden }, { status: 404 });
   if (forbidden) return NextResponse.json({ error: forbidden }, { status: 403 });
+
+  // Supprime côté Outlook d'abord (best-effort), puis en DB.
+  const linked = await prisma.calendarEvent.findUnique({
+    where: { id },
+    select: { outlookEventId: true, kind: true },
+  });
+  if (linked?.kind === "WORK_LOCATION" && linked.outlookEventId) {
+    try {
+      const { deleteEventFromOutlook } = await import("@/lib/calendar/location-sync");
+      await deleteEventFromOutlook(id);
+    } catch (e) {
+      console.warn("[location-sync] delete Outlook failed:", e);
+    }
+  }
 
   await prisma.calendarEvent.delete({ where: { id } });
   return NextResponse.json({ ok: true });
