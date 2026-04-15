@@ -92,13 +92,30 @@ Règles :
       if (res.ok) {
         const data = await res.json();
         const content = data.choices?.[0]?.message?.content ?? "";
-        try {
-          const parsed = JSON.parse(content);
-          if (Array.isArray(parsed.suggestions)) {
-            return NextResponse.json({ suggestions: parsed.suggestions, source: "openai" });
-          }
-        } catch {
-          // JSON parse failed — tombe sur l'heuristique
+        const parsed = safeParseJson(content);
+        if (parsed && Array.isArray(parsed.suggestions)) {
+          // Normalise et filtre les entrées invalides retournées par l'IA.
+          const cleaned = (parsed.suggestions as unknown[])
+            .map((s) => {
+              const obj = s as Record<string, unknown>;
+              const subject =
+                typeof obj.subject === "string" ? obj.subject.trim() : "";
+              if (!subject) return null;
+              const rawPriority = String(obj.priority ?? "medium").toLowerCase();
+              const priority = ["low", "medium", "high", "critical"].includes(rawPriority)
+                ? rawPriority
+                : "medium";
+              return {
+                subject: subject.slice(0, 200),
+                description:
+                  typeof obj.description === "string" ? obj.description : "",
+                priority,
+                rationale:
+                  typeof obj.rationale === "string" ? obj.rationale : "",
+              };
+            })
+            .filter(Boolean);
+          return NextResponse.json({ suggestions: cleaned, source: "openai" });
         }
       }
     } catch {
@@ -150,6 +167,39 @@ Règles :
     if (suggestions.length >= 10) break;
   }
   return NextResponse.json({ suggestions, source: "heuristic" });
+}
+
+/**
+ * Parse un JSON qui peut être enveloppé dans une fence markdown `\`\`\`json ... \`\`\``
+ * ou précédé d'une ligne de prose. Renvoie null si pas parseable.
+ */
+function safeParseJson(raw: string): Record<string, unknown> | null {
+  if (!raw) return null;
+  const tryParse = (s: string) => {
+    try {
+      const obj = JSON.parse(s);
+      return typeof obj === "object" && obj !== null ? (obj as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  };
+  // 1) tel quel
+  let parsed = tryParse(raw.trim());
+  if (parsed) return parsed;
+  // 2) dans un bloc ```json … ``` ou ``` … ```
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence && fence[1]) {
+    parsed = tryParse(fence[1].trim());
+    if (parsed) return parsed;
+  }
+  // 3) extrait le premier objet JSON équilibré
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    parsed = tryParse(raw.slice(start, end + 1));
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 function stripHtml(html: string): string {

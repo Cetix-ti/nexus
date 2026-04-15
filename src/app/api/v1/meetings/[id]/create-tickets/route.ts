@@ -38,26 +38,21 @@ export async function POST(
   });
   if (!meeting) return NextResponse.json({ error: "Meeting introuvable" }, { status: 404 });
 
-  // Les tickets internes n'ont pas d'organisation client — on les accroche
-  // à la première organisation marquée comme "Cetix" (interne) ou, à
-  // défaut, à la première org active. Sans ce champ dédié, on réutilise
-  // l'organizationId existant (requis par le schéma Ticket).
-  const cetixOrg =
-    (await prisma.organization.findFirst({
-      where: {
-        OR: [
-          { clientCode: "CTX" },
-          { name: { equals: "Cetix", mode: "insensitive" } },
-        ],
-      },
-      select: { id: true },
-    })) ??
-    (await prisma.organization.findFirst({ select: { id: true } }));
-
-  if (!cetixOrg) {
+  // Les tickets internes s'accrochent à l'organisation marquée
+  // `isInternal=true` (Cetix). Si aucune org interne n'existe encore
+  // (base non-seedée), on refuse explicitement plutôt que de créer les
+  // tickets dans une org client au hasard — ce qui pollue les rapports.
+  const internalOrg = await prisma.organization.findFirst({
+    where: { isInternal: true },
+    select: { id: true, name: true },
+  });
+  if (!internalOrg) {
     return NextResponse.json(
-      { error: "Aucune organisation pour rattacher les tickets internes" },
-      { status: 500 },
+      {
+        error:
+          "Aucune organisation interne définie. Marque l'organisation Cetix comme interne dans Paramètres → Organisations avant de créer des tickets internes.",
+      },
+      { status: 412 },
     );
   }
 
@@ -73,7 +68,7 @@ export async function POST(
     if (!t.subject) continue;
     const ticket = await prisma.ticket.create({
       data: {
-        organizationId: cetixOrg.id,
+        organizationId: internalOrg.id,
         creatorId: me.id,
         assigneeId: t.assigneeId ?? null,
         subject: t.subject,

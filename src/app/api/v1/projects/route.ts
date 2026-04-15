@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
       budgetHours: body.budgetHours,
       budgetAmount: body.budgetAmount,
       isVisibleToClient: body.isVisibleToClient ?? false,
+      isInternal: !!body.isInternal,
       tags: body.tags ?? [],
     },
     include: {

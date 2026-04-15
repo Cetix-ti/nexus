@@ -56,13 +56,31 @@ export async function POST(req: Request) {
       });
       if (org) organizationId = org.id;
     }
+    // Pour un ticket interne : force l'organisation interne (Cetix).
+    // Sans isInternal, fallback à la première org active pour backward-compat.
     if (!organizationId) {
-      // Use first active org as fallback
-      const firstOrg = await prisma.organization.findFirst({
-        where: { isActive: true },
-        select: { id: true },
-      });
-      organizationId = firstOrg?.id;
+      if (body.isInternal) {
+        const internal = await prisma.organization.findFirst({
+          where: { isInternal: true },
+          select: { id: true },
+        });
+        if (!internal) {
+          return NextResponse.json(
+            {
+              error:
+                "Aucune organisation interne configurée. Marque l'organisation Cetix comme interne dans les Paramètres.",
+            },
+            { status: 412 },
+          );
+        }
+        organizationId = internal.id;
+      } else {
+        const firstOrg = await prisma.organization.findFirst({
+          where: { isActive: true },
+          select: { id: true },
+        });
+        organizationId = firstOrg?.id;
+      }
     }
     if (!organizationId) {
       return NextResponse.json({ error: "Organisation non trouvée" }, { status: 400 });
@@ -158,6 +176,8 @@ export async function POST(req: Request) {
       source: body.source,
       categoryId,
       queueId,
+      isInternal: !!body.isInternal,
+      meetingId: body.meetingId ?? null,
     });
 
     // Handle approval workflow if requested

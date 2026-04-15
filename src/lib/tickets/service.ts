@@ -289,6 +289,8 @@ export async function createTicket(input: {
   assigneeId?: string | null;
   creatorId: string;
   tags?: string[];
+  isInternal?: boolean;
+  meetingId?: string | null;
 }): Promise<UiTicket> {
   const t = await prisma.ticket.create({
     data: {
@@ -306,6 +308,8 @@ export async function createTicket(input: {
       requesterId: input.requesterId || null,
       assigneeId: input.assigneeId || null,
       creatorId: input.creatorId,
+      isInternal: input.isInternal ?? false,
+      meetingId: input.meetingId ?? null,
     },
     include: detailIncludes,
   });

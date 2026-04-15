@@ -36,6 +36,9 @@ model Organization {
   primaryColor String? @map("primary_color")
   plan        String   @default("standard")
   isActive    Boolean  @default(true) @map("is_active")
+  /// Organisation interne (Cetix elle-même). Sert à ancrer les tickets
+  /// et projets internes sans polluer les agrégats clients.
+  isInternal  Boolean  @default(false) @map("is_internal")
 
   // Portal config
   portalEnabled       Boolean  @default(true) @map("portal_enabled")
@@ -272,7 +275,9 @@ model Ticket {
   // dans /internal-tickets.
   isInternal     Boolean       @default(false) @map("is_internal")
   meetingId      String?       @map("meeting_id") // ticket généré par une rencontre
-  meeting        Meeting?      @relation(fields: [meetingId], references: [id])
+  // onDelete: SetNull → si la rencontre est supprimée, le ticket interne
+  // reste mais perd son lien retour (plutôt que de disparaître).
+  meeting        Meeting?      @relation(fields: [meetingId], references: [id], onDelete: SetNull)
 
   // Approval workflow
   requiresApproval Boolean       @default(false) @map("requires_approval")
@@ -1740,7 +1745,11 @@ model CalendarEvent {
   owner        User?        @relation("CalendarEventOwner", fields: [ownerId], references: [id])
   createdBy    User?        @relation("CalendarEventCreator", fields: [createdById], references: [id])
   organization Organization? @relation(fields: [organizationId], references: [id])
-  meeting      Meeting?     @relation(fields: [meetingId], references: [id])
+  // Si le Meeting est supprimé, on supprime aussi son CalendarEvent
+  // (évite un event kind=MEETING orphelin pointant vers un meeting inexistant).
+  // Et symétriquement : si l'event est supprimé, le Meeting aussi (sinon
+  // un Meeting orphelin sans trace dans le calendrier).
+  meeting      Meeting?     @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
   @@index([calendarId, startsAt])
   @@index([ownerId, startsAt])

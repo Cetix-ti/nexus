@@ -1,12 +1,34 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth-utils";
+import { getCurrentUser, hasMinimumRole, type UserRole } from "@/lib/auth-utils";
 
 /** Strip the "@occurrenceStartISO" suffix that the API adds to recurring
  *  event occurrences — DB operations doivent cibler l'event-source. */
 function normalizeEventId(raw: string): string {
   const at = raw.indexOf("@");
   return at >= 0 ? raw.slice(0, at) : raw;
+}
+
+/**
+ * Un event est modifiable par :
+ *  - son owner (pour un congé, un WFH, un perso)
+ *  - son créateur
+ *  - un SUPERVISOR+ (override admin)
+ */
+async function assertCanMutate(
+  eventId: string,
+  me: { id: string; role: UserRole },
+): Promise<string | null> {
+  const event = await prisma.calendarEvent.findUnique({
+    where: { id: eventId },
+    select: { ownerId: true, createdById: true },
+  });
+  if (!event) return "Not found";
+  const isOwner = event.ownerId === me.id;
+  const isCreator = event.createdById === me.id;
+  const isSupervisor = hasMinimumRole(me.role, "SUPERVISOR");
+  if (!isOwner && !isCreator && !isSupervisor) return "Forbidden";
+  return null;
 }
 
 export async function PATCH(
@@ -20,7 +42,33 @@ export async function PATCH(
   }
   const { id: rawId } = await params;
   const id = normalizeEventId(rawId);
+  const forbidden = await assertCanMutate(id, me);
+  if (forbidden === "Not found") return NextResponse.json({ error: forbidden }, { status: 404 });
+  if (forbidden) return NextResponse.json({ error: forbidden }, { status: 403 });
+
   const body = await req.json();
+
+  // Validation dates si fournies
+  let startsAtDate: Date | undefined;
+  let endsAtDate: Date | undefined;
+  if (body.startsAt) {
+    startsAtDate = new Date(body.startsAt);
+    if (Number.isNaN(startsAtDate.getTime())) {
+      return NextResponse.json({ error: "startsAt invalide" }, { status: 400 });
+    }
+  }
+  if (body.endsAt) {
+    endsAtDate = new Date(body.endsAt);
+    if (Number.isNaN(endsAtDate.getTime())) {
+      return NextResponse.json({ error: "endsAt invalide" }, { status: 400 });
+    }
+  }
+  if (startsAtDate && endsAtDate && endsAtDate <= startsAtDate) {
+    return NextResponse.json(
+      { error: "La fin doit être après le début" },
+      { status: 400 },
+    );
+  }
 
   const data: Record<string, unknown> = {};
   const allow = [
@@ -30,8 +78,13 @@ export async function PATCH(
     "internalTicketId", "internalProjectId", "status",
   ];
   for (const k of allow) if (k in body) data[k] = body[k];
-  if (body.startsAt) data.startsAt = new Date(body.startsAt);
-  if (body.endsAt) data.endsAt = new Date(body.endsAt);
+  if (typeof data.title === "string") {
+    const trimmed = data.title.trim();
+    if (!trimmed) return NextResponse.json({ error: "Titre vide" }, { status: 400 });
+    data.title = trimmed;
+  }
+  if (startsAtDate) data.startsAt = startsAtDate;
+  if (endsAtDate) data.endsAt = endsAtDate;
   if (body.recurrenceEndDate) data.recurrenceEndDate = new Date(body.recurrenceEndDate);
 
   const updated = await prisma.calendarEvent.update({
@@ -52,6 +105,10 @@ export async function DELETE(
   }
   const { id: rawId } = await params;
   const id = normalizeEventId(rawId);
+  const forbidden = await assertCanMutate(id, me);
+  if (forbidden === "Not found") return NextResponse.json({ error: forbidden }, { status: 404 });
+  if (forbidden) return NextResponse.json({ error: forbidden }, { status: 403 });
+
   await prisma.calendarEvent.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

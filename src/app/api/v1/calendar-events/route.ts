@@ -18,59 +18,51 @@ export async function GET(req: Request) {
   const toStr = searchParams.get("to");
   const calendarIdsStr = searchParams.get("calendarIds");
 
-  const where: Record<string, unknown> = { status: "active" };
+  const fromDate = fromStr ? new Date(fromStr) : new Date(Date.now() - 30 * 24 * 3600 * 1000);
+  const toDate = toStr ? new Date(toStr) : new Date(Date.now() + 90 * 24 * 3600 * 1000);
 
-  if (fromStr || toStr) {
-    const fromDate = fromStr ? new Date(fromStr) : new Date(Date.now() - 30 * 24 * 3600 * 1000);
-    const toDate = toStr ? new Date(toStr) : new Date(Date.now() + 90 * 24 * 3600 * 1000);
-    // Un événement est dans la fenêtre s'il chevauche [from, to] :
-    //   startsAt <= to ET endsAt >= from
-    where.AND = [
-      { startsAt: { lte: toDate } },
-      { endsAt: { gte: fromDate } },
-    ];
-  }
-
+  // Contraintes communes (status + calendarIds) qui s'appliquent à TOUS
+  // les events, qu'ils soient récurrents ou non.
+  const baseWhere: Record<string, unknown> = { status: "active" };
   if (calendarIdsStr) {
     const ids = calendarIdsStr.split(",").filter(Boolean);
-    if (ids.length > 0) where.calendarId = { in: ids };
+    if (ids.length > 0) baseWhere.calendarId = { in: ids };
   }
 
-  // Pour les événements récurrents, on charge TOUS les events dont la
-  // recurrence pourrait produire une occurrence dans la fenêtre (donc on
-  // enlève la borne `endsAt >= from` et on la remplace par une logique
-  // "start ≤ to et (recurrence active OU endsAt >= from)")
-  const recurrentOr = [
-    { recurrence: { in: ["weekly", "monthly", "yearly"] } },
-  ];
-  const finalWhere = where.AND
-    ? ({
-        ...where,
-        // Conserve les conditions déjà appliquées, mais élargit : un
-        // event récurrent peut avoir un startsAt très ancien mais
-        // générer des occurrences dans la fenêtre.
-        OR: [
-          { AND: where.AND as any },
-          ...recurrentOr,
+  // Deux cas d'inclusion :
+  //   (a) event classique qui chevauche la fenêtre
+  //       → startsAt <= to ET endsAt >= from
+  //   (b) event récurrent : on l'inclut même si son startsAt d'origine
+  //       est avant la fenêtre (l'expansion ci-dessous générera les
+  //       occurrences dans la fenêtre).
+  //       → startsAt <= to ET (recurrence != null)
+  // On combine via OR tout en gardant les contraintes de base (status,
+  // calendarIds) sur chaque branche.
+  const finalWhere = {
+    ...baseWhere,
+    OR: [
+      { AND: [{ startsAt: { lte: toDate } }, { endsAt: { gte: fromDate } }] },
+      {
+        AND: [
+          { startsAt: { lte: toDate } },
+          { recurrence: { in: ["weekly", "monthly", "yearly"] } },
         ],
-        AND: undefined,
-      } as any)
-    : where;
+      },
+    ],
+  };
 
   const raw = await prisma.calendarEvent.findMany({
-    where: finalWhere,
+    where: finalWhere as never,
     include: {
       calendar: { select: { id: true, name: true, kind: true, color: true } },
       owner: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-      organization: { select: { id: true, name: true } },
+      organization: { select: { id: true, name: true, clientCode: true, slug: true } },
       meeting: { select: { id: true, status: true } },
     },
     orderBy: { startsAt: "asc" },
   });
 
   // Étend les occurrences récurrentes dans la fenêtre [from, to].
-  const fromDate = fromStr ? new Date(fromStr) : new Date(Date.now() - 30 * 24 * 3600 * 1000);
-  const toDate = toStr ? new Date(toStr) : new Date(Date.now() + 90 * 24 * 3600 * 1000);
   const expanded = expandRecurrences(raw, fromDate, toDate);
 
   return NextResponse.json(expanded);
@@ -151,11 +143,37 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  if (!body.calendarId || !body.title || !body.startsAt || !body.endsAt) {
+  if (
+    !body.calendarId ||
+    typeof body.title !== "string" ||
+    !body.title.trim() ||
+    !body.startsAt ||
+    !body.endsAt
+  ) {
     return NextResponse.json(
       { error: "calendarId, title, startsAt, endsAt requis" },
       { status: 400 },
     );
+  }
+  const startsAt = new Date(body.startsAt);
+  const endsAt = new Date(body.endsAt);
+  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+    return NextResponse.json({ error: "Dates invalides" }, { status: 400 });
+  }
+  if (endsAt <= startsAt) {
+    return NextResponse.json(
+      { error: "La fin doit être après le début" },
+      { status: 400 },
+    );
+  }
+  if (body.recurrenceEndDate) {
+    const recEnd = new Date(body.recurrenceEndDate);
+    if (Number.isNaN(recEnd.getTime()) || recEnd < endsAt) {
+      return NextResponse.json(
+        { error: "La fin de récurrence doit être après la fin de l'événement" },
+        { status: 400 },
+      );
+    }
   }
 
   // Si kind=MEETING et pas de meeting encore, on crée le Meeting en même
@@ -164,20 +182,26 @@ export async function POST(req: Request) {
   if (body.kind === "MEETING" && !meetingId) {
     const m = await prisma.meeting.create({
       data: {
-        title: body.title,
+        title: body.title.trim(),
         description: body.description ?? null,
-        startsAt: new Date(body.startsAt),
-        endsAt: new Date(body.endsAt),
+        startsAt,
+        endsAt,
         location: body.location ?? null,
         createdById: me.id,
-        participants: body.participantIds?.length
-          ? {
-              create: body.participantIds.map((uid: string) => ({
-                userId: uid,
-                role: uid === me.id ? "organizer" : "attendee",
-              })),
-            }
-          : undefined,
+        participants: {
+          create: [
+            // Créateur auto-ajouté comme organisateur
+            { userId: me.id, role: "organizer" },
+            ...(Array.isArray(body.participantIds)
+              ? body.participantIds
+                  .filter((uid: string) => uid && uid !== me.id)
+                  .map((uid: string) => ({
+                    userId: uid,
+                    role: "attendee" as const,
+                  }))
+              : []),
+          ],
+        },
       },
     });
     meetingId = m.id;
@@ -186,11 +210,11 @@ export async function POST(req: Request) {
   const created = await prisma.calendarEvent.create({
     data: {
       calendarId: body.calendarId,
-      title: body.title,
+      title: body.title.trim(),
       description: body.description ?? null,
       kind: body.kind ?? "OTHER",
-      startsAt: new Date(body.startsAt),
-      endsAt: new Date(body.endsAt),
+      startsAt,
+      endsAt,
       allDay: !!body.allDay,
       ownerId: body.ownerId ?? null,
       location: body.location ?? null,

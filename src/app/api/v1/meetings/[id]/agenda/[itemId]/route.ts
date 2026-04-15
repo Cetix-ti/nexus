@@ -17,6 +17,17 @@ export async function PATCH(
   for (const k of ["title", "description", "notes", "status", "order", "durationMinutes"]) {
     if (k in body) data[k] = body[k];
   }
+  if (typeof data.title === "string") {
+    const trimmed = data.title.trim();
+    if (!trimmed) return NextResponse.json({ error: "Titre vide" }, { status: 400 });
+    data.title = trimmed;
+  }
+  if ("status" in data) {
+    const allowed = ["pending", "in_progress", "done", "deferred"];
+    if (!allowed.includes(data.status as string)) {
+      return NextResponse.json({ error: "Statut invalide" }, { status: 400 });
+    }
+  }
   const updated = await prisma.meetingAgendaItem.update({
     where: { id: itemId },
     data,
