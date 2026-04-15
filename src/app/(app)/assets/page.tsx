@@ -73,9 +73,9 @@ const TYPE_CONFIG: Record<
   AssetType,
   { label: string; icon: React.ElementType; color: string }
 > = {
-  workstation: { label: "Poste de travail", icon: Monitor, color: "text-blue-600" },
-  laptop: { label: "Ordinateur portable", icon: Laptop, color: "text-indigo-600" },
-  server: { label: "Serveur", icon: Server, color: "text-purple-600" },
+  workstation: { label: "Postes de travail", icon: Monitor, color: "text-blue-600" },
+  laptop: { label: "Postes de travail", icon: Laptop, color: "text-indigo-600" },
+  server: { label: "Serveurs Windows/Linux", icon: Server, color: "text-purple-600" },
   network: { label: "Réseau", icon: Network, color: "text-teal-600" },
   printer: { label: "Imprimante", icon: Printer, color: "text-orange-600" },
   mobile: { label: "Mobile", icon: Smartphone, color: "text-pink-600" },
@@ -157,7 +157,13 @@ export default function AssetsPage() {
     }
 
     if (typeFilter !== "all") {
-      result = result.filter((a) => a.type === typeFilter);
+      // "workstation" désigne désormais les postes ET les portables (libellé
+      // "Postes de travail"). Toute autre valeur compare exactement.
+      if (typeFilter === "workstation") {
+        result = result.filter((a) => a.type === "workstation" || a.type === "laptop");
+      } else {
+        result = result.filter((a) => a.type === typeFilter);
+      }
     }
 
     if (statusFilter !== "all") {
@@ -275,9 +281,8 @@ export default function AssetsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tous les types</SelectItem>
-            <SelectItem value="workstation">Poste de travail</SelectItem>
-            <SelectItem value="laptop">Ordinateur portable</SelectItem>
-            <SelectItem value="server">Serveur</SelectItem>
+            <SelectItem value="workstation">Postes de travail</SelectItem>
+            <SelectItem value="server">Serveurs Windows/Linux</SelectItem>
             <SelectItem value="network">Réseau</SelectItem>
             <SelectItem value="printer">Imprimante</SelectItem>
             <SelectItem value="mobile">Mobile</SelectItem>

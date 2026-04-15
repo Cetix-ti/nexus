@@ -112,6 +112,19 @@ export async function PATCH(req: Request) {
   const body = await req.json();
   const id = body.id;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  // Ownership : un TECHNICIAN ne peut modifier QUE ses propres saisies.
+  // Un SUPERVISOR+ peut modifier n'importe laquelle (correction, validation, etc.).
+  const { default: prisma } = await import("@/lib/prisma");
+  const entry = await prisma.timeEntry.findUnique({
+    where: { id },
+    select: { agentId: true },
+  });
+  if (!entry) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const isOwner = entry.agentId === me.id;
+  const isSupervisor = hasMinimumRole(me.role, "SUPERVISOR");
+  if (!isOwner && !isSupervisor) return forbidden();
+
   try {
     const { updateTimeEntry } = await import("@/lib/billing/time-entries-service");
     const updated = await updateTimeEntry(id, body);
@@ -129,6 +142,18 @@ export async function DELETE(req: Request) {
   if (!id) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
+
+  // Même règle ownership que PATCH.
+  const { default: prisma } = await import("@/lib/prisma");
+  const entry = await prisma.timeEntry.findUnique({
+    where: { id },
+    select: { agentId: true },
+  });
+  if (!entry) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const isOwner = entry.agentId === me.id;
+  const isSupervisor = hasMinimumRole(me.role, "SUPERVISOR");
+  if (!isOwner && !isSupervisor) return forbidden();
+
   await deleteTimeEntry(id);
   return NextResponse.json({ ok: true });
 }

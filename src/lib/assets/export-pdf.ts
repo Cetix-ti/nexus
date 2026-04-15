@@ -5,9 +5,10 @@ import autoTable from "jspdf-autotable";
 import type { OrgAsset } from "./types";
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
-  server_physical: "Serveur physique", server_virtual: "VM", windows_server: "Serveur Windows",
-  linux_server: "Serveur Linux", nas: "NAS", san: "SAN", hypervisor: "Hyperviseur",
-  workstation: "Poste de travail", laptop: "Portable", network_switch: "Switch",
+  server_physical: "Serveur physique", server_virtual: "VM",
+  windows_server: "Serveurs Windows/Linux", linux_server: "Serveurs Windows/Linux",
+  nas: "NAS", san: "SAN", hypervisor: "Hyperviseur",
+  workstation: "Postes de travail", laptop: "Postes de travail", network_switch: "Switch",
   firewall: "Pare-feu", router: "Routeur", wifi_ap: "WiFi AP", ups: "UPS",
   printer: "Imprimante", ip_phone: "Téléphone IP", monitoring_appliance: "Monitoring",
   tape_library: "Sauvegarde", cloud_resource: "Cloud",
@@ -18,20 +19,69 @@ const STATUS_LABELS: Record<string, string> = {
   retired: "Retiré", decommissioned: "Hors service",
 };
 
-export function exportAssetsPdf(assets: OrgAsset[], orgName: string) {
+// Charge une image statique publique en data-URL (PNG) pour jsPDF.
+// Cache par URL — évite de re-fetcher à chaque export.
+const imgCache = new Map<string, { dataUrl: string; width: number; height: number }>();
+async function loadPublicImage(
+  url: string
+): Promise<{ dataUrl: string; width: number; height: number }> {
+  if (imgCache.has(url)) return imgCache.get(url)!;
+  const res = await fetch(url);
+  const blob = await res.blob();
+  const dataUrl: string = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onloadend = () => resolve(r.result as string);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+  const dims: { width: number; height: number } = await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve({ width: 600, height: 200 });
+    img.src = dataUrl;
+  });
+  const entry = { dataUrl, width: dims.width, height: dims.height };
+  imgCache.set(url, entry);
+  return entry;
+}
+
+// Normalise un nom de client pour un nom de fichier (accents, espaces, etc.)
+function slugForFilename(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+}
+
+export async function exportAssetsPdf(assets: OrgAsset[], orgName: string) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
   const pageWidth = doc.internal.pageSize.getWidth();
 
-  // Header — Cetix logo text (since we can't embed the actual image without base64)
+  // Bandeau foncé
   doc.setFillColor(15, 23, 42); // slate-900
   doc.rect(0, 0, pageWidth, 22, "F");
+
+  // Logo Cetix — version blanche sur fond sombre
+  try {
+    const logo = await loadPublicImage("/images/cetix-logo-blanc-horizontal-HD.png");
+    const logoH = 12; // mm — hauteur cible dans le bandeau
+    const logoW = (logo.width / logo.height) * logoH;
+    doc.addImage(logo.dataUrl, "PNG", 15, 5, logoW, logoH, undefined, "FAST");
+  } catch {
+    // Fallback : texte "CETIX" si le chargement échoue (offline, etc.)
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text("CETIX", 15, 14);
+  }
+
+  // Libellé à droite du logo
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(16);
-  doc.setFont("helvetica", "bold");
-  doc.text("CETIX", 15, 14);
-  doc.setFontSize(9);
+  doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text("Services TI gérés", 42, 14);
+  doc.text("Rapport d'inventaire", pageWidth - 15, 14, { align: "right" });
 
   // Title
   doc.setTextColor(15, 23, 42);
@@ -109,5 +159,7 @@ export function exportAssetsPdf(assets: OrgAsset[], orgName: string) {
     },
   });
 
-  doc.save(`actifs-${orgName.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase()}-${new Date().toISOString().split("T")[0]}.pdf`);
+  const slug = slugForFilename(orgName) || "client";
+  const dateIso = new Date().toISOString().split("T")[0];
+  doc.save(`Inventaire-actifs-${slug}-${dateIso}.pdf`);
 }

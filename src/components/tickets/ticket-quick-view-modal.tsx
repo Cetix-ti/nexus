@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-editor";
+import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
 import {
   STATUS_CONFIG,
   PRIORITY_CONFIG,
@@ -158,6 +159,10 @@ export function TicketQuickViewModal({
       "Utilisateur"
     : "Utilisateur";
 
+  const avatars = useAgentAvatarsStore((s) => s.avatars);
+  const loadAvatars = useAgentAvatarsStore((s) => s.load);
+  useEffect(() => { loadAvatars(); }, [loadAvatars]);
+
   const [replyText, setReplyText] = useState("");
   const [isInternal, setIsInternal] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -171,6 +176,17 @@ export function TicketQuickViewModal({
     ticket?.priority
   );
 
+  // Quick time-entry state
+  const [timeOpen, setTimeOpen] = useState(false);
+  const [timeType, setTimeType] = useState<"remote_work" | "onsite_work" | "other_work">(
+    "remote_work"
+  );
+  const [timeMinutes, setTimeMinutes] = useState<number>(30);
+  const [timeDescription, setTimeDescription] = useState("");
+  const [timeSaving, setTimeSaving] = useState(false);
+  const [timeError, setTimeError] = useState<string | null>(null);
+  const [timeSaved, setTimeSaved] = useState(false);
+
   // Reset state when ticket changes
   useEffect(() => {
     setReplyText("");
@@ -180,6 +196,12 @@ export function TicketQuickViewModal({
     setLocalComments([]);
     setLocalStatus(ticket?.status);
     setLocalPriority(ticket?.priority);
+    setTimeOpen(false);
+    setTimeMinutes(30);
+    setTimeDescription("");
+    setTimeError(null);
+    setTimeSaved(false);
+    setTimeType("remote_work");
   }, [ticket?.id, ticket?.status, ticket?.priority]);
 
   // Close on escape
@@ -239,6 +261,54 @@ export function TicketQuickViewModal({
       setSendError(message);
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleSaveTimeEntry() {
+    if (!ticket || timeSaving) return;
+    const orgId = (ticket as unknown as { organizationId?: string }).organizationId;
+    if (!orgId) {
+      setTimeError("Organisation introuvable pour ce ticket");
+      return;
+    }
+    if (!Number.isFinite(timeMinutes) || timeMinutes <= 0) {
+      setTimeError("Durée invalide");
+      return;
+    }
+    setTimeSaving(true);
+    setTimeError(null);
+    try {
+      const now = new Date();
+      const startedAt = new Date(now.getTime() - timeMinutes * 60_000);
+      const res = await fetch("/api/v1/time-entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticketId: ticket.id,
+          organizationId: orgId,
+          timeType,
+          startedAt: startedAt.toISOString(),
+          endedAt: now.toISOString(),
+          durationMinutes: Math.round(timeMinutes),
+          description: timeDescription.trim() || undefined,
+          isOnsite: timeType === "onsite_work",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Erreur ${res.status}`);
+      }
+      setTimeSaved(true);
+      setTimeDescription("");
+      setTimeMinutes(30);
+      setTimeout(() => {
+        setTimeSaved(false);
+        setTimeOpen(false);
+      }, 1500);
+    } catch (e) {
+      setTimeError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setTimeSaving(false);
     }
   }
 
@@ -399,16 +469,29 @@ export function TicketQuickViewModal({
                     Conversation ({allComments.length})
                   </h3>
                   <div className="space-y-3">
-                    {allComments.map((c) => (
+                    {allComments.map((c) => {
+                      const authorAvatar =
+                        (c as unknown as { authorAvatar?: string | null }).authorAvatar
+                        ?? avatars[c.authorName];
+                      return (
                       <div key={c.id} className="flex gap-3">
-                        <div
-                          className={cn(
-                            "h-8 w-8 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[10px] font-semibold shrink-0 ring-2 ring-white shadow-sm",
-                            getAvatarGradient(c.authorName)
-                          )}
-                        >
-                          {getInitials(c.authorName)}
-                        </div>
+                        {authorAvatar ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={authorAvatar}
+                            alt={c.authorName}
+                            className="h-8 w-8 rounded-full object-cover shrink-0 ring-2 ring-white shadow-sm"
+                          />
+                        ) : (
+                          <div
+                            className={cn(
+                              "h-8 w-8 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[10px] font-semibold shrink-0 ring-2 ring-white shadow-sm",
+                              getAvatarGradient(c.authorName)
+                            )}
+                          >
+                            {getInitials(c.authorName)}
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <div
                             className={cn(
@@ -442,7 +525,8 @@ export function TicketQuickViewModal({
                           </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -497,13 +581,7 @@ export function TicketQuickViewModal({
                     {sendError}
                   </div>
                 )}
-                <div className="mt-2 flex items-center justify-between">
-                  <p className="text-[10.5px] text-slate-400">
-                    <kbd className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[9px]">
-                      ⌘ Enter
-                    </kbd>{" "}
-                    pour envoyer
-                  </p>
+                <div className="mt-2 flex items-center justify-end">
                   <Button
                     variant="primary"
                     size="sm"
@@ -570,14 +648,23 @@ export function TicketQuickViewModal({
                 </h3>
                 {ticket.assigneeName ? (
                   <div className="flex items-center gap-2">
-                    <div
-                      className={cn(
-                        "h-7 w-7 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[10px] font-semibold shrink-0",
-                        getAvatarGradient(ticket.assigneeName)
-                      )}
-                    >
-                      {getInitials(ticket.assigneeName)}
-                    </div>
+                    {avatars[ticket.assigneeName] ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={avatars[ticket.assigneeName]!}
+                        alt={ticket.assigneeName}
+                        className="h-7 w-7 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div
+                        className={cn(
+                          "h-7 w-7 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[10px] font-semibold shrink-0",
+                          getAvatarGradient(ticket.assigneeName)
+                        )}
+                      >
+                        {getInitials(ticket.assigneeName)}
+                      </div>
+                    )}
                     <span className="text-[12.5px] text-slate-700 truncate">
                       {ticket.assigneeName}
                     </span>
@@ -696,6 +783,120 @@ export function TicketQuickViewModal({
                         locale: fr,
                       })}
                     </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Quick time entry */}
+              <div className="pt-3 border-t border-slate-200">
+                {!timeOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setTimeOpen(true)}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                  >
+                    <Clock className="h-3.5 w-3.5" />
+                    Saisir du temps
+                  </button>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                        <Clock className="inline h-2.5 w-2.5 mr-1" />
+                        Saisie de temps
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTimeOpen(false);
+                          setTimeError(null);
+                        }}
+                        className="text-[11px] text-slate-400 hover:text-slate-700"
+                      >
+                        Annuler
+                      </button>
+                    </div>
+
+                    <Select
+                      value={timeType}
+                      onValueChange={(v) =>
+                        setTimeType(v as "remote_work" | "onsite_work" | "other_work")
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-[12px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="remote_work">Travail à distance</SelectItem>
+                        <SelectItem value="onsite_work">Intervention sur place</SelectItem>
+                        <SelectItem value="other_work">Autre</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={1}
+                          max={24 * 60}
+                          step={5}
+                          value={timeMinutes}
+                          onChange={(e) =>
+                            setTimeMinutes(
+                              Math.max(1, Math.min(24 * 60, Number(e.target.value) || 0))
+                            )
+                          }
+                          className="w-20 h-8 rounded-md border border-slate-200 bg-white px-2 text-[12px] tabular-nums text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                        <span className="text-[11.5px] text-slate-500">min</span>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-1">
+                        {[15, 30, 45, 60, 90, 120].map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setTimeMinutes(m)}
+                            className={cn(
+                              "h-6 px-1.5 rounded text-[10.5px] font-medium transition-colors",
+                              timeMinutes === m
+                                ? "bg-blue-600 text-white"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            )}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <textarea
+                      value={timeDescription}
+                      onChange={(e) => setTimeDescription(e.target.value)}
+                      placeholder="Description de l'intervention (optionnel)"
+                      rows={2}
+                      className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                    />
+
+                    {timeError ? (
+                      <p className="text-[11px] text-red-600">{timeError}</p>
+                    ) : null}
+                    {timeSaved ? (
+                      <p className="text-[11px] text-emerald-600 font-medium">
+                        Saisie enregistrée ✓
+                      </p>
+                    ) : null}
+
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      className="w-full"
+                      onClick={handleSaveTimeEntry}
+                      loading={timeSaving}
+                      disabled={timeSaving || timeSaved}
+                    >
+                      Enregistrer
+                    </Button>
                   </div>
                 )}
               </div>

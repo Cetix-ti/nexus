@@ -66,19 +66,19 @@ const TYPE_ICONS: Record<string, any> = {
 
 const TYPE_LABELS: Record<string, string> = {
   // DB enum values
-  WORKSTATION: "Poste de travail",
-  LAPTOP: "Portable",
-  SERVER: "Serveur",
+  WORKSTATION: "Postes de travail",
+  LAPTOP: "Postes de travail",
+  SERVER: "Serveurs Windows/Linux",
   VIRTUAL_MACHINE: "Machine virtuelle",
   NETWORK_DEVICE: "Équipement réseau",
   PRINTER: "Imprimante",
   MOBILE: "Mobile",
   OTHER: "Autre",
   // UI mapped values returned by the API
-  workstation: "Poste de travail",
-  laptop: "Portable",
-  windows_server: "Serveur Windows",
-  linux_server: "Serveur Linux",
+  workstation: "Postes de travail",
+  laptop: "Postes de travail",
+  windows_server: "Serveurs Windows/Linux",
+  linux_server: "Serveurs Windows/Linux",
   server_physical: "Serveur physique",
   server_virtual: "Machine virtuelle",
   nas: "NAS",
@@ -191,9 +191,20 @@ export function LinkAssetModal({
     fetchAssets();
   }, [open, fetchAssets]);
 
+  // Resolve the display label for a raw asset type (handles both DB enum
+  // values and UI-mapped ones).
+  function labelForType(t: string): string {
+    return TYPE_LABELS[t] ?? t;
+  }
+
   const filteredAssets = useMemo(() => {
     let list = assets.filter((a) => !alreadyLinkedIds.includes(a.id));
-    if (typeFilter) list = list.filter((a) => a.type === typeFilter);
+    if (typeFilter) {
+      // typeFilter holds a display LABEL — an asset matches if its
+      // resolved label equals the selected label (so "Postes de travail"
+      // matches both WORKSTATION and LAPTOP).
+      list = list.filter((a) => labelForType(a.type) === typeFilter);
+    }
     if (search.length > 0) {
       const q = search.toLowerCase();
       list = list.filter((a) =>
@@ -204,10 +215,12 @@ export function LinkAssetModal({
     return list;
   }, [assets, search, typeFilter, alreadyLinkedIds]);
 
+  // Chip labels, deduplicated. Two raw types that share a label (e.g.
+  // WORKSTATION + LAPTOP → "Postes de travail") collapse to one chip.
   const availableTypes = useMemo(() => {
     const set = new Set<string>();
-    assets.forEach((a) => set.add(a.type));
-    return Array.from(set).sort();
+    assets.forEach((a) => set.add(labelForType(a.type)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
   }, [assets]);
 
   async function handleLink(asset: Asset) {
@@ -322,16 +335,16 @@ export function LinkAssetModal({
                 >
                   Tous les types
                 </button>
-                {availableTypes.map((t) => (
+                {availableTypes.map((label) => (
                   <button
-                    key={t}
-                    onClick={() => setTypeFilter(t)}
+                    key={label}
+                    onClick={() => setTypeFilter(label)}
                     className={cn(
                       "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11.5px] font-medium ring-1 ring-inset transition-colors",
-                      typeFilter === t ? "bg-blue-50 text-blue-700 ring-blue-200" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50",
+                      typeFilter === label ? "bg-blue-50 text-blue-700 ring-blue-200" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50",
                     )}
                   >
-                    {TYPE_LABELS[t] ?? t}
+                    {label}
                   </button>
                 ))}
               </div>

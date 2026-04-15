@@ -22,13 +22,18 @@ export type AssetType =
 export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   server_physical: "Serveur physique",
   server_virtual: "Machine virtuelle",
-  windows_server: "Serveur Windows",
-  linux_server: "Serveur Linux",
+  // Regroupés sous un libellé unique : l'OSType d'Atera ne permet pas
+  // toujours de distinguer un Windows Server d'un serveur Linux (il peut
+  // retourner simplement "Server" / "Domain Controller").
+  windows_server: "Serveurs Windows/Linux",
+  linux_server: "Serveurs Windows/Linux",
   nas: "NAS",
   san: "SAN / Stockage",
   hypervisor: "Hyperviseur",
-  workstation: "Poste de travail",
-  laptop: "Portable",
+  // Regroupés : la catégorisation OSType "Work Station" est identique
+  // pour les desktops et les laptops ; distinction impossible de façon fiable.
+  workstation: "Postes de travail",
+  laptop: "Postes de travail",
   network_switch: "Switch réseau",
   firewall: "Pare-feu",
   router: "Routeur",
@@ -48,9 +53,15 @@ export const ASSET_TYPE_CATEGORIES: { label: string; types: AssetType[] }[] = [
   },
   { label: "Stockage", types: ["nas", "san", "tape_library"] },
   { label: "Réseau", types: ["network_switch", "firewall", "router", "wifi_ap"] },
+  // Postes de travail : typiquement issus d'Atera (workstation + laptop
+  // partagent le libellé "Postes de travail" via ASSET_TYPE_LABELS).
+  { label: "Postes de travail", types: ["workstation", "laptop"] },
+  // Périphériques divers : pas gérés par le RMM — imprimantes, téléphones
+  // IP, onduleurs, appliances de monitoring. Catégorie séparée pour ne
+  // pas les mélanger avec les postes Atera.
   {
-    label: "Postes & Périphériques",
-    types: ["workstation", "laptop", "printer", "ip_phone", "ups", "monitoring_appliance"],
+    label: "Périphériques divers",
+    types: ["printer", "ip_phone", "ups", "monitoring_appliance"],
   },
   { label: "Cloud", types: ["cloud_resource"] },
 ];

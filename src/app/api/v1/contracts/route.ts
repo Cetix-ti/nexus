@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth-utils";
+import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
 
 export async function GET(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Les contrats contiennent les tarifs horaires et les heures incluses —
+  // données sensibles. Réservé aux agents MSP (pas CLIENT_*). Pour un
+  // client, utiliser les endpoints `/api/v1/portal/*` qui filtrent par org.
+  if (me.role.startsWith("CLIENT_")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const url = new URL(req.url);
   const orgId = url.searchParams.get("organizationId") || undefined;
   const rows = await prisma.contract.findMany({
@@ -29,6 +35,10 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Création de contrat : SUPERVISOR+ (impact tarification client).
+  if (!hasMinimumRole(me.role, "SUPERVISOR") || me.role.startsWith("CLIENT_")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const body = await req.json();
   if (!body.name || !body.organizationId || !body.startDate) {
     return NextResponse.json({ error: "name, organizationId, startDate requis" }, { status: 400 });

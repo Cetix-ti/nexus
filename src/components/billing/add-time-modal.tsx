@@ -30,7 +30,7 @@ interface AddTimeModalProps {
   ticketNumber: string;
   organizationId: string;
   organizationName: string;
-  onSave: (entry: TimeEntry) => void;
+  onSave: (entry: TimeEntry) => void | Promise<void>;
 }
 
 const QUICK_DURATIONS = [15, 30, 45, 60, 90, 120];
@@ -69,6 +69,7 @@ export function AddTimeModal({
   const [isWeekend, setIsWeekend] = useState(false);
   const [isUrgent, setIsUrgent] = useState(false);
   const [forceNonBillable, setForceNonBillable] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Load current user name
   const [currentUserName, setCurrentUserName] = useState("—");
@@ -162,42 +163,52 @@ export function AddTimeModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Guard contre double-submit : sans ça, un double-clic rapide ou un
+    // appui répété sur Enter produisait deux POST identiques (on a constaté
+    // plusieurs doublons en base).
+    if (submitting) return;
     if (!decision || durationMinutes <= 0) return;
-    const now = new Date().toISOString();
-    const startedAt = new Date(`${date}T${startTime}:00`).toISOString();
-    const endedAt = manualMode
-      ? undefined
-      : new Date(`${date}T${endTime}:00`).toISOString();
-    const entry: TimeEntry = {
-      id: `te_${Date.now()}`,
-      ticketId,
-      ticketNumber,
-      organizationId,
-      organizationName,
-      contractId: contract?.id,
-      agentId: "usr_current",
-      agentName: currentUserName,
-      timeType,
-      startedAt,
-      endedAt,
-      durationMinutes,
-      description,
-      isAfterHours,
-      isWeekend,
-      isUrgent,
-      isOnsite,
-      coverageStatus: decision.status,
-      coverageReason: decision.reason,
-      hourlyRate: decision.rate,
-      amount: decision.amount,
-      approvalStatus: "draft",
-      createdAt: now,
-      updatedAt: now,
-    };
-    // The parent (TicketBillingSection) handles the API call via onSave
-    onSave(entry);
-    reset();
-    onClose();
+    setSubmitting(true);
+    try {
+      const now = new Date().toISOString();
+      const startedAt = new Date(`${date}T${startTime}:00`).toISOString();
+      const endedAt = manualMode
+        ? undefined
+        : new Date(`${date}T${endTime}:00`).toISOString();
+      const entry: TimeEntry = {
+        id: `te_${Date.now()}`,
+        ticketId,
+        ticketNumber,
+        organizationId,
+        organizationName,
+        contractId: contract?.id,
+        agentId: "usr_current",
+        agentName: currentUserName,
+        timeType,
+        startedAt,
+        endedAt,
+        durationMinutes,
+        description,
+        isAfterHours,
+        isWeekend,
+        isUrgent,
+        isOnsite,
+        coverageStatus: decision.status,
+        coverageReason: decision.reason,
+        hourlyRate: decision.rate,
+        amount: decision.amount,
+        approvalStatus: "draft",
+        createdAt: now,
+        updatedAt: now,
+      };
+      // Awaité : sans await, on fermait la modale avant que le POST ait
+      // rendu, et l'utilisateur pouvait ré-ouvrir puis re-poster.
+      await onSave(entry);
+      reset();
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -397,7 +408,12 @@ export function AddTimeModal({
             <Button type="button" variant="outline" onClick={onClose}>
               Annuler
             </Button>
-            <Button type="submit" variant="primary" disabled={durationMinutes <= 0 || !description.trim()}>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={submitting}
+              disabled={submitting || durationMinutes <= 0 || !description.trim()}
+            >
               <Save className="h-4 w-4" strokeWidth={2.5} />
               Enregistrer
             </Button>

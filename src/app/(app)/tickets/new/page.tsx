@@ -9,6 +9,7 @@ import { ArrowLeft, ChevronRight, Save, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AdvancedRichEditor } from "@/components/ui/advanced-rich-editor";
 import {
   Select,
   SelectContent,
@@ -210,16 +211,13 @@ export default function NewTicketPage() {
                 <label className="mb-1.5 block text-sm font-medium text-neutral-700">
                   Description
                 </label>
-                <textarea
-                  placeholder="Description détaillée du problème ou de la demande..."
-                  className={cn(
-                    "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-sm text-neutral-900 shadow-sm transition-colors",
-                    "placeholder:text-neutral-400",
-                    "focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20",
-                    "min-h-[140px] resize-y",
-                    errors.description && "border-red-500 focus:border-red-500 focus:ring-red-500/20"
-                  )}
-                  {...register("description")}
+                {/* Hidden input so react-hook-form can validate the value */}
+                <input type="hidden" {...register("description")} />
+                <AdvancedRichEditor
+                  value={watch("description") || ""}
+                  onChange={(html) => setValue("description", html, { shouldValidate: true })}
+                  placeholder="Description détaillée du problème ou de la demande. Vous pouvez coller des images directement."
+                  minHeight="180px"
                 />
                 {errors.description && (
                   <p className="mt-1.5 text-sm text-red-600">{errors.description.message}</p>

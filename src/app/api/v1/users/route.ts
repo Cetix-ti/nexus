@@ -96,8 +96,9 @@ export async function GET(req: Request) {
   const includeSystem = url.searchParams.get("includeSystem") === "true";
 
   // Lightweight list — exclude heavy fields (avatar, signature*)
-  // to keep the payload small. Fetch individual user for full data.
+  // to keep the payload small. Opt-in via query params for pages that need them.
   const includeAvatar = url.searchParams.get("includeAvatar") === "true";
+  const includeSignature = url.searchParams.get("includeSignature") === "true";
   const users = await prisma.user.findMany({
     where: {
       ...(role
@@ -119,6 +120,7 @@ export async function GET(req: Request) {
       isActive: true,
       lastLoginAt: true,
       ...(includeAvatar ? { avatar: true } : {}),
+      ...(includeSignature ? { signature: true, signatureHtml: true } : {}),
     },
   });
 
@@ -134,6 +136,12 @@ export async function GET(req: Request) {
       phone: u.phone,
       isActive: u.isActive,
       lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
+      ...(includeSignature
+        ? {
+            signature: (u as any).signature ?? null,
+            signatureHtml: (u as any).signatureHtml ?? null,
+          }
+        : {}),
     })),
   );
 }

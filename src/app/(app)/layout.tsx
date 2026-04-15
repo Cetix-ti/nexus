@@ -1,16 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { AiChatWidget } from "@/components/ai/ai-chat-widget";
 import { NotificationToasts } from "@/components/layout/notification-toasts";
 import { Topbar } from "@/components/layout/topbar";
+import { UserPrefsSyncBoot } from "@/components/user-prefs-sync-boot";
 import { useSidebarStore } from "@/stores/sidebar";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { collapsed, toggle } = useSidebarStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Ferme le drawer mobile à chaque navigation — sinon il reste ouvert
+  // par-dessus la page cible.
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   // Keyboard shortcut: Ctrl/Cmd+B to toggle sidebar
   useEffect(() => {
@@ -31,6 +40,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-slate-50">
+      {/* Sync des préférences user (localStorage ↔ DB) — invisible */}
+      <UserPrefsSyncBoot />
       {/* Desktop layout — sidebar + content */}
       <div
         className="hidden md:grid h-screen"
@@ -80,7 +91,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               onClick={() => setMobileMenuOpen(false)}
             />
             <div className="relative w-[min(280px,85vw)] h-full">
-              <Sidebar />
+              <Sidebar forceExpanded />
               <button
                 onClick={() => setMobileMenuOpen(false)}
                 className="absolute top-4 right-4 h-8 w-8 flex items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 z-10"

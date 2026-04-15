@@ -111,7 +111,7 @@ export function Topbar() {
           id: o.id,
           title: o.name,
           subtitle: o.domain ?? "",
-          href: `/organizations/${o.id}`,
+          href: `/organisations/${encodeURIComponent(o.slug || o.clientCode || o.id)}`,
         });
       }
 

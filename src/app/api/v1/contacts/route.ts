@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { listContacts, createContact } from "@/lib/orgs/service";
-import { getCurrentUser } from "@/lib/auth-utils";
+import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
 
 export async function GET(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Les CLIENT_* n'ont aucun accès à la liste globale — ils utilisent
+  // leurs propres endpoints `/api/v1/portal/*`.
+  if (me.role.startsWith("CLIENT_")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const url = new URL(req.url);
   const orgId = url.searchParams.get("organizationId") || undefined;
   const contacts = await listContacts(orgId);
@@ -41,6 +46,10 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Création de contact : TECHNICIAN+ (pas de CLIENT_*).
+  if (!hasMinimumRole(me.role, "TECHNICIAN") || me.role.startsWith("CLIENT_")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const body = await req.json();
   if (!body.firstName || !body.lastName || !body.email || !body.organizationId) {
     return NextResponse.json({ error: "Champs requis manquants" }, { status: 400 });

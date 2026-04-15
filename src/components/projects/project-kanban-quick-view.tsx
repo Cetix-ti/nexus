@@ -168,40 +168,57 @@ export function ProjectKanbanQuickView({
     onStatusChange?.(ticket!.id, s);
   }
 
-  function handleSaveTime() {
+  async function handleSaveTime() {
     const mins = parseInt(duration, 10);
     if (!mins || mins <= 0 || saving || !ticket) return;
+    // organizationId vient du ticket ; sans lui on ne peut pas persister.
+    const orgId = (ticket as unknown as { organizationId?: string }).organizationId;
+    if (!orgId) {
+      alert(
+        "Organisation introuvable pour ce ticket — impossible d'enregistrer la saisie.",
+      );
+      return;
+    }
     setSaving(true);
-    setTimeout(() => {
-      const now = new Date().toISOString();
-      const entry: TimeEntry = {
-        id: `te_local_${Date.now()}`,
-        ticketId: ticket.id,
-        ticketNumber: ticket.number,
-        organizationId: "",
-        organizationName: ticket.organizationName,
-        agentId: "usr_current",
-        agentName: currentUserName,
-        timeType,
-        startedAt: now,
-        endedAt: now,
-        durationMinutes: mins,
-        description: description || TIME_TYPE_LABELS[timeType],
-        isAfterHours: false,
-        isWeekend: false,
-        isUrgent: false,
-        isOnsite: timeType === "onsite_work",
-        coverageStatus: "included_in_contract",
-        coverageReason: "Saisie rapide depuis le kanban projet",
-        approvalStatus: "draft",
-        createdAt: now,
-        updatedAt: now,
-      };
-      setLocalEntries((prev) => [...prev, entry]);
+    try {
+      const now = new Date();
+      const startedAt = new Date(now.getTime() - mins * 60_000);
+      const res = await fetch("/api/v1/time-entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticketId: ticket.id,
+          organizationId: orgId,
+          timeType,
+          startedAt: startedAt.toISOString(),
+          endedAt: now.toISOString(),
+          durationMinutes: mins,
+          description: description || TIME_TYPE_LABELS[timeType],
+          isOnsite: timeType === "onsite_work",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Échec : ${err.error || res.status}`);
+        return;
+      }
+      // Recharge les entries depuis l'API pour refléter la persistance DB
+      // (évite un état local qui diverge du serveur).
+      const refreshed = await fetch(
+        `/api/v1/time-entries?ticketId=${ticket.id}`,
+      );
+      if (refreshed.ok) {
+        const rows = await refreshed.json();
+        setApiEntries(Array.isArray(rows) ? rows : []);
+      }
+      setLocalEntries([]);
       setDescription("");
       setDuration("30");
+    } catch (e) {
+      alert(`Erreur réseau : ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
       setSaving(false);
-    }, 250);
+    }
   }
 
   return (

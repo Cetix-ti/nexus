@@ -47,6 +47,7 @@ export interface Ticket {
   impact: TicketImpact;
   type: TicketType;
   source: TicketSource;
+  organizationId?: string;
   organizationName: string;
   requesterName: string;
   requesterEmail: string;

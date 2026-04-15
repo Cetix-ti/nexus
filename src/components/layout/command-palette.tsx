@@ -39,6 +39,7 @@ interface Organization {
   id: string;
   name: string;
   slug: string;
+  clientCode?: string | null;
 }
 
 interface Project {
@@ -174,7 +175,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             icon: Building2,
             title: o.name,
             subtitle: `/${o.slug}`,
-            href: `/organizations/${o.id}`,
+            href: `/organisations/${encodeURIComponent(o.slug || o.clientCode || o.id)}`,
           });
         }
       }

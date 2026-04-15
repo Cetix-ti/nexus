@@ -107,8 +107,12 @@ function badgeForRole(role: string): Agent["roleBadge"] {
 export function AgentProfilesSection() {
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveOk, setSaveOk] = useState<string | null>(null);
+
   useEffect(() => {
-    fetch("/api/v1/users")
+    // includeSignature + includeAvatar so the modal pre-fills correctly.
+    fetch("/api/v1/users?includeSignature=true&includeAvatar=true")
       .then((r) => r.json())
       .then((users) => {
         if (!Array.isArray(users) || users.length === 0) return;
@@ -119,6 +123,7 @@ export function AgentProfilesSection() {
           role: u.role,
           roleBadge: badgeForRole(u.role),
           gradient: GRADIENTS[i % GRADIENTS.length],
+          avatar: u.avatar ?? null,
           signature: u.signature || `${u.name || `${u.firstName} ${u.lastName}`}\n${u.email}${u.phone ? `\n${u.phone}` : ""}`,
           signatureHtml: u.signatureHtml || null,
         }));
@@ -136,14 +141,34 @@ export function AgentProfilesSection() {
     if (patch.signature !== undefined) body.signature = patch.signature;
     if (patch.signatureHtml !== undefined) body.signatureHtml = patch.signatureHtml;
     if ((patch as any).avatar !== undefined) body.avatar = (patch as any).avatar;
+    setSaveError(null);
+    setSaveOk(null);
     try {
-      await fetch("/api/v1/users", {
+      const res = await fetch("/api/v1/users", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        const msg =
+          errJson.error ||
+          (res.status === 403
+            ? "Permissions insuffisantes pour modifier cet agent"
+            : res.status === 400
+            ? "Données invalides (signature trop longue ?)"
+            : `Erreur ${res.status}`);
+        setSaveError(msg);
+        console.error("Signature save failed:", msg, errJson);
+        return; // Do NOT optimistically update the UI if the save failed
+      }
+      const who = agents.find((a) => a.id === id);
+      setSaveOk(`Signature enregistrée pour ${who?.name ?? "l'agent"}`);
+      setTimeout(() => setSaveOk(null), 4000);
     } catch (e) {
+      setSaveError("Erreur réseau");
       console.error("Signature save failed:", e);
+      return;
     }
     setAgents((prev) =>
       prev.map((a) => (a.id === id ? { ...a, ...patch } : a))
@@ -162,6 +187,17 @@ export function AgentProfilesSection() {
         </p>
       </div>
 
+      {saveError ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] text-red-700">
+          <strong>Erreur&nbsp;:</strong> {saveError}
+        </div>
+      ) : null}
+      {saveOk ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-[13px] text-emerald-700">
+          {saveOk}
+        </div>
+      ) : null}
+
       <div className="space-y-3">
         {agents.map((agent) => (
           <Card key={agent.id} className="card-hover">
@@ -169,11 +205,20 @@ export function AgentProfilesSection() {
               <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
                 {/* Identity */}
                 <div className="flex items-center gap-4 lg:w-72 shrink-0">
-                  <div
-                    className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${agent.gradient} text-white text-lg font-semibold shadow-sm shrink-0`}
-                  >
-                    {getInitials(agent.name)}
-                  </div>
+                  {agent.avatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={agent.avatar}
+                      alt={agent.name}
+                      className="h-14 w-14 rounded-2xl object-cover shadow-sm shrink-0 ring-2 ring-white"
+                    />
+                  ) : (
+                    <div
+                      className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${agent.gradient} text-white text-lg font-semibold shadow-sm shrink-0`}
+                    >
+                      {getInitials(agent.name)}
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <h3 className="text-[15px] font-semibold text-slate-900 truncate">
                       {agent.name}
@@ -196,13 +241,24 @@ export function AgentProfilesSection() {
                     Photo de profil
                   </p>
                   <div className="flex items-center gap-3">
-                    <div
-                      className={`flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br ${agent.gradient} text-white text-sm font-semibold shrink-0`}
-                    >
-                      {getInitials(agent.name)}
-                    </div>
+                    {agent.avatar ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={agent.avatar}
+                        alt={agent.name}
+                        className="h-12 w-12 rounded-full object-cover shrink-0 ring-2 ring-white shadow-sm"
+                      />
+                    ) : (
+                      <div
+                        className={`flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br ${agent.gradient} text-white text-sm font-semibold shrink-0`}
+                      >
+                        {getInitials(agent.name)}
+                      </div>
+                    )}
                     <p className="text-[11px] text-slate-400">
-                      La photo se gère depuis le profil de l&apos;agent
+                      {agent.avatar
+                        ? "Cliquez sur « Éditer » pour changer la photo"
+                        : "Aucune photo — cliquez sur « Éditer » pour en ajouter une"}
                     </p>
                   </div>
                 </div>

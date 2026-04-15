@@ -5,7 +5,10 @@
    ================================================================ */
 
 @theme {
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  /* `--font-inter` est injecté sur <html> par next/font/google
+     (voir src/app/layout.tsx). On le chaîne ici pour que tout l'UI
+     hérite de la vraie Inter au lieu de tomber sur system-ui. */
+  --font-sans: var(--font-inter), "Inter", system-ui, -apple-system, sans-serif;
 }
 
 :root {

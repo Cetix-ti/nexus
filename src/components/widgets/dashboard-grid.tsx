@@ -144,18 +144,33 @@ function SortableWidget({
     : shouldExpandOnLaptop
     ? `span ${GRID_COLS}`
     : `span ${displayW}`;
+  // `gridAutoRows: 60px` is a FIXED-size implicit row, so `minHeight` alone
+  // doesn't grow it. We must spell out the row span so the grid layout
+  // reserves H rows of 60px each = H * 60px of vertical space per widget.
+  const rowSpan = isMobile ? undefined : `span ${displayH}`;
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition: isResizing ? "none" : transition,
     opacity: isDragging ? 0.3 : 1,
     zIndex: isDragging || isResizing ? 50 : undefined,
     gridColumn: colSpan,
+    gridRow: rowSpan,
     minHeight: isMobile ? "auto" : `${displayH * ROW_PX}px`,
   };
 
   if (!editMode) {
+    // View mode: explicitly span H rows so widgets aren't flattened to a
+    // single 60-px track. Keep minHeight as a belt-and-suspenders for
+    // browsers that ignore the row span when content is shorter.
     return (
-      <div style={{ gridColumn: colSpan }} className="w-full">
+      <div
+        style={{
+          gridColumn: colSpan,
+          gridRow: rowSpan,
+          minHeight: isMobile ? "auto" : `${displayH * ROW_PX}px`,
+        }}
+        className="w-full"
+      >
         {children}
       </div>
     );
@@ -301,8 +316,23 @@ export function DashboardGrid({
             editMode && "bg-slate-50/40 rounded-2xl p-4 ring-1 ring-dashed ring-slate-300/70"
           )}
           style={{
-            gridTemplateColumns: isMobile ? "1fr" : `repeat(${GRID_COLS}, 1fr)`,
-            gridAutoRows: isMobile ? "auto" : `${ROW_PX}px`,
+            // `minmax(0, 1fr)` au lieu de `1fr` : empêche les colonnes de
+            // gonfler quand un enfant a un min-content plus large que le
+            // viewport (Recharts, tableaux avec long texte, etc.). Sans ça,
+            // une grille mobile à 1 colonne déborde dès qu'un widget contient
+            // un graphique large.
+            gridTemplateColumns: isMobile
+              ? "minmax(0, 1fr)"
+              : `repeat(${GRID_COLS}, minmax(0, 1fr))`,
+            // `minmax(60px, auto)` — rows ≥ 60 px mais grandissent si le
+            // contenu est plus haut. Sans ce "auto", un widget dont le
+            // contenu dépasse H × 60 px (ex: graphique recharts 280 px
+            // dans un widget H=4=240 px) débordait par-dessus le widget
+            // suivant. Avec `auto`, la row expand → les widgets du bas
+            // descendent d'autant, plus de chevauchement.
+            gridAutoRows: isMobile
+              ? "auto"
+              : `minmax(${ROW_PX}px, auto)`,
             ...gridBgStyle,
           }}
         >

@@ -99,14 +99,20 @@ export default function PortalLayout({
 
   return (
     <div
-      className="min-h-screen flex bg-[#F9FAFB]"
+      className="min-h-screen flex flex-col bg-[#F9FAFB]"
       style={
         brand?.primaryColor
           ? ({ ["--portal-primary" as string]: brand.primaryColor } as React.CSSProperties)
           : undefined
       }
     >
+      {/* Impersonation banner — pinned at the very top when an agent
+          is viewing the portal as a client contact. Kept OUTSIDE the
+          sidebar/main flex-row so it can't be stretched by flex layout. */}
       <PortalImpersonationBanner />
+
+      {/* Main layout: fixed sidebar + flexible content */}
+      <div className="flex flex-1 min-h-0 relative">
 
       {/* ================================================================ */}
       {/* SIDEBAR — desktop                                                */}
@@ -412,6 +418,7 @@ export default function PortalLayout({
         <footer className="border-t border-neutral-200 bg-white">
           <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4" />
         </footer>
+      </div>
       </div>
     </div>
   );

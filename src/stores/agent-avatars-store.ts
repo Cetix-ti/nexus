@@ -15,7 +15,12 @@ export const useAgentAvatarsStore = create<AgentAvatarsState>()((set, get) => ({
   load: async () => {
     if (get().loaded) return;
     try {
-      const res = await fetch("/api/v1/users");
+      // includeAvatar=true : sans ce flag, le endpoint /api/v1/users
+      // renvoie une liste allégée sans le champ `avatar` pour garder
+      // le payload petit. Résultat : toutes les cartes de ticket, listes,
+      // etc. qui lisent depuis ce store voient `avatar = undefined` et
+      // tombent sur les initiales dégradées.
+      const res = await fetch("/api/v1/users?includeAvatar=true");
       if (!res.ok) return;
       const data = await res.json();
       const users = Array.isArray(data) ? data : [];

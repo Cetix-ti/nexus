@@ -295,8 +295,8 @@ export default function MySpacePage() {
               {(data?.monthlyBreakdown?.length ?? 0) > 0 ? (
                 <>
                   <div className="flex items-end gap-1 h-28">
-                    {data!.monthlyBreakdown.map((m) => {
-                      const maxH = Math.max(...data!.monthlyBreakdown.map((x) => x.hours), 1);
+                    {(data?.monthlyBreakdown ?? []).map((m) => {
+                      const maxH = Math.max(...(data?.monthlyBreakdown ?? []).map((x) => x.hours), 1);
                       const pct = (m.hours / maxH) * 100;
                       const bp = m.hours > 0 ? (m.billableHours / m.hours) * 100 : 0;
                       return (
@@ -326,8 +326,8 @@ export default function MySpacePage() {
                 <h3 className="text-[15px] font-semibold text-slate-900 mb-4 flex items-center gap-2"><Building2 className="h-4 w-4 text-slate-500" /> Mes clients principaux</h3>
                 {(data?.topOrgs?.length ?? 0) > 0 ? (
                   <div className="space-y-2.5">
-                    {data!.topOrgs.map((o) => {
-                      const max = data!.topOrgs[0]?.hours || 1;
+                    {(data?.topOrgs ?? []).map((o) => {
+                      const max = (data?.topOrgs ?? [])[0]?.hours || 1;
                       return (
                         <Link key={o.organizationId} href={`/organizations/${o.organizationId}`} className="flex items-center gap-3 group rounded-lg px-1 -mx-1 py-0.5 hover:bg-slate-50 transition-colors">
                           <span className="text-[12px] text-slate-700 w-32 truncate font-medium group-hover:text-blue-600 transition-colors">{o.organizationName}</span>
@@ -350,7 +350,7 @@ export default function MySpacePage() {
                 {(data?.coverageBreakdown?.length ?? 0) > 0 ? (
                   <>
                     <div className="space-y-2.5">
-                      {data!.coverageBreakdown.map((c) => (
+                      {(data?.coverageBreakdown ?? []).map((c) => (
                         <div key={c.status} className="flex items-center gap-3">
                           <div className={cn("h-2.5 w-2.5 rounded-full shrink-0", COVERAGE_COLORS[c.status] ?? "bg-slate-400")} />
                           <span className="text-[12px] text-slate-700 flex-1 truncate">{COVERAGE_LABELS[c.status] ?? c.status}</span>
@@ -361,7 +361,7 @@ export default function MySpacePage() {
                     </div>
                     {k.totalHours > 0 && (
                       <div className="mt-4 h-3 rounded-full bg-slate-100 overflow-hidden flex">
-                        {data!.coverageBreakdown.map((c) => (
+                        {(data?.coverageBreakdown ?? []).map((c) => (
                           <div key={c.status} className={cn("h-full", COVERAGE_COLORS[c.status] ?? "bg-slate-400")} style={{ width: `${(c.hours / k.totalHours) * 100}%` }} />
                         ))}
                       </div>

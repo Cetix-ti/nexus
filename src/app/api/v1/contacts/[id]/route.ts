@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth-utils";
+import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
 
 export async function GET(
   _req: Request,
@@ -8,6 +8,10 @@ export async function GET(
 ) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Interdit aux CLIENT_* — ils ont leur propre endpoint portail.
+  if (me.role.startsWith("CLIENT_")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const { id } = await params;
   const contact = await prisma.contact.findUnique({
@@ -27,6 +31,10 @@ export async function PATCH(
   const me = await getCurrentUser();
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Modification d'un contact : TECHNICIAN+ (pas CLIENT_*).
+  if (!hasMinimumRole(me.role, "TECHNICIAN") || me.role.startsWith("CLIENT_")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await params;
@@ -122,6 +130,10 @@ export async function DELETE(
   const me = await getCurrentUser();
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Suppression : SUPERVISOR+ (action destructive).
+  if (!hasMinimumRole(me.role, "SUPERVISOR")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await params;

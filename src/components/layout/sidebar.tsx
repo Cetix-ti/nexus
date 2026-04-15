@@ -200,8 +200,12 @@ function NavItemComponent({
   );
 }
 
-export function Sidebar() {
-  const { collapsed, toggle } = useSidebarStore();
+export function Sidebar({ forceExpanded = false }: { forceExpanded?: boolean } = {}) {
+  // Le drawer mobile passe `forceExpanded` pour ignorer l'état "collapsed"
+  // du store global (la version 76 px icônes-seules n'a aucun sens dans
+  // un drawer 280 px de large).
+  const { collapsed: storedCollapsed, toggle } = useSidebarStore();
+  const collapsed = forceExpanded ? false : storedCollapsed;
   const { data: session, status: sessionStatus } = useSession();
 
   const user = session?.user;
@@ -273,24 +277,26 @@ export function Sidebar() {
 
       {/* Footer: collapse + user */}
       <div className="border-t border-slate-800/80 p-3 space-y-1">
-        {/* Collapse toggle */}
-        <button
-          onClick={toggle}
-          className={cn(
-            "flex items-center gap-2.5 w-full rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.04] transition-colors text-[12.5px]",
-            collapsed ? "h-10 justify-center" : "h-9 px-3"
-          )}
-          title={collapsed ? "Étendre" : "Réduire"}
-        >
-          {collapsed ? (
-            <ChevronsRight className="w-4 h-4" strokeWidth={2} />
-          ) : (
-            <>
-              <ChevronsLeft className="w-4 h-4" strokeWidth={2} />
-              <span>Réduire le menu</span>
-            </>
-          )}
-        </button>
+        {/* Collapse toggle — caché dans le drawer mobile (forceExpanded) */}
+        {!forceExpanded && (
+          <button
+            onClick={toggle}
+            className={cn(
+              "flex items-center gap-2.5 w-full rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.04] transition-colors text-[12.5px]",
+              collapsed ? "h-10 justify-center" : "h-9 px-3"
+            )}
+            title={collapsed ? "Étendre" : "Réduire"}
+          >
+            {collapsed ? (
+              <ChevronsRight className="w-4 h-4" strokeWidth={2} />
+            ) : (
+              <>
+                <ChevronsLeft className="w-4 h-4" strokeWidth={2} />
+                <span>Réduire le menu</span>
+              </>
+            )}
+          </button>
+        )}
 
         {/* User info */}
         <div

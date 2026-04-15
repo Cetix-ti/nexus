@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow, format } from "date-fns";
 import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
 import {
   STATUS_CONFIG,
   PRIORITY_CONFIG,
@@ -57,6 +58,11 @@ export function TicketListView({ tickets }: TicketListViewProps) {
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Charge les avatars d'agents pour les cartes/lignes assignées.
+  const avatars = useAgentAvatarsStore((s) => s.avatars);
+  const loadAvatars = useAgentAvatarsStore((s) => s.load);
+  useEffect(() => { loadAvatars(); }, [loadAvatars]);
 
   function toggleSort(field: SortField) {
     if (sortField === field) {
@@ -155,9 +161,18 @@ export function TicketListView({ tickets }: TicketListViewProps) {
               </div>
               {ticket.assigneeName && (
                 <div className="mt-2 flex items-center gap-1.5">
-                  <div className="h-5 w-5 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-[8px] font-semibold">
-                    {getInitials(ticket.assigneeName)}
-                  </div>
+                  {avatars[ticket.assigneeName] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={avatars[ticket.assigneeName]!}
+                      alt={ticket.assigneeName}
+                      className="h-5 w-5 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="h-5 w-5 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-[8px] font-semibold">
+                      {getInitials(ticket.assigneeName)}
+                    </div>
+                  )}
                   <span className="text-[11px] text-slate-500">{ticket.assigneeName}</span>
                 </div>
               )}
@@ -279,9 +294,18 @@ export function TicketListView({ tickets }: TicketListViewProps) {
                     <td className="px-3 py-3">
                       {ticket.assigneeName ? (
                         <div className="flex items-center gap-2">
-                          <div className="h-6 w-6 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-[9px] font-semibold ring-2 ring-white shadow-sm">
-                            {getInitials(ticket.assigneeName)}
-                          </div>
+                          {avatars[ticket.assigneeName] ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={avatars[ticket.assigneeName]!}
+                              alt={ticket.assigneeName}
+                              className="h-6 w-6 rounded-full object-cover ring-2 ring-white shadow-sm"
+                            />
+                          ) : (
+                            <div className="h-6 w-6 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-[9px] font-semibold ring-2 ring-white shadow-sm">
+                              {getInitials(ticket.assigneeName)}
+                            </div>
+                          )}
                           <span className="text-[12px] text-slate-700 whitespace-nowrap">{ticket.assigneeName}</span>
                         </div>
                       ) : (

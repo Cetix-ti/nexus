@@ -125,7 +125,11 @@ export default function ProjectsPage() {
       if (typeFilter !== "all" && p.type !== typeFilter) return false;
       return true;
     });
-  }, [search, statusFilter, orgFilter, managerFilter, typeFilter, tabFilter]);
+    // `projects` ESSENTIEL dans les deps — sans ça, le memo capture le
+    // tableau initial vide au premier render et ne se met jamais à jour
+    // quand le fetch termine. C'est ce qui faisait qu'on voyait "2" dans
+    // la pastille mais rien dans la grille.
+  }, [projects, search, statusFilter, orgFilter, managerFilter, typeFilter, tabFilter]);
 
   const stats = useMemo(() => {
     const active = projects.filter(

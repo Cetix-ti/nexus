@@ -291,7 +291,7 @@ export default function OrganizationsPage() {
                 >
                   <td className="px-4 py-3">
                     <Link
-                      href={`/organizations/${org.id}`}
+                      href={`/organisations/${encodeURIComponent(org.slug || org.id)}`}
                       className="flex items-center gap-3"
                     >
                       {org.logo ? (

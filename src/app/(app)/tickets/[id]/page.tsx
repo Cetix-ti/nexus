@@ -42,6 +42,37 @@ function getOrgId(ticket: { organizationId?: string; organizationName: string })
   return "org_" + ticket.organizationName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/_+$/, "");
 }
 
+/**
+ * Render a ticket description as HTML.
+ * If the description already contains HTML tags, return it as-is.
+ * Otherwise escape it and convert newlines to <br> so plain-text imported
+ * descriptions render with line breaks and stay safe from XSS.
+ */
+function renderDescription(description: string | null | undefined): string {
+  if (!description || !description.trim()) {
+    return '<p class="text-slate-400 italic">Aucune description.</p>';
+  }
+  const hasHtml = /<[a-z][\s\S]*>/i.test(description);
+  if (hasHtml) return description;
+  // Plain text: escape + preserve line breaks + auto-link URLs
+  const escaped = description
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  // Convert URLs to clickable links
+  const withLinks = escaped.replace(
+    /(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
+  );
+  // Split into paragraphs on double newlines, keep single newlines as <br>
+  const paragraphs = withLinks
+    .split(/\n{2,}/)
+    .map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`)
+    .join("");
+  return paragraphs;
+}
+
 function getInitials(name: string): string {
   return name
     .split(" ")
@@ -84,8 +115,8 @@ function SidebarSection({ title, children }: { title: string; children: React.Re
 function SidebarRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-gray-500 whitespace-nowrap pt-0.5">{label}</span>
-      <div className="text-right">{children}</div>
+      <span className="text-xs text-gray-500 whitespace-nowrap pt-0.5 shrink-0">{label}</span>
+      <div className="text-right min-w-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -142,6 +173,7 @@ export default function TicketDetailPage() {
   const [linkedProjectName, setLinkedProjectName] = useState<string | null>(null);
   const [userSignature, setUserSignature] = useState<{ signature: string | null; signatureHtml: string | null }>({ signature: null, signatureHtml: null });
   const [appendSignature, setAppendSignature] = useState(true);
+  const [requesterPhone, setRequesterPhone] = useState<string | null>(null);
   const [timelineTab, setTimelineTab] = useState<"messages" | "notes" | "activity">("messages");
 
   const tickets = useTicketsStore((s) => s.tickets);
@@ -239,6 +271,18 @@ export default function TicketDetailPage() {
         }
       })
       .catch(() => {});
+    // Load requester phone — resolve by email, scoped to this org
+    if (ticket?.requesterEmail) {
+      fetch(`/api/v1/contacts/search?q=${encodeURIComponent(ticket.requesterEmail)}`, { signal })
+        .then((r) => r.ok ? r.json() : [])
+        .then((d) => {
+          if (signal.aborted) return;
+          const list = Array.isArray(d) ? d : [];
+          const match = list.find((c: any) => c.email?.toLowerCase() === ticket.requesterEmail.toLowerCase());
+          if (match?.phone) setRequesterPhone(match.phone);
+        })
+        .catch(() => {});
+    }
 
     return () => controller.abort();
   }, [ticket?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -583,7 +627,7 @@ export default function TicketDetailPage() {
               ) : (
                 <div
                   className="tiptap text-sm text-gray-700 leading-relaxed prose prose-sm prose-slate max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_em]:italic [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_pre]:bg-slate-100 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:rounded [&_img]:max-w-full [&_img]:rounded-lg"
-                  dangerouslySetInnerHTML={{ __html: ticket.description || "<p>Aucune description.</p>" }}
+                  dangerouslySetInnerHTML={{ __html: renderDescription(ticket.description) }}
                 />
               )}
             </div>
@@ -794,9 +838,6 @@ export default function TicketDetailPage() {
               />
               <div className="mt-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <p className="text-[11px] text-slate-400">
-                    Astuce : <kbd className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[10px]">⌘ Enter</kbd> pour envoyer
-                  </p>
                   {(userSignature.signature || userSignature.signatureHtml) && (
                     <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
                       <input
@@ -952,9 +993,18 @@ export default function TicketDetailPage() {
                 </select>
               </SidebarRow>
               <SidebarRow label="Demandeur">
-                <div>
-                  <p className="text-sm text-gray-700">{ticket.requesterName}</p>
-                  <p className="text-xs text-gray-400">{ticket.requesterEmail}</p>
+                <div className="text-left">
+                  <p className="text-[12.5px] font-semibold text-gray-900 truncate" title={ticket.requesterName}>
+                    {ticket.requesterName}
+                  </p>
+                  <p className="text-[11px] text-gray-500 truncate" title={ticket.requesterEmail}>
+                    {ticket.requesterEmail}
+                  </p>
+                  {requesterPhone && (
+                    <p className="text-[11px] text-gray-500 tabular-nums">
+                      {requesterPhone}
+                    </p>
+                  )}
                 </div>
               </SidebarRow>
             </SidebarSection>

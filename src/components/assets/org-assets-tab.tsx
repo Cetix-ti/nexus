@@ -31,9 +31,7 @@ import { Card } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -173,9 +171,11 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
   }, [organizationId]);
 
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [activeCategory, setActiveCategory] = useState<string>("all"); // libellé de catégorie
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 30;
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<OrgAsset | null>(null);
   const [detailAsset, setDetailAsset] = useState<OrgAsset | null>(null);
@@ -195,9 +195,27 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
       .catch(() => {});
   }, [organizationId]);
 
+  // Map each AssetType to its parent category label (Serveurs / Stockage / etc.)
+  const typeToCategoryLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const cat of ASSET_TYPE_CATEGORIES) {
+      for (const t of cat.types) map.set(t, cat.label);
+    }
+    return map;
+  }, []);
+
+  // Reset à la page 1 dès qu'un filtre/recherche/onglet change.
+  useEffect(() => {
+    setPage(0);
+  }, [search, statusFilter, sourceFilter, activeCategory]);
+
   const filtered = useMemo(() => {
     return assets.filter((a) => {
-      if (typeFilter !== "all" && a.type !== typeFilter) return false;
+      // Onglet de catégorie (libellé) : "Serveurs", "Stockage", "Réseau", etc.
+      if (activeCategory !== "all") {
+        const cat = typeToCategoryLabel.get(a.type);
+        if (cat !== activeCategory) return false;
+      }
       if (statusFilter !== "all" && a.status !== statusFilter) return false;
       if (sourceFilter !== "all" && a.source !== sourceFilter) return false;
       if (search) {
@@ -208,9 +226,27 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
       }
       return true;
     });
-  }, [assets, search, typeFilter, statusFilter, sourceFilter]);
+  }, [assets, search, statusFilter, sourceFilter, activeCategory, typeToCategoryLabel]);
 
   const { sorted: sortedAssets, sort: assetSort, toggleSort: toggleAssetSort } = useSortable(filtered, "name");
+
+  // Compteurs par onglet (sur les assets bruts, avant les autres filtres) —
+  // utilisés pour afficher les badges sur les onglets de catégories.
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: assets.length };
+    for (const cat of ASSET_TYPE_CATEGORIES) counts[cat.label] = 0;
+    for (const a of assets) {
+      const cat = typeToCategoryLabel.get(a.type);
+      if (cat) counts[cat] = (counts[cat] || 0) + 1;
+    }
+    return counts;
+  }, [assets, typeToCategoryLabel]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedAssets.length / PAGE_SIZE));
+  const pagedAssets = useMemo(
+    () => sortedAssets.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
+    [sortedAssets, page]
+  );
 
   const stats = useMemo(() => {
     const monitored = assets.filter((a) => a.isMonitored).length;
@@ -532,21 +568,7 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
               iconLeft={<Search className="h-4 w-4" />}
             />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 lg:w-auto lg:flex">
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="lg:w-44"><SelectValue placeholder="Type" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous les types</SelectItem>
-                {ASSET_TYPE_CATEGORIES.map((cat) => (
-                  <SelectGroup key={cat.label}>
-                    <SelectLabel>{cat.label}</SelectLabel>
-                    {cat.types.map((t) => (
-                      <SelectItem key={t} value={t}>{ASSET_TYPE_LABELS[t]}</SelectItem>
-                    ))}
-                  </SelectGroup>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 lg:w-auto lg:flex">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="lg:w-40"><SelectValue placeholder="Statut" /></SelectTrigger>
               <SelectContent>
@@ -570,7 +592,7 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
             variant="outline"
             onClick={() => {
               import("@/lib/assets/export-pdf").then(({ exportAssetsPdf }) => {
-                exportAssetsPdf(filtered, organizationId);
+                exportAssetsPdf(filtered, organizationName || organizationId);
               }).catch(() => alert("Erreur lors de l'export PDF"));
             }}
           >
@@ -583,6 +605,47 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
           </Button>
         </div>
       </Card>
+
+      {/* Onglets par catégorie d'actifs */}
+      <div className="flex items-center gap-1 overflow-x-auto pb-1 -mb-1">
+        <button
+          type="button"
+          onClick={() => setActiveCategory("all")}
+          className={cn(
+            "shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium ring-1 ring-inset transition-colors",
+            activeCategory === "all"
+              ? "bg-blue-50 text-blue-700 ring-blue-200"
+              : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50"
+          )}
+        >
+          Tous
+          <span className="rounded bg-slate-200/70 px-1.5 text-[10.5px] font-semibold text-slate-700 tabular-nums">
+            {categoryCounts.all ?? 0}
+          </span>
+        </button>
+        {ASSET_TYPE_CATEGORIES.map((cat) => {
+          const count = categoryCounts[cat.label] ?? 0;
+          if (count === 0) return null; // n'affiche pas une catégorie vide
+          return (
+            <button
+              key={cat.label}
+              type="button"
+              onClick={() => setActiveCategory(cat.label)}
+              className={cn(
+                "shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium ring-1 ring-inset transition-colors",
+                activeCategory === cat.label
+                  ? "bg-blue-50 text-blue-700 ring-blue-200"
+                  : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50"
+              )}
+            >
+              {cat.label}
+              <span className="rounded bg-slate-200/70 px-1.5 text-[10.5px] font-semibold text-slate-700 tabular-nums">
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Table */}
       <Card className="overflow-hidden">
@@ -603,7 +666,7 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {sortedAssets.map((a) => {
+              {pagedAssets.map((a) => {
                 const Icon = TYPE_ICONS[a.type] ?? Monitor;
                 return (
                   <tr key={a.id} className="hover:bg-slate-50/80 transition-colors">
@@ -680,6 +743,49 @@ export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabP
             </tbody>
           </table>
         </div>
+
+        {/* Pagination footer */}
+        {sortedAssets.length > 0 && (
+          <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/40 px-4 py-2.5 text-[12px] text-slate-600">
+            <div className="tabular-nums">
+              {sortedAssets.length === 0 ? (
+                "Aucun résultat"
+              ) : (
+                <>
+                  <span className="font-medium text-slate-800">
+                    {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedAssets.length)}
+                  </span>
+                  <span className="text-slate-500"> sur </span>
+                  <span className="font-medium text-slate-800">{sortedAssets.length}</span>
+                  <span className="text-slate-500"> actif{sortedAssets.length > 1 ? "s" : ""}</span>
+                </>
+              )}
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="h-7 px-2 rounded text-[12px] font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ← Précédent
+                </button>
+                <span className="px-2 text-[11.5px] text-slate-500 tabular-nums">
+                  Page {page + 1} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="h-7 px-2 rounded text-[12px] font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Suivant →
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </Card>
 
       <AssetModal

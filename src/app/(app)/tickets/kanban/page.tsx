@@ -14,11 +14,13 @@ import {
   ChevronRight,
   Columns3,
   Check,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { TicketKanbanView } from "@/components/tickets/ticket-kanban-view";
+import { PendingApprovalsModal } from "@/components/tickets/pending-approvals-modal";
 import { useSession } from "next-auth/react";
 import { KanbanBoardSwitcher } from "@/components/tickets/kanban-board-switcher";
 import { useKanbanBoardsStore } from "@/stores/kanban-boards-store";
@@ -148,8 +150,21 @@ export default function KanbanPage() {
       );
     }
 
+    // Hors kanban : les tickets en attente d'approbation. Ils restent
+    // invisibles dans les colonnes tant que l'approbateur n'a pas décidé,
+    // pour éviter qu'un technicien commence à travailler un ticket non
+    // approuvé. Ils restent accessibles via le bouton "En attente d'approbation".
+    result = result.filter((t) => t.approvalStatus !== "pending");
+
     return result;
   }, [tickets, search, priorityFilter, orgFilter, assigneeFilter, activeBoard, myTicketsView, currentUserName]);
+
+  // Tickets en attente d'approbation — servent au bouton + à la modale.
+  const pendingApprovalTickets = useMemo(
+    () => tickets.filter((t) => t.approvalStatus === "pending"),
+    [tickets],
+  );
+  const [approvalsModalOpen, setApprovalsModalOpen] = useState(false);
 
   const activeFiltersCount =
     priorityFilter.length + orgFilter.length + assigneeFilter.length + (search ? 1 : 0);
@@ -198,6 +213,35 @@ export default function KanbanPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* En attente d'approbation — ces tickets n'apparaissent PAS dans
+              les colonnes kanban tant qu'ils n'ont pas été approuvés. Le
+              bouton est toujours visible (même à 0) pour découvrabilité ;
+              il passe en neutre quand la file est vide. */}
+          <button
+            type="button"
+            onClick={() => setApprovalsModalOpen(true)}
+            className={cn(
+              "flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[12px] font-medium transition-colors",
+              pendingApprovalTickets.length > 0
+                ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50",
+            )}
+            title="Tickets en attente d'approbation (exclus des colonnes kanban)"
+          >
+            <Clock className="h-3.5 w-3.5" />
+            En attente d&apos;approbation
+            <span
+              className={cn(
+                "ml-0.5 text-[10px] rounded-full h-4 min-w-[1rem] px-1 flex items-center justify-center tabular-nums",
+                pendingApprovalTickets.length > 0
+                  ? "bg-amber-200 text-amber-900"
+                  : "bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-200",
+              )}
+            >
+              {pendingApprovalTickets.length}
+            </span>
+          </button>
+
           {/* Board switcher */}
           <KanbanBoardSwitcher />
 
@@ -328,6 +372,13 @@ export default function KanbanPage() {
 
       {/* Kanban board */}
       <TicketKanbanView tickets={filtered} hiddenColumns={hiddenColumns} />
+
+      {/* Modale des tickets en attente d'approbation */}
+      <PendingApprovalsModal
+        open={approvalsModalOpen}
+        onClose={() => setApprovalsModalOpen(false)}
+        tickets={pendingApprovalTickets}
+      />
     </div>
   );
 }
