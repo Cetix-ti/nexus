@@ -87,6 +87,9 @@ function flattenDetail(t: PrismaTicketDetail, clientPrefix: string): UiTicket {
   return {
     id: t.id,
     number: formatTicketNumber(t.number, !!t.isInternal, clientPrefix),
+    // Préserve le HTML d'origine (courriels entrants) pour affichage
+    // fidèle dans la fiche ticket et le portail client.
+    descriptionHtml: t.descriptionHtml ?? undefined,
     subject: t.subject,
     description: t.description,
     status: statusToUi(t.status),
@@ -122,6 +125,8 @@ function flattenDetail(t: PrismaTicketDetail, clientPrefix: string): UiTicket {
         : "Système",
       authorAvatar: c.author?.avatar ?? undefined,
       content: c.body,
+      contentHtml: c.bodyHtml ?? undefined,
+      source: (c as { source?: string | null }).source ?? undefined,
       isInternal: c.isInternal,
       createdAt: c.createdAt.toISOString(),
     })),

@@ -73,6 +73,10 @@ export async function GET(
       displayNumber: formatTicketNumber(ticket.number, false, clientPrefix),
       subject: ticket.subject,
       description: ticket.description,
+      // HTML safe (sanitizé par le pipeline d'ingestion). Le portail
+      // l'affichera via dangerouslySetInnerHTML pour préserver le fil
+      // de conversation Outlook complet.
+      descriptionHtml: ticket.descriptionHtml ?? null,
       status: ticket.status,
       priority: ticket.priority,
       type: ticket.type,
@@ -99,6 +103,11 @@ export async function GET(
           : "Système",
         authorAvatar: c.author?.avatar ?? null,
         content: c.body,
+        // Même logique que sur la fiche agent : on expose le HTML
+        // sanitizé pour que le portail rende fidèlement les replies
+        // par courriel (tableaux, signatures, fils Outlook).
+        contentHtml: c.bodyHtml ?? null,
+        source: (c as { source?: string | null }).source ?? null,
         isInternal: false,
         createdAt: c.createdAt.toISOString(),
       })),

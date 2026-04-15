@@ -22,6 +22,10 @@ export interface TicketComment {
   authorName: string;
   authorAvatar?: string;
   content: string;
+  /** HTML safe sanitizé — affichage fidèle des courriels entrants. */
+  contentHtml?: string;
+  /** "portal" | "email" | "agent" — origine du message. */
+  source?: string;
   isInternal: boolean;
   createdAt: string;
 }
@@ -41,6 +45,10 @@ export interface Ticket {
   number: string;
   subject: string;
   description: string;
+  /** HTML safe (sanitizé côté serveur) de la description — préserve la
+   *  mise en page des courriels entrants. Fallback sur description en
+   *  plain text si absent. */
+  descriptionHtml?: string;
   status: TicketStatus;
   priority: TicketPriority;
   urgency: TicketUrgency;

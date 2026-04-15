@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { notifyCommentAdded } from "@/lib/email/ticket-notifications";
+import { sendTicketReplyEmail } from "@/lib/email/ticket-reply";
+import { htmlToPlainText } from "@/lib/email-to-ticket/html";
 
 export async function GET(
   _request: NextRequest,
@@ -37,6 +39,8 @@ export async function GET(
       authorName: c.author ? `${c.author.firstName} ${c.author.lastName}` : "Système",
       authorAvatar: c.author?.avatar ?? null,
       content: c.body,
+      contentHtml: c.bodyHtml,
+      source: c.source,
       isInternal: c.isInternal,
       createdAt: c.createdAt.toISOString(),
     })),
@@ -68,19 +72,20 @@ export async function POST(
     return NextResponse.json({ success: false, error: "Content required" }, { status: 400 });
   }
 
-  // Store both HTML and plain text versions
+  // On stocke TOUJOURS bodyHtml (permet l'affichage fidèle au portail /
+  // fiche ticket) + un plain extrait depuis le HTML pour la recherche.
   const isHtml = rawContent.includes("<");
-  const plainText = isHtml
-    ? rawContent.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim()
-    : rawContent;
+  const bodyHtml = isHtml ? rawContent : null;
+  const plainText = isHtml ? htmlToPlainText(rawContent) : rawContent;
 
   const comment = await prisma.comment.create({
     data: {
       ticketId: ticket.id,
       authorId: me.id,
-      body: rawContent,
-      bodyHtml: isHtml ? rawContent : null,
+      body: plainText,
+      bodyHtml,
       isInternal: body.isInternal ?? false,
+      source: "agent",
     },
     include: { author: { select: { firstName: true, lastName: true, avatar: true } } },
   });
@@ -89,10 +94,21 @@ export async function POST(
     ? `${comment.author.firstName} ${comment.author.lastName}`
     : me.email;
 
+  // Commentaire public → envoi par courriel au demandeur (threading MIME
+  // correct). Note interne → reste strictement interne (jamais envoyée).
+  if (!comment.isInternal) {
+    sendTicketReplyEmail(comment.id).catch((err) =>
+      console.error("[ticket-reply email]", err),
+    );
+  }
+
+  // Garde le legacy notifyCommentAdded pour les canaux internes (agent
+  // assigné notifié d'une note interne, etc.) — sendTicketReplyEmail est
+  // dédié au pipeline client omnicanal.
   notifyCommentAdded(ticket.id, {
     authorName,
     authorId: me.id,
-    content: body.content.trim(),
+    content: plainText,
     isInternal: body.isInternal ?? false,
   }).catch((err) => console.error("[comment notification]", err));
 

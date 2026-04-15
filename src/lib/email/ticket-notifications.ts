@@ -229,14 +229,11 @@ export async function notifyCommentAdded(
         : false;
 
     if (authorIsAgent) {
-      // Agent replied -> notify requester (Contact)
-      // GUARD: check if contact notifications are enabled
-      if (ticket.requester?.email && ticket.requesterId) {
-        const enabled = await isContactNotificationEnabled(ticket.requesterId);
-        if (enabled) {
-          await sendEmail(ticket.requester.email, subject, html);
-        }
-      }
+      // Agent a répondu → le courriel AU DEMANDEUR est maintenant géré
+      // par `sendTicketReplyEmail()` (threading MIME, Message-ID stocké
+      // sur le Comment, Reply-To = billets@cetix.ca). Ici on NE renvoie
+      // PAS pour éviter le double envoi.
+      return;
     } else {
       // Requester replied -> notify assigned agent (always allowed)
       if (ticket.assignee?.email) {

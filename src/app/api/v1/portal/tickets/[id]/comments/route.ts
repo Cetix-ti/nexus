@@ -76,20 +76,32 @@ export async function POST(
 
   const rawContent = body.content.trim();
   const isHtml = rawContent.includes("<");
+  // HTML sanitization + plain text fallback identique au pipeline agent.
+  const { sanitizeEmailHtml, plainTextToHtml, htmlToPlainText } = await import("@/lib/email-to-ticket/html");
+  const bodyHtml = isHtml ? sanitizeEmailHtml(rawContent) : plainTextToHtml(rawContent);
+  const bodyText = isHtml ? htmlToPlainText(bodyHtml) : rawContent;
 
   const comment = await prisma.comment.create({
     data: {
       ticketId: ticket.id,
       authorId: authorUser.id,
-      body: rawContent,
-      bodyHtml: isHtml ? rawContent : null,
+      body: bodyText,
+      bodyHtml,
       isInternal: false, // Portal users can never create internal notes
+      source: "portal",
     },
     include: {
       author: {
         select: { firstName: true, lastName: true, avatar: true },
       },
     },
+  });
+
+  // Re-ouvre le ticket s'il était RESOLVED/CLOSED — le client vient de
+  // répondre, il veut une réponse.
+  await prisma.ticket.updateMany({
+    where: { id: ticket.id, status: { in: ["RESOLVED", "CLOSED"] } },
+    data: { status: "OPEN", resolvedAt: null, closedAt: null },
   });
 
   notifyCommentAdded(ticket.id, {

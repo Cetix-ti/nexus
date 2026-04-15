@@ -280,16 +280,33 @@ export default function PortalTicketDetailPage() {
             <h2 className="text-sm font-semibold text-neutral-900 mb-3">
               Description
             </h2>
-            {ticket.description.includes("<") ? (
-              <div
-                className="text-sm text-neutral-600 leading-relaxed prose prose-sm prose-neutral max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_img]:max-w-full [&_img]:rounded-lg"
-                dangerouslySetInnerHTML={{ __html: ticket.description }}
-              />
-            ) : (
-              <p className="text-sm text-neutral-600 leading-relaxed whitespace-pre-line">
-                {ticket.description}
-              </p>
-            )}
+            {(() => {
+              // Préférence : descriptionHtml déjà sanitizé côté serveur
+              // (courriels entrants avec fil Outlook complet). Fallback :
+              // description en plain text (rendu pre-line).
+              const html = (ticket as { descriptionHtml?: string | null }).descriptionHtml;
+              if (html) {
+                return (
+                  <div
+                    className="text-sm text-neutral-700 leading-relaxed prose prose-sm prose-neutral max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_img]:max-w-full [&_img]:rounded-lg [&_blockquote]:border-l-4 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-500 [&_blockquote]:my-2 [&_table]:border-collapse [&_table]:my-2 [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_th]:bg-slate-50"
+                    dangerouslySetInnerHTML={{ __html: html }}
+                  />
+                );
+              }
+              if (ticket.description.includes("<")) {
+                return (
+                  <div
+                    className="text-sm text-neutral-600 leading-relaxed prose prose-sm prose-neutral max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_img]:max-w-full [&_img]:rounded-lg"
+                    dangerouslySetInnerHTML={{ __html: ticket.description }}
+                  />
+                );
+              }
+              return (
+                <p className="text-sm text-neutral-600 leading-relaxed whitespace-pre-line">
+                  {ticket.description}
+                </p>
+              );
+            })()}
           </div>
 
           {/* Conversation */}
@@ -342,9 +359,22 @@ export default function PortalTicketDetailPage() {
                               {formatDate(msg.createdAt)}
                             </span>
                           </div>
-                          <p className="mt-2 text-sm text-neutral-600 leading-relaxed whitespace-pre-line">
-                            {msg.content}
-                          </p>
+                          {(() => {
+                            const html = (msg as { contentHtml?: string | null }).contentHtml;
+                            if (html) {
+                              return (
+                                <div
+                                  className="mt-2 text-sm text-neutral-700 leading-relaxed prose prose-sm prose-neutral max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_img]:max-w-full [&_img]:rounded-lg [&_blockquote]:border-l-4 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-500 [&_blockquote]:my-2 [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_th]:bg-slate-50"
+                                  dangerouslySetInnerHTML={{ __html: html }}
+                                />
+                              );
+                            }
+                            return (
+                              <p className="mt-2 text-sm text-neutral-600 leading-relaxed whitespace-pre-line">
+                                {msg.content}
+                              </p>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>

@@ -415,6 +415,23 @@ model Comment {
   body       String      @db.Text
   bodyHtml   String?     @map("body_html") @db.Text
   isInternal Boolean     @default(false) @map("is_internal")
+
+  // Threading courriel ↔ ticket (Freshservice-style) :
+  //  - messageId           : le MIME Message-ID de CE commentaire (si créé depuis
+  //                          un courriel entrant OU généré pour un commentaire
+  //                          sortant envoyé au demandeur).
+  //  - inReplyToMessageId  : Message-ID auquel ce commentaire répond (venant
+  //                          du header In-Reply-To du courriel entrant, ou du
+  //                          dernier Comment de la conversation pour un sortant).
+  //  - source              : PORTAL / EMAIL / AGENT (origine du message)
+  //  - emailSent           : true quand l'envoi SMTP a réussi pour ce comment
+  //  - emailSentAt         : timestamp d'envoi
+  messageId           String?  @map("message_id")
+  inReplyToMessageId  String?  @map("in_reply_to_message_id")
+  source              String?  @map("source") // "portal" | "email" | "agent"
+  emailSent           Boolean  @default(false) @map("email_sent")
+  emailSentAt         DateTime? @map("email_sent_at")
+
   createdAt  DateTime    @default(now()) @map("created_at")
   updatedAt  DateTime    @updatedAt @map("updated_at")
 
@@ -423,6 +440,7 @@ model Comment {
   attachments Attachment[]
 
   @@index([ticketId, createdAt])
+  @@unique([messageId]) // évite qu'un même courriel crée 2 comments
   @@map("comments")
 }
 

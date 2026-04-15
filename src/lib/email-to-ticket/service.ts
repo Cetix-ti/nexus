@@ -3,9 +3,22 @@
 // Reads a shared mailbox (e.g. billets@cetix.ca), parses incoming emails,
 // matches sender to org/contact, and creates tickets automatically.
 // Reuses the same Azure app registration as the Veeam module.
+//
+// Nouveautés (Freshservice-style) :
+//  - Préservation HTML complète du courriel (signatures, tableaux, fils Outlook)
+//  - Détection du demandeur original sur un transfert
+//  - Threading entrant : un "Re: [TK-1042]" ou un In-Reply-To connu
+//    devient un Comment sur le ticket existant au lieu d'un nouveau ticket
 // ============================================================================
 
 import prisma from "@/lib/prisma";
+import { normalizeEmailBodyToHtml, htmlToPlainText } from "@/lib/email-to-ticket/html";
+import {
+  parseForwardedSender,
+  extractTicketNumberFromSubject,
+  parseInReplyTo,
+  parseReferences,
+} from "@/lib/email-to-ticket/parse";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,6 +41,7 @@ interface GraphMessage {
   body: { content: string; contentType: string };
   isRead: boolean;
   hasAttachments: boolean;
+  internetMessageHeaders?: Array<{ name: string; value: string }>;
 }
 
 interface GraphFolder {
@@ -245,100 +259,53 @@ async function resolveContact(
 }
 
 // ---------------------------------------------------------------------------
-// Forwarded email detection — extract original sender
-// When an agent forwards an email (e.g., from bruno.robert@cetix.ca)
-// that was originally from a client (stephane.robert@hvac.ca),
-// we want to attribute the ticket to the original sender.
+// Sync: read emails → create tickets (ou append un reply sur un ticket existant)
 // ---------------------------------------------------------------------------
 
-interface ParsedForward {
-  originalSenderEmail: string;
-  originalSenderName: string;
-  isForward: boolean;
-}
-
-function detectForwardedEmail(
+/**
+ * Essaye de raccrocher un courriel entrant à un ticket existant.
+ * Stratégies, dans l'ordre :
+ *  1. In-Reply-To / References ciblent un Comment.messageId connu
+ *  2. Subject contient "[TK-1042]" / "[INT-1042]" → lookup par number
+ *  3. In-Reply-To / References ciblent un Ticket.externalId connu
+ * Retourne l'id du ticket ciblé ou null.
+ */
+async function findThreadedTicket(
   subject: string,
-  body: string,
-  senderEmail: string,
-  senderName: string,
-): ParsedForward {
-  const notForward: ParsedForward = {
-    originalSenderEmail: senderEmail,
-    originalSenderName: senderName,
-    isForward: false,
-  };
+  headers: Array<{ name: string; value: string }> | undefined,
+): Promise<string | null> {
+  const inReplyTo = parseInReplyTo(headers);
+  const refs = parseReferences(headers);
+  const candidateIds = [inReplyTo, ...refs].filter(Boolean) as string[];
 
-  // Check if subject indicates a forward
-  const fwdPatterns = /^(fw|fwd|tr|transfert|transféré)\s*:/i;
-  const isSubjectForward = fwdPatterns.test(subject.trim());
+  if (candidateIds.length > 0) {
+    // 1. Match par Comment.messageId (réponse à notre sortant)
+    const comment = await prisma.comment.findFirst({
+      where: { messageId: { in: candidateIds } },
+      select: { ticketId: true },
+    });
+    if (comment) return comment.ticketId;
 
-  if (!isSubjectForward) return notForward;
-
-  // Try to extract original sender from body
-  // Common patterns in forwarded emails:
-  // "De : Stéphane Robert <stephane.robert@hvac.ca>"
-  // "From: Stephane Robert <stephane.robert@hvac.ca>"
-  // "De : stephane.robert@hvac.ca"
-  const fromPatterns = [
-    // "De : Name <email>" or "From: Name <email>"
-    /(?:^|\n)\s*(?:de|from)\s*:\s*(.+?)\s*<([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>/im,
-    // "De : email" (no angle brackets)
-    /(?:^|\n)\s*(?:de|from)\s*:\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/im,
-    // Outlook-style "-----Original Message-----\nFrom: ..."
-    /(?:message\s+(?:original|d'origine)|original\s+message)[\s\S]{0,200}?(?:de|from)\s*:\s*(.+?)\s*<([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>/im,
-    // Outlook: "De : Name [mailto:email]"
-    /(?:de|from)\s*:\s*(.+?)\s*\[mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\]/im,
-  ];
-
-  for (const pattern of fromPatterns) {
-    const match = body.match(pattern);
-    if (match) {
-      // Pattern with name + email in groups
-      if (match[2]) {
-        return {
-          originalSenderEmail: match[2].toLowerCase().trim(),
-          originalSenderName: match[1].replace(/['"]/g, "").trim(),
-          isForward: true,
-        };
-      }
-      // Pattern with email only
-      if (match[1] && match[1].includes("@")) {
-        const email = match[1].toLowerCase().trim();
-        return {
-          originalSenderEmail: email,
-          originalSenderName: email.split("@")[0].replace(/[._-]/g, " "),
-          isForward: true,
-        };
-      }
-    }
+    // 3. Match par Ticket.externalId (réponse au message qui a créé le ticket)
+    const ticket = await prisma.ticket.findFirst({
+      where: { externalId: { in: candidateIds } },
+      select: { id: true },
+    });
+    if (ticket) return ticket.id;
   }
 
-  // Subject says it's a forward but we couldn't extract the original sender
-  return notForward;
+  // 2. Match par "[TK-1042]" dans le sujet
+  const parsed = extractTicketNumberFromSubject(subject);
+  if (parsed) {
+    const ticket = await prisma.ticket.findFirst({
+      where: { number: parsed.rawNumber },
+      select: { id: true },
+    });
+    if (ticket) return ticket.id;
+  }
+
+  return null;
 }
-
-// ---------------------------------------------------------------------------
-// Strip HTML from email body
-// ---------------------------------------------------------------------------
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-// ---------------------------------------------------------------------------
-// Sync: read emails → create tickets
-// ---------------------------------------------------------------------------
 
 export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): Promise<{
   fetched: number;
@@ -381,7 +348,7 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
       `?$filter=${filterParts.join(" and ")}` +
       `&$orderby=receivedDateTime asc` +
       `&$top=50` +
-      `&$select=id,internetMessageId,subject,from,receivedDateTime,bodyPreview,body,isRead,hasAttachments`;
+      `&$select=id,internetMessageId,subject,from,receivedDateTime,bodyPreview,body,isRead,hasAttachments,internetMessageHeaders`;
 
     interface GraphPage { value: GraphMessage[]; "@odata.nextLink"?: string; }
 
@@ -394,69 +361,155 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
           const senderEmail = msg.from?.emailAddress?.address?.toLowerCase();
           if (!senderEmail) { skipped++; continue; }
           const senderName = msg.from?.emailAddress?.name || senderEmail;
-          let subject = msg.subject?.trim();
-          if (!subject) { skipped++; continue; }
-          // Strip forwarding prefixes from subject
-          subject = subject.replace(/^(?:fw|fwd|tr|transfert|transféré)\s*:\s*/i, "").trim();
+          const rawSubject = (msg.subject || "").trim();
+          if (!rawSubject) { skipped++; continue; }
+          // Version "propre" du sujet pour ticket.subject : on vire les
+          // préfixes Re:/Fw: et le tag [TK-1042] pour éviter la pollution.
+          const cleanSubject = rawSubject
+            .replace(/^\s*(?:re|rv|fw|fwd|tr|transfert|transféré|wg)\s*:\s*/gi, "")
+            .replace(/\s*\[(?:TK|INT|INC)[\s-]*\d{3,}\]\s*/gi, " ")
+            .replace(/\s+/g, " ")
+            .trim() || rawSubject;
 
-          // Check if ticket already exists for this email (dedup by internetMessageId)
           const messageId = msg.internetMessageId || `graph-${msg.id}`;
-          const existingTicket = await prisma.ticket.findFirst({
-            where: { externalId: messageId, externalSource: "email" },
+
+          // Dédup strict : même Message-ID déjà vu (en tant que ticket
+          // source OU comment sortant → comment entrant).
+          const alreadySeen = await prisma.ticket.findFirst({
+            where: { externalId: messageId },
             select: { id: true },
           });
-          if (existingTicket) { skipped++; continue; }
+          if (alreadySeen) { skipped++; continue; }
+          const dupComment = await prisma.comment.findFirst({
+            where: { messageId },
+            select: { id: true },
+          });
+          if (dupComment) { skipped++; continue; }
 
-          // Extract body text early for forward detection
-          const bodyText = msg.body?.contentType === "html"
-            ? stripHtml(msg.body.content)
+          // --- Normalisation du body (HTML préservé) -----------------------
+          // On stocke TOUJOURS un HTML safe dans descriptionHtml/bodyHtml.
+          // Le plain text de fallback est extrait depuis le HTML (pas
+          // l'inverse) pour préserver au mieux la structure.
+          const htmlBody = normalizeEmailBodyToHtml(
+            msg.body?.contentType,
+            msg.body?.content,
+            msg.bodyPreview,
+          );
+          const plainBody = htmlToPlainText(htmlBody);
+          // Texte utilisé pour la détection forward (plus robuste que HTML).
+          const forwardText = msg.body?.contentType === "html"
+            ? msg.body.content
             : (msg.body?.content || msg.bodyPreview || "");
 
-          // Detect forwarded emails and extract original sender
-          const forward = detectForwardedEmail(subject, bodyText, senderEmail, senderName);
-          const actualSenderEmail = forward.originalSenderEmail;
-          const actualSenderName = forward.originalSenderName;
+          // --- Threading : est-ce une réponse à un ticket existant ? -------
+          const targetTicketId = await findThreadedTicket(
+            rawSubject,
+            msg.internetMessageHeaders,
+          );
 
-          // Match sender domain to org (use actual sender, not forwarder)
-          const domain = actualSenderEmail.split("@")[1] || "";
+          if (targetTicketId) {
+            // Réponse entrante : on l'ajoute comme Comment PUBLIC au ticket.
+            // Requester par défaut : le sender du courriel (c'est normal pour
+            // une réponse — le client répond depuis son propre compte).
+            // On réutilise le contact/demandeur existant du ticket comme
+            // author si on le retrouve, sinon on retombe sur n'importe quel
+            // agent actif (les Comments demandent un authorId User valide).
+            const ticket = await prisma.ticket.findUnique({
+              where: { id: targetTicketId },
+              select: { organizationId: true, requesterId: true },
+            });
+            if (!ticket) { skipped++; continue; }
+
+            // On a besoin d'un User pour authorId — on prend l'agent "bot"
+            // (premier admin actif). Le vrai auteur est tracé dans le body
+            // (le HTML contient "De : ..." de toute façon) + on pourra plus
+            // tard ajouter un champ `authorContactId` si on veut afficher
+            // proprement "Répondu par <client>" au portail.
+            const agent = await prisma.user.findFirst({
+              where: { role: { in: ["SUPER_ADMIN", "MSP_ADMIN", "TECHNICIAN"] }, isActive: true },
+              select: { id: true },
+              orderBy: { role: "asc" },
+            });
+            if (!agent) {
+              errors.push(`Aucun agent pour loger le reply de ${senderEmail}`);
+              continue;
+            }
+
+            await prisma.comment.create({
+              data: {
+                ticketId: targetTicketId,
+                authorId: agent.id, // fallback ; cf. commentaire ci-dessus
+                body: plainBody.slice(0, 50_000) ||
+                  `(Réponse de ${senderName} <${senderEmail}>)`,
+                bodyHtml: htmlBody.slice(0, 500_000),
+                isInternal: false,
+                messageId,
+                inReplyToMessageId: parseInReplyTo(msg.internetMessageHeaders),
+                source: "email",
+              },
+            });
+
+            // Remet le ticket en OPEN s'il était RESOLVED/CLOSED — le
+            // client vient de répondre, donc la conversation reprend.
+            await prisma.ticket.updateMany({
+              where: {
+                id: targetTicketId,
+                status: { in: ["RESOLVED", "CLOSED"] },
+              },
+              data: { status: "OPEN", resolvedAt: null, closedAt: null },
+            });
+
+            created++; // on comptabilise ça comme "1 contenu créé" côté sync
+            if (cfg.markAsRead && !msg.isRead) {
+              await markAsRead(cfg.mailbox, msg.id).catch(() => {});
+            }
+            continue;
+          }
+
+          // --- Nouveau ticket : détection forward pour le demandeur --------
+          const forward = parseForwardedSender(rawSubject, forwardText, {
+            email: senderEmail,
+            name: senderName,
+          });
+          const actualEmail = forward.originalSenderEmail ?? senderEmail;
+          const actualName = forward.originalSenderName ?? senderName;
+
+          // Match org par domaine : priorité au sender original.
+          const domain = actualEmail.split("@")[1] || "";
           let org = domainMap.get(domain);
-
-          // If forwarded and original domain not found, try the forwarder's domain
           if (!org && forward.isForward) {
             const forwarderDomain = senderEmail.split("@")[1] || "";
             org = domainMap.get(forwarderDomain);
           }
-
           if (!org) {
             skipped++;
-            continue; // Can't create ticket without an org
+            continue;
           }
 
-          // Find or create contact (use actual sender)
-          const contactId = await resolveContact(actualSenderEmail, actualSenderName, org.id);
-
-          // Find the first admin/tech user to use as creator
+          const contactId = await resolveContact(actualEmail, actualName, org.id);
           const creator = await prisma.user.findFirst({
             where: { role: { in: ["SUPER_ADMIN", "MSP_ADMIN", "TECHNICIAN"] }, isActive: true },
             select: { id: true },
             orderBy: { role: "asc" },
           });
           if (!creator) {
-            errors.push(`Aucun agent trouvé pour créer le ticket de ${senderEmail}`);
+            errors.push(`Aucun agent pour créer le ticket de ${senderEmail}`);
             continue;
           }
 
-          // Create ticket
+          // Clé: on stocke l'HTML SANITIZÉ dans descriptionHtml (le full
+          // fil Outlook est conservé), et un plain extrait pour la recherche
+          // et le fallback.
           await prisma.ticket.create({
             data: {
               organizationId: org.id,
               requesterId: contactId,
               creatorId: creator.id,
-              subject,
-              description: bodyText.slice(0, 10000),
-              descriptionHtml: msg.body?.contentType === "html" ? msg.body.content.slice(0, 50000) : null,
+              subject: cleanSubject.slice(0, 255),
+              description: plainBody.slice(0, 10_000) || cleanSubject,
+              descriptionHtml: htmlBody.slice(0, 500_000) || null,
               status: "NEW",
-              priority: (cfg.defaultPriority as any) || "MEDIUM",
+              priority: (cfg.defaultPriority as never) || "MEDIUM",
               type: "INCIDENT",
               source: "EMAIL",
               externalSource: "email",
@@ -465,18 +518,8 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
           });
           created++;
 
-          // Mark as read in Graph if configured
           if (cfg.markAsRead && !msg.isRead) {
-            try {
-              await graphFetch(
-                `/users/${encodeURIComponent(cfg.mailbox)}/messages/${msg.id}`,
-                {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ isRead: true }),
-                },
-              );
-            } catch { /* ignore mark-as-read failures */ }
+            await markAsRead(cfg.mailbox, msg.id).catch(() => {});
           }
         } catch (err) {
           errors.push(`Message ${msg.id}: ${err instanceof Error ? err.message : String(err)}`);
@@ -491,4 +534,15 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
   }
 
   return { fetched, created, skipped, errors };
+}
+
+async function markAsRead(mailbox: string, messageId: string): Promise<void> {
+  await graphFetch(
+    `/users/${encodeURIComponent(mailbox)}/messages/${messageId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isRead: true }),
+    },
+  );
 }

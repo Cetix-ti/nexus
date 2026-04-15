@@ -48,6 +48,19 @@ function getOrgId(ticket: { organizationId?: string; organizationName: string })
  * Otherwise escape it and convert newlines to <br> so plain-text imported
  * descriptions render with line breaks and stay safe from XSS.
  */
+/**
+ * Rend un bloc description pour l'affichage. Priorité au HTML sanitizé
+ * (ticket.descriptionHtml — préservation fidèle du courriel entrant),
+ * puis fallback vers le plain texte avec auto-link des URLs.
+ * NOTE: descriptionHtml est déjà sanitizé côté serveur (lib/email-to-ticket/html.ts).
+ */
+function renderDescriptionWithHtml(ticket: { description: string; descriptionHtml?: string }): string {
+  if (ticket.descriptionHtml && ticket.descriptionHtml.trim()) {
+    return ticket.descriptionHtml;
+  }
+  return renderDescription(ticket.description);
+}
+
 function renderDescription(description: string | null | undefined): string {
   if (!description || !description.trim()) {
     return '<p class="text-slate-400 italic">Aucune description.</p>';
@@ -433,7 +446,9 @@ export default function TicketDetailPage() {
       id: c.id,
       kind: "comment" as const,
       authorName: c.authorName,
-      content: c.content,
+      // Préfère le HTML déjà sanitizé (courriels entrants + réponses
+      // agents/portail), sinon le plain text.
+      content: (c as { contentHtml?: string }).contentHtml || c.content,
       isInternal: c.isInternal,
       createdAt: c.createdAt,
     })),
@@ -694,7 +709,7 @@ export default function TicketDetailPage() {
               ) : (
                 <div
                   className="tiptap text-sm text-gray-700 leading-relaxed prose prose-sm prose-slate max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_em]:italic [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_pre]:bg-slate-100 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:rounded [&_img]:max-w-full [&_img]:rounded-lg"
-                  dangerouslySetInnerHTML={{ __html: renderDescription(ticket.description) }}
+                  dangerouslySetInnerHTML={{ __html: renderDescriptionWithHtml(ticket) }}
                 />
               )}
             </div>
