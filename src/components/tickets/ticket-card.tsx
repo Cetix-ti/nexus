@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import {
@@ -175,7 +176,50 @@ function InlineAssigneePicker({
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const updateTicket = useTicketsStore((s) => s.updateTicket);
+  // Position du popover en coordonnées viewport (calculée à l'ouverture).
+  // On utilise un portal pour sortir le popover du colonne Kanban (qui a
+  // overflow-y-auto et qui clippe / cache l'élément derrière le titre).
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) return;
+    const recalc = () => {
+      const btn = buttonRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      // Popover : 224px de large (w-56). On l'aligne à droite du bouton
+      // (same right edge). On le place AU-DESSUS du bouton avec un gap
+      // de 8px. Si pas assez d'espace en haut, on bascule en bas.
+      const POPOVER_WIDTH = 224;
+      const POPOVER_HEIGHT_EST = 260; // estimation ; affiné par maxHeight CSS
+      const GAP = 8;
+      const spaceAbove = rect.top;
+      const openUpward = spaceAbove >= POPOVER_HEIGHT_EST;
+      const top = openUpward
+        ? rect.top - POPOVER_HEIGHT_EST - GAP
+        : rect.bottom + GAP;
+      const left = Math.max(
+        8,
+        Math.min(
+          window.innerWidth - POPOVER_WIDTH - 8,
+          rect.right - POPOVER_WIDTH,
+        ),
+      );
+      setPos({ top: Math.max(8, top), left });
+    };
+    recalc();
+    // Recalcule si on scroll ou resize pendant que le popover est ouvert.
+    window.addEventListener("scroll", recalc, true);
+    window.addEventListener("resize", recalc);
+    return () => {
+      window.removeEventListener("scroll", recalc, true);
+      window.removeEventListener("resize", recalc);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open || agents.length > 0) return;
@@ -192,9 +236,10 @@ function InlineAssigneePicker({
   useEffect(() => {
     if (!open) return;
     function onDocClick(e: MouseEvent) {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      const inPopover = popoverRef.current?.contains(target);
+      const onButton = buttonRef.current?.contains(target);
+      if (!inPopover && !onButton) setOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
@@ -217,6 +262,7 @@ function InlineAssigneePicker({
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onPointerDown={(e) => {
           // Empêche le drag handler du Kanban de s'activer sur ce bouton.
@@ -249,62 +295,70 @@ function InlineAssigneePicker({
         )}
       </button>
 
-      {open && (
-        <div
-          ref={popoverRef}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          className="absolute bottom-full right-0 mb-1.5 z-50 w-56 rounded-lg border border-slate-200 bg-white shadow-lg"
-        >
-          <div className="p-2 border-b border-slate-100">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Rechercher un agent…"
-              className="w-full h-7 rounded-md border border-slate-200 px-2 text-[12px] focus:border-blue-500 focus:outline-none"
-              autoFocus
-            />
-          </div>
-          <div className="max-h-56 overflow-y-auto py-1">
-            <button
-              type="button"
-              onClick={() => assign(null)}
-              className="w-full px-3 py-1.5 flex items-center gap-2 text-left text-[12px] hover:bg-slate-50"
-            >
-              <div className="h-5 w-5 rounded-full border border-dashed border-slate-300 flex items-center justify-center shrink-0">
-                <User className="h-2.5 w-2.5 text-slate-400" />
-              </div>
-              <span className="text-slate-600">Non assigné</span>
-              {!ticket.assigneeName && <Check className="h-3 w-3 ml-auto text-blue-600" />}
-            </button>
-            {loading && (
-              <p className="px-3 py-2 text-[11.5px] text-slate-400">Chargement…</p>
-            )}
-            {filtered.map((a) => (
+      {/* Popover rendu via Portal pour s'échapper du overflow-y-auto de
+          la colonne Kanban (qui clippait / cachait le menu derrière
+          l'en-tête de colonne). Position fixed calculée depuis le rect
+          du bouton, z-index très élevé pour passer au-dessus des cards,
+          en-têtes de colonne et tout autre élément du Kanban. */}
+      {open && mounted && pos &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: "fixed", top: pos.top, left: pos.left, width: 224 }}
+            className="z-[1000] rounded-lg border border-slate-200 bg-white shadow-lg"
+          >
+            <div className="p-2 border-b border-slate-100">
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Rechercher un agent…"
+                className="w-full h-7 rounded-md border border-slate-200 px-2 text-[12px] focus:border-blue-500 focus:outline-none"
+                autoFocus
+              />
+            </div>
+            <div className="max-h-56 overflow-y-auto py-1">
               <button
-                key={a.id}
                 type="button"
-                onClick={() => assign({ id: a.id, name: a.name })}
+                onClick={() => assign(null)}
                 className="w-full px-3 py-1.5 flex items-center gap-2 text-left text-[12px] hover:bg-slate-50"
               >
-                {a.avatar ? (
-                  <img src={a.avatar} alt={a.name} className="h-5 w-5 rounded-full object-cover shrink-0" />
-                ) : (
-                  <div className="h-5 w-5 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
-                    <span className="text-[8px] font-semibold text-slate-600">{getInitials(a.name)}</span>
-                  </div>
-                )}
-                <span className="truncate">{a.name}</span>
-                {ticket.assigneeName === a.name && <Check className="h-3 w-3 ml-auto text-blue-600 shrink-0" />}
+                <div className="h-5 w-5 rounded-full border border-dashed border-slate-300 flex items-center justify-center shrink-0">
+                  <User className="h-2.5 w-2.5 text-slate-400" />
+                </div>
+                <span className="text-slate-600">Non assigné</span>
+                {!ticket.assigneeName && <Check className="h-3 w-3 ml-auto text-blue-600" />}
               </button>
-            ))}
-            {!loading && filtered.length === 0 && query && (
-              <p className="px-3 py-2 text-[11.5px] text-slate-400">Aucun agent trouvé</p>
-            )}
-          </div>
-        </div>
-      )}
+              {loading && (
+                <p className="px-3 py-2 text-[11.5px] text-slate-400">Chargement…</p>
+              )}
+              {filtered.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => assign({ id: a.id, name: a.name })}
+                  className="w-full px-3 py-1.5 flex items-center gap-2 text-left text-[12px] hover:bg-slate-50"
+                >
+                  {a.avatar ? (
+                    <img src={a.avatar} alt={a.name} className="h-5 w-5 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="h-5 w-5 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
+                      <span className="text-[8px] font-semibold text-slate-600">{getInitials(a.name)}</span>
+                    </div>
+                  )}
+                  <span className="truncate">{a.name}</span>
+                  {ticket.assigneeName === a.name && <Check className="h-3 w-3 ml-auto text-blue-600 shrink-0" />}
+                </button>
+              ))}
+              {!loading && filtered.length === 0 && query && (
+                <p className="px-3 py-2 text-[11.5px] text-slate-400">Aucun agent trouvé</p>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
