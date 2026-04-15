@@ -52,6 +52,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       isAtRisk: project.isAtRisk,
       riskNotes: project.riskNotes,
       isArchived: project.isArchived,
+      isInternal: project.isInternal,
       taskCount: project.tasks.length,
       completedTaskCount: project.tasks.filter((t) => t.status === "completed").length,
       createdAt: project.createdAt.toISOString(),

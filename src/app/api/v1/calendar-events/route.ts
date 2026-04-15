@@ -60,6 +60,7 @@ export async function GET(req: Request) {
       meeting: { select: { id: true, status: true } },
       internalTicket: { select: { id: true, number: true, subject: true, status: true } },
       internalProject: { select: { id: true, code: true, name: true, status: true } },
+      site: { select: { id: true, name: true, city: true } },
     },
     orderBy: { startsAt: "asc" },
   });
@@ -233,6 +234,7 @@ export async function POST(req: Request) {
       ownerId: body.ownerId ?? null,
       location: body.location ?? null,
       organizationId: body.organizationId ?? null,
+      siteId: body.siteId ?? null,
       renewalType: body.renewalType ?? null,
       renewalAmount: body.renewalAmount ?? null,
       renewalNotifyDaysBefore: body.renewalNotifyDaysBefore ?? null,

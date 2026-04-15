@@ -73,7 +73,7 @@ export async function PATCH(
   const data: Record<string, unknown> = {};
   const allow = [
     "title", "description", "kind", "allDay", "ownerId", "location",
-    "organizationId", "renewalType", "renewalAmount", "renewalNotifyDaysBefore",
+    "organizationId", "siteId", "renewalType", "renewalAmount", "renewalNotifyDaysBefore",
     "renewalExternalRef", "leaveType", "leaveApproved", "recurrence",
     "internalTicketId", "internalProjectId", "calendarId", "status",
   ];

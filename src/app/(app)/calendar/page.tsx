@@ -54,6 +54,8 @@ interface CalendarEvent {
   ownerId: string | null;
   location: string | null;
   organizationId: string | null;
+  siteId: string | null;
+  site: { id: string; name: string; city: string | null } | null;
   meetingId: string | null;
   calendar: { id: string; name: string; kind: string; color: string };
   owner: { id: string; firstName: string; lastName: string; avatar: string | null } | null;
@@ -504,8 +506,17 @@ function EventDetailDrawer({
         className="relative w-full max-w-md my-4 rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-3 right-3 h-8 w-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900 transition-colors z-10"
+          title="Fermer"
+          aria-label="Fermer"
+        >
+          <X className="h-4 w-4" />
+        </button>
         <div
-          className="border-b border-slate-200 px-5 py-4 rounded-t-2xl"
+          className="border-b border-slate-200 px-5 py-4 pr-14 rounded-t-2xl"
           style={{ borderLeftWidth: 4, borderLeftColor: event.calendar.color }}
         >
           <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
@@ -553,6 +564,12 @@ function EventDetailDrawer({
                 </Link>
               ) : (
                 <p className="text-slate-700">{event.organization.name}</p>
+              )}
+              {event.site && (
+                <p className="mt-0.5 text-[11.5px] text-slate-500">
+                  Site : {event.site.name}
+                  {event.site.city ? ` — ${event.site.city}` : ""}
+                </p>
               )}
             </div>
           )}
@@ -977,7 +994,14 @@ function CreateEventModal({
   const initStart = editing ? splitIso(editing.startsAt) : { date: today, time: "09:00" };
   const initEnd = editing ? splitIso(editing.endsAt) : { date: today, time: "10:00" };
 
-  const [calendarId, setCalendarId] = useState(editing?.calendarId ?? calendars[0]?.id ?? "");
+  // Defaut = calendrier "Agenda général" (kind=GENERAL). Fallback sur le
+  // premier calendrier dispo si le général n'existe pas (cas pathologique).
+  const defaultCalendarId =
+    editing?.calendarId ??
+    calendars.find((c) => c.kind === "GENERAL")?.id ??
+    calendars[0]?.id ??
+    "";
+  const [calendarId, setCalendarId] = useState(defaultCalendarId);
   const [title, setTitle] = useState(editing?.title ?? "");
   const [kind, setKind] = useState<CalendarEvent["kind"]>(editing?.kind ?? "OTHER");
   const [startDate, setStartDate] = useState(initStart.date);
@@ -987,6 +1011,16 @@ function CreateEventModal({
   const [allDay, setAllDay] = useState(editing?.allDay ?? false);
   const [description, setDescription] = useState(editing?.description ?? "");
   const [location, setLocation] = useState(editing?.location ?? "");
+  // Client + site — visibles sur calendrier général (ou quand WORK_LOCATION).
+  const [organizationId, setOrganizationId] = useState<string>(editing?.organizationId ?? "");
+  const [organizationName, setOrganizationName] = useState<string>(
+    editing?.organization?.name ?? "",
+  );
+  const [orgSearch, setOrgSearch] = useState<string>(editing?.organization?.name ?? "");
+  const [orgSuggestions, setOrgSuggestions] = useState<Array<{ id: string; name: string }>>([]);
+  const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
+  const [siteId, setSiteId] = useState<string>(editing?.siteId ?? "");
+  const [sitesForOrg, setSitesForOrg] = useState<Array<{ id: string; name: string; city: string | null; isMain?: boolean }>>([]);
   const [recurrence, setRecurrence] = useState<"none" | "weekly" | "monthly" | "yearly">(
     (editing as { recurrence?: "weekly" | "monthly" | "yearly" } | undefined)?.recurrence ?? "none",
   );
@@ -1029,6 +1063,16 @@ function CreateEventModal({
       .catch(() => {});
   }, []);
 
+  // Si les calendriers arrivent après le premier render (fetch async dans
+  // le parent) ET qu'on est en création sans calendarId encore fixé,
+  // bascule sur GENERAL dès qu'il est dispo.
+  useEffect(() => {
+    if (isEdit) return;
+    if (calendarId) return;
+    const general = calendars.find((c) => c.kind === "GENERAL")?.id ?? calendars[0]?.id;
+    if (general) setCalendarId(general);
+  }, [calendars, calendarId, isEdit]);
+
   // Synchronise le kind avec la nature du calendrier sélectionné
   // (uniquement en mode création — en édition on respecte le kind existant).
   useEffect(() => {
@@ -1038,6 +1082,56 @@ function CreateEventModal({
     if (cal.kind === "RENEWALS") setKind("RENEWAL");
     else if (cal.kind === "LEAVE") setKind("LEAVE");
   }, [calendarId, calendars, isEdit]);
+
+  // Debounce l'autocomplete client : fetch /organizations?search=... après
+  // 200ms d'inactivité clavier.
+  useEffect(() => {
+    const q = orgSearch.trim();
+    if (q.length < 1) {
+      setOrgSuggestions([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      fetch(`/api/v1/organizations?search=${encodeURIComponent(q)}`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((arr) => {
+          if (Array.isArray(arr)) {
+            setOrgSuggestions(
+              arr
+                .filter((o: { isInternal?: boolean }) => !o.isInternal)
+                .slice(0, 20)
+                .map((o: { id: string; name: string }) => ({ id: o.id, name: o.name })),
+            );
+          }
+        })
+        .catch(() => {});
+    }, 200);
+    return () => clearTimeout(t);
+  }, [orgSearch]);
+
+  // Charge les sites du client sélectionné (reset à chaque changement d'org).
+  useEffect(() => {
+    if (!organizationId) {
+      setSitesForOrg([]);
+      setSiteId("");
+      return;
+    }
+    fetch(`/api/v1/sites?organizationId=${encodeURIComponent(organizationId)}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((arr) => {
+        if (Array.isArray(arr)) {
+          setSitesForOrg(
+            arr.map((s: { id: string; name: string; city: string; primary?: boolean }) => ({
+              id: s.id,
+              name: s.name,
+              city: s.city === "—" ? null : s.city,
+              isMain: s.primary,
+            })),
+          );
+        }
+      })
+      .catch(() => {});
+  }, [organizationId]);
 
   async function submit() {
     if (!calendarId || !title.trim()) return;
@@ -1078,6 +1172,8 @@ function CreateEventModal({
           renewalExternalRef: kind === "RENEWAL" ? (renewalExternalRef || undefined) : undefined,
           internalTicketId: internalTicketId || null,
           internalProjectId: internalProjectId || null,
+          organizationId: organizationId || null,
+          siteId: siteId || null,
         }),
       });
       if (!res.ok) {
@@ -1093,169 +1189,294 @@ function CreateEventModal({
     }
   }
 
+  // On affiche le bloc Client/Site quand l'event peut pertinemment être
+  // "chez un client" : type OTHER (défaut calendrier général), MEETING
+  // (réunion possiblement sur site), WORK_LOCATION (sur site client).
+  const showClientSite = kind === "OTHER" || kind === "MEETING" || kind === "WORK_LOCATION";
+
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4 sm:p-6" onClick={onClose}>
-      <div className="relative w-full max-w-lg my-4 rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="border-b border-slate-200 px-5 py-4">
-          <h2 className="text-[15px] font-semibold text-slate-900">
+      <div className="relative w-full max-w-5xl my-4 rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-3 right-3 h-8 w-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900 transition-colors z-10"
+          title="Fermer"
+          aria-label="Fermer"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <div className="border-b border-slate-200 px-6 py-4 pr-14">
+          <h2 className="text-[16px] font-semibold text-slate-900">
             {isEdit ? "Modifier l'événement" : "Nouvel événement"}
           </h2>
+          <p className="mt-0.5 text-[12px] text-slate-500">
+            {isEdit
+              ? "Mets à jour les détails ci-dessous."
+              : "Par défaut, l'événement est ajouté à l'agenda général."}
+          </p>
         </div>
-        <div className="p-5 space-y-3">
-          <div>
-            <label className="text-[11px] font-medium text-slate-500">Calendrier</label>
-            <Select value={calendarId} onValueChange={setCalendarId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {calendars.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Input label="Titre" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex: Renouvellement SSL hvac.ca" />
-          <div>
-            <label className="text-[11px] font-medium text-slate-500">Type</label>
-            <Select value={kind} onValueChange={(v) => setKind(v as CalendarEvent["kind"])}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="MEETING">Rencontre interne</SelectItem>
-                <SelectItem value="RENEWAL">Renouvellement</SelectItem>
-                <SelectItem value="LEAVE">Congé / absence</SelectItem>
-                <SelectItem value="WORK_LOCATION">Localisation de travail</SelectItem>
-                <SelectItem value="PERSONAL">Personnel</SelectItem>
-                <SelectItem value="OTHER">Autre</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Input type="date" label="Début" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            {!allDay && <Input type="time" label="Heure" value={startTime} onChange={(e) => setStartTime(e.target.value)} />}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Input type="date" label="Fin" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-            {!allDay && <Input type="time" label="Heure" value={endTime} onChange={(e) => setEndTime(e.target.value)} />}
-          </div>
-          <label className="flex items-center gap-2 text-[12px] text-slate-600">
-            <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />
-            Toute la journée
-          </label>
-          {(kind === "LEAVE" || kind === "WORK_LOCATION" || kind === "PERSONAL") && (
+
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+          {/* ================= COLONNE GAUCHE ================= */}
+          <div className="space-y-4">
             <div>
-              <label className="text-[11px] font-medium text-slate-500">Agent concerné</label>
-              <Select value={ownerId} onValueChange={setOwnerId}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner un agent" /></SelectTrigger>
+              <label className="text-[11px] font-medium text-slate-500">Calendrier</label>
+              <Select value={calendarId} onValueChange={setCalendarId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {users.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                  {calendars.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          )}
-          {kind === "WORK_LOCATION" && (
-            <Input label="Emplacement" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Ex: Chez HVAC, Bureau, Télétravail" />
-          )}
+            <Input label="Titre" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex: Point hebdo HVAC, Installation baie" />
+            <div>
+              <label className="text-[11px] font-medium text-slate-500">Type</label>
+              <Select value={kind} onValueChange={(v) => setKind(v as CalendarEvent["kind"])}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MEETING">Rencontre interne</SelectItem>
+                  <SelectItem value="RENEWAL">Renouvellement</SelectItem>
+                  <SelectItem value="LEAVE">Congé / absence</SelectItem>
+                  <SelectItem value="WORK_LOCATION">Localisation de travail</SelectItem>
+                  <SelectItem value="PERSONAL">Personnel</SelectItem>
+                  <SelectItem value="OTHER">Autre</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-          {kind === "RENEWAL" && (
-            <div className="space-y-2 rounded-lg bg-amber-50/50 border border-amber-200 p-3">
-              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-amber-700">
-                Détails du renouvellement
-              </p>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Input type="date" label="Début" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              {!allDay && <Input type="time" label="Heure" value={startTime} onChange={(e) => setStartTime(e.target.value)} />}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Input type="date" label="Fin" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              {!allDay && <Input type="time" label="Heure" value={endTime} onChange={(e) => setEndTime(e.target.value)} />}
+            </div>
+            <label className="flex items-center gap-2 text-[12px] text-slate-600">
+              <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />
+              Toute la journée
+            </label>
+
+            <div>
+              <label className="text-[11px] font-medium text-slate-500">Récurrence</label>
+              <Select value={recurrence} onValueChange={(v) => setRecurrence(v as "none" | "weekly" | "monthly" | "yearly")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Aucune</SelectItem>
+                  <SelectItem value="weekly">Chaque semaine</SelectItem>
+                  <SelectItem value="monthly">Chaque mois</SelectItem>
+                  <SelectItem value="yearly">Chaque année</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* ================= COLONNE DROITE ================= */}
+          <div className="space-y-4">
+            {showClientSite && (
+              <div className="space-y-2 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                <p className="text-[10.5px] font-semibold uppercase tracking-wider text-blue-700">
+                  Chez un client (optionnel)
+                </p>
+                {/* Organization autocomplete */}
+                <div className="relative">
+                  <label className="text-[11px] font-medium text-slate-500">Client</label>
+                  <div className="relative">
+                    <Input
+                      value={orgSearch}
+                      onChange={(e) => {
+                        setOrgSearch(e.target.value);
+                        setOrgDropdownOpen(true);
+                        // Si on efface tout ou modifie le nom sélectionné, on
+                        // reset l'id pour forcer une re-sélection explicite.
+                        if (e.target.value !== organizationName) {
+                          setOrganizationId("");
+                        }
+                      }}
+                      onFocus={() => setOrgDropdownOpen(true)}
+                      onBlur={() => setTimeout(() => setOrgDropdownOpen(false), 150)}
+                      placeholder="Taper le nom d'un client…"
+                    />
+                    {organizationId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOrganizationId("");
+                          setOrganizationName("");
+                          setOrgSearch("");
+                          setSiteId("");
+                          setSitesForOrg([]);
+                        }}
+                        className="absolute top-1/2 -translate-y-1/2 right-2 h-5 w-5 inline-flex items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        title="Retirer"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  {orgDropdownOpen && orgSuggestions.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg max-h-60 overflow-y-auto">
+                      {orgSuggestions.map((o) => (
+                        <button
+                          key={o.id}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setOrganizationId(o.id);
+                            setOrganizationName(o.name);
+                            setOrgSearch(o.name);
+                            setOrgDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
+                        >
+                          {o.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* Site selector (facultatif, dépend de l'org) */}
                 <div>
-                  <label className="text-[11px] font-medium text-slate-500">Type</label>
-                  <Select value={renewalType} onValueChange={setRenewalType}>
-                    <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                  <label className="text-[11px] font-medium text-slate-500">
+                    Site (facultatif)
+                  </label>
+                  <Select
+                    value={siteId || "_none"}
+                    onValueChange={(v) => setSiteId(v === "_none" ? "" : v)}
+                    disabled={!organizationId || sitesForOrg.length === 0}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={!organizationId ? "Choisis d'abord un client" : sitesForOrg.length === 0 ? "Aucun site" : "—"} />
+                    </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="license">Licence logicielle</SelectItem>
-                      <SelectItem value="ssl">Certificat SSL</SelectItem>
-                      <SelectItem value="subscription">Abonnement</SelectItem>
-                      <SelectItem value="warranty">Garantie matériel</SelectItem>
-                      <SelectItem value="contract">Contrat</SelectItem>
+                      <SelectItem value="_none">Aucun site précis</SelectItem>
+                      {sitesForOrg.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.isMain ? "★ " : ""}{s.name}{s.city ? ` — ${s.city}` : ""}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+            )}
+
+            {(kind === "LEAVE" || kind === "WORK_LOCATION" || kind === "PERSONAL") && (
+              <div>
+                <label className="text-[11px] font-medium text-slate-500">Agent concerné</label>
+                <Select value={ownerId} onValueChange={setOwnerId}>
+                  <SelectTrigger><SelectValue placeholder="Sélectionner un agent" /></SelectTrigger>
+                  <SelectContent>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {(kind === "WORK_LOCATION" || kind === "MEETING" || kind === "OTHER") && (
+              <Input
+                label="Emplacement / lieu (texte libre)"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Ex: Salle conseil, Teams, 1234 rue X"
+              />
+            )}
+
+            {kind === "RENEWAL" && (
+              <div className="space-y-2 rounded-lg bg-amber-50/50 border border-amber-200 p-3">
+                <p className="text-[10.5px] font-semibold uppercase tracking-wider text-amber-700">
+                  Détails du renouvellement
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-medium text-slate-500">Type</label>
+                    <Select value={renewalType} onValueChange={setRenewalType}>
+                      <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="license">Licence logicielle</SelectItem>
+                        <SelectItem value="ssl">Certificat SSL</SelectItem>
+                        <SelectItem value="subscription">Abonnement</SelectItem>
+                        <SelectItem value="warranty">Garantie matériel</SelectItem>
+                        <SelectItem value="contract">Contrat</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Input
+                    type="number"
+                    label="Montant (CAD)"
+                    value={renewalAmount}
+                    onChange={(e) => setRenewalAmount(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+                <Input
+                  label="Référence externe"
+                  value={renewalExternalRef}
+                  onChange={(e) => setRenewalExternalRef(e.target.value)}
+                  placeholder="N° commande, domaine SSL, etc."
+                />
                 <Input
                   type="number"
-                  label="Montant (CAD)"
-                  value={renewalAmount}
-                  onChange={(e) => setRenewalAmount(e.target.value)}
-                  placeholder="0.00"
+                  label="Notifier N jours avant"
+                  value={renewalNotifyDays}
+                  onChange={(e) => setRenewalNotifyDays(e.target.value)}
                 />
+                <p className="text-[10.5px] text-amber-700">
+                  Une notification sera envoyée aux admins MSP + à l&apos;agent concerné à l&apos;approche de l&apos;échéance.
+                </p>
               </div>
-              <Input
-                label="Référence externe"
-                value={renewalExternalRef}
-                onChange={(e) => setRenewalExternalRef(e.target.value)}
-                placeholder="N° commande, domaine SSL, etc."
-              />
-              <Input
-                type="number"
-                label="Notifier N jours avant"
-                value={renewalNotifyDays}
-                onChange={(e) => setRenewalNotifyDays(e.target.value)}
-              />
-              <p className="text-[10.5px] text-amber-700">
-                Une notification sera envoyée aux admins MSP + à l&apos;agent concerné à l&apos;approche de l&apos;échéance.
+            )}
+
+            <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+                Lier à une ressource interne (optionnel)
               </p>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-            <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
-              Lier à une ressource interne (optionnel)
-            </p>
-            <div>
-              <label className="text-[11px] font-medium text-slate-500">Ticket interne</label>
-              <Select value={internalTicketId || "_none"} onValueChange={(v) => setInternalTicketId(v === "_none" ? "" : v)}>
-                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Aucun</SelectItem>
-                  {internalTickets.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>#{t.number} — {t.subject}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-[11px] font-medium text-slate-500">Projet interne</label>
-              <Select value={internalProjectId || "_none"} onValueChange={(v) => setInternalProjectId(v === "_none" ? "" : v)}>
-                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Aucun</SelectItem>
-                  {internalProjects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.code} — {p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div>
+                <label className="text-[11px] font-medium text-slate-500">Ticket interne</label>
+                <Select value={internalTicketId || "_none"} onValueChange={(v) => setInternalTicketId(v === "_none" ? "" : v)}>
+                  <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Aucun</SelectItem>
+                    {internalTickets.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>#{t.number} — {t.subject}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-slate-500">Projet interne</label>
+                <Select value={internalProjectId || "_none"} onValueChange={(v) => setInternalProjectId(v === "_none" ? "" : v)}>
+                  <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Aucun</SelectItem>
+                    {internalProjects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.code} — {p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
-          <div>
-            <label className="text-[11px] font-medium text-slate-500">Récurrence</label>
-            <Select value={recurrence} onValueChange={(v) => setRecurrence(v as "none" | "weekly" | "monthly" | "yearly")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Aucune</SelectItem>
-                <SelectItem value="weekly">Chaque semaine</SelectItem>
-                <SelectItem value="monthly">Chaque mois</SelectItem>
-                <SelectItem value="yearly">Chaque année</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
+          {/* ================= PLEINE LARGEUR : DESCRIPTION ================= */}
+          <div className="md:col-span-2">
             <label className="text-[11px] font-medium text-slate-500">Description (optionnel)</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              placeholder="Contexte, ordre du jour, notes…"
             />
           </div>
 
           {error && (
-            <p className="text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            <p className="md:col-span-2 text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
               {error}
             </p>
           )}

@@ -185,6 +185,7 @@ export default function TicketDetailPage() {
   // tickets clients par défaut pour ne pas polluer la liste /tickets).
   // On le charge directement par id en fallback.
   const [directTicket, setDirectTicket] = useState<import("@/lib/mock-data").Ticket | null>(null);
+  const [directAttempted, setDirectAttempted] = useState(false);
   const [directLoading, setDirectLoading] = useState(false);
   useEffect(() => {
     if (!loaded) loadAll();
@@ -192,7 +193,8 @@ export default function TicketDetailPage() {
   const ticketFromStore = tickets.find((t) => t.id === params.id);
   useEffect(() => {
     // Si le store est chargé mais ne contient pas ce ticket, fetch direct.
-    if (loaded && !ticketFromStore && !directTicket && !directLoading) {
+    if (loaded && !ticketFromStore && !directTicket && !directAttempted) {
+      setDirectAttempted(true);
       setDirectLoading(true);
       fetch(`/api/v1/tickets/${params.id}`)
         .then((r) => (r.ok ? r.json() : null))
@@ -200,7 +202,7 @@ export default function TicketDetailPage() {
         .catch(() => {})
         .finally(() => setDirectLoading(false));
     }
-  }, [loaded, ticketFromStore, directTicket, directLoading, params.id]);
+  }, [loaded, ticketFromStore, directTicket, directAttempted, params.id]);
   const ticket = ticketFromStore ?? directTicket;
 
   // Direct API patch for fields not in the Zustand Ticket type
@@ -367,7 +369,25 @@ export default function TicketDetailPage() {
     setReminder(null);
   }
 
+  // Tant que le store charge OU que le fallback direct est en vol, on
+  // affiche un spinner — sinon on flashe "Ticket non trouvé" pendant 1-2
+  // frames et le bouton "Retour" s'affiche juste après la création d'un
+  // ticket interne (bug). On ne conclut à "non trouvé" qu'une fois les
+  // deux chargements terminés sans résultat.
   if (!ticket) {
+    // On considère que le chargement est en cours tant que :
+    //   - le store n'a pas encore terminé son loadAll()
+    //   - OU on n'a pas encore tenté le fetch direct (loaded true, mais
+    //     useEffect pas encore exécuté dans le même tick)
+    //   - OU le fetch direct est en vol
+    const stillLoading = !loaded || (!directAttempted && !ticketFromStore) || directLoading;
+    if (stillLoading) {
+      return (
+        <div className="flex items-center justify-center p-12">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col items-center justify-center gap-4 p-12">
         <p className="text-gray-500">Ticket non trouvé.</p>

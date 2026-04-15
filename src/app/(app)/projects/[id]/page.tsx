@@ -242,8 +242,11 @@ export default function ProjectDetailPage() {
       <div className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200/80">
         <div className="px-6 py-3 flex items-center justify-between max-w-[1600px] mx-auto">
           <div className="flex items-center gap-2 text-[12.5px] text-slate-500">
-            <Link href="/projects" className="hover:text-slate-700 transition-colors">
-              Projets
+            <Link
+              href={(project as { isInternal?: boolean }).isInternal ? "/internal-projects" : "/projects"}
+              className="hover:text-slate-700 transition-colors"
+            >
+              {(project as { isInternal?: boolean }).isInternal ? "Projets internes" : "Projets"}
             </Link>
             <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
             <span className="font-mono text-slate-700 font-medium">{project.code}</span>
@@ -261,7 +264,15 @@ export default function ProjectDetailPage() {
             <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => {
               if (confirm("Archiver ce projet ?")) {
                 fetch(`/api/v1/projects/${project.id}`, { method: "DELETE" })
-                  .then((r) => { if (r.ok) router.push("/projects"); });
+                  .then((r) => {
+                    if (r.ok) {
+                      router.push(
+                        (project as { isInternal?: boolean }).isInternal
+                          ? "/internal-projects"
+                          : "/projects",
+                      );
+                    }
+                  });
               }
             }}>
               <MoreHorizontal className="h-4 w-4" />

@@ -90,6 +90,7 @@ model Site {
   contacts       Contact[]
   assets         Asset[]
   tickets        Ticket[]
+  calendarEvents CalendarEvent[]
 
   @@map("sites")
 }
@@ -1718,6 +1719,8 @@ model CalendarEvent {
   location       String?
   /// Pour RENEWAL et WORK_LOCATION chez un client.
   organizationId String?           @map("organization_id")
+  /// Site précis chez l'organisation (facultatif).
+  siteId         String?           @map("site_id")
 
   // --- RENEWAL-specific ---
   renewalType             String? @map("renewal_type")  // license | ssl | subscription | warranty
@@ -1749,6 +1752,7 @@ model CalendarEvent {
   owner        User?        @relation("CalendarEventOwner", fields: [ownerId], references: [id])
   createdBy    User?        @relation("CalendarEventCreator", fields: [createdById], references: [id])
   organization Organization? @relation(fields: [organizationId], references: [id])
+  site         Site?        @relation(fields: [siteId], references: [id])
   // Si le Meeting est supprimé, on supprime aussi son CalendarEvent
   // (évite un event kind=MEETING orphelin pointant vers un meeting inexistant).
   // Et symétriquement : si l'event est supprimé, le Meeting aussi (sinon
