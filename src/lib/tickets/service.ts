@@ -85,7 +85,7 @@ export function typeToDb(t: string): string {
 function flattenDetail(t: PrismaTicketDetail): UiTicket {
   return {
     id: t.id,
-    number: `INC-${1000 + t.number}`,
+    number: `${t.isInternal ? "INT" : "INC"}-${1000 + t.number}`,
     subject: t.subject,
     description: t.description,
     status: statusToUi(t.status),
@@ -158,7 +158,7 @@ function flattenDetail(t: PrismaTicketDetail): UiTicket {
 function flattenList(t: PrismaTicketList): UiTicket {
   return {
     id: t.id,
-    number: `INC-${1000 + t.number}`,
+    number: `${t.isInternal ? "INT" : "INC"}-${1000 + t.number}`,
     subject: t.subject,
     description: t.description,
     status: statusToUi(t.status),

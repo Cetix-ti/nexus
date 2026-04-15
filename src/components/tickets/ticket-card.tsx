@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import {
@@ -11,11 +12,13 @@ import {
   ArrowDown,
   Zap,
   User,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PRIORITY_CONFIG, type Ticket, type TicketPriority } from "@/lib/mock-data";
 import { useOrgLogosStore } from "@/stores/org-logos-store";
 import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
+import { useTicketsStore } from "@/stores/tickets-store";
 
 interface TicketCardProps {
   ticket: Ticket;
@@ -146,35 +149,162 @@ export function TicketCard({ ticket, onClick }: TicketCardProps) {
             )}
           </div>
 
-          {/* Assignee — photo or neutral initials */}
-          {ticket.assigneeName ? (
-            assigneeAvatar ? (
-              <img
-                src={assigneeAvatar}
-                alt={ticket.assigneeName}
-                title={ticket.assigneeName}
-                className="h-[22px] w-[22px] rounded-full object-cover ring-2 ring-white shadow-sm"
-              />
-            ) : (
-              <div
-                className="h-[22px] w-[22px] rounded-full bg-slate-200 flex items-center justify-center ring-2 ring-white"
-                title={ticket.assigneeName}
-              >
-                <span className="text-[8px] font-semibold text-slate-600">
-                  {getInitials(ticket.assigneeName)}
-                </span>
-              </div>
-            )
-          ) : (
-            <div
-              className="h-[22px] w-[22px] rounded-full border border-dashed border-slate-300 flex items-center justify-center"
-              title="Non assigné"
-            >
-              <User className="h-2.5 w-2.5 text-slate-300" strokeWidth={2} />
-            </div>
-          )}
+          {/* Assignee — clic direct ouvre un mini-picker (sans avoir à
+              ouvrir la fiche complète). Inspiré de Freshservice. */}
+          <InlineAssigneePicker ticket={ticket} assigneeAvatar={assigneeAvatar} />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inline assignee picker — avatar cliquable dans le coin inférieur droit
+// de la carte. Au clic : popover avec la liste des agents (+ "Non assigné"
+// en tête pour désassigner). PATCH direct, mise à jour optimiste du store.
+// ---------------------------------------------------------------------------
+function InlineAssigneePicker({
+  ticket,
+  assigneeAvatar,
+}: {
+  ticket: Ticket;
+  assigneeAvatar: string | null | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const [agents, setAgents] = useState<Array<{ id: string; name: string; avatar: string | null }>>([]);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const updateTicket = useTicketsStore((s) => s.updateTicket);
+
+  useEffect(() => {
+    if (!open || agents.length > 0) return;
+    setLoading(true);
+    fetch("/api/v1/users?role=TECHNICIAN,SUPERVISOR,MSP_ADMIN,SUPER_ADMIN")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((arr: Array<{ id: string; name: string; avatar: string | null }>) => {
+        if (Array.isArray(arr)) setAgents(arr);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [open, agents.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  async function assign(agent: { id: string; name: string } | null) {
+    setOpen(false);
+    // Mise à jour optimiste via le store (cover le Kanban + liste simultanément).
+    // updateTicket fait déjà le PATCH + merge dans le state.
+    await updateTicket(ticket.id, {
+      assigneeId: agent?.id ?? null,
+      assigneeName: agent?.name ?? null,
+    } as Partial<Ticket>);
+  }
+
+  const filtered = query.trim()
+    ? agents.filter((a) => a.name.toLowerCase().includes(query.toLowerCase()))
+    : agents;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onPointerDown={(e) => {
+          // Empêche le drag handler du Kanban de s'activer sur ce bouton.
+          e.stopPropagation();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        title={ticket.assigneeName ? `Assigné à ${ticket.assigneeName}` : "Non assigné — cliquer pour assigner"}
+        className={cn(
+          "h-[22px] w-[22px] rounded-full flex items-center justify-center transition-all",
+          ticket.assigneeName
+            ? "ring-2 ring-white shadow-sm hover:ring-blue-400"
+            : "border border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50",
+        )}
+      >
+        {ticket.assigneeName ? (
+          assigneeAvatar ? (
+            <img src={assigneeAvatar} alt={ticket.assigneeName} className="h-[22px] w-[22px] rounded-full object-cover" />
+          ) : (
+            <div className="h-[22px] w-[22px] rounded-full bg-slate-200 flex items-center justify-center">
+              <span className="text-[8px] font-semibold text-slate-600">
+                {getInitials(ticket.assigneeName)}
+              </span>
+            </div>
+          )
+        ) : (
+          <User className="h-2.5 w-2.5 text-slate-300" strokeWidth={2} />
+        )}
+      </button>
+
+      {open && (
+        <div
+          ref={popoverRef}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          className="absolute bottom-full right-0 mb-1.5 z-50 w-56 rounded-lg border border-slate-200 bg-white shadow-lg"
+        >
+          <div className="p-2 border-b border-slate-100">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Rechercher un agent…"
+              className="w-full h-7 rounded-md border border-slate-200 px-2 text-[12px] focus:border-blue-500 focus:outline-none"
+              autoFocus
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto py-1">
+            <button
+              type="button"
+              onClick={() => assign(null)}
+              className="w-full px-3 py-1.5 flex items-center gap-2 text-left text-[12px] hover:bg-slate-50"
+            >
+              <div className="h-5 w-5 rounded-full border border-dashed border-slate-300 flex items-center justify-center shrink-0">
+                <User className="h-2.5 w-2.5 text-slate-400" />
+              </div>
+              <span className="text-slate-600">Non assigné</span>
+              {!ticket.assigneeName && <Check className="h-3 w-3 ml-auto text-blue-600" />}
+            </button>
+            {loading && (
+              <p className="px-3 py-2 text-[11.5px] text-slate-400">Chargement…</p>
+            )}
+            {filtered.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => assign({ id: a.id, name: a.name })}
+                className="w-full px-3 py-1.5 flex items-center gap-2 text-left text-[12px] hover:bg-slate-50"
+              >
+                {a.avatar ? (
+                  <img src={a.avatar} alt={a.name} className="h-5 w-5 rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="h-5 w-5 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
+                    <span className="text-[8px] font-semibold text-slate-600">{getInitials(a.name)}</span>
+                  </div>
+                )}
+                <span className="truncate">{a.name}</span>
+                {ticket.assigneeName === a.name && <Check className="h-3 w-3 ml-auto text-blue-600 shrink-0" />}
+              </button>
+            ))}
+            {!loading && filtered.length === 0 && query && (
+              <p className="px-3 py-2 text-[11.5px] text-slate-400">Aucun agent trouvé</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

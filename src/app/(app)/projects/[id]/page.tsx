@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { format, formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import {
@@ -94,6 +94,12 @@ const VISIBILITY_LABELS: Record<keyof ProjectVisibilitySettings, string> = {
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const pathname = usePathname();
+  // Contexte interne vs client — le même composant détail est utilisé à la
+  // fois sous /projects/[id] et /internal-projects/[id]. On s'aligne sur le
+  // chemin pour que breadcrumb, "Retour" et archivage restent cohérents
+  // avec la sidebar active.
+  const isInternalView = pathname?.startsWith("/internal-projects") ?? false;
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -243,10 +249,10 @@ export default function ProjectDetailPage() {
         <div className="px-6 py-3 flex items-center justify-between max-w-[1600px] mx-auto">
           <div className="flex items-center gap-2 text-[12.5px] text-slate-500">
             <Link
-              href={(project as { isInternal?: boolean }).isInternal ? "/internal-projects" : "/projects"}
+              href={isInternalView ? "/internal-projects" : "/projects"}
               className="hover:text-slate-700 transition-colors"
             >
-              {(project as { isInternal?: boolean }).isInternal ? "Projets internes" : "Projets"}
+              {isInternalView ? "Projets internes" : "Projets clients"}
             </Link>
             <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
             <span className="font-mono text-slate-700 font-medium">{project.code}</span>
@@ -266,11 +272,7 @@ export default function ProjectDetailPage() {
                 fetch(`/api/v1/projects/${project.id}`, { method: "DELETE" })
                   .then((r) => {
                     if (r.ok) {
-                      router.push(
-                        (project as { isInternal?: boolean }).isInternal
-                          ? "/internal-projects"
-                          : "/projects",
-                      );
+                      router.push(isInternalView ? "/internal-projects" : "/projects");
                     }
                   });
               }

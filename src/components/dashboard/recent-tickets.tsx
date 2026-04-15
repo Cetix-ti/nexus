@@ -82,7 +82,7 @@ export function RecentTickets({
         {tickets.map((ticket) => (
           <Link
             key={ticket.id}
-            href={`/tickets/${ticket.id}`}
+            href={(ticket as { isInternal?: boolean }).isInternal ? `/internal-tickets/${ticket.id}` : `/tickets/${ticket.id}`}
             className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-2.5 sm:py-3 hover:bg-neutral-50 transition-colors cursor-pointer"
           >
             <span

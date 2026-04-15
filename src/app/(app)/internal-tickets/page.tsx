@@ -170,10 +170,10 @@ export default function InternalTicketsPage() {
               {filtered.map((t) => (
                 <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="px-4 py-3 text-[12px] font-mono text-blue-600">
-                    <Link href={`/tickets/${t.id}`}>{t.number}</Link>
+                    <Link href={`/internal-tickets/${t.id}`}>{t.number}</Link>
                   </td>
                   <td className="px-4 py-3">
-                    <Link href={`/tickets/${t.id}`} className="text-[13px] text-slate-900 font-medium hover:underline">
+                    <Link href={`/internal-tickets/${t.id}`} className="text-[13px] text-slate-900 font-medium hover:underline">
                       {t.subject}
                     </Link>
                     {t.meetingId && (
@@ -218,7 +218,7 @@ export default function InternalTicketsPage() {
           onClose={() => setShowCreate(false)}
           onCreated={(newTicket) => {
             setShowCreate(false);
-            router.push(`/tickets/${newTicket.id}`);
+            router.push(`/internal-tickets/${newTicket.id}`);
           }}
         />
       )}

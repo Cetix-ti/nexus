@@ -12,7 +12,6 @@ import {
   Monitor,
   FolderKanban,
   CalendarDays,
-  Receipt,
   BookOpen,
   BarChart3,
   Zap,
@@ -55,10 +54,11 @@ function hasNavAccess(userRole: string, minRole?: string): boolean {
 }
 
 const NAV_SECTIONS: NavSection[] = [
-  // Vue principale (sans label de section) — ce qu'un agent ouvre 90% du temps.
-  // Le Calendrier est maintenant intégré au Tableau de bord, donc il n'a
-  // plus son entrée propre ici (la page /calendar reste accessible via
-  // deep-link, et /calendar/meetings garde son entrée dans Équipe).
+  // Navigation principale « à plat » : on met en haut les entrées que l'agent
+  // ouvre le plus souvent, sans les noyer dans des sections. Le Calendrier
+  // est intégré au Tableau de bord (plus d'entrée propre ici).
+  // Préfacturation a été retirée — toutes les vues de facturation sont gérées
+  // depuis Analytique → Rapports (modèles "facturation").
   {
     items: [
       { label: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
@@ -72,39 +72,29 @@ const NAV_SECTIONS: NavSection[] = [
           { label: "Ma journée", href: "/tickets/my-day" },
         ],
       },
+      { label: "Projets clients", href: "/projects", icon: FolderKanban },
+      { label: "Alertes monitoring", href: "/monitoring", icon: Bell },
+      { label: "Sauvegardes", href: "/backups", icon: HardDrive },
+      { label: "Mon espace", href: "/my-space", icon: UserCircle },
     ],
   },
+  // Données annexes du côté client — gardées groupées car consultées moins
+  // souvent qu'un ticket ou un projet.
   {
     label: "Clients",
     items: [
-      { label: "Projets clients", href: "/projects", icon: FolderKanban },
       { label: "Organisations", href: "/organisations", icon: Building2 },
       { label: "Contacts", href: "/contacts", icon: Users },
       { label: "Actifs", href: "/assets", icon: Monitor },
       { label: "Planificateur", href: "/scheduling", icon: CalendarDays },
-      { label: "Préfacturation", href: "/billing", icon: Receipt, minRole: "SUPERVISOR" },
       { label: "Finances", href: "/finances", icon: DollarSign, minRole: "SUPERVISOR" },
     ],
   },
-  {
-    label: "Surveillance",
-    items: [
-      { label: "Alertes monitoring", href: "/monitoring", icon: Bell },
-      { label: "Sauvegardes", href: "/backups", icon: HardDrive },
-    ],
-  },
-  {
-    label: "Personnel",
-    items: [
-      { label: "Mon espace", href: "/my-space", icon: UserCircle },
-    ],
-  },
+  // TECHNICIAN+ : exclut les CLIENT_* / READ_ONLY. La section Équipe contient
+  // les données opérationnelles Cetix (rencontres, tickets admin, projets
+  // admin) — aucun client ne doit y accéder.
   {
     label: "Équipe",
-    // TECHNICIAN+ : exclut les CLIENT_ADMIN / CLIENT_USER / READ_ONLY. La
-    // section Équipe contient des données opérationnelles Cetix (rencontres
-    // internes, tickets admin, projets admin) — aucun client ne doit y
-    // accéder.
     items: [
       { label: "Rencontres", href: "/calendar/meetings", icon: CalendarDays, minRole: "TECHNICIAN" },
       { label: "Tickets internes", href: "/internal-tickets", icon: Ticket, minRole: "TECHNICIAN" },

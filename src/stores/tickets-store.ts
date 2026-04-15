@@ -23,7 +23,12 @@ export const useTicketsStore = create<TicketsState>()((set, get) => ({
     if (get().loading) return;
     set({ loading: true });
     try {
-      const res = await fetch("/api/v1/tickets");
+      // Limit=500 (au lieu du 100 par défaut de l'API) pour que les vues
+      // Kanban / liste aient un échantillon représentatif de toutes les
+      // colonnes et pas seulement des 100 tickets les plus récents (qui se
+      // retrouvent tous dans "Nouveau"). Au-delà, on compte sur des filtres
+      // serveur-side pour ne pas saturer.
+      const res = await fetch("/api/v1/tickets?limit=500");
       const tickets = (await res.json()) as Ticket[];
       // Replace (not append) to prevent memory accumulation
       set({ tickets, loaded: true, loading: false });

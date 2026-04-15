@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useTicketsStore } from "@/stores/tickets-store";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { formatDistanceToNow, format } from "date-fns";
 import {
   ArrowLeft,
@@ -133,15 +133,24 @@ interface LocalComment {
 export default function TicketDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Contexte interne vs client : la page détail est utilisée à la fois depuis
+  // /tickets/[id] (clients) et /internal-tickets/[id] (Cetix). Le chemin
+  // courant dicte le "Retour" par défaut et le breadcrumb pour rester
+  // cohérent avec la sidebar active.
+  const isInternalView = pathname?.startsWith("/internal-tickets") ?? false;
+  const defaultBackHref = isInternalView ? "/internal-tickets" : "/tickets";
   // Si la page d'origine a passé ?back=/path, on l'utilise pour le bouton
-  // « Retour », sinon on retombe sur la liste des tickets.
+  // « Retour », sinon on retombe sur la liste appropriée.
   const rawBack = searchParams?.get("back");
   // Sécurité : on n'autorise que les chemins internes (/...).
-  const backHref = rawBack && rawBack.startsWith("/") ? rawBack : "/tickets";
+  const backHref = rawBack && rawBack.startsWith("/") ? rawBack : defaultBackHref;
   const backLabel =
     backHref === "/tickets"
       ? "Tickets"
+      : backHref === "/internal-tickets"
+      ? "Tickets internes"
       : backHref.startsWith("/organizations/")
       ? "Organisation"
       : "Retour";
@@ -391,8 +400,8 @@ export default function TicketDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center gap-4 p-12">
         <p className="text-gray-500">Ticket non trouvé.</p>
-        <Button variant="outline" onClick={() => router.push("/tickets")}>
-          Retour aux tickets
+        <Button variant="outline" onClick={() => router.push(defaultBackHref)}>
+          {isInternalView ? "Retour aux tickets internes" : "Retour aux tickets"}
         </Button>
       </div>
     );

@@ -14,7 +14,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Plus } from "lucide-react";
+import { Plus, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TicketCard } from "./ticket-card";
 import { TicketQuickViewModal } from "./ticket-quick-view-modal";
@@ -101,6 +101,12 @@ function DroppableColumnBody({
 // ----------------------------------------------------------------------------
 // Main Kanban view
 // ----------------------------------------------------------------------------
+
+// Nombre de tickets visibles par colonne avant de requérir un "Voir plus".
+// Inspiré de Freshservice — garde les colonnes lisibles même avec 100+ tickets.
+const DEFAULT_COLUMN_PAGE_SIZE = 20;
+const COLUMN_PAGE_INCREMENT = 20;
+
 export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanViewProps) {
   const router = useRouter();
   const columnsConfig = useKanbanStore((s) => s.columns);
@@ -112,6 +118,9 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
   const [quickViewTicket, setQuickViewTicket] = useState<Ticket | null>(null);
   const [quickViewOpen, setQuickViewOpen] = useState(false);
+  // Limite par colonne : key = col.value (status/priority/etc), value =
+  // nombre de tickets à rendre. Incrémente par le bouton "Voir plus".
+  const [pageSizes, setPageSizes] = useState<Record<string, number>>({});
 
   useEffect(() => {
     setLocalTickets(tickets);
@@ -327,13 +336,40 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
                 dropId={col.value}
                 isEmpty={col.tickets.length === 0}
               >
-                {col.tickets.map((ticket) => (
-                  <DraggableCard
-                    key={ticket.id}
-                    ticket={ticket}
-                    onClick={() => openQuickView(ticket)}
-                  />
-                ))}
+                {(() => {
+                  const limit = pageSizes[col.value] ?? DEFAULT_COLUMN_PAGE_SIZE;
+                  const shown = col.tickets.slice(0, limit);
+                  const remaining = col.tickets.length - shown.length;
+                  return (
+                    <>
+                      {shown.map((ticket) => (
+                        <DraggableCard
+                          key={ticket.id}
+                          ticket={ticket}
+                          onClick={() => openQuickView(ticket)}
+                        />
+                      ))}
+                      {remaining > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPageSizes((prev) => ({
+                              ...prev,
+                              [col.value]: (prev[col.value] ?? DEFAULT_COLUMN_PAGE_SIZE) + COLUMN_PAGE_INCREMENT,
+                            }))
+                          }
+                          className="w-full rounded-lg border border-dashed border-slate-200 bg-white/60 hover:bg-white hover:border-slate-300 text-[11.5px] font-medium text-slate-600 px-3 py-2 flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                          <ChevronDown className="h-3 w-3" />
+                          Voir {Math.min(remaining, COLUMN_PAGE_INCREMENT)} de plus
+                          <span className="text-slate-400 font-normal">
+                            ({remaining} restants)
+                          </span>
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
               </DroppableColumnBody>
             </div>
           ))}

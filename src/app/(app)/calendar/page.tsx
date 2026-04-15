@@ -614,7 +614,7 @@ function EventDetailDrawer({
                 Ticket interne lié
               </p>
               <Link
-                href={`/tickets/${event.internalTicket.id}`}
+                href={`/internal-tickets/${event.internalTicket.id}`}
                 className="mt-1 block text-[12.5px] text-blue-700 hover:underline truncate"
               >
                 #{event.internalTicket.number} — {event.internalTicket.subject}
@@ -628,7 +628,7 @@ function EventDetailDrawer({
                 Projet interne lié
               </p>
               <Link
-                href={`/projects/${event.internalProject.id}`}
+                href={`/internal-projects/${event.internalProject.id}`}
                 className="mt-1 block text-[12.5px] text-violet-700 hover:underline truncate"
               >
                 {event.internalProject.code} — {event.internalProject.name}

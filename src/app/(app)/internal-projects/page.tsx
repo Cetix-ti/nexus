@@ -70,7 +70,7 @@ export default function InternalProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {projects.map((p) => (
-            <Link key={p.id} href={`/projects/${p.id}`}>
+            <Link key={p.id} href={`/internal-projects/${p.id}`}>
               <Card className="hover:shadow-md transition-shadow cursor-pointer">
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-2">
@@ -100,7 +100,7 @@ export default function InternalProjectsPage() {
           onClose={() => setShowCreate(false)}
           onCreated={(id) => {
             setShowCreate(false);
-            router.push(`/projects/${id}`);
+            router.push(`/internal-projects/${id}`);
           }}
         />
       )}

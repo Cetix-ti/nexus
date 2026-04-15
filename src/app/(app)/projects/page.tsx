@@ -49,6 +49,15 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
+/** Format safe d'une date projet : accepte "" / null / undefined sans
+ *  faire crasher la carte. Un projet sans date affiche "—". */
+function fmtProjectDate(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "—";
+  return format(d, "d MMM", { locale: fr });
+}
+
 const TABS: { key: string; label: string; filter: (p: Project) => boolean }[] = [
   { key: "all", label: "Tous", filter: () => true },
   {
@@ -635,8 +644,7 @@ function ProjectCard({ project: p }: { project: Project }) {
         <div className="flex items-center gap-3 text-[11.5px] text-slate-500">
           <span className="flex items-center gap-1">
             <Clock className="h-3 w-3" />
-            {format(new Date(p.startDate), "d MMM", { locale: fr })} →{" "}
-            {format(new Date(p.targetEndDate), "d MMM", { locale: fr })}
+            {fmtProjectDate(p.startDate)} → {fmtProjectDate(p.targetEndDate)}
           </span>
           <span className="flex items-center gap-1">
             <ListChecks className="h-3 w-3" />
