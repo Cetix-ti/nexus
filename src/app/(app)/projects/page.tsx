@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Card, CardContent } from "@/components/ui/card";
+import { OrgLogo } from "@/components/organizations/org-logo";
 import {
   PROJECT_STATUS_LABELS,
   PROJECT_STATUS_COLORS,
@@ -597,11 +598,9 @@ function ProjectCard({ project: p }: { project: Project }) {
 
       {/* Org row */}
       <div className="mt-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded-full bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center text-white text-[9px] font-semibold ring-2 ring-white shadow-sm">
-            {getInitials(p.organizationName)}
-          </div>
-          <span className="text-[12.5px] font-medium text-slate-700">
+        <div className="flex items-center gap-2 min-w-0">
+          <OrgLogo name={p.organizationName} size={24} rounded="full" />
+          <span className="text-[12.5px] font-medium text-slate-700 truncate">
             {p.organizationName}
           </span>
         </div>

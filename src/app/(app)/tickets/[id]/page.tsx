@@ -27,6 +27,7 @@ import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-edito
 import { AdvancedRichEditor } from "@/components/ui/advanced-rich-editor";
 import { LinkAssetModal } from "@/components/tickets/link-asset-modal";
 import { LinkProjectModal } from "@/components/tickets/link-project-modal";
+import { OrgLogo } from "@/components/organizations/org-logo";
 import {
   STATUS_CONFIG,
   PRIORITY_CONFIG,
@@ -1247,9 +1248,11 @@ export default function TicketDetailPage() {
 
             {/* Organization */}
             <SidebarSection title="Organisation">
-              <div className="flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-gray-400" />
-                <span className="text-sm text-gray-700">{ticket.organizationName}</span>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <OrgLogo name={ticket.organizationName} size={28} rounded="md" />
+                <span className="text-sm text-gray-800 font-medium truncate">
+                  {ticket.organizationName}
+                </span>
               </div>
             </SidebarSection>
 

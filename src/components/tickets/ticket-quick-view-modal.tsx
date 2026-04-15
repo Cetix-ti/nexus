@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-editor";
+import { OrgLogo } from "@/components/organizations/org-logo";
 import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
 import {
   STATUS_CONFIG,
@@ -701,15 +702,8 @@ export function TicketQuickViewModal({
                 <h3 className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500 mb-2">
                   Organisation
                 </h3>
-                <div className="flex items-center gap-2">
-                  <div
-                    className={cn(
-                      "h-7 w-7 rounded-md bg-gradient-to-br flex items-center justify-center text-white text-[9px] font-bold shrink-0 shadow-sm",
-                      getAvatarGradient(ticket.organizationName)
-                    )}
-                  >
-                    {getInitials(ticket.organizationName)}
-                  </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <OrgLogo name={ticket.organizationName} size={28} rounded="md" />
                   <span className="text-[12.5px] text-slate-700 truncate">
                     {ticket.organizationName}
                   </span>
