@@ -136,12 +136,13 @@ export function EmailToTicketSection() {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold text-slate-900">
-          Création de tickets par courriel
+          Configuration SMTP pour les tickets
         </h2>
         <p className="text-[13px] text-slate-500 mt-1">
-          Les courriels reçus dans la boîte configurée sont automatiquement
-          convertis en tickets. L&apos;expéditeur est associé à son
-          organisation via le domaine de son adresse courriel.
+          Adresse courriel utilisée pour <strong>recevoir des tickets</strong> et
+          pour <strong>répondre aux tickets</strong>. Les courriels reçus dans la
+          boîte configurée sont automatiquement convertis en tickets ;
+          l&apos;expéditeur est associé à son organisation via son domaine.
         </p>
       </div>
 

@@ -142,7 +142,6 @@ const sectionGroups: SettingsGroup[] = [
     iconBg: "bg-cyan-50 ring-cyan-200/60",
     sections: [
       { key: "portal_access", label: "Portail client", icon: UserCogIcon },
-      { key: "portal_preview", label: "Visualiser le portail", icon: Eye },
       { key: "portal_domain", label: "Domaine du portail", icon: Globe, superAdminOnly: true },
     ],
   },
@@ -1047,9 +1046,28 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   users: <><UsersSection /><div className="mt-10 pt-10 border-t border-slate-200"><AgentProfilesSection /></div></>,
   roles: <RolesSection />,
   notifications: <NotificationsSection />,
-  email: <><EmailSection /><div className="mt-8"><EmailToTicketSection /></div></>,
-  portal_access: <PortalAccessSection />,
-  portal_preview: <PortalPreviewSection />,
+  // Ordre des sections Courriels :
+  //   1. Configuration SMTP pour les tickets (réception + réponse)
+  //   2. Configuration SMTP pour les notifications systèmes (envoi hors-ticket)
+  email: (
+    <>
+      <EmailToTicketSection />
+      <div className="mt-10 pt-10 border-t border-slate-200">
+        <EmailSection />
+      </div>
+    </>
+  ),
+  // Portail client : on empile la config globale puis l'impersonation
+  // (« Visualiser le portail ») en dessous — les deux actions vivent
+  // logiquement sur la même page.
+  portal_access: (
+    <>
+      <PortalAccessSection />
+      <div className="mt-10 pt-10 border-t border-slate-200">
+        <PortalPreviewSection />
+      </div>
+    </>
+  ),
   sla: <SLASection />,
   categories: <CategoriesSection />,
   queues: <QueuesSection />,

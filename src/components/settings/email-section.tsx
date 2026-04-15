@@ -209,10 +209,12 @@ export function EmailSection() {
     <div className="space-y-5">
       <div>
         <h2 className="text-[17px] font-semibold tracking-tight text-slate-900">
-          Configuration SMTP
+          Configuration SMTP pour les notifications systèmes
         </h2>
         <p className="mt-1 text-[13px] text-slate-500">
-          Paramètres du serveur d&apos;envoi de courriels
+          Adresse courriel utilisée par Nexus pour envoyer les notifications
+          hors-tickets — création de compte, réinitialisation de mot de passe,
+          expirations SSL à venir, renouvellements, alertes de sécurité, etc.
         </p>
       </div>
 
