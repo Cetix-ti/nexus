@@ -1053,6 +1053,26 @@ export default function TicketDetailPage() {
                   <option value="alert">Alerte</option>
                 </select>
               </SidebarRow>
+              {/* Flag "à faire sur place" — rend le ticket éligible à être
+                  planifié sur un événement WORK_LOCATION du calendrier. */}
+              <SidebarRow label="Sur place">
+                <label className="flex items-center gap-2 text-[12px] text-slate-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!(ticket as { requiresOnSite?: boolean }).requiresOnSite}
+                    onChange={async (e) => {
+                      const checked = e.target.checked;
+                      await patchTicketField({ requiresOnSite: checked });
+                      (ticket as { requiresOnSite?: boolean }).requiresOnSite = checked;
+                      // Si on retire le flag, le backend n'unlink pas le
+                      // calendarEventId tout de suite (filtre display-time
+                      // côté event drawer), mais le ticket disparait des
+                      // vues de planification.
+                    }}
+                  />
+                  <span>À faire sur place</span>
+                </label>
+              </SidebarRow>
             </SidebarSection>
 
             {/* People */}

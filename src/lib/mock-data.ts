@@ -74,6 +74,10 @@ export interface Ticket {
   // Interne (admin Cetix) — exclu des vues client
   isInternal?: boolean;
   meetingId?: string;
+  // Planification sur place — si true, le ticket est candidat à être lié
+  // à un CalendarEvent WORK_LOCATION pour structurer "Ma journée".
+  requiresOnSite?: boolean;
+  calendarEventId?: string | null;
   // Approvals — when set, the ticket needs client-side approval before
   // the MSP team can start working on it
   approvers?: TicketApprover[];

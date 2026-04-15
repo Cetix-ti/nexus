@@ -86,6 +86,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Organisation non trouvée" }, { status: 400 });
     }
 
+    // Auto-propagation du flag "interne" depuis l'organisation : si l'org
+    // est marquée isInternal=true (ex: Cetix, ou plus tard Preventix), tout
+    // ticket créé pour elle est automatiquement traité comme ticket interne,
+    // même si l'appelant n'a pas passé body.isInternal=true.
+    const orgRow = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { isInternal: true },
+    });
+    const effectiveIsInternal = !!body.isInternal || !!orgRow?.isInternal;
+
     // Resolve requester by name if provided
     let requesterId = body.requesterId;
     if (!requesterId && body.requesterName && organizationId) {
@@ -176,7 +186,7 @@ export async function POST(req: Request) {
       source: body.source,
       categoryId,
       queueId,
-      isInternal: !!body.isInternal,
+      isInternal: effectiveIsInternal,
       meetingId: body.meetingId ?? null,
     });
 

@@ -280,6 +280,14 @@ model Ticket {
   // reste mais perd son lien retour (plutôt que de disparaître).
   meeting        Meeting?      @relation(fields: [meetingId], references: [id], onDelete: SetNull)
 
+  // Planification sur place — marquer un ticket "à faire sur place" le
+  // rend candidat à être lié à un CalendarEvent kind=WORK_LOCATION via
+  // calendarEventId. Le lien est filtré par organisation côté UI pour que
+  // les suggestions se limitent aux tickets du client visité.
+  requiresOnSite   Boolean        @default(false) @map("requires_on_site")
+  calendarEventId  String?        @map("calendar_event_id")
+  calendarEvent    CalendarEvent? @relation("CalendarEventLinkedTickets", fields: [calendarEventId], references: [id], onDelete: SetNull)
+
   // Approval workflow
   requiresApproval Boolean       @default(false) @map("requires_approval")
   approvalStatus   ApprovalStatus @default(NOT_REQUIRED) @map("approval_status")
@@ -296,6 +304,8 @@ model Ticket {
   linkedCalendarEvents CalendarEvent[] @relation("CalendarEventInternalTicket")
 
   @@index([organizationId, status])
+  @@index([requiresOnSite, status])
+  @@index([calendarEventId])
   @@index([assigneeId])
   @@index([requesterId])
   @@index([createdAt])
@@ -1762,6 +1772,10 @@ model CalendarEvent {
   // SetNull → si la ressource liée est supprimée, l'event reste mais perd son lien.
   internalTicket  Ticket?  @relation("CalendarEventInternalTicket", fields: [internalTicketId], references: [id], onDelete: SetNull)
   internalProject Project? @relation("CalendarEventInternalProject", fields: [internalProjectId], references: [id], onDelete: SetNull)
+  // Tickets planifiés sur cet événement (WORK_LOCATION : visite client).
+  // SetNull côté Ticket → si l'event est supprimé, les tickets liés gardent
+  // leur vie propre (juste délié).
+  linkedTickets Ticket[] @relation("CalendarEventLinkedTickets")
 
   @@index([calendarId, startsAt])
   @@index([ownerId, startsAt])

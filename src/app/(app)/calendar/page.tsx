@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -72,6 +73,17 @@ interface CalendarEvent {
   internalProjectId: string | null;
   internalTicket: { id: string; number: number; subject: string; status: string } | null;
   internalProject: { id: string; code: string; name: string; status: string } | null;
+  linkedTickets?: Array<{
+    id: string;
+    number: number;
+    subject: string;
+    status: string;
+    priority: string;
+    isInternal: boolean;
+    organizationId: string;
+    assigneeId: string | null;
+    assignee: { firstName: string; lastName: string } | null;
+  }>;
 }
 
 const KIND_ICONS = {
@@ -390,7 +402,17 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
               Calendriers
             </h3>
             <div className="space-y-1">
-              {calendars.map((c) => {
+              {/* Ordre préféré : Agenda général en tête, puis Renouvellements,
+                  puis Congés, puis le reste alphabétique. */}
+              {[...calendars]
+                .sort((a, b) => {
+                  const order: Record<string, number> = { GENERAL: 0, RENEWALS: 1, LEAVE: 2, CUSTOM: 3 };
+                  const da = order[a.kind] ?? 99;
+                  const db = order[b.kind] ?? 99;
+                  if (da !== db) return da - db;
+                  return a.name.localeCompare(b.name, "fr");
+                })
+                .map((c) => {
                 const visible = visibleCalendarIds.has(c.id);
                 return (
                   <button
@@ -636,6 +658,11 @@ function EventDetailDrawer({
             </div>
           )}
 
+          {/* Tickets liés à cette visite — planification "Ma journée". */}
+          {event.kind === "WORK_LOCATION" && (
+            <LinkedTicketsSection eventId={event.id} organizationId={event.organizationId} />
+          )}
+
           {event.recurrence && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-600">
@@ -688,6 +715,335 @@ function EventDetailDrawer({
 }
 
 // ---------------------------------------------------------------------------
+// LinkedTicketsSection — tickets planifiés sur une visite WORK_LOCATION.
+// Affiche la liste actuelle (filtrée display-time : seuls les tickets
+// requiresOnSite=true + non résolus restent) + un bouton pour ouvrir un
+// picker des autres tickets "à faire sur place" du même client, qu'on
+// peut cocher pour ajouter au plan.
+// ---------------------------------------------------------------------------
+interface LinkedTicketRow {
+  id: string;
+  number: number;
+  subject: string;
+  status: string;
+  priority: string;
+  isInternal: boolean;
+  organizationId: string;
+  assignee: { firstName: string; lastName: string } | null;
+}
+
+function LinkedTicketsSection({
+  eventId,
+  organizationId,
+}: {
+  eventId: string;
+  organizationId: string | null;
+}) {
+  const [linked, setLinked] = useState<LinkedTicketRow[]>([]);
+  const [clientPool, setClientPool] = useState<LinkedTicketRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/v1/calendar-events/${eventId}/linked-tickets`);
+      if (!res.ok) return;
+      const d = await res.json();
+      setLinked(d.linked ?? []);
+      setClientPool(d.clientOnSite ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId]);
+
+  async function addTickets(ids: string[]) {
+    if (ids.length === 0) return;
+    const res = await fetch(`/api/v1/calendar-events/${eventId}/linked-tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticketIds: ids }),
+    });
+    if (res.ok) {
+      setPickerOpen(false);
+      load();
+    }
+  }
+
+  async function removeTicket(ticketId: string) {
+    const res = await fetch(
+      `/api/v1/calendar-events/${eventId}/linked-tickets?ticketId=${ticketId}`,
+      { method: "DELETE" },
+    );
+    if (res.ok) load();
+  }
+
+  const priorityClass = (p: string): string => {
+    switch (p?.toUpperCase()) {
+      case "CRITICAL": return "text-red-600 bg-red-50 border-red-200";
+      case "HIGH": return "text-orange-600 bg-orange-50 border-orange-200";
+      case "MEDIUM": return "text-amber-600 bg-amber-50 border-amber-200";
+      default: return "text-slate-500 bg-slate-50 border-slate-200";
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-600">
+          Tickets planifiés sur cette visite
+          {linked.length > 0 && (
+            <span className="ml-1.5 text-slate-400">({linked.length})</span>
+          )}
+        </p>
+        {organizationId && (
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="text-[11.5px] font-medium text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+          >
+            <Plus className="h-3 w-3" />
+            Ajouter depuis tickets sur site
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="text-[11.5px] text-slate-400">Chargement…</p>
+      ) : linked.length === 0 ? (
+        <p className="text-[11.5px] text-slate-400">
+          Aucun ticket lié. Utilise le bouton ci-dessus pour planifier les tickets « à faire sur place » de ce client.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {linked.map((t) => (
+            <li
+              key={t.id}
+              className="flex items-center gap-2 rounded-md border border-slate-100 bg-slate-50/60 px-2 py-1.5"
+            >
+              <Link
+                href={t.isInternal ? `/internal-tickets/${t.id}` : `/tickets/${t.id}`}
+                className="flex items-center gap-2 flex-1 min-w-0"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <span className={cn(
+                  "inline-flex items-center rounded border px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wider shrink-0",
+                  priorityClass(t.priority),
+                )}>
+                  {t.priority}
+                </span>
+                <span className="text-[11px] font-mono text-slate-500 shrink-0">
+                  {t.isInternal ? "INT" : "INC"}-{1000 + t.number}
+                </span>
+                <span className="text-[12.5px] text-slate-700 truncate flex-1 hover:text-blue-600 hover:underline">
+                  {t.subject}
+                </span>
+              </Link>
+              {t.assignee && (
+                <span className="text-[10.5px] text-slate-400 shrink-0">
+                  {t.assignee.firstName[0]}. {t.assignee.lastName}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => removeTicket(t.id)}
+                className="h-5 w-5 inline-flex items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors shrink-0"
+                title="Retirer"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {pickerOpen && (
+        <OnSiteTicketPicker
+          tickets={clientPool}
+          onCancel={() => setPickerOpen(false)}
+          onAdd={addTickets}
+        />
+      )}
+    </div>
+  );
+}
+
+function OnSiteTicketPicker({
+  tickets,
+  onCancel,
+  onAdd,
+}: {
+  tickets: LinkedTicketRow[];
+  onCancel: () => void;
+  onAdd: (ids: string[]) => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  return (
+    <div
+      className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-sm p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="relative w-full max-w-lg my-4 rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-slate-200 px-5 py-4">
+          <h3 className="text-[15px] font-semibold text-slate-900">
+            Tickets « à faire sur place » chez ce client
+          </h3>
+          <p className="mt-0.5 text-[12px] text-slate-500">
+            Coche ceux que tu veux ajouter à ta planification pour cette visite.
+          </p>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto p-4 space-y-1.5">
+          {tickets.length === 0 ? (
+            <p className="text-[12px] text-slate-500 py-6 text-center">
+              Aucun autre ticket « à faire sur place » chez ce client.
+            </p>
+          ) : (
+            tickets.map((t) => {
+              const checked = selected.has(t.id);
+              return (
+                <label
+                  key={t.id}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md border px-2.5 py-2 cursor-pointer transition-colors",
+                    checked
+                      ? "border-blue-300 bg-blue-50/60"
+                      : "border-slate-200 bg-white hover:bg-slate-50",
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggle(t.id)}
+                    className="shrink-0"
+                  />
+                  <span className="text-[11px] font-mono text-slate-500 shrink-0">
+                    INC-{1000 + t.number}
+                  </span>
+                  <span className="text-[12.5px] text-slate-800 truncate flex-1">
+                    {t.subject}
+                  </span>
+                  {t.assignee && (
+                    <span className="text-[10.5px] text-slate-400 shrink-0">
+                      {t.assignee.firstName[0]}. {t.assignee.lastName}
+                    </span>
+                  )}
+                </label>
+              );
+            })
+          )}
+        </div>
+        <div className="border-t border-slate-200 px-5 py-3 flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onCancel}>
+            Annuler
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={selected.size === 0}
+            onClick={() => onAdd(Array.from(selected))}
+          >
+            Ajouter ({selected.size})
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EventTile — rendu d'un événement dans la grille mois/all-day/time.
+// Pour WORK_LOCATION : avatar agent à gauche, titre au centre, nom du
+// client à droite. Autres kinds : icône + titre classique.
+// ---------------------------------------------------------------------------
+function EventTile({
+  event,
+  onClick,
+  compact = true,
+}: {
+  event: CalendarEvent;
+  onClick: () => void;
+  compact?: boolean;
+}) {
+  const Icon = KIND_ICONS[event.kind] ?? CalIcon;
+  const isWorkLoc = event.kind === "WORK_LOCATION";
+  const ownerInitials = event.owner
+    ? `${event.owner.firstName?.[0] ?? ""}${event.owner.lastName?.[0] ?? ""}`.toUpperCase()
+    : "";
+
+  if (isWorkLoc) {
+    return (
+      <button
+        onClick={onClick}
+        className={cn(
+          "flex items-center gap-1.5 w-full px-1.5 py-0.5 rounded text-[10.5px] text-left hover:brightness-95 transition-all min-w-0",
+        )}
+        style={{ backgroundColor: event.calendar.color + "22", color: event.calendar.color }}
+        title={`${event.title}${event.organization ? ` · ${event.organization.name}` : ""}${event.owner ? ` · ${event.owner.firstName} ${event.owner.lastName}` : ""}`}
+      >
+        {/* Avatar agent à gauche */}
+        {event.owner?.avatar ? (
+          <img
+            src={event.owner.avatar}
+            alt={`${event.owner.firstName} ${event.owner.lastName}`}
+            className="h-4 w-4 rounded-full object-cover ring-1 ring-white/60 shrink-0"
+          />
+        ) : event.owner ? (
+          <span
+            className="h-4 w-4 rounded-full flex items-center justify-center shrink-0 text-[8px] font-semibold text-white"
+            style={{ backgroundColor: event.calendar.color }}
+          >
+            {ownerInitials}
+          </span>
+        ) : (
+          <Icon className="h-2.5 w-2.5 shrink-0" />
+        )}
+        {/* Titre (flex-1, truncate) */}
+        <span className="truncate flex-1 min-w-0">{event.title}</span>
+        {/* Client à droite */}
+        {event.organization && (
+          <span
+            className={cn(
+              "shrink-0 font-medium opacity-75 truncate",
+              compact ? "max-w-[60px] text-[9.5px]" : "max-w-[120px]",
+            )}
+          >
+            {event.organization.name}
+          </span>
+        )}
+      </button>
+    );
+  }
+
+  // Autres kinds — rendu classique
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] text-left truncate hover:brightness-95 transition-all"
+      style={{ backgroundColor: event.calendar.color + "22", color: event.calendar.color }}
+      title={event.title}
+    >
+      <Icon className="h-2.5 w-2.5 shrink-0" />
+      <span className="truncate">{event.title}</span>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Month grid (6 weeks × 7 days)
 // ---------------------------------------------------------------------------
 function MonthGrid({
@@ -736,21 +1092,9 @@ function MonthGrid({
                 </span>
               </div>
               <div className="flex-1 overflow-y-auto flex flex-col gap-0.5 min-h-0">
-                {dayEvents.slice(0, 4).map((e) => {
-                  const Icon = KIND_ICONS[e.kind] ?? CalIcon;
-                  return (
-                    <button
-                      key={e.id}
-                      onClick={() => onEventClick(e)}
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] text-left truncate hover:brightness-95 transition-all"
-                      style={{ backgroundColor: e.calendar.color + "22", color: e.calendar.color }}
-                      title={e.title}
-                    >
-                      <Icon className="h-2.5 w-2.5 shrink-0" />
-                      <span className="truncate">{e.title}</span>
-                    </button>
-                  );
-                })}
+                {dayEvents.slice(0, 4).map((e) => (
+                  <EventTile key={e.id} event={e} onClick={() => onEventClick(e)} />
+                ))}
                 {dayEvents.length > 4 && (
                   <span className="text-[9.5px] text-slate-500 px-1.5">
                     +{dayEvents.length - 4} autres
@@ -865,21 +1209,9 @@ function TimeGrid({
           const { allDay } = splitDayEvents(d);
           return (
             <div key={d.toISOString()} className="border-l border-slate-200 first:border-l-0 p-1 min-h-[28px] flex flex-col gap-0.5">
-              {allDay.map((e) => {
-                const Icon = KIND_ICONS[e.kind] ?? CalIcon;
-                return (
-                  <button
-                    key={e.id}
-                    onClick={() => onEventClick(e)}
-                    className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] text-left truncate hover:brightness-95 transition-all"
-                    style={{ backgroundColor: e.calendar.color + "22", color: e.calendar.color }}
-                    title={e.title}
-                  >
-                    <Icon className="h-2.5 w-2.5 shrink-0" />
-                    <span className="truncate">{e.title}</span>
-                  </button>
-                );
-              })}
+              {allDay.map((e) => (
+                <EventTile key={e.id} event={e} onClick={() => onEventClick(e)} compact={false} />
+              ))}
             </div>
           );
         })}
@@ -1009,7 +1341,9 @@ function CreateEventModal({
     "";
   const [calendarId, setCalendarId] = useState(defaultCalendarId);
   const [title, setTitle] = useState(editing?.title ?? "");
-  const [kind, setKind] = useState<CalendarEvent["kind"]>(editing?.kind ?? "OTHER");
+  // Défaut type = WORK_LOCATION (~95% des événements à la création dans
+  // l'agenda général). En édition, on respecte le kind existant.
+  const [kind, setKind] = useState<CalendarEvent["kind"]>(editing?.kind ?? "WORK_LOCATION");
   const [startDate, setStartDate] = useState(initStart.date);
   const [startTime, setStartTime] = useState(initStart.time);
   const [endDate, setEndDate] = useState(initEnd.date);
@@ -1040,8 +1374,12 @@ function CreateEventModal({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [users, setUsers] = useState<Array<{ id: string; name: string }>>([]);
-  const [ownerId, setOwnerId] = useState<string>(editing?.ownerId ?? "");
+  const [users, setUsers] = useState<Array<{ id: string; name: string; avatar: string | null }>>([]);
+  const { data: session } = useSession();
+  const currentUserId = (session?.user as { id?: string } | undefined)?.id ?? "";
+  // Défaut = l'agent qui crée l'événement (gain de temps : 95% des
+  // WORK_LOCATION sont "ma propre localisation"). Modifiable au besoin.
+  const [ownerId, setOwnerId] = useState<string>(editing?.ownerId ?? currentUserId);
   const [internalTickets, setInternalTickets] = useState<Array<{ id: string; number: number; subject: string }>>([]);
   const [internalProjects, setInternalProjects] = useState<Array<{ id: string; code: string; name: string }>>([]);
   const [internalTicketId, setInternalTicketId] = useState<string>(editing?.internalTicketId ?? "");
@@ -1050,8 +1388,12 @@ function CreateEventModal({
   useEffect(() => {
     fetch("/api/v1/users")
       .then((r) => (r.ok ? r.json() : []))
-      .then((arr: Array<{ id: string; name: string; firstName: string; lastName: string }>) => {
-        setUsers(arr.map((u) => ({ id: u.id, name: u.name || `${u.firstName} ${u.lastName}` })));
+      .then((arr: Array<{ id: string; name: string; firstName: string; lastName: string; avatar: string | null }>) => {
+        setUsers(arr.map((u) => ({
+          id: u.id,
+          name: u.name || `${u.firstName} ${u.lastName}`,
+          avatar: u.avatar ?? null,
+        })));
       })
       .catch(() => {});
     // Pré-charge tickets + projets internes pour le sélecteur de lien.
@@ -1078,6 +1420,14 @@ function CreateEventModal({
     const general = calendars.find((c) => c.kind === "GENERAL")?.id ?? calendars[0]?.id;
     if (general) setCalendarId(general);
   }, [calendars, calendarId, isEdit]);
+
+  // Même logique pour la session : si elle hydrate après le premier render,
+  // synchronise ownerId sur moi-même tant qu'on n'a rien choisi.
+  useEffect(() => {
+    if (isEdit) return;
+    if (ownerId) return;
+    if (currentUserId) setOwnerId(currentUserId);
+  }, [currentUserId, ownerId, isEdit]);
 
   // Synchronise le kind avec la nature du calendrier sélectionné
   // (uniquement en mode création — en édition on respecte le kind existant).
@@ -1199,6 +1549,17 @@ function CreateEventModal({
   // "chez un client" : type OTHER (défaut calendrier général), MEETING
   // (réunion possiblement sur site), WORK_LOCATION (sur site client).
   const showClientSite = kind === "OTHER" || kind === "MEETING" || kind === "WORK_LOCATION";
+  // Ordre préféré du dropdown calendrier : GENERAL d'abord, puis RENEWALS,
+  // LEAVE, puis le reste par nom. Le fait que le défaut soit GENERAL est
+  // décidé plus haut (defaultCalendarId) mais la liste visible aussi doit
+  // le montrer en tête.
+  const calKindOrder: Record<string, number> = { GENERAL: 0, RENEWALS: 1, LEAVE: 2, CUSTOM: 3 };
+  const sortedCalendars = [...calendars].sort((a, b) => {
+    const da = calKindOrder[a.kind] ?? 99;
+    const db = calKindOrder[b.kind] ?? 99;
+    if (da !== db) return da - db;
+    return a.name.localeCompare(b.name, "fr");
+  });
 
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4 sm:p-6" onClick={onClose}>
@@ -1231,27 +1592,32 @@ function CreateEventModal({
               <Select value={calendarId} onValueChange={setCalendarId}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {calendars.map((c) => (
+                  {sortedCalendars.map((c) => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <Input label="Titre" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex: Point hebdo HVAC, Installation baie" />
+            <Input label="Titre" value={title} onChange={(e) => setTitle(e.target.value)} />
             <div>
               <label className="text-[11px] font-medium text-slate-500">Type</label>
               <Select value={kind} onValueChange={(v) => setKind(v as CalendarEvent["kind"])}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="WORK_LOCATION">Localisation de travail</SelectItem>
                   <SelectItem value="MEETING">Rencontre interne</SelectItem>
                   <SelectItem value="RENEWAL">Renouvellement</SelectItem>
                   <SelectItem value="LEAVE">Congé / absence</SelectItem>
-                  <SelectItem value="WORK_LOCATION">Localisation de travail</SelectItem>
                   <SelectItem value="PERSONAL">Personnel</SelectItem>
                   <SelectItem value="OTHER">Autre</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {/* Case "toute la journée" — juste sous le dropdown Type. */}
+            <label className="flex items-center gap-2 text-[12px] text-slate-600">
+              <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />
+              Toute la journée
+            </label>
 
             <div className="grid grid-cols-2 gap-2">
               <Input type="date" label="Début" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -1261,10 +1627,6 @@ function CreateEventModal({
               <Input type="date" label="Fin" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               {!allDay && <Input type="time" label="Heure" value={endTime} onChange={(e) => setEndTime(e.target.value)} />}
             </div>
-            <label className="flex items-center gap-2 text-[12px] text-slate-600">
-              <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />
-              Toute la journée
-            </label>
 
             <div>
               <label className="text-[11px] font-medium text-slate-500">Récurrence</label>

@@ -78,8 +78,8 @@ export const BUILTIN_WIDGETS: WidgetDefinition[] = [
   { id: "w_dash_kpis", name: "KPIs Service Desk", description: "Tickets ouverts, non assignés, en retard, SLA, résolution, aujourd'hui", category: "Tableau de bord", icon: "Ticket", defaultSize: "full", availableIn: ["dashboard"], builtIn: true },
   { id: "w_dash_volume", name: "Volume des tickets (7j)", description: "Graphique du volume de tickets par jour", category: "Tableau de bord", icon: "BarChart3", defaultSize: "md", availableIn: ["dashboard"], builtIn: true },
   { id: "w_dash_calendar", name: "Calendrier", description: "Vue mois/semaine/jour + création rapide d'événements", category: "Tableau de bord", icon: "CalendarDays", defaultSize: "full", availableIn: ["dashboard"], builtIn: true },
-  { id: "w_dash_recent", name: "Tickets récents", description: "Derniers tickets ouverts", category: "Tableau de bord", icon: "Clock", defaultSize: "md", availableIn: ["dashboard"], builtIn: true },
-  { id: "w_dash_my", name: "Mes tickets assignés", description: "Tickets assignés à moi", category: "Tableau de bord", icon: "Ticket", defaultSize: "md", availableIn: ["dashboard"], builtIn: true },
+  { id: "w_dash_unassigned", name: "Tickets récents non assignés", description: "Derniers tickets ouverts qui n'ont pas encore d'agent", category: "Tableau de bord", icon: "Clock", defaultSize: "md", availableIn: ["dashboard"], builtIn: true },
+  { id: "w_dash_my", name: "Mes tickets assignés", description: "Tickets assignés à moi (pleine largeur)", category: "Tableau de bord", icon: "Ticket", defaultSize: "full", availableIn: ["dashboard"], builtIn: true },
   { id: "w_dash_orgs", name: "Tickets par organisation", description: "Top organisations par nombre de tickets", category: "Tableau de bord", icon: "Building2", defaultSize: "full", availableIn: ["dashboard"], builtIn: true },
 ];
 

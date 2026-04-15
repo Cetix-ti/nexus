@@ -181,6 +181,16 @@ interface DayCalendarEvent {
   location: string | null;
   meeting: { id: string; status: string } | null;
   calendar: { name: string; color: string };
+  organization: { id: string; name: string } | null;
+  owner: { id: string; firstName: string; lastName: string; avatar: string | null } | null;
+  linkedTickets?: Array<{
+    id: string;
+    number: number;
+    subject: string;
+    priority: string;
+    status: string;
+    isInternal: boolean;
+  }>;
 }
 
 export default function MyDayPage() {
@@ -412,30 +422,64 @@ export default function MyDayPage() {
                 ev.kind === "PERSONAL" ? User :
                 CalIcon;
               const href = ev.meeting ? `/calendar/meetings/${ev.meeting.id}` : "/calendar";
+              const linked = ev.linkedTickets ?? [];
               return (
-                <Link
-                  key={ev.id}
-                  href={href}
-                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50/80 transition-colors"
-                >
-                  <span
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md shrink-0"
-                    style={{ backgroundColor: ev.calendar.color + "22", color: ev.calendar.color }}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium text-slate-900 truncate">{ev.title}</p>
-                    {ev.location && (
-                      <p className="text-[11px] text-slate-500 truncate">{ev.location}</p>
+                <div key={ev.id} className="px-4 py-2.5 hover:bg-slate-50/80 transition-colors">
+                  <Link href={href} className="flex items-center gap-3">
+                    {/* Avatar agent pour WORK_LOCATION, sinon l'icône kind */}
+                    {ev.kind === "WORK_LOCATION" && ev.owner?.avatar ? (
+                      <img
+                        src={ev.owner.avatar}
+                        alt={`${ev.owner.firstName} ${ev.owner.lastName}`}
+                        className="h-7 w-7 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
+                      />
+                    ) : (
+                      <span
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md shrink-0"
+                        style={{ backgroundColor: ev.calendar.color + "22", color: ev.calendar.color }}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
                     )}
-                  </div>
-                  <span className="text-[11.5px] tabular-nums text-slate-500 shrink-0">
-                    {ev.allDay
-                      ? "Toute la journée"
-                      : `${new Date(ev.startsAt).toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })} – ${new Date(ev.endsAt).toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })}`}
-                  </span>
-                </Link>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-slate-900 truncate">
+                        {ev.title}
+                        {ev.organization && (
+                          <span className="ml-1.5 text-[11.5px] font-normal text-slate-500">
+                            · {ev.organization.name}
+                          </span>
+                        )}
+                      </p>
+                      {ev.location && (
+                        <p className="text-[11px] text-slate-500 truncate">{ev.location}</p>
+                      )}
+                    </div>
+                    <span className="text-[11.5px] tabular-nums text-slate-500 shrink-0">
+                      {ev.allDay
+                        ? "Toute la journée"
+                        : `${new Date(ev.startsAt).toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })} – ${new Date(ev.endsAt).toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })}`}
+                    </span>
+                  </Link>
+
+                  {/* Tickets planifiés sur cette visite — listés sous l'event */}
+                  {linked.length > 0 && (
+                    <ul className="mt-1.5 ml-10 space-y-0.5">
+                      {linked.map((t) => (
+                        <li key={t.id}>
+                          <Link
+                            href={t.isInternal ? `/internal-tickets/${t.id}` : `/tickets/${t.id}`}
+                            className="flex items-center gap-2 text-[11.5px] text-slate-600 hover:text-blue-700"
+                          >
+                            <span className="font-mono text-slate-400 shrink-0">
+                              {t.isInternal ? "INT" : "INC"}-{1000 + t.number}
+                            </span>
+                            <span className="truncate">{t.subject}</span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               );
             })}
           </div>

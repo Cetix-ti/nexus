@@ -16,6 +16,7 @@ export interface UiOrganization {
   domain: string;
   phone: string;
   logo: string | null;
+  isInternal: boolean;
 }
 
 const COLORS = ["bg-blue-600", "bg-emerald-600", "bg-violet-600", "bg-amber-600", "bg-rose-600", "bg-cyan-600", "bg-indigo-600", "bg-pink-600"];
@@ -94,6 +95,7 @@ export async function listOrganizations(search?: string): Promise<UiOrganization
     domain: o.domain || `${o.slug}.com`,
     phone: "—",
     logo: o.logo || null,
+    isInternal: o.isInternal,
   }));
 }
 
@@ -169,6 +171,10 @@ export async function updateOrganization(
     country: string;
     logo: string;
     logoOverridden: boolean;
+    // Marquer une organisation comme "interne" fait que tous les tickets
+    // créés pour elle sont classés comme tickets internes (administratifs
+    // Cetix) et donc exclus des vues clients.
+    isInternal: boolean;
   }>
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

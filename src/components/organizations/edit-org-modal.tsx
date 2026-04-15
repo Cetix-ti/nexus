@@ -25,6 +25,7 @@ export interface EditOrgModalOrg {
   plan: string;
   domain: string;
   isActive: boolean;
+  isInternal?: boolean;
   clientCode?: string | null;
   website?: string | null;
   description?: string | null;
@@ -87,6 +88,9 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
   const [plan, setPlan] = useState("Standard");
   const [description, setDescription] = useState("");
   const [active, setActive] = useState(true);
+  // Flag "traiter comme interne" — tous les tickets créés pour cette org
+  // seront classés comme tickets internes (admin Cetix / Preventix).
+  const [treatAsInternal, setTreatAsInternal] = useState(false);
   const [primaryColor, setPrimaryColor] = useState(PRIMARY_SWATCHES[0]);
   const [secondaryColor, setSecondaryColor] = useState(SECONDARY_SWATCHES[0]);
   const [emailFooter, setEmailFooter] = useState("");
@@ -121,6 +125,7 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
       setPlan(org.plan || "Standard");
       setDescription(org.description || "");
       setActive(!!org.isActive);
+      setTreatAsInternal(!!org.isInternal);
       setPrimaryColor(PRIMARY_SWATCHES[0]);
       setSecondaryColor(SECONDARY_SWATCHES[0]);
       setEmailFooter("");
@@ -171,6 +176,7 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
           name,
           domains,
           isActive: active,
+          isInternal: treatAsInternal,
           clientCode: clientCode.trim().toUpperCase() || null,
           website: website || null,
           phone: phone || null,
@@ -564,6 +570,20 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
                   </p>
                 </div>
                 <Switch checked={active} onCheckedChange={setActive} />
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
+                <div className="flex-1 pr-3">
+                  <p className="text-[13px] font-medium text-slate-900">
+                    Traiter les tickets de cette compagnie comme des tickets internes
+                  </p>
+                  <p className="text-[12.5px] text-slate-500">
+                    À activer pour Cetix (admin) ou toute filiale administrative
+                    (ex: Preventix). Les tickets créés pour cette org seront exclus
+                    des vues clients et apparaitront dans « Tickets internes ».
+                  </p>
+                </div>
+                <Switch checked={treatAsInternal} onCheckedChange={setTreatAsInternal} />
               </div>
             </>
           )}

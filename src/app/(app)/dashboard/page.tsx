@@ -43,58 +43,83 @@ const EMPTY: DashboardData = {
 // v2 = bump après retrait du widget "priorité" + ajout du widget "calendrier".
 // Les layouts en localStorage antérieurs pointent vers les anciens IDs ;
 // le loader ci-dessous les migre.
-const LAYOUT_KEY = "nexus:dashboard:layout:v2";
-const LEGACY_LAYOUT_KEY = "nexus:dashboard:layout";
+// v3 = Volume+Tickets non-assignés côte-à-côte (hauteurs égales), Mes
+// tickets sur toute la largeur, widget "Tickets récents" remplacé par
+// "Tickets récents non assignés".
+const LAYOUT_KEY = "nexus:dashboard:layout:v3";
+const LEGACY_LAYOUT_KEYS = ["nexus:dashboard:layout:v2", "nexus:dashboard:layout"];
 const DEFAULT_ITEMS: DashboardItem[] = [
   { id: "d_kpis", widgetId: "w_dash_kpis", w: 10, h: 2 },
-  // Le calendrier prend la vedette — il occupe toute la largeur en haut
-  // du dashboard. Hauteur généreuse pour afficher une vue mois complète.
+  // Le calendrier prend la vedette — pleine largeur en haut du dashboard.
   { id: "d_calendar", widgetId: "w_dash_calendar", w: 10, h: 10 },
-  { id: "d_volume", widgetId: "w_dash_volume", w: 5, h: 4 },
-  { id: "d_recent", widgetId: "w_dash_recent", w: 5, h: 5 },
-  { id: "d_my", widgetId: "w_dash_my", w: 5, h: 5 },
+  // Volume et Tickets non assignés côte-à-côte, même hauteur.
+  { id: "d_volume", widgetId: "w_dash_volume", w: 5, h: 5 },
+  { id: "d_unassigned", widgetId: "w_dash_unassigned", w: 5, h: 5 },
+  // Mes tickets — pleine largeur, seul sur sa ligne.
+  { id: "d_my", widgetId: "w_dash_my", w: 10, h: 5 },
   { id: "d_orgs", widgetId: "w_dash_orgs", w: 10, h: 4 },
 ];
 
 function loadLayout(): DashboardItem[] {
   try {
-    // v2 d'abord.
     let raw = localStorage.getItem(LAYOUT_KEY);
-    if (!raw) raw = localStorage.getItem(LEGACY_LAYOUT_KEY);
+    if (!raw) {
+      for (const k of LEGACY_LAYOUT_KEYS) {
+        raw = localStorage.getItem(k);
+        if (raw) break;
+      }
+    }
     if (!raw) return DEFAULT_ITEMS;
     const parsed = JSON.parse(raw) as DashboardItem[];
-    // Retire le widget "priorité" retiré du dashboard par défaut ; l'utilisateur
-    // peut le re-ajouter via la sidebar s'il en veut vraiment un.
+    // Retire les widgets abandonnés (priorité, ancien "recent").
     const filtered = parsed.filter(
-      (it) => it.widgetId !== "w_dash_priority" && it.widgetId !== "priority_chart",
+      (it) =>
+        it.widgetId !== "w_dash_priority" &&
+        it.widgetId !== "priority_chart" &&
+        it.widgetId !== "w_dash_recent" && // remplacé par "unassigned"
+        it.widgetId !== "recent_tickets",
     );
     // Migre les anciens IDs.
     const migrated = filtered.map((item) => {
       if (item.widgetId === "kpis") return { ...item, widgetId: "w_dash_kpis" };
       if (item.widgetId === "ticket_volume") return { ...item, widgetId: "w_dash_volume" };
-      if (item.widgetId === "recent_tickets") return { ...item, widgetId: "w_dash_recent" };
       if (item.widgetId === "my_tickets") return { ...item, widgetId: "w_dash_my" };
       if (item.widgetId === "org_chart") return { ...item, widgetId: "w_dash_orgs" };
       return item;
     });
-    // Garantit qu'on a un widget calendrier — ajoute-le en haut s'il manque.
-    const hasCalendar = migrated.some((it) => it.widgetId === "w_dash_calendar");
+
+    // Normalisation côté tailles pour respecter la nouvelle maquette :
+    //   volume+unassigned côte-à-côte (w=5, h=5), my pleine largeur (w=10)
+    const normalized = migrated.map((item) => {
+      if (item.widgetId === "w_dash_volume") return { ...item, w: 5, h: 5 };
+      if (item.widgetId === "w_dash_unassigned") return { ...item, w: 5, h: 5 };
+      if (item.widgetId === "w_dash_my") return { ...item, w: 10, h: 5 };
+      return item;
+    });
+
+    // Garantit la présence des widgets clés.
+    const hasCalendar = normalized.some((it) => it.widgetId === "w_dash_calendar");
     if (!hasCalendar) {
-      // On le glisse juste après les KPIs s'ils existent, sinon en premier.
-      const kpiIdx = migrated.findIndex((it) => it.widgetId === "w_dash_kpis");
+      const kpiIdx = normalized.findIndex((it) => it.widgetId === "w_dash_kpis");
       const calItem: DashboardItem = { id: "d_calendar", widgetId: "w_dash_calendar", w: 10, h: 10 };
-      if (kpiIdx >= 0) migrated.splice(kpiIdx + 1, 0, calItem);
-      else migrated.unshift(calItem);
+      if (kpiIdx >= 0) normalized.splice(kpiIdx + 1, 0, calItem);
+      else normalized.unshift(calItem);
     }
-    return migrated;
+    const hasUnassigned = normalized.some((it) => it.widgetId === "w_dash_unassigned");
+    if (!hasUnassigned) {
+      const volumeIdx = normalized.findIndex((it) => it.widgetId === "w_dash_volume");
+      const unItem: DashboardItem = { id: "d_unassigned", widgetId: "w_dash_unassigned", w: 5, h: 5 };
+      if (volumeIdx >= 0) normalized.splice(volumeIdx + 1, 0, unItem);
+      else normalized.push(unItem);
+    }
+    return normalized;
   } catch {}
   return DEFAULT_ITEMS;
 }
 function saveLayout(items: DashboardItem[]) {
   try {
     localStorage.setItem(LAYOUT_KEY, JSON.stringify(items));
-    // Nettoie l'ancienne clé pour éviter qu'elle ne revive en mode fallback.
-    localStorage.removeItem(LEGACY_LAYOUT_KEY);
+    for (const k of LEGACY_LAYOUT_KEYS) localStorage.removeItem(k);
   } catch {}
 }
 
@@ -146,8 +171,11 @@ export default function DashboardPage() {
             <CalendarBoard embedded />
           </div>
         );
-      case "w_dash_recent":
-        return <RecentTickets tickets={data.recentTickets} title="Tickets récents" />;
+      case "w_dash_unassigned": {
+        // Tickets récents NON assignés — priorisés pour attribution rapide.
+        const unassigned = (data.recentTickets ?? []).filter((t: { assigneeName?: string | null }) => !t.assigneeName);
+        return <RecentTickets tickets={unassigned} title="Tickets récents non assignés" />;
+      }
       case "w_dash_my":
         return <RecentTickets tickets={data.myTickets} title="Mes tickets" showAssignee={false} />;
       case "w_dash_orgs":

@@ -61,6 +61,28 @@ export async function GET(req: Request) {
       internalTicket: { select: { id: true, number: true, subject: true, status: true } },
       internalProject: { select: { id: true, code: true, name: true, status: true } },
       site: { select: { id: true, name: true, city: true } },
+      linkedTickets: {
+        // Filtre display-time : un ticket qui n'est plus "requiresOnSite"
+        // OU qui est résolu/fermé/annulé disparait de la liste planifiée
+        // sans qu'on ait à toucher la DB. Si l'utilisateur ré-active le
+        // flag, le ticket revient automatiquement.
+        where: {
+          requiresOnSite: true,
+          status: { notIn: ["RESOLVED", "CLOSED", "CANCELLED"] },
+        },
+        select: {
+          id: true,
+          number: true,
+          subject: true,
+          status: true,
+          priority: true,
+          isInternal: true,
+          organizationId: true,
+          assigneeId: true,
+          assignee: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { priority: "desc" },
+      },
     },
     orderBy: { startsAt: "asc" },
   });

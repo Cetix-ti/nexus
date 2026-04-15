@@ -140,6 +140,8 @@ function flattenDetail(t: PrismaTicketDetail): UiTicket {
     }),
     projectId: t.projectId ?? undefined,
     isInternal: t.isInternal ?? false,
+    requiresOnSite: t.requiresOnSite ?? false,
+    calendarEventId: t.calendarEventId ?? null,
     meetingId: t.meetingId ?? undefined,
     approvalStatus: (t.approvalStatus?.toLowerCase() as UiTicket["approvalStatus"]) ?? undefined,
     approvers: (t.approvals ?? []).map((a) => ({
@@ -191,6 +193,8 @@ function flattenList(t: PrismaTicketList): UiTicket {
     activities: [],
     projectId: t.projectId ?? undefined,
     isInternal: t.isInternal ?? false,
+    requiresOnSite: t.requiresOnSite ?? false,
+    calendarEventId: t.calendarEventId ?? null,
     meetingId: t.meetingId ?? undefined,
     approvalStatus: (t.approvalStatus?.toLowerCase() as UiTicket["approvalStatus"]) ?? undefined,
     approvers: (t.approvals ?? []).map((a) => ({
@@ -363,6 +367,8 @@ export async function updateTicket(
     dueAt: string | null;
     isEscalated: boolean;
     projectId: string | null;
+    requiresOnSite: boolean;
+    calendarEventId: string | null;
   }>,
   userId?: string,
 ): Promise<UiTicket> {
@@ -386,6 +392,7 @@ export async function updateTicket(
   if (patch.type !== undefined) data.type = typeToDb(patch.type) as any;
   if (patch.source !== undefined) data.source = patch.source.toUpperCase() as any;
   if (patch.isEscalated !== undefined) data.isEscalated = patch.isEscalated;
+  if (patch.requiresOnSite !== undefined) data.requiresOnSite = patch.requiresOnSite;
   if (patch.dueAt !== undefined) {
     data.dueAt = patch.dueAt ? new Date(patch.dueAt) : null;
   }
@@ -424,6 +431,11 @@ export async function updateTicket(
   if (patch.projectId !== undefined) {
     data.project = patch.projectId
       ? { connect: { id: patch.projectId } }
+      : { disconnect: true };
+  }
+  if (patch.calendarEventId !== undefined) {
+    data.calendarEvent = patch.calendarEventId
+      ? { connect: { id: patch.calendarEventId } }
       : { disconnect: true };
   }
 
