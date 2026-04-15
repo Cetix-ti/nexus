@@ -477,7 +477,41 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
           // Match org par domaine : priorité au sender original.
           const domain = actualEmail.split("@")[1] || "";
           let org = domainMap.get(domain);
-          if (!org && forward.isForward) {
+
+          // Si on ne trouve PAS d'org pour le vrai expéditeur d'un courriel
+          // transféré, on ne doit PAS attribuer le ticket au forwarder (ex:
+          // Cetix). Sinon un courriel externe (jdoe@vdsa.ca) transféré par
+          // Bruno à billets@cetix.ca serait classé comme ticket interne
+          // Cetix — faux. On crée donc une org "auto" basée sur le domaine
+          // du vrai sender pour capturer le client même sans config préalable.
+          if (!org && forward.isForward && actualEmail !== senderEmail) {
+            // Auto-création d'une org basique pour ne pas perdre le ticket.
+            // L'admin pourra ensuite la fusionner / renommer depuis
+            // /organisations. Le slug est dérivé du domaine.
+            const slug = domain.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || `auto-${Date.now()}`;
+            const niceName = domain
+              .split(".")
+              .slice(0, -1)
+              .join(".")
+              .replace(/[-_]/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase()) || domain;
+            const created = await prisma.organization.create({
+              data: {
+                name: niceName,
+                slug,
+                domain,
+                domains: [domain],
+                isActive: true,
+              },
+            });
+            org = { id: created.id, name: created.name };
+            domainMap.set(domain, org);
+          }
+
+          // Dernier fallback (non-forward ou forward sans sender extrait) :
+          // domaine du sender réel du courriel reçu — typiquement une org
+          // client qui écrit directement.
+          if (!org) {
             const forwarderDomain = senderEmail.split("@")[1] || "";
             org = domainMap.get(forwarderDomain);
           }
@@ -485,6 +519,14 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
             skipped++;
             continue;
           }
+
+          // Récupère le flag isInternal de l'org pour marquer le ticket
+          // correctement (évite qu'un courriel à Cetix soit classé comme
+          // ticket client).
+          const orgRow = await prisma.organization.findUnique({
+            where: { id: org.id },
+            select: { isInternal: true },
+          });
 
           const contactId = await resolveContact(actualEmail, actualName, org.id);
           const creator = await prisma.user.findFirst({
@@ -499,7 +541,8 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
 
           // Clé: on stocke l'HTML SANITIZÉ dans descriptionHtml (le full
           // fil Outlook est conservé), et un plain extrait pour la recherche
-          // et le fallback.
+          // et le fallback. isInternal propagé depuis l'org pour que les
+          // tickets Cetix atterrissent dans /internal-tickets.
           await prisma.ticket.create({
             data: {
               organizationId: org.id,
@@ -514,6 +557,7 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
               source: "EMAIL",
               externalSource: "email",
               externalId: messageId,
+              isInternal: !!orgRow?.isInternal,
             },
           });
           created++;

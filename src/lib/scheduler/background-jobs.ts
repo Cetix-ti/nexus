@@ -92,7 +92,9 @@ export function startBackgroundJobs() {
 
   scheduleJob({
     name: "email-to-ticket",
-    intervalMs: Number(process.env.EMAIL_SYNC_INTERVAL_MS) || 60_000,
+    // 30s par défaut — proche temps réel pour l'ingestion des tickets
+    // clients entrants sur billets@cetix.ca. Override via env si besoin.
+    intervalMs: Number(process.env.EMAIL_SYNC_INTERVAL_MS) || 30_000,
     isRunning: false,
     lastRun: null,
     lastError: null,
