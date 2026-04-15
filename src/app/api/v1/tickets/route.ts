@@ -27,6 +27,13 @@ export async function GET(req: Request) {
     // includeMonitoring=true pour que le dashboard "Alertes monitoring"
     // puisse les récupérer. Par défaut exclus des vues tickets classiques.
     includeMonitoring: url.searchParams.get("includeMonitoring") === "true",
+    // internal=true → seulement internes (admin Cetix) ; "all" → tout.
+    internal:
+      url.searchParams.get("internal") === "true"
+        ? true
+        : url.searchParams.get("internal") === "all"
+        ? "all"
+        : false,
   });
   return NextResponse.json(tickets);
 }

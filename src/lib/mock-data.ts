@@ -71,6 +71,9 @@ export interface Ticket {
   comments: TicketComment[];
   activities: TicketActivity[];
   projectId?: string;
+  // Interne (admin Cetix) — exclu des vues client
+  isInternal?: boolean;
+  meetingId?: string;
   // Approvals — when set, the ticket needs client-side approval before
   // the MSP team can start working on it
   approvers?: TicketApprover[];

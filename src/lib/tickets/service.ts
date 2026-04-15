@@ -139,6 +139,8 @@ function flattenDetail(t: PrismaTicketDetail): UiTicket {
       };
     }),
     projectId: t.projectId ?? undefined,
+    isInternal: t.isInternal ?? false,
+    meetingId: t.meetingId ?? undefined,
     approvalStatus: (t.approvalStatus?.toLowerCase() as UiTicket["approvalStatus"]) ?? undefined,
     approvers: (t.approvals ?? []).map((a) => ({
       id: a.id,
@@ -188,6 +190,8 @@ function flattenList(t: PrismaTicketList): UiTicket {
     comments: [],
     activities: [],
     projectId: t.projectId ?? undefined,
+    isInternal: t.isInternal ?? false,
+    meetingId: t.meetingId ?? undefined,
     approvalStatus: (t.approvalStatus?.toLowerCase() as UiTicket["approvalStatus"]) ?? undefined,
     approvers: (t.approvals ?? []).map((a) => ({
       id: a.id,
@@ -221,6 +225,12 @@ export async function listTickets(options?: {
    * `includeMonitoring: true` pour les endpoints qui veulent vraiment tout.
    */
   includeMonitoring?: boolean;
+  /**
+   * Filtre interne/client. Par défaut (undefined) = que des tickets
+   * clients (isInternal=false). `true` = seulement internes, `"all"` =
+   * tout.
+   */
+  internal?: boolean | "all";
 }): Promise<UiTicket[]> {
   const where: Prisma.TicketWhereInput = {};
   if (options?.organizationId) where.organizationId = options.organizationId;
@@ -232,6 +242,10 @@ export async function listTickets(options?: {
       { subject: { contains: options.search, mode: "insensitive" } },
       { description: { contains: options.search, mode: "insensitive" } },
     ];
+  }
+  // Filtre isInternal : par défaut cache les internes dans les vues client.
+  if (options?.internal !== "all") {
+    where.isInternal = options?.internal === true;
   }
   // Exclure les tickets monitoring sauf si explicitement demandé.
   if (!options?.includeMonitoring) {

@@ -90,6 +90,14 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    label: "Équipe",
+    items: [
+      { label: "Calendrier", href: "/calendar", icon: CalendarDays },
+      { label: "Tickets internes", href: "/internal-tickets", icon: Ticket },
+      { label: "Projets internes", href: "/internal-projects", icon: FolderKanban },
+    ],
+  },
+  {
     label: "Ressources",
     items: [
       { label: "Base de connaissances", href: "/knowledge", icon: BookOpen },

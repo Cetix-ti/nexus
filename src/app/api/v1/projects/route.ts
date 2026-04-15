@@ -10,6 +10,13 @@ export async function GET(request: NextRequest) {
 
   const where: Record<string, unknown> = { isArchived: false };
 
+  // Par défaut : seulement projets CLIENTS. internal=true → seulement
+  // internes, "all" → tout.
+  const internal = sp.get("internal");
+  if (internal !== "all") {
+    where.isInternal = internal === "true";
+  }
+
   const organizationId = sp.get("organizationId");
   if (organizationId) where.organizationId = organizationId;
 

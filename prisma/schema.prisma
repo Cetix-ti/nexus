@@ -63,6 +63,7 @@ model Organization {
   purchaseOrders PurchaseOrder[]
   projects       Project[]
   sharedResources SharedResource[] @relation("SharedWithOrg")
+  calendarEvents  CalendarEvent[]
 
   @@map("organizations")
 }
@@ -134,6 +135,14 @@ model User {
   sharedResources SharedResource[] @relation("SharedByUser")
   ticketReminders TicketReminder[]
   notifications   Notification[]
+
+  // Calendrier + rencontres
+  createdCalendars    Calendar[]
+  ownedCalendarEvents CalendarEvent[]      @relation("CalendarEventOwner")
+  createdCalendarEvents CalendarEvent[]    @relation("CalendarEventCreator")
+  createdMeetings     Meeting[]            @relation("MeetingCreator")
+  meetingAgendaItems  MeetingAgendaItem[]
+  meetingParticipations MeetingParticipant[]
 
   @@map("users")
 }
@@ -257,6 +266,13 @@ model Ticket {
 
   projectId      String?       @map("project_id")
   project        Project?      @relation(fields: [projectId], references: [id])
+
+  // Interne (administratif Cetix) vs client. isInternal=true exclut le
+  // ticket des vues clients (liste, kanban, my-day) et le fait apparaitre
+  // dans /internal-tickets.
+  isInternal     Boolean       @default(false) @map("is_internal")
+  meetingId      String?       @map("meeting_id") // ticket généré par une rencontre
+  meeting        Meeting?      @relation(fields: [meetingId], references: [id])
 
   // Approval workflow
   requiresApproval Boolean       @default(false) @map("requires_approval")
@@ -1499,6 +1515,9 @@ model Project {
   isAtRisk          Boolean       @default(false) @map("is_at_risk")
   riskNotes         String?       @map("risk_notes") @db.Text
   isArchived        Boolean       @default(false) @map("is_archived")
+  // Interne (Cetix admin) vs client. Exclut des vues client /projects
+  // pour apparaitre dans /internal-projects.
+  isInternal        Boolean       @default(false) @map("is_internal")
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
@@ -1508,6 +1527,7 @@ model Project {
 
   @@index([organizationId])
   @@index([status])
+  @@index([isInternal])
   @@map("projects")
 }
 
@@ -1628,4 +1648,175 @@ model Notification {
 
   @@index([userId, isRead, createdAt])
   @@map("notifications")
+}
+
+// ============================================================================
+// CALENDRIER — module multi-calendriers
+// Un calendrier regroupe des événements. Plusieurs calendriers coexistent
+// (renouvellements, congés, général). Les événements peuvent référencer un
+// Meeting, un ticket interne, ou une org pour les renouvellements.
+// ============================================================================
+
+enum CalendarKind {
+  RENEWALS      // Licences, SSL, abonnements
+  LEAVE         // Congés, vacances, absences
+  GENERAL       // Agenda général : localisation agents, rencontres, perso
+  CUSTOM        // Extensible
+}
+
+model Calendar {
+  id          String       @id @default(cuid())
+  name        String
+  description String?      @db.Text
+  kind        CalendarKind
+  color       String       @default("#3B82F6")
+  isActive    Boolean      @default(true) @map("is_active")
+  /// "team" | "private" — "private" = visible uniquement au créateur
+  visibility  String       @default("team")
+  createdById String?      @map("created_by_id")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  createdBy   User?        @relation(fields: [createdById], references: [id])
+  events      CalendarEvent[]
+
+  @@index([kind, isActive])
+  @@map("calendars")
+}
+
+enum CalendarEventKind {
+  RENEWAL         // Renouvellement (licence, SSL, abonnement)
+  LEAVE           // Congé / absence
+  WORK_LOCATION   // Où travaille l'agent aujourd'hui (client, bureau, télétravail)
+  MEETING         // Rencontre interne (lié à Meeting)
+  PERSONAL        // Événement personnel (perso, rdv médical, etc.)
+  OTHER
+}
+
+model CalendarEvent {
+  id             String            @id @default(cuid())
+  calendarId     String            @map("calendar_id")
+  title          String
+  description    String?           @db.Text
+  kind           CalendarEventKind
+  startsAt       DateTime          @map("starts_at")
+  endsAt         DateTime          @map("ends_at")
+  allDay         Boolean           @default(false) @map("all_day")
+
+  /// L'agent concerné (pour LEAVE, WORK_LOCATION, PERSONAL).
+  ownerId        String?           @map("owner_id")
+  /// Emplacement texte libre : "client:HVAC", "office", "remote", "onsite:address"
+  location       String?
+  /// Pour RENEWAL et WORK_LOCATION chez un client.
+  organizationId String?           @map("organization_id")
+
+  // --- RENEWAL-specific ---
+  renewalType             String? @map("renewal_type")  // license | ssl | subscription | warranty
+  renewalAmount           Float?  @map("renewal_amount")
+  renewalNotifyDaysBefore Int?    @map("renewal_notify_days_before")
+  /// Identifiant externe (vendor, numéro de commande, domaine SSL, etc.)
+  renewalExternalRef      String? @map("renewal_external_ref")
+
+  // --- LEAVE-specific ---
+  leaveType     String?  @map("leave_type")  // vacation | sick | personal | training
+  leaveApproved Boolean? @map("leave_approved")
+
+  // --- Récurrence simple (v1) ---
+  recurrence        String?   // "weekly" | "monthly" | "yearly" | null
+  recurrenceEndDate DateTime? @map("recurrence_end_date")
+
+  status    String @default("active") // active | cancelled
+
+  // --- Liens vers d'autres modules ---
+  meetingId         String?  @unique @map("meeting_id")
+  internalTicketId  String?  @map("internal_ticket_id")
+  internalProjectId String?  @map("internal_project_id")
+
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  calendar     Calendar     @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  owner        User?        @relation("CalendarEventOwner", fields: [ownerId], references: [id])
+  createdBy    User?        @relation("CalendarEventCreator", fields: [createdById], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  meeting      Meeting?     @relation(fields: [meetingId], references: [id])
+
+  @@index([calendarId, startsAt])
+  @@index([ownerId, startsAt])
+  @@index([kind, startsAt])
+  @@map("calendar_events")
+}
+
+// ============================================================================
+// RENCONTRES INTERNES — Meeting + agenda + notes + participants
+// ============================================================================
+
+model Meeting {
+  id             String              @id @default(cuid())
+  title          String
+  description    String?             @db.Text
+  startsAt       DateTime            @map("starts_at")
+  endsAt         DateTime            @map("ends_at")
+  location       String?             // "Bureau Cetix", "Teams", "Zoom URL", etc.
+
+  /// Notes de réunion — HTML rich text. Alimenté en direct pendant la
+  /// rencontre. Source de l'analyse IA pour suggérer des tickets.
+  notes          String?             @db.Text
+  notesUpdatedAt DateTime?           @map("notes_updated_at")
+
+  status         String              @default("scheduled") // scheduled | in_progress | completed | cancelled
+
+  createdById    String              @map("created_by_id")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  createdBy      User                @relation("MeetingCreator", fields: [createdById], references: [id])
+  calendarEvent  CalendarEvent?
+  agenda         MeetingAgendaItem[]
+  participants   MeetingParticipant[]
+  /// Tickets internes générés depuis cette rencontre (via suggestion IA
+  /// ou création manuelle depuis la fiche réunion).
+  generatedTickets Ticket[]
+
+  @@index([startsAt])
+  @@index([status])
+  @@map("meetings")
+}
+
+model MeetingAgendaItem {
+  id              String   @id @default(cuid())
+  meetingId       String   @map("meeting_id")
+  title           String
+  description     String?  @db.Text
+  addedById       String   @map("added_by_id")
+  order           Int      @default(0)
+  status          String   @default("pending") // pending | in_progress | done | deferred
+  notes           String?  @db.Text
+  durationMinutes Int?     @map("duration_minutes")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  addedBy User    @relation(fields: [addedById], references: [id])
+
+  @@index([meetingId, order])
+  @@map("meeting_agenda_items")
+}
+
+model MeetingParticipant {
+  id        String   @id @default(cuid())
+  meetingId String   @map("meeting_id")
+  userId    String   @map("user_id")
+  /// "organizer" | "attendee" | "optional"
+  role      String   @default("attendee")
+  attended  Boolean?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([meetingId, userId])
+  @@index([userId])
+  @@map("meeting_participants")
 }
