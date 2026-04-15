@@ -238,15 +238,31 @@ export function AdvancedRichEditor({
     if (url) editor!.chain().focus().setImage({ src: url }).run();
   }
 
-  function uploadImage(e: React.ChangeEvent<HTMLInputElement>) {
+  async function uploadImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
+    // On tente un vrai upload vers MinIO via /api/v1/uploads ; si ça rate
+    // (ex: storage down), fallback sur data-URL pour ne pas bloquer l'éditeur.
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("prefix", "inline-images");
+      const res = await fetch("/api/v1/uploads", { method: "POST", body: form });
+      if (res.ok) {
+        const data = (await res.json()) as { url: string };
+        editor!.chain().focus().setImage({ src: data.url }).run();
+        return;
+      }
+    } catch {
+      /* ignore — fallback ci-dessous */
+    }
+    // Fallback : embed en base64 (moins propre mais fonctionnel hors-ligne).
     const reader = new FileReader();
     reader.onload = () => {
       editor!.chain().focus().setImage({ src: reader.result as string }).run();
     };
     reader.readAsDataURL(file);
-    e.target.value = "";
   }
 
   function insertTable() {

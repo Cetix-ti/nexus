@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTicketsStore } from "@/stores/tickets-store";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatDistanceToNow, format } from "date-fns";
@@ -34,7 +34,7 @@ import {
   type TicketPriority,
 } from "@/lib/mock-data";
 import { TicketBillingSection } from "@/components/billing/ticket-billing-section";
-import { FolderKanban } from "lucide-react";
+import { FolderKanban, Paperclip } from "lucide-react";
 
 function getOrgId(ticket: { organizationId?: string; organizationName: string }): string {
   if (ticket.organizationId) return ticket.organizationId;
@@ -168,6 +168,7 @@ export default function TicketDetailPage() {
   const [catLevel2, setCatLevel2] = useState<string>("");
   const [catLevel3, setCatLevel3] = useState<string>("");
   const [linkedAssets, setLinkedAssets] = useState<{ id: string; name: string; type: string; externalSource: string | null }[]>([]);
+  const [ticketAttachments, setTicketAttachments] = useState<Array<{ id: string; name: string; size: number; mimeType: string; url: string; createdAt: string }>>([]);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [linkedProjectName, setLinkedProjectName] = useState<string | null>(null);
@@ -180,10 +181,27 @@ export default function TicketDetailPage() {
   const loadAll = useTicketsStore((s) => s.loadAll);
   const loaded = useTicketsStore((s) => s.loaded);
   const updateTicket = useTicketsStore((s) => s.updateTicket);
+  // Ticket hors-store (ex: ticket interne — le store ne charge que les
+  // tickets clients par défaut pour ne pas polluer la liste /tickets).
+  // On le charge directement par id en fallback.
+  const [directTicket, setDirectTicket] = useState<import("@/lib/mock-data").Ticket | null>(null);
+  const [directLoading, setDirectLoading] = useState(false);
   useEffect(() => {
     if (!loaded) loadAll();
   }, [loaded, loadAll]);
-  const ticket = tickets.find((t) => t.id === params.id);
+  const ticketFromStore = tickets.find((t) => t.id === params.id);
+  useEffect(() => {
+    // Si le store est chargé mais ne contient pas ce ticket, fetch direct.
+    if (loaded && !ticketFromStore && !directTicket && !directLoading) {
+      setDirectLoading(true);
+      fetch(`/api/v1/tickets/${params.id}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((t) => { if (t) setDirectTicket(t); })
+        .catch(() => {})
+        .finally(() => setDirectLoading(false));
+    }
+  }, [loaded, ticketFromStore, directTicket, directLoading, params.id]);
+  const ticket = ticketFromStore ?? directTicket;
 
   // Direct API patch for fields not in the Zustand Ticket type
   async function patchTicketField(patch: Record<string, unknown>) {
@@ -204,6 +222,10 @@ export default function TicketDetailPage() {
     fetch(`/api/v1/tickets/${ticket.id}/collaborators`, { signal })
       .then((r) => r.ok ? r.json() : { data: [] })
       .then((d) => { if (!signal.aborted) setCollaborators(d.data || []); })
+      .catch(() => {});
+    fetch(`/api/v1/tickets/${ticket.id}/attachments`, { signal })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((arr) => { if (!signal.aborted && Array.isArray(arr)) setTicketAttachments(arr); })
       .catch(() => {});
     fetch("/api/v1/users?role=TECHNICIAN,SUPERVISOR,MSP_ADMIN,SUPER_ADMIN", { signal })
       .then((r) => r.json())
@@ -631,6 +653,13 @@ export default function TicketDetailPage() {
                 />
               )}
             </div>
+
+            {/* Ticket attachments (fichiers joints à la description) */}
+            <TicketAttachments
+              ticketId={ticket.id}
+              attachments={ticketAttachments}
+              onChange={setTicketAttachments}
+            />
 
             {/* Billing */}
             <div id="ticket-billing">
@@ -1362,6 +1391,158 @@ export default function TicketDetailPage() {
           setShowProjectPicker(false);
         }}
       />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ticket attachments — affiche les fichiers joints à la description,
+// permet d'en ajouter / retirer. Les images sont prévisualisées en grille.
+// ---------------------------------------------------------------------------
+function TicketAttachments({
+  ticketId,
+  attachments,
+  onChange,
+}: {
+  ticketId: string;
+  attachments: Array<{ id: string; name: string; size: number; mimeType: string; url: string; createdAt: string }>;
+  onChange: (list: Array<{ id: string; name: string; size: number; mimeType: string; url: string; createdAt: string }>) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function fmtSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} o`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} Mo`;
+  }
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const uploaded = await Promise.all(
+        Array.from(files).map(async (f) => {
+          const form = new FormData();
+          form.append("file", f);
+          form.append("ticketId", ticketId);
+          form.append("prefix", `tickets/${ticketId}`);
+          const r = await fetch("/api/v1/uploads", { method: "POST", body: form });
+          if (!r.ok) return null;
+          const d = await r.json();
+          return {
+            id: d.id,
+            name: d.name,
+            size: d.size,
+            mimeType: d.mimeType,
+            url: d.url,
+            createdAt: new Date().toISOString(),
+          };
+        }),
+      );
+      const good = uploaded.filter(Boolean) as typeof attachments;
+      onChange([...good, ...attachments]);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removeAtt(attId: string) {
+    const r = await fetch(`/api/v1/tickets/${ticketId}/attachments?attachmentId=${attId}`, {
+      method: "DELETE",
+    });
+    if (r.ok) {
+      onChange(attachments.filter((a) => a.id !== attId));
+    }
+  }
+
+  if (attachments.length === 0 && !uploading) {
+    return (
+      <div className="mt-4 flex items-center justify-between rounded-lg border border-dashed border-slate-200 px-4 py-2.5">
+        <p className="text-[11.5px] text-slate-500">Aucune pièce jointe</p>
+        <button
+          onClick={() => inputRef.current?.click()}
+          className="inline-flex items-center gap-1 text-[11.5px] font-medium text-blue-600 hover:text-blue-700"
+        >
+          <Paperclip className="h-3 w-3" />
+          Ajouter un fichier
+        </button>
+        <input ref={inputRef} type="file" multiple hidden onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }} />
+      </div>
+    );
+  }
+
+  const images = attachments.filter((a) => a.mimeType.startsWith("image/"));
+  const others = attachments.filter((a) => !a.mimeType.startsWith("image/"));
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[12.5px] font-semibold text-slate-700">
+          Pièces jointes <span className="text-slate-400 font-normal">({attachments.length})</span>
+        </h3>
+        <button
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          className="inline-flex items-center gap-1 text-[11.5px] font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+        >
+          <Paperclip className="h-3 w-3" />
+          {uploading ? "Envoi…" : "Ajouter"}
+        </button>
+        <input ref={inputRef} type="file" multiple hidden onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }} />
+      </div>
+
+      {images.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+          {images.map((img) => (
+            <div key={img.id} className="group relative aspect-square rounded-lg overflow-hidden bg-slate-50 border border-slate-200">
+              <a href={img.url} target="_blank" rel="noopener noreferrer">
+                <img
+                  src={img.url}
+                  alt={img.name}
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              </a>
+              <button
+                onClick={() => removeAtt(img.id)}
+                className="absolute top-1 right-1 h-6 w-6 inline-flex items-center justify-center rounded-md bg-white/95 text-slate-600 shadow-sm opacity-0 group-hover:opacity-100 transition hover:bg-red-50 hover:text-red-600"
+                title="Retirer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+              <p className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1 text-[10px] text-white truncate">
+                {img.name}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {others.length > 0 && (
+        <ul className="space-y-1">
+          {others.map((a) => (
+            <li key={a.id} className="flex items-center gap-2 rounded-md border border-slate-100 bg-slate-50/60 px-2 py-1.5">
+              <Paperclip className="h-3 w-3 text-slate-400 shrink-0" />
+              <a
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[12px] font-medium text-slate-700 hover:text-blue-600 truncate flex-1"
+              >
+                {a.name}
+              </a>
+              <span className="text-[10.5px] text-slate-400 tabular-nums shrink-0">{fmtSize(a.size)}</span>
+              <button
+                onClick={() => removeAtt(a.id)}
+                className="h-5 w-5 inline-flex items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors shrink-0"
+                title="Retirer"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
