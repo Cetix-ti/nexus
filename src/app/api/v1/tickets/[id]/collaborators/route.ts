@@ -81,6 +81,11 @@ export async function POST(
     },
   });
 
+  // Notifie l'agent ajouté (fire-and-forget, respecte ses préférences).
+  import("@/lib/notifications/dispatch")
+    .then((m) => m.dispatchCollaboratorAdded(id, body.userId, me.id))
+    .catch(() => {});
+
   return NextResponse.json({
     success: true,
     data: {

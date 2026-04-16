@@ -112,6 +112,26 @@ export async function POST(
     isInternal: body.isInternal ?? false,
   }).catch((err) => console.error("[comment notification]", err));
 
+  // Notification in-app + email aux watchers + mentions via dispatcher
+  // central qui respecte les préférences. Les @mentions sont extraites
+  // naïvement du bodyHtml (format @{userId} ou @prénom nom recherché par
+  // l'UI). Pour l'instant on prend les mentions fournies par le client si
+  // disponibles (body.mentionedUserIds).
+  const mentionedUserIds = Array.isArray(body.mentionedUserIds)
+    ? body.mentionedUserIds.filter((x: unknown): x is string => typeof x === "string")
+    : [];
+  import("@/lib/notifications/dispatch")
+    .then((m) =>
+      m.dispatchTicketComment({
+        ticketId: ticket.id,
+        authorUserId: me.id,
+        commentBody: plainText,
+        isInternal: body.isInternal ?? false,
+        mentionedUserIds,
+      }),
+    )
+    .catch(() => {});
+
   return NextResponse.json({
     success: true,
     data: {

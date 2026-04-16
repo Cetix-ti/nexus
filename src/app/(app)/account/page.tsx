@@ -572,25 +572,33 @@ function MfaSection() {
   );
 }
 
+// Les préférences sont désormais chargées depuis l'API
+// /api/v1/account/notifications (source de vérité côté serveur) et
+// enregistrées via PUT au changement. Le catalogue d'événements est lui
+// aussi retourné par l'API pour que front + back restent synchrones.
 interface EventPref {
   email: boolean;
-  inapp: boolean;
+  inApp: boolean;
+}
+interface ApiEventCatalog {
+  key: string;
+  label: string;
+  description?: string;
+  category: string;
+  defaults: EventPref;
+}
+interface ApiPrefs {
+  channels: { inApp: boolean; email: boolean };
+  events: Record<string, EventPref>;
 }
 
-const USER_EVENTS: { key: string; label: string; description?: string; prefs: EventPref }[] = [
-  { key: "assigned", label: "Nouveau ticket assigné", prefs: { email: true, inapp: true } },
-  { key: "assigned_others", label: "Ticket assigné à un autre agent", description: "Désactivez pour ne pas recevoir de notification lorsqu'un ticket créé par un agent est assigné à quelqu'un d'autre", prefs: { email: false, inapp: false } },
-  { key: "status", label: "Mise à jour de statut", prefs: { email: true, inapp: true } },
-  { key: "comment", label: "Nouveau commentaire", prefs: { email: true, inapp: true } },
-  { key: "mention", label: "Mention dans un commentaire", prefs: { email: true, inapp: true } },
-  { key: "sla_warn", label: "SLA bientôt expiré", prefs: { email: true, inapp: true } },
-  { key: "sla_breach", label: "SLA dépassé", prefs: { email: true, inapp: true } },
-  { key: "resolved", label: "Ticket résolu", prefs: { email: true, inapp: false } },
-  { key: "new_client", label: "Nouveau ticket client", prefs: { email: true, inapp: true } },
-  { key: "reminder", label: "Rappel de ticket", description: "Notification lorsqu'un rappel configuré sur un ticket arrive à échéance", prefs: { email: true, inapp: true } },
-  { key: "escalation", label: "Escalade automatique", prefs: { email: true, inapp: true } },
-  { key: "weekly", label: "Rapport hebdomadaire", prefs: { email: true, inapp: false } },
-];
+const CATEGORY_LABELS: Record<string, string> = {
+  tickets: "Tickets",
+  projects: "Projets",
+  calendar: "Calendrier & rappels",
+  infra: "Sauvegardes & monitoring",
+  system: "Système",
+};
 
 function UserToggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
@@ -605,20 +613,106 @@ function UserToggle({ checked, onChange }: { checked: boolean; onChange: () => v
 }
 
 function NotificationsTab() {
-  const [events, setEvents] = useState(USER_EVENTS);
-  const [inappEnabled, setInappEnabled] = useState(true);
-  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [prefs, setPrefs] = useState<ApiPrefs | null>(null);
+  const [catalog, setCatalog] = useState<ApiEventCatalog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
-  function toggleEvent(key: string, channel: keyof EventPref) {
-    setEvents((prev) => prev.map((e) => (e.key === key ? { ...e, prefs: { ...e.prefs, [channel]: !e.prefs[channel] } } : e)));
+  useEffect(() => {
+    fetch("/api/v1/account/notifications")
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((data) => {
+        setPrefs(data.prefs as ApiPrefs);
+        setCatalog(data.catalog as ApiEventCatalog[]);
+      })
+      .catch((e) => setError(`Erreur ${e}`))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Persiste immédiatement chaque changement via PUT. Le toggle est
+  // donc "live" — chaque clic déclenche un enregistrement. Un petit
+  // badge "Enregistré" apparaît 1.5s pour feedback.
+  async function persist(next: ApiPrefs) {
+    setPrefs(next);
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/v1/account/notifications", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      setToast("Enregistré");
+      setTimeout(() => setToast(null), 1500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
   }
+
+  function toggleChannel(ch: "inApp" | "email") {
+    if (!prefs) return;
+    persist({ ...prefs, channels: { ...prefs.channels, [ch]: !prefs.channels[ch] } });
+  }
+
+  function toggleEvent(key: string, ch: "inApp" | "email") {
+    if (!prefs) return;
+    const current = prefs.events[key] ?? { inApp: false, email: false };
+    persist({
+      ...prefs,
+      events: {
+        ...prefs.events,
+        [key]: { ...current, [ch]: !current[ch] },
+      },
+    });
+  }
+
+  if (loading) {
+    return (
+      <Card title="Notifications">
+        <p className="text-[13px] text-slate-400">Chargement…</p>
+      </Card>
+    );
+  }
+  if (!prefs) {
+    return (
+      <Card title="Notifications">
+        <p className="text-[13px] text-red-600">
+          Impossible de charger les préférences. {error}
+        </p>
+      </Card>
+    );
+  }
+
+  const byCategory = catalog.reduce<Record<string, ApiEventCatalog[]>>((acc, e) => {
+    (acc[e.category] ||= []).push(e);
+    return acc;
+  }, {});
 
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed top-5 right-5 z-50 rounded-lg bg-emerald-600 text-white text-[12px] px-3 py-2 shadow-lg animate-in fade-in">
+          {toast}
+        </div>
+      )}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 text-[13px] px-4 py-2.5">
+          {error}
+        </div>
+      )}
+
       {/* Global channel toggles — per-user */}
       <Card title="Canaux de notification">
         <p className="text-[13px] text-slate-500 mb-4">
-          Choisissez les canaux par lesquels vous souhaitez être notifié.
+          Désactive un canal ici pour couper toutes les notifications de ce type — prioritaire sur les toggles par événement.
         </p>
         <div className="space-y-3">
           <div className="flex items-center justify-between py-2.5 border-b border-slate-100">
@@ -628,10 +722,10 @@ function NotificationsTab() {
               </div>
               <div>
                 <p className="text-[13px] font-semibold text-slate-900">Notifications dans l&apos;app</p>
-                <p className="text-[12px] text-slate-500">Affichez les pop-ups dans la barre de notifications</p>
+                <p className="text-[12px] text-slate-500">Cloche en haut de l&apos;écran + toasts</p>
               </div>
             </div>
-            <UserToggle checked={inappEnabled} onChange={() => setInappEnabled(!inappEnabled)} />
+            <UserToggle checked={prefs.channels.inApp} onChange={() => toggleChannel("inApp")} />
           </div>
           <div className="flex items-center justify-between py-2.5">
             <div className="flex items-center gap-3">
@@ -640,51 +734,68 @@ function NotificationsTab() {
               </div>
               <div>
                 <p className="text-[13px] font-semibold text-slate-900">Email</p>
-                <p className="text-[12px] text-slate-500">Recevez les notifications par courriel</p>
+                <p className="text-[12px] text-slate-500">Courriels envoyés à {" "}
+                  {/* Le mail affiché côté UI vient de la session — feature "nice to have" */}
+                  votre adresse d&apos;agent
+                </p>
               </div>
             </div>
-            <UserToggle checked={emailEnabled} onChange={() => setEmailEnabled(!emailEnabled)} />
+            <UserToggle checked={prefs.channels.email} onChange={() => toggleChannel("email")} />
           </div>
         </div>
       </Card>
 
-      {/* Per-event preferences */}
-      <Card title="Préférences par événement">
-        <p className="text-[13px] text-slate-500 mb-4">
-          Choisissez par quels canaux chaque type d&apos;événement vous est diffusé.
-        </p>
-        <div className="overflow-x-auto -mx-6">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/50">
-                <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Événement</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500 w-20">Email</th>
-                <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500 w-20 pr-6">In-app</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {events.map((e) => (
-                <tr key={e.key} className="hover:bg-slate-50/60">
-                  <td className="px-6 py-3">
-                    <div className="text-[13px] font-medium text-slate-800">{e.label}</div>
-                    {e.description && <div className="text-[11px] text-slate-400 mt-0.5">{e.description}</div>}
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex justify-center">
-                      <UserToggle checked={e.prefs.email} onChange={() => toggleEvent(e.key, "email")} />
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 pr-6">
-                    <div className="flex justify-center">
-                      <UserToggle checked={e.prefs.inapp} onChange={() => toggleEvent(e.key, "inapp")} />
-                    </div>
-                  </td>
+      {/* Per-event preferences groupées par catégorie */}
+      {Object.entries(byCategory).map(([cat, events]) => (
+        <Card key={cat} title={CATEGORY_LABELS[cat] ?? cat}>
+          <div className="overflow-x-auto -mx-6">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/50">
+                  <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Événement</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500 w-20">Email</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500 w-20 pr-6">In-app</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {events.map((e) => {
+                  const pref = prefs.events[e.key] ?? e.defaults;
+                  return (
+                    <tr key={e.key} className="hover:bg-slate-50/60">
+                      <td className="px-6 py-3">
+                        <div className="text-[13px] font-medium text-slate-800">{e.label}</div>
+                        {e.description && (
+                          <div className="text-[11px] text-slate-400 mt-0.5">{e.description}</div>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex justify-center">
+                          <UserToggle
+                            checked={pref.email}
+                            onChange={() => toggleEvent(e.key, "email")}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 pr-6">
+                        <div className="flex justify-center">
+                          <UserToggle
+                            checked={pref.inApp}
+                            onChange={() => toggleEvent(e.key, "inApp")}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ))}
+
+      <p className="text-[11px] text-slate-400 text-center">
+        {saving ? "Enregistrement…" : "Les changements sont enregistrés automatiquement."}
+      </p>
     </div>
   );
 }

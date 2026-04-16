@@ -541,6 +541,18 @@ export async function updateTicket(
         newValue: patch.status.toLowerCase(),
         metadata: { content: "a changé le statut" },
       });
+      // Notification aux watchers (assignee + créateur + collaborateurs)
+      // via le dispatcher central, qui respecte les préférences par agent.
+      import("@/lib/notifications/dispatch")
+        .then((m) =>
+          m.dispatchTicketStatusChange(
+            id,
+            oldTicket.status,
+            patch.status!.toUpperCase(),
+            userId,
+          ),
+        )
+        .catch(() => {});
     }
     if (patch.priority !== undefined && oldTicket.priority !== patch.priority.toUpperCase()) {
       activities.push({

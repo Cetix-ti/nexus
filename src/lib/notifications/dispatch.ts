@@ -1,48 +1,80 @@
 // ============================================================================
-// NOTIFICATION DISPATCHER — orchestre les notifications (in-app + email) sur
-// les événements clés des tickets.
+// NOTIFICATION DISPATCHERS BY EVENT
 //
-// Règles de sécurité (garde anti-accidents en développement) :
-// - AGENTS (User model) : toujours notifiés, jamais gated par l'allowlist.
-//   Ce sont des employés Cetix, accident nul si on leur envoie un courriel.
-// - CONTACTS (Contact model, clients externes) : gated par allowlist (voir
-//   `src/lib/notifications/allowlist.ts`). En dev, seuls les emails whitelist
-//   reçoivent. En prod, l'admin désactive le guard.
+// Une fonction par événement métier. Chaque fonction :
+//   1. récupère les données nécessaires depuis la DB (ticket, projet, etc.)
+//   2. détermine les destinataires (assignee, collaborateurs, créateur, tous
+//      les agents, etc.)
+//   3. construit le contenu (title, email) et appelle notifyUser/notifyUsers
 //
-// Ne throw jamais — les notifications sont fire-and-forget. Les erreurs
-// sont loggées et le ticket reste créé normalement.
+// Les appelants (service de création/update de ticket, hook de comment, etc.)
+// se contentent d'appeler la fonction dédiée — ils n'ont pas à gérer les
+// préférences, les emails, ni les canaux.
+//
+// Règles d'anti-accident :
+//   - Les contacts externes (Contact) ne passent PAS par ici ; ils sont gated
+//     par l'allowlist (cf. src/lib/notifications/allowlist.ts) et envoyés
+//     via leur propre code (dispatchTicketCreatedNotifications garde l'accès
+//     contact pour ne pas casser la chaîne existante).
+//   - L'auteur d'une action (creatorId, commenter, agent qui fait le change)
+//     est exclu pour éviter les self-notifs.
 // ============================================================================
 
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email/send";
-import { buildBrandedEmailHtml } from "@/lib/email/branded-template";
+import { buildNexusEmail } from "@/lib/email/nexus-template";
 import { isAllowedContactEmail } from "./allowlist";
 import { getPortalTicketUrl, getAgentTicketUrl } from "@/lib/portal-domain/url";
 import { getClientTicketPrefix, formatTicketNumber } from "@/lib/tenant-settings/service";
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function stripHtml(s: string): string {
-  return s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-const PRIORITY_COLORS: Record<string, string> = {
-  CRITICAL: "#EF4444",
-  HIGH: "#F97316",
-  MEDIUM: "#EAB308",
-  LOW: "#22C55E",
-};
+import { notifyUser, notifyUsers, type NotifyContent } from "./notify";
 
 // ----------------------------------------------------------------------------
-// TICKET CREATED — notifie les agents (non assigné → tous, sinon → assigné)
-// et le contact demandeur (via garde allowlist).
+// Helpers internes
 // ----------------------------------------------------------------------------
+
+async function formatTicketDisplay(ticket: {
+  number: number;
+  isInternal: boolean | null;
+}): Promise<string> {
+  const prefix = await getClientTicketPrefix();
+  return formatTicketNumber(ticket.number, !!ticket.isInternal, prefix);
+}
+
+async function listActiveAgents(excludeId?: string | null): Promise<string[]> {
+  const agents = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      role: { in: ["SUPER_ADMIN", "MSP_ADMIN", "SUPERVISOR", "TECHNICIAN"] },
+      email: { not: "freshservice-import@cetix.ca" },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true },
+  });
+  return agents.map((a) => a.id);
+}
+
+function ticketMetadata(ticket: {
+  requester?: { firstName: string; lastName: string } | null;
+  organization?: { name: string } | null;
+  priority: string;
+}): { label: string; value: string }[] {
+  const meta: { label: string; value: string }[] = [];
+  if (ticket.requester) {
+    meta.push({
+      label: "Demandeur",
+      value: `${ticket.requester.firstName} ${ticket.requester.lastName}`.trim(),
+    });
+  }
+  if (ticket.organization?.name) {
+    meta.push({ label: "Organisation", value: ticket.organization.name });
+  }
+  meta.push({ label: "Priorité", value: ticket.priority.toLowerCase() });
+  return meta;
+}
+
+// ============================================================================
+// TICKET CREATED
+// ============================================================================
 
 export async function dispatchTicketCreatedNotifications(ticketId: string): Promise<void> {
   try {
@@ -58,169 +90,71 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
         assigneeId: true,
         creatorId: true,
         requester: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            isActive: true,
-          },
+          select: { firstName: true, lastName: true, email: true, isActive: true },
         },
-        assignee: {
-          select: { id: true, email: true, firstName: true, lastName: true },
-        },
+        assignee: { select: { id: true } },
         organization: { select: { name: true } },
       },
     });
     if (!ticket) return;
 
-    const clientPrefix = await getClientTicketPrefix();
-    const displayNumber = formatTicketNumber(
-      ticket.number,
-      !!ticket.isInternal,
-      clientPrefix,
-    );
-    const requesterName = ticket.requester
-      ? `${ticket.requester.firstName} ${ticket.requester.lastName}`.trim()
-      : "—";
-    const orgName = ticket.organization?.name ?? "—";
-    const priorityColor = PRIORITY_COLORS[ticket.priority] ?? "#6B7280";
+    const displayNumber = await formatTicketDisplay(ticket);
+    const agentUrl = await getAgentTicketUrl(ticket.id);
+    const portalUrl = await getPortalTicketUrl(ticket.id);
+    const excerpt = (ticket.description || "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300);
 
-    // ------------------------------------------------------------------------
-    // 1. AGENTS — notification email + in-app
-    // ------------------------------------------------------------------------
-    // Si assignee défini → seulement lui. Sinon → tous les agents actifs
-    // (TECHNICIAN, SUPERVISOR, MSP_ADMIN, SUPER_ADMIN). On exclut l'auteur
-    // de l'action (creatorId) pour ne pas lui notifier sa propre création.
-    const agents = ticket.assigneeId
-      ? ticket.assignee
-        ? [
-            {
-              id: ticket.assignee.id,
-              email: ticket.assignee.email,
-              firstName: ticket.assignee.firstName,
-              lastName: ticket.assignee.lastName,
-            },
-          ]
-        : []
-      : await prisma.user.findMany({
-          where: {
-            isActive: true,
-            role: {
-              in: ["SUPER_ADMIN", "MSP_ADMIN", "SUPERVISOR", "TECHNICIAN"],
-            },
-            // Jamais au compte technique d'import FS
-            email: { not: "freshservice-import@cetix.ca" },
-            ...(ticket.creatorId ? { id: { not: ticket.creatorId } } : {}),
-          },
-          select: { id: true, email: true, firstName: true, lastName: true },
-        });
+    // --- Destinataires agents -----------------------------------------
+    const event = ticket.assigneeId ? "ticket_assigned" : "ticket_unassigned_pool";
+    const recipients = ticket.assigneeId
+      ? [ticket.assigneeId]
+      : await listActiveAgents(ticket.creatorId);
 
-    if (agents.length > 0) {
-      const agentUrl = await getAgentTicketUrl(ticket.id);
-      const kind = ticket.assigneeId ? "Nouveau billet assigné" : "Nouveau billet à prendre en charge";
-      const emailHtml = buildBrandedEmailHtml({
-        headerGradient: "linear-gradient(135deg,#059669 0%,#10B981 100%)",
-        preheader: `${kind} — ${ticket.subject}`,
-        title: `${displayNumber} — ${escapeHtml(ticket.subject)}`,
-        subtitle: kind,
-        bodyHtml: `
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;margin-bottom:20px;">
-            <tr>
-              <td style="padding:14px 18px;border-right:1px solid #E2E8F0;" width="33%">
-                <p style="margin:0;font-size:11px;color:#94A3B8;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;">Demandeur</p>
-                <p style="margin:4px 0 0;font-size:13px;font-weight:600;color:#1E293B;">${escapeHtml(requesterName)}</p>
-              </td>
-              <td style="padding:14px 18px;border-right:1px solid #E2E8F0;" width="33%">
-                <p style="margin:0;font-size:11px;color:#94A3B8;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;">Organisation</p>
-                <p style="margin:4px 0 0;font-size:13px;font-weight:600;color:#1E293B;">${escapeHtml(orgName)}</p>
-              </td>
-              <td style="padding:14px 18px;" width="33%">
-                <p style="margin:0;font-size:11px;color:#94A3B8;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;">Priorité</p>
-                <p style="margin:4px 0 0;font-size:13px;font-weight:700;color:${priorityColor};">${ticket.priority.toLowerCase()}</p>
-              </td>
-            </tr>
-          </table>
-          <p style="margin:0 0 8px;font-size:12px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:0.5px;">Description</p>
-          <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:20px;font-size:14px;color:#334155;line-height:1.65;white-space:pre-wrap;margin-bottom:24px;">${escapeHtml(stripHtml(ticket.description).slice(0, 500))}${stripHtml(ticket.description).length > 500 ? "…" : ""}</div>
-        `,
+    const content: NotifyContent = {
+      title: ticket.assigneeId
+        ? `Ticket assigné : ${ticket.subject}`
+        : `Nouveau ticket à prendre en charge : ${ticket.subject}`,
+      body: `${displayNumber} · ${ticket.organization?.name ?? "—"} · Priorité ${ticket.priority.toLowerCase()}`,
+      link: `/tickets/${ticket.id}`,
+      metadata: { ticketId: ticket.id, ticketNumber: ticket.number },
+      emailSubject: `[${displayNumber}] ${ticket.subject}`,
+      email: {
+        title: ticket.assigneeId ? "Un ticket vous est assigné" : "Nouveau ticket à prendre en charge",
+        intro: `${displayNumber} — ${ticket.subject}`,
+        metadata: ticketMetadata(ticket),
+        body: excerpt ? `<p style="margin:0;">${excerpt}${excerpt.length === 300 ? "…" : ""}</p>` : undefined,
         ctaUrl: agentUrl,
-        ctaLabel: "Ouvrir le billet",
-        ctaColor: "#059669",
-      });
-      const emailSubject = `[${displayNumber}] ${ticket.subject}`;
+        ctaLabel: "Ouvrir le ticket",
+      },
+    };
 
-      // En parallèle : in-app pour chaque agent, email pour chaque agent
-      // qui en a un. Pas de `Promise.all` pour éviter qu'un agent sans
-      // email fasse planter le lot ; on boucle et on swallow.
-      await prisma.notification.createMany({
-        data: agents.map((a) => ({
-          userId: a.id,
-          type: ticket.assigneeId ? "ticket_assigned" : "ticket_unassigned",
-          title: ticket.assigneeId
-            ? `Nouveau billet assigné : ${ticket.subject}`
-            : `Nouveau billet à prendre en charge : ${ticket.subject}`,
-          body: `${displayNumber} · ${orgName} · Priorité ${ticket.priority.toLowerCase()}`,
-          link: `/tickets/${ticket.id}`,
-          metadata: { ticketId: ticket.id, ticketNumber: ticket.number },
-        })),
-      });
+    await notifyUsers(recipients, event, content, ticket.creatorId);
 
-      for (const a of agents) {
-        if (!a.email) continue;
-        sendEmail(a.email, emailSubject, emailHtml).catch((e) =>
-          console.warn("[dispatch] agent email failed", a.email, e),
-        );
-      }
-    }
-
-    // ------------------------------------------------------------------------
-    // 2. CONTACT DEMANDEUR — confirmation avec lien portail direct
-    // ------------------------------------------------------------------------
-    // Garde stricte : contact actif + email présent + allowlist.
-    // Un ticket interne (isInternal=true) n'envoie PAS de confirmation au
-    // contact — c'est un ticket interne Cetix, pas une demande client.
+    // --- Contact demandeur (courriel seulement, gated allowlist) ------
     if (!ticket.isInternal && ticket.requester?.email && ticket.requester.isActive) {
       const contactEmail = ticket.requester.email.trim().toLowerCase();
       const allowed = await isAllowedContactEmail(contactEmail);
       if (allowed) {
-        const portalUrl = await getPortalTicketUrl(ticket.id);
-        const contactSubject = `Confirmation — ${displayNumber} ${ticket.subject}`;
-        const contactHtml = buildBrandedEmailHtml({
-          headerGradient: "linear-gradient(135deg,#1E40AF 0%,#3B82F6 100%)",
-          preheader: `Votre demande ${displayNumber} a bien été reçue`,
-          title: "Votre demande a été enregistrée",
-          subtitle: `Référence ${displayNumber}`,
-          bodyHtml: `
-            <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.65;">
-              Bonjour ${escapeHtml(requesterName)},
-            </p>
-            <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.65;">
-              Nous avons bien reçu votre demande et elle a été enregistrée sous la référence
-              <strong>${escapeHtml(displayNumber)}</strong>. Un membre de notre équipe la prendra en charge dans les meilleurs délais.
-            </p>
-            <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:16px 20px;margin:20px 0;">
-              <p style="margin:0 0 6px;font-size:11px;color:#94A3B8;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;">Sujet</p>
-              <p style="margin:0 0 12px;font-size:14px;font-weight:600;color:#1E293B;">${escapeHtml(ticket.subject)}</p>
-              <p style="margin:0 0 6px;font-size:11px;color:#94A3B8;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;">Priorité</p>
-              <p style="margin:0;font-size:13px;font-weight:700;color:${priorityColor};">${ticket.priority.toLowerCase()}</p>
-            </div>
-            <p style="margin:16px 0 0;font-size:13px;color:#64748B;line-height:1.65;">
-              Vous pouvez consulter l'avancement de votre demande et échanger avec notre équipe directement via le portail ci-dessous.
-            </p>
-          `,
+        const html = buildNexusEmail({
+          event: "ticket_unassigned_pool",
+          title: "Votre demande est bien reçue",
+          intro: `Référence ${displayNumber}`,
+          metadata: [
+            { label: "Sujet", value: ticket.subject },
+            { label: "Priorité", value: ticket.priority.toLowerCase() },
+          ],
+          body: `<p style="margin:0;">Bonjour ${ticket.requester.firstName},</p><p style="margin:12px 0 0;">Nous avons bien enregistré votre demande. Un membre de notre équipe la prendra en charge dans les meilleurs délais et vous pourrez suivre son avancement directement depuis le portail.</p>`,
           ctaUrl: portalUrl,
           ctaLabel: "Voir ma demande",
-          ctaColor: "#2563EB",
         });
-
-        sendEmail(contactEmail, contactSubject, contactHtml).catch((e) =>
-          console.warn("[dispatch] contact email failed", contactEmail, e),
+        sendEmail(contactEmail, `Confirmation — ${displayNumber} ${ticket.subject}`, html).catch(
+          (e) => console.warn("[dispatch] contact email failed", e),
         );
       } else {
-        console.info(
-          `[dispatch] contact email bloqué par allowlist : ${contactEmail} (ticket ${displayNumber})`,
-        );
+        console.info(`[dispatch] contact email bloqué par allowlist : ${contactEmail}`);
       }
     }
   } catch (err) {
@@ -228,10 +162,394 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
   }
 }
 
+// ============================================================================
+// TICKET COLLABORATOR ADDED  (nouveau — demande explicite utilisateur)
+// ============================================================================
+
+export async function dispatchCollaboratorAdded(
+  ticketId: string,
+  addedUserId: string,
+  addedByUserId?: string | null,
+): Promise<void> {
+  try {
+    if (addedByUserId === addedUserId) return; // on ne se notifie pas soi-même
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: {
+        id: true,
+        number: true,
+        subject: true,
+        priority: true,
+        isInternal: true,
+        assigneeId: true,
+        requester: { select: { firstName: true, lastName: true } },
+        organization: { select: { name: true } },
+      },
+    });
+    if (!ticket) return;
+    const displayNumber = await formatTicketDisplay(ticket);
+    const agentUrl = await getAgentTicketUrl(ticket.id);
+
+    let addedByName = "Un agent";
+    if (addedByUserId) {
+      const u = await prisma.user.findUnique({
+        where: { id: addedByUserId },
+        select: { firstName: true, lastName: true },
+      });
+      if (u) addedByName = `${u.firstName} ${u.lastName}`.trim() || addedByName;
+    }
+
+    await notifyUser(addedUserId, "ticket_collaborator_added", {
+      title: `Vous avez été ajouté comme collaborateur : ${ticket.subject}`,
+      body: `${displayNumber} · ${ticket.organization?.name ?? "—"} · par ${addedByName}`,
+      link: `/tickets/${ticket.id}`,
+      metadata: { ticketId: ticket.id, addedBy: addedByUserId },
+      emailSubject: `[${displayNumber}] Vous avez été ajouté en collaboration`,
+      email: {
+        title: "Vous avez été ajouté comme collaborateur",
+        intro: `${addedByName} vous a ajouté sur le ticket ${displayNumber}.`,
+        metadata: [
+          { label: "Ticket", value: ticket.subject },
+          { label: "Organisation", value: ticket.organization?.name ?? "—" },
+          { label: "Priorité", value: ticket.priority.toLowerCase() },
+        ],
+        ctaUrl: agentUrl,
+        ctaLabel: "Ouvrir le ticket",
+      },
+    });
+  } catch (err) {
+    console.error("[dispatchCollaboratorAdded] erreur :", err);
+  }
+}
+
+// ============================================================================
+// TICKET STATUS CHANGE
+// ============================================================================
+
+export async function dispatchTicketStatusChange(
+  ticketId: string,
+  oldStatus: string,
+  newStatus: string,
+  changedByUserId?: string | null,
+): Promise<void> {
+  try {
+    if (oldStatus === newStatus) return;
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: {
+        id: true,
+        number: true,
+        subject: true,
+        priority: true,
+        isInternal: true,
+        assigneeId: true,
+        creatorId: true,
+        organization: { select: { name: true } },
+        collaborators: { select: { userId: true } },
+      },
+    });
+    if (!ticket) return;
+
+    // Destinataires = assignee + créateur + collaborateurs (uniques),
+    // moins celui qui a fait le changement.
+    const recipients = new Set<string>();
+    if (ticket.assigneeId) recipients.add(ticket.assigneeId);
+    if (ticket.creatorId) recipients.add(ticket.creatorId);
+    for (const c of ticket.collaborators) recipients.add(c.userId);
+    const displayNumber = await formatTicketDisplay(ticket);
+    const agentUrl = await getAgentTicketUrl(ticket.id);
+
+    // Choix d'événement : si statut final → "resolved" dédié (opt-in distinct
+    // dans les prefs), sinon changement générique.
+    const isResolution = newStatus.toUpperCase() === "RESOLVED";
+    const eventKey = isResolution ? "ticket_resolved" : "ticket_status_change";
+
+    await notifyUsers(
+      Array.from(recipients),
+      eventKey,
+      {
+        title: isResolution
+          ? `Ticket résolu : ${ticket.subject}`
+          : `Statut changé : ${ticket.subject}`,
+        body: `${displayNumber} · ${oldStatus.toLowerCase()} → ${newStatus.toLowerCase()}`,
+        link: `/tickets/${ticket.id}`,
+        metadata: { ticketId: ticket.id, oldStatus, newStatus },
+        emailSubject: `[${displayNumber}] ${isResolution ? "Résolu" : "Statut mis à jour"}`,
+        email: {
+          title: isResolution ? "Ticket résolu" : "Statut du ticket mis à jour",
+          intro: `${displayNumber} — ${ticket.subject}`,
+          metadata: [
+            { label: "Ancien statut", value: oldStatus.toLowerCase() },
+            { label: "Nouveau statut", value: newStatus.toLowerCase() },
+            { label: "Organisation", value: ticket.organization?.name ?? "—" },
+          ],
+          ctaUrl: agentUrl,
+          ctaLabel: "Ouvrir le ticket",
+        },
+      },
+      changedByUserId ?? undefined,
+    );
+  } catch (err) {
+    console.error("[dispatchTicketStatusChange] erreur :", err);
+  }
+}
+
+// ============================================================================
+// TICKET COMMENT  (+ mention si @user détecté)
+// ============================================================================
+
+export async function dispatchTicketComment(opts: {
+  ticketId: string;
+  authorUserId?: string | null;
+  commentBody: string;
+  isInternal: boolean;
+  mentionedUserIds?: string[];
+}): Promise<void> {
+  try {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: opts.ticketId },
+      select: {
+        id: true,
+        number: true,
+        subject: true,
+        priority: true,
+        isInternal: true,
+        assigneeId: true,
+        creatorId: true,
+        organization: { select: { name: true } },
+        collaborators: { select: { userId: true } },
+      },
+    });
+    if (!ticket) return;
+
+    const displayNumber = await formatTicketDisplay(ticket);
+    const agentUrl = await getAgentTicketUrl(ticket.id);
+
+    let authorName = "Un agent";
+    if (opts.authorUserId) {
+      const u = await prisma.user.findUnique({
+        where: { id: opts.authorUserId },
+        select: { firstName: true, lastName: true },
+      });
+      if (u) authorName = `${u.firstName} ${u.lastName}`.trim() || authorName;
+    }
+
+    // Watchers = assignee + créateur + collaborateurs.
+    const watchers = new Set<string>();
+    if (ticket.assigneeId) watchers.add(ticket.assigneeId);
+    if (ticket.creatorId) watchers.add(ticket.creatorId);
+    for (const c of ticket.collaborators) watchers.add(c.userId);
+
+    // Mentions : on notifie explicitement avec l'événement "ticket_mention"
+    // et on les retire des watchers simples (évite double notif).
+    const mentions = new Set(opts.mentionedUserIds ?? []);
+    for (const uid of mentions) watchers.delete(uid);
+
+    const excerpt = opts.commentBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+
+    const commonContent: Omit<NotifyContent, "title"> = {
+      body: `${displayNumber} · ${authorName}${opts.isInternal ? " (note interne)" : ""}`,
+      link: `/tickets/${ticket.id}`,
+      metadata: { ticketId: ticket.id, authorUserId: opts.authorUserId ?? null },
+      emailSubject: `[${displayNumber}] Nouveau commentaire`,
+      email: {
+        title: "Nouveau commentaire sur un ticket",
+        intro: `${displayNumber} — ${ticket.subject}`,
+        metadata: ticketMetadata({
+          requester: null,
+          organization: ticket.organization,
+          priority: ticket.priority,
+        }),
+        quote: excerpt ? { author: authorName, content: excerpt + (excerpt.length === 300 ? "…" : "") } : undefined,
+        ctaUrl: agentUrl,
+        ctaLabel: "Voir le commentaire",
+      },
+    };
+
+    await Promise.allSettled([
+      notifyUsers(
+        Array.from(mentions),
+        "ticket_mention",
+        { ...commonContent, title: `${authorName} vous a mentionné sur ${ticket.subject}` },
+        opts.authorUserId ?? undefined,
+      ),
+      notifyUsers(
+        Array.from(watchers),
+        "ticket_comment",
+        { ...commonContent, title: `Nouveau commentaire : ${ticket.subject}` },
+        opts.authorUserId ?? undefined,
+      ),
+    ]);
+  } catch (err) {
+    console.error("[dispatchTicketComment] erreur :", err);
+  }
+}
+
+// ============================================================================
+// TICKET REMINDER
+// ============================================================================
+
+export async function dispatchTicketReminder(
+  ticketId: string,
+  forUserId: string,
+  note?: string,
+): Promise<void> {
+  try {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: {
+        id: true,
+        number: true,
+        subject: true,
+        priority: true,
+        isInternal: true,
+        organization: { select: { name: true } },
+      },
+    });
+    if (!ticket) return;
+    const displayNumber = await formatTicketDisplay(ticket);
+    const agentUrl = await getAgentTicketUrl(ticket.id);
+
+    await notifyUser(forUserId, "ticket_reminder", {
+      title: `Rappel : ${ticket.subject}`,
+      body: `${displayNumber}${note ? ` · ${note}` : ""}`,
+      link: `/tickets/${ticket.id}`,
+      metadata: { ticketId: ticket.id, note },
+      emailSubject: `[${displayNumber}] Rappel`,
+      email: {
+        title: "Rappel de ticket",
+        intro: `${displayNumber} — ${ticket.subject}`,
+        metadata: ticketMetadata({
+          requester: null,
+          organization: ticket.organization,
+          priority: ticket.priority,
+        }),
+        body: note ? `<p style="margin:0;">${note}</p>` : undefined,
+        ctaUrl: agentUrl,
+        ctaLabel: "Ouvrir le ticket",
+      },
+    });
+  } catch (err) {
+    console.error("[dispatchTicketReminder] erreur :", err);
+  }
+}
+
+// ============================================================================
+// PROJECT ASSIGNED / STATUS CHANGE  (client + interne)
+// ============================================================================
+
+export async function dispatchProjectAssigned(
+  projectId: string,
+  userId: string,
+  assignedByUserId?: string | null,
+): Promise<void> {
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, name: true, code: true, organizationId: true, organization: { select: { name: true, isInternal: true } } },
+    });
+    if (!project) return;
+    const base = await getPortalTicketUrl(""); // piggyback for URL base
+    const url = base.replace(/\/portal\/tickets\/$/, `/projects/${project.id}`);
+
+    await notifyUser(userId, "project_assigned", {
+      title: `Assigné au projet : ${project.name}`,
+      body: `${project.code ?? project.name} · ${project.organization?.name ?? "—"}`,
+      link: `/projects/${project.id}`,
+      metadata: { projectId: project.id },
+      emailSubject: `Projet : ${project.name}`,
+      email: {
+        title: "Vous avez été assigné à un projet",
+        intro: `${project.code ?? "Projet"} — ${project.name}`,
+        metadata: [
+          { label: "Organisation", value: project.organization?.name ?? "—" },
+        ],
+        ctaUrl: url,
+        ctaLabel: "Ouvrir le projet",
+      },
+    });
+  } catch (err) {
+    console.error("[dispatchProjectAssigned] erreur :", err);
+  }
+}
+
+// ============================================================================
+// BACKUP FAILED
+// ============================================================================
+
+export async function dispatchBackupAlert(opts: {
+  organizationName: string;
+  jobName: string;
+  detail?: string;
+}): Promise<void> {
+  try {
+    const recipients = await listActiveAgents();
+    const base = await getPortalTicketUrl("");
+    const url = base.replace(/\/portal\/tickets\/$/, "/backups");
+    await notifyUsers(recipients, "backup_failed", {
+      title: `Échec de sauvegarde : ${opts.jobName}`,
+      body: `${opts.organizationName}${opts.detail ? ` · ${opts.detail}` : ""}`,
+      link: "/backups",
+      metadata: { organizationName: opts.organizationName, jobName: opts.jobName },
+      emailSubject: `Sauvegarde en échec : ${opts.jobName}`,
+      email: {
+        title: "Échec de sauvegarde détecté",
+        intro: `${opts.jobName} — ${opts.organizationName}`,
+        metadata: [
+          { label: "Client", value: opts.organizationName },
+          { label: "Tâche", value: opts.jobName },
+          ...(opts.detail ? [{ label: "Détail", value: opts.detail }] : []),
+        ],
+        ctaUrl: url,
+        ctaLabel: "Ouvrir Nexus",
+      },
+    });
+  } catch (err) {
+    console.error("[dispatchBackupAlert] erreur :", err);
+  }
+}
+
+// ============================================================================
+// MONITORING ALERT
+// ============================================================================
+
+export async function dispatchMonitoringAlert(opts: {
+  organizationName: string;
+  alertTitle: string;
+  severity?: string;
+  body?: string;
+}): Promise<void> {
+  try {
+    const recipients = await listActiveAgents();
+    const base = await getPortalTicketUrl("");
+    const url = base.replace(/\/portal\/tickets\/$/, "/monitoring");
+    await notifyUsers(recipients, "monitoring_alert", {
+      title: `Alerte : ${opts.alertTitle}`,
+      body: `${opts.organizationName}${opts.severity ? ` · ${opts.severity.toUpperCase()}` : ""}`,
+      link: "/monitoring",
+      metadata: { organizationName: opts.organizationName },
+      emailSubject: `Alerte monitoring — ${opts.organizationName}`,
+      email: {
+        title: opts.alertTitle,
+        intro: opts.organizationName,
+        metadata: [
+          { label: "Client", value: opts.organizationName },
+          ...(opts.severity ? [{ label: "Sévérité", value: opts.severity }] : []),
+        ],
+        body: opts.body ? `<p style="margin:0;">${opts.body}</p>` : undefined,
+        ctaUrl: url,
+        ctaLabel: "Ouvrir le monitoring",
+      },
+    });
+  } catch (err) {
+    console.error("[dispatchMonitoringAlert] erreur :", err);
+  }
+}
+
 // ----------------------------------------------------------------------------
-// Helper utilitaire public : créer une notification in-app simple. Utile
-// pour les autres flux (commentaires, changements de statut…) qui veulent
-// juste pousser dans la cloche.
+// Compat : ancienne API `createInAppNotification` utilisée par d'autres modules.
+// On la conserve pour ne pas casser les imports externes. Nouveau code doit
+// préférer notifyUser() qui respecte les préférences.
 // ----------------------------------------------------------------------------
 
 export async function createInAppNotification(opts: {
@@ -250,7 +568,7 @@ export async function createInAppNotification(opts: {
         title: opts.title,
         body: opts.body,
         link: opts.link,
-        metadata: opts.metadata as any,
+        metadata: opts.metadata as never,
       },
     });
   } catch (err) {

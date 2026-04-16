@@ -32,6 +32,43 @@ interface AuditReport {
   generatedAt: string;
 }
 
+/** Raw category tel que retourné par /api/v1/categories. Réutilisé pour
+ *  résoudre les paths en ids lors de l'application d'une suggestion. */
+interface ApiCategory {
+  id: string;
+  name: string;
+  parentId: string | null;
+  description: string | null;
+  icon: string | null;
+  sortOrder: number;
+}
+
+/** Parse un chemin "Niveau1 > Niveau2 > Niveau3" en segments trimés. */
+function parsePath(path: string): string[] {
+  return path.split(">").map((s) => s.trim()).filter(Boolean);
+}
+
+/** Trouve une catégorie par segments de chemin (case-insensitive).
+ *  Renvoie les catégories successives de la racine jusqu'au leaf. */
+function resolvePath(
+  all: ApiCategory[],
+  segments: string[],
+): ApiCategory[] | null {
+  const chain: ApiCategory[] = [];
+  let parentId: string | null = null;
+  for (const seg of segments) {
+    const match = all.find(
+      (c) =>
+        (c.parentId ?? null) === parentId &&
+        c.name.toLowerCase() === seg.toLowerCase(),
+    );
+    if (!match) return null;
+    chain.push(match);
+    parentId = match.id;
+  }
+  return chain;
+}
+
 interface ItemCategory {
   id: string;
   name: string;
@@ -133,10 +170,20 @@ const initialCategories: Category[] = [
 
 export function CategoriesSection() {
   const [categories, setCategories] = useState<Category[]>(initialCategories);
+  // Raw liste retournée par l'API (plate) — gardée en parallèle de l'arbre
+  // formaté pour que l'application des suggestions d'audit puisse résoudre
+  // path → id rapidement sans re-requêter.
+  const [rawCategories, setRawCategories] = useState<ApiCategory[]>([]);
   // AI taxonomy audit
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
   const [auditError, setAuditError] = useState<string | null>(null);
+  // Application des suggestions
+  const [applyingIdx, setApplyingIdx] = useState<number | null>(null);
+  const [appliedIdx, setAppliedIdx] = useState<Set<number>>(new Set());
+  const [applyError, setApplyError] = useState<string | null>(null);
+  // Nonce pour déclencher un reload des catégories après une apply.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   async function runAudit() {
     setAuditLoading(true);
@@ -163,6 +210,7 @@ export function CategoriesSection() {
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
+          setRawCategories(data as ApiCategory[]);
           const COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#06B6D4"];
           // Build tree: roots → subcategories
           const roots = data.filter((c: any) => !c.parentId);
@@ -190,7 +238,109 @@ export function CategoriesSection() {
         }
       })
       .catch(() => {});
-  }, []);
+    // reloadNonce fait re-runner le fetch après une apply ou un CRUD manuel.
+  }, [reloadNonce]);
+
+  // --- Application d'une suggestion d'audit ---------------------------
+  // Chaque kind nécessite une logique différente. On reconstitue les ids
+  // via resolvePath sur rawCategories ; si le chemin n'existe pas (ou
+  // n'existe plus après un précédent apply), on affiche une erreur claire.
+  async function applySuggestion(suggestion: AuditSuggestion, idx: number) {
+    setApplyError(null);
+    setApplyingIdx(idx);
+    try {
+      if (suggestion.kind === "add") {
+        // Crée chaque segment manquant à partir de la racine jusqu'au leaf.
+        const target = suggestion.proposedPath ?? suggestion.path;
+        const segments = parsePath(target);
+        if (segments.length === 0) throw new Error("Chemin invalide");
+        let parentId: string | null = null;
+        let current = rawCategories;
+        for (const seg of segments) {
+          const existing = current.find(
+            (c) =>
+              (c.parentId ?? null) === parentId &&
+              c.name.toLowerCase() === seg.toLowerCase(),
+          );
+          if (existing) {
+            parentId = existing.id;
+            continue;
+          }
+          const res = await fetch("/api/v1/categories", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: seg, parentId }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${res.status}`);
+          }
+          const created = (await res.json()) as ApiCategory;
+          current = [...current, created];
+          parentId = created.id;
+        }
+      } else if (suggestion.kind === "rename") {
+        if (!suggestion.proposedPath) throw new Error("proposedPath manquant");
+        const fromSegments = parsePath(suggestion.path);
+        const toSegments = parsePath(suggestion.proposedPath);
+        const chain = resolvePath(rawCategories, fromSegments);
+        if (!chain || chain.length === 0) throw new Error("Catégorie introuvable à " + suggestion.path);
+        const target = chain[chain.length - 1];
+        const newName = toSegments[toSegments.length - 1];
+        if (!newName) throw new Error("Nouveau nom invalide");
+        const res = await fetch(`/api/v1/categories/${target.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: newName }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+      } else if (suggestion.kind === "rehome") {
+        if (!suggestion.proposedPath) throw new Error("proposedPath manquant");
+        const fromSegments = parsePath(suggestion.path);
+        const toSegments = parsePath(suggestion.proposedPath);
+        const chain = resolvePath(rawCategories, fromSegments);
+        if (!chain || chain.length === 0) throw new Error("Catégorie introuvable à " + suggestion.path);
+        const target = chain[chain.length - 1];
+        // Nouveau parent = tous sauf le dernier segment du proposedPath.
+        // Le nom final de la catégorie devient le DERNIER segment (au cas
+        // où rehome inclut aussi un rename implicite).
+        const newParentSegs = toSegments.slice(0, -1);
+        const newName = toSegments[toSegments.length - 1];
+        let newParentId: string | null = null;
+        if (newParentSegs.length > 0) {
+          const pChain = resolvePath(rawCategories, newParentSegs);
+          if (!pChain) throw new Error("Nouveau parent introuvable : " + newParentSegs.join(" > "));
+          newParentId = pChain[pChain.length - 1].id;
+        }
+        const patch: Record<string, unknown> = { parentId: newParentId };
+        if (newName && newName.toLowerCase() !== target.name.toLowerCase()) {
+          patch.name = newName;
+        }
+        const res = await fetch(`/api/v1/categories/${target.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+      }
+      setAppliedIdx((prev) => {
+        const next = new Set(prev);
+        next.add(idx);
+        return next;
+      });
+      setReloadNonce((n) => n + 1);
+    } catch (e) {
+      setApplyError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApplyingIdx(null);
+    }
+  }
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["c1"]));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creatingFor, setCreatingFor] = useState<string | null>(null);
@@ -355,10 +505,12 @@ export function CategoriesSection() {
                       : s.kind === "rehome"
                         ? "bg-amber-100 text-amber-800 ring-amber-200/70"
                         : "bg-sky-100 text-sky-800 ring-sky-200/70";
+                  const isApplied = appliedIdx.has(i);
+                  const isApplying = applyingIdx === i;
                   return (
                     <div
                       key={i}
-                      className="rounded-lg border border-violet-200/60 bg-white px-3 py-2.5 space-y-1.5"
+                      className={`rounded-lg border px-3 py-2.5 space-y-1.5 ${isApplied ? "border-emerald-200 bg-emerald-50/40" : "border-violet-200/60 bg-white"}`}
                     >
                       <div className="flex items-start gap-2">
                         <span
@@ -382,13 +534,35 @@ export function CategoriesSection() {
                             {s.reason}
                           </p>
                         </div>
+                        <Button
+                          size="sm"
+                          variant={isApplied ? "outline" : "primary"}
+                          disabled={isApplying || isApplied}
+                          onClick={() => applySuggestion(s, i)}
+                          className="shrink-0"
+                        >
+                          {isApplied ? (
+                            <>✓ Appliqué</>
+                          ) : isApplying ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            "Appliquer"
+                          )}
+                        </Button>
                       </div>
                     </div>
                   );
                 })}
+                {applyError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 text-[11.5px] px-3 py-2">
+                    <strong>Erreur lors de l&apos;application :</strong> {applyError}
+                  </div>
+                )}
                 <p className="text-[10.5px] text-violet-700/70 mt-3 italic">
-                  💡 Applique les suggestions manuellement via les boutons + / ✎ ci-dessous.
-                  L'IA n'altère pas la hiérarchie automatiquement.
+                  💡 Chaque « Appliquer » exécute réellement la modification
+                  (création, renommage ou déplacement) via l&apos;API catégories.
+                  Les tickets liés gardent leur référence et reflètent le
+                  changement instantanément.
                 </p>
               </div>
             )}

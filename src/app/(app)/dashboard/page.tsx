@@ -134,11 +134,31 @@ export default function DashboardPage() {
   const [items, setItems] = useState<DashboardItem[]>(() => loadLayout());
   const [showSidebar, setShowSidebar] = useState(false);
 
+  // On surface les erreurs au lieu de swallow silencieux : si l'endpoint
+  // renvoie 500 (changement de schéma, régression, etc.) l'utilisateur
+  // voyait juste un dashboard vide sans comprendre pourquoi.
+  const [fetchError, setFetchError] = useState<string | null>(null);
   useEffect(() => {
     fetch("/api/v1/dashboard/stats")
-      .then((r) => r.json())
-      .then((res) => { if (res?.success && res.data) setData(res.data); })
-      .catch(() => {})
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body?.error || `HTTP ${r.status}`);
+        }
+        return r.json();
+      })
+      .then((res) => {
+        if (res?.success && res.data) {
+          setData(res.data);
+          setFetchError(null);
+        } else {
+          throw new Error(res?.error || "Réponse inattendue du serveur");
+        }
+      })
+      .catch((e) => {
+        setFetchError(e instanceof Error ? e.message : String(e));
+        console.error("[dashboard] fetch failed:", e);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -207,6 +227,18 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Bannière d'erreur — ne bloque pas le rendu, mais donne un indice
+          clair plutôt qu'un dashboard mystérieusement vide. */}
+      {fetchError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+          <strong>Impossible de charger les statistiques :</strong> {fetchError}
+          <div className="mt-1 text-[12px] text-red-600/80">
+            Essaie de rafraîchir la page (Ctrl+Maj+R pour forcer le
+            rechargement du bundle si tu viens de mettre à jour Nexus).
+          </div>
+        </div>
+      )}
 
       {/* Dashboard Grid */}
       <DashboardGrid
