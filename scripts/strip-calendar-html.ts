@@ -34,11 +34,11 @@ function stripHtmlToText(raw: string | null | undefined): string | null {
 }
 
 async function main() {
+  // On examine TOUS les events avec une description, pas seulement ceux
+  // synchronisés depuis Outlook — un utilisateur peut aussi avoir créé
+  // manuellement un event avec une description HTML via un client API.
   const events = await prisma.calendarEvent.findMany({
-    where: {
-      description: { not: null },
-      outlookEventId: { not: null },
-    },
+    where: { description: { not: null } },
     select: { id: true, description: true },
   });
   console.log(`Events à examiner : ${events.length}`);

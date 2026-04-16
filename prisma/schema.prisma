@@ -41,9 +41,14 @@ model Organization {
   isInternal  Boolean  @default(false) @map("is_internal")
 
   // Portal config
-  portalEnabled       Boolean  @default(true) @map("portal_enabled")
-  portalAuthProviders String[] @default([]) @map("portal_auth_providers")  // ["microsoft", "google", "local"]
-  portalDefaultRole   PortalRole? @map("portal_default_role")
+  // Par défaut : portail ACTIF, les trois méthodes d'auth autorisées
+  // (Microsoft, Google, local password) et les contacts sont ajoutés
+  // comme utilisateurs STANDARD (peuvent créer et suivre leurs billets).
+  // Ces valeurs par défaut s'appliquent aux nouvelles orgs ; les orgs
+  // existantes ont été alignées via scripts/portal-defaults-migrate.ts.
+  portalEnabled       Boolean     @default(true) @map("portal_enabled")
+  portalAuthProviders String[]    @default(["microsoft", "google", "local"]) @map("portal_auth_providers")
+  portalDefaultRole   PortalRole  @default(STANDARD) @map("portal_default_role")
 
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -237,7 +242,16 @@ model Ticket {
   descriptionHtml String?      @map("description_html") @db.Text
 
   status         TicketStatus  @default(NEW)
-  priority       TicketPriority @default(MEDIUM)
+  /// Priorité par défaut = LOW. Le créateur peut surcharger explicitement
+  /// (medium, high, critical). L'IA peut ensuite ré-évaluer et remonter
+  /// la priorité SI sa confiance est "high" (voir src/lib/ai/auto-prioritize.ts).
+  /// `prioritySource` garde une trace de l'origine pour l'UI.
+  priority       TicketPriority @default(LOW)
+  /// Origine de la valeur courante de `priority` :
+  ///   - null ou "DEFAULT" : valeur par défaut (LOW), jamais touchée
+  ///   - "MANUAL"          : fixée explicitement par un humain
+  ///   - "AI"              : ajustée par l'IA après création
+  prioritySource String?       @map("priority_source")
   urgency        TicketUrgency @default(MEDIUM)
   impact         TicketImpact  @default(MEDIUM)
   type           TicketType    @default(INCIDENT)

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser, hasMinimumRole, type UserRole } from "@/lib/auth-utils";
+import { stripHtmlToText } from "@/lib/calendar/description-utils";
 
 /** Strip the "@occurrenceStartISO" suffix that the API adds to recurring
  *  event occurrences — DB operations doivent cibler l'event-source. */
@@ -82,6 +83,12 @@ export async function PATCH(
     const trimmed = data.title.trim();
     if (!trimmed) return NextResponse.json({ error: "Titre vide" }, { status: 400 });
     data.title = trimmed;
+  }
+  // Normalise systématiquement la description en plain text — voir
+  // src/lib/calendar/description-utils.ts pour la raison d'être (Outlook
+  // + clients API qui pourraient envoyer du HTML par inadvertance).
+  if ("description" in body) {
+    data.description = stripHtmlToText(body.description);
   }
   if (startsAtDate) data.startsAt = startsAtDate;
   if (endsAtDate) data.endsAt = endsAtDate;

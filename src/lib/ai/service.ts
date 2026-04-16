@@ -911,6 +911,85 @@ export interface CategorySuggestion {
   reasoning: string;
 }
 
+// ----------------------------------------------------------------------------
+// PRIORITY SUGGESTION — analyse IA pour positionner la priorité d'un ticket
+// ----------------------------------------------------------------------------
+
+export type AiPriority = "critical" | "high" | "medium" | "low";
+
+export interface PrioritySuggestion {
+  /** Priorité suggérée par l'IA. */
+  priority: AiPriority;
+  /** Niveau de confiance — seul "high" déclenche une mise à jour. */
+  confidence: "high" | "medium" | "low";
+  /** Explication courte (1 phrase) en français. */
+  reasoning: string;
+}
+
+/**
+ * Analyse le sujet + la description d'un ticket et renvoie une priorité
+ * suggérée. L'objectif est strict : on ne doit PAS sur-prioriser. L'IA
+ * doit défaut à `low` sauf preuve contraire (mots-clés d'urgence explicites,
+ * impact multi-utilisateurs, sécurité, production down, etc.).
+ *
+ * Ne throw jamais — en cas d'erreur réseau/clé absente, renvoie une
+ * suggestion `low` + `confidence: low` pour que l'appelant n'écrase rien.
+ */
+export async function suggestPriority(
+  subject: string,
+  description: string,
+): Promise<PrioritySuggestion> {
+  const messages: ChatMessage[] = [
+    {
+      role: "system",
+      content: `Tu es un analyste de priorité pour les tickets d'un MSP (support IT).
+
+Tu dois classifier la priorité du ticket sur 4 niveaux :
+- "critical" : production down, sécurité compromise, perte de données, plusieurs utilisateurs bloqués.
+- "high"     : un utilisateur clé ou un service important ne fonctionne plus ; blocage du travail.
+- "medium"   : gêne réelle mais contournement possible, demande à traiter dans la journée.
+- "low"      : demande standard, question, demande de configuration, pas de blocage.
+
+Règles ABSOLUES :
+1. Par défaut, priorité = "low". N'élève la priorité que si tu as des signaux CLAIRS.
+2. Si le texte est court, vague, ou ambigu → confidence = "low" et priority = "low".
+3. Si tu n'es PAS sûr → confidence = "low". Mieux vaut sous-prioriser et laisser l'agent élever que faire paniquer l'équipe.
+4. Réserve "critical" aux vraies pannes. Réserve "high" aux blocages individuels avec mention d'impact.
+5. confidence = "high" uniquement si les indices sont explicites et non ambigus (ex: "production down", "serveur inaccessible", "équipe entière bloquée", "virus", "rançongiciel").
+
+Retourne UNIQUEMENT du JSON valide (sans markdown, sans backticks) :
+{
+  "priority": "critical|high|medium|low",
+  "confidence": "high|medium|low",
+  "reasoning": "Explication courte en français (1 phrase)"
+}`,
+    },
+    {
+      role: "user",
+      content: `Sujet: ${subject}\nDescription: ${description || "(aucune)"}`,
+    },
+  ];
+
+  try {
+    const response = await chatCompletion(messages, { temperature: 0.1 });
+    const parsed = JSON.parse(response) as Partial<PrioritySuggestion>;
+    const priority = (parsed.priority || "low") as AiPriority;
+    const confidence = (parsed.confidence || "low") as PrioritySuggestion["confidence"];
+    const valid: AiPriority[] = ["critical", "high", "medium", "low"];
+    return {
+      priority: valid.includes(priority) ? priority : "low",
+      confidence: ["high", "medium", "low"].includes(confidence) ? confidence : "low",
+      reasoning: parsed.reasoning || "",
+    };
+  } catch (e) {
+    return {
+      priority: "low",
+      confidence: "low",
+      reasoning: e instanceof Error ? `Erreur IA : ${e.message}` : "Erreur IA",
+    };
+  }
+}
+
 export async function suggestCategory(
   subject: string,
   description: string,

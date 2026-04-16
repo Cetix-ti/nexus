@@ -1204,6 +1204,16 @@ export default function TicketDetailPage() {
                   <option value="medium">Moyenne</option>
                   <option value="low">Faible</option>
                 </select>
+                {/* Notice "priorité IA" — affichée uniquement quand l'IA
+                    a défini/remonté la priorité à la création. Dès qu'un
+                    agent ajuste manuellement, updateTicket passe à
+                    prioritySource="MANUAL" et la notice disparaît. */}
+                {(ticket as { prioritySource?: string }).prioritySource === "AI" && (
+                  <div className="mt-1 flex items-center gap-1 text-[10.5px] text-violet-700 bg-violet-50 border border-violet-100 rounded px-1.5 py-0.5" title="La priorité a été définie automatiquement par l'IA en analysant le contenu du ticket. Tu peux la modifier — cette notice disparaîtra.">
+                    <Sparkles className="h-2.5 w-2.5" />
+                    <span>Priorité définie par l&apos;IA</span>
+                  </div>
+                )}
               </SidebarField>
               <SidebarField label="Urgence">
                 <select

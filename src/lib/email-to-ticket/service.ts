@@ -668,6 +668,12 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
             ? isMonitoringSource
             : false;
 
+          // Priorité initiale : LOW par défaut (cohérent avec le reste de
+          // Nexus — voir src/lib/tickets/service.ts). cfg.defaultPriority
+          // peut surcharger via la config email-to-ticket si un admin a
+          // volontairement défini autre chose. `prioritySource="DEFAULT"`
+          // indique que c'est la valeur de repli ; l'IA prendra le relais.
+          const emailPriority = (cfg.defaultPriority as never) || "LOW";
           const newTicket = await prisma.ticket.create({
             data: {
               organizationId: org.id,
@@ -677,7 +683,8 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
               description: plainBody.slice(0, 10_000) || cleanSubject,
               descriptionHtml: htmlBody.slice(0, 500_000) || null,
               status: "NEW",
-              priority: (cfg.defaultPriority as never) || "MEDIUM",
+              priority: emailPriority,
+              prioritySource: "DEFAULT",
               type: "INCIDENT",
               source: "EMAIL",
               externalSource: "email",
@@ -693,6 +700,14 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
           // aux vrais clients en développement).
           import("@/lib/notifications/dispatch")
             .then((m) => m.dispatchTicketCreatedNotifications(newTicket.id))
+            .catch(() => {});
+
+          // Auto-prioritisation IA (fire-and-forget) — analyse le ticket
+          // entrant et remonte la priorité si sa confiance est "high".
+          // Sans cet appel, les courriels entrants resteraient en LOW même
+          // si le client écrit "PRODUCTION DOWN — URGENT".
+          import("@/lib/ai/auto-prioritize")
+            .then((m) => m.autoPrioritizeTicketAsync(newTicket.id))
             .catch(() => {});
 
           if (cfg.markAsRead && !msg.isRead) {

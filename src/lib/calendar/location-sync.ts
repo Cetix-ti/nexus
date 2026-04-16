@@ -44,6 +44,7 @@ import {
   type DecodableOrg,
   type DecoderResult,
 } from "./location-decoder";
+import { stripHtmlToText } from "./description-utils";
 
 // ---------------------------------------------------------------------------
 // Config — stockée dans tenant_settings ("calendar.location-sync")
@@ -118,48 +119,6 @@ async function ensureNexusCalendar(): Promise<string> {
   });
   await setLocationSyncConfig({ nexusCalendarId: created.id });
   return created.id;
-}
-
-/**
- * Convertit le body Outlook (HTML ou texte) en plain text propre.
- *
- * - Supprime les balises HTML (y compris `<style>`, `<script>` et leur contenu).
- * - Remplace `<br>` et fin de paragraphe par des sauts de ligne.
- * - Décode les entités courantes (`&nbsp;`, `&amp;`, etc.).
- * - Retourne `null` si le résultat final ne contient que du blanc — nécessaire
- *   car Outlook envoie souvent un squelette HTML vide même quand l'utilisateur
- *   n'a saisi aucune description.
- */
-function stripHtmlToText(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  let text = raw
-    // Vire les blocs non textuels avec leur contenu.
-    .replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, "")
-    // <br> et fins de blocs → saut de ligne.
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n")
-    // Autres balises → rien.
-    .replace(/<[^>]+>/g, "");
-  // Décodage entités courantes.
-  text = text
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x27;/g, "'");
-  // Normalise les espaces : consolide les blancs multiples, garde les
-  // sauts de ligne explicites.
-  text = text
-    .replace(/[\u200B-\u200D\uFEFF]/g, "") // zero-width
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((line) => line.replace(/[\t ]+/g, " ").trim())
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return text.length > 0 ? text : null;
 }
 
 // ---------------------------------------------------------------------------

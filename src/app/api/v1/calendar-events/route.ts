@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { stripHtmlToText } from "@/lib/calendar/description-utils";
 
 /**
  * GET /api/v1/calendar-events?from=...&to=...&calendarIds=id1,id2
@@ -255,7 +256,7 @@ export async function POST(req: Request) {
     const m = await prisma.meeting.create({
       data: {
         title: body.title.trim(),
-        description: body.description ?? null,
+        description: stripHtmlToText(body.description),
         startsAt,
         endsAt,
         location: body.location ?? null,
@@ -295,7 +296,11 @@ export async function POST(req: Request) {
     data: {
       calendarId: body.calendarId,
       title: body.title.trim(),
-      description: body.description ?? null,
+      // Toutes les descriptions passent par stripHtmlToText pour éviter
+      // qu'un client API (ou un formulaire qui enverrait du HTML par
+      // erreur) n'injecte des balises qui se retrouveraient affichées
+      // telles quelles côté drawer (rendu plain text).
+      description: stripHtmlToText(body.description),
       kind: body.kind ?? "OTHER",
       startsAt,
       endsAt,

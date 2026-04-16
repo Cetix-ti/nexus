@@ -23,6 +23,7 @@ import {
   ArrowDown,
   MessageSquare,
   Paperclip,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -679,6 +680,15 @@ export function TicketQuickViewModal({
                     ))}
                   </SelectContent>
                 </Select>
+                {ticket?.prioritySource === "AI" && (
+                  <div
+                    className="mt-1.5 flex items-center gap-1 text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded px-2 py-1"
+                    title="Priorité définie automatiquement par l'IA"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    <span>Priorité définie par l&apos;IA</span>
+                  </div>
+                )}
               </div>
 
               {/* Assignee */}

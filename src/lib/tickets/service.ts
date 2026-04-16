@@ -94,6 +94,7 @@ function flattenDetail(t: PrismaTicketDetail, clientPrefix: string): UiTicket {
     description: t.description,
     status: statusToUi(t.status),
     priority: priorityToUi(t.priority),
+    prioritySource: (t.prioritySource as UiTicket["prioritySource"]) ?? null,
     urgency: priorityToUi(t.urgency),
     impact: priorityToUi(t.impact),
     type: typeToUi(t.type),
@@ -171,6 +172,7 @@ function flattenList(t: PrismaTicketList, clientPrefix: string): UiTicket {
     description: t.description,
     status: statusToUi(t.status),
     priority: priorityToUi(t.priority),
+    prioritySource: (t.prioritySource as UiTicket["prioritySource"]) ?? null,
     urgency: priorityToUi(t.urgency),
     impact: priorityToUi(t.impact),
     type: typeToUi(t.type),
@@ -327,6 +329,18 @@ export async function createTicket(input: {
   isInternal?: boolean;
   meetingId?: string | null;
 }): Promise<UiTicket> {
+  // Priorité : par défaut LOW. Si le créateur a fourni une valeur
+  // EXPLICITE (medium/high/critical/low), on la garde telle quelle et on
+  // marque prioritySource="MANUAL" pour que l'auto-prioritisation IA sache
+  // qu'un humain s'est prononcé. Sinon prioritySource="DEFAULT" et l'IA
+  // pourra remonter la priorité si elle détecte un signal fort.
+  const priorityDb = (input.priority?.toUpperCase() || "LOW") as
+    | "CRITICAL"
+    | "HIGH"
+    | "MEDIUM"
+    | "LOW";
+  const priorityWasExplicit = !!input.priority;
+
   const t = await prisma.ticket.create({
     data: {
       organizationId: input.organizationId,
@@ -334,7 +348,8 @@ export async function createTicket(input: {
       description: input.description,
       descriptionHtml: input.descriptionHtml ?? null,
       status: (input.status?.toUpperCase() || "NEW") as any,
-      priority: (input.priority?.toUpperCase() || "MEDIUM") as any,
+      priority: priorityDb as any,
+      prioritySource: priorityWasExplicit ? "MANUAL" : "DEFAULT",
       urgency: (input.urgency?.toUpperCase() || "MEDIUM") as any,
       impact: (input.impact?.toUpperCase() || "MEDIUM") as any,
       type: input.type ? (typeToDb(input.type) as any) : "INCIDENT",
@@ -361,6 +376,17 @@ export async function createTicket(input: {
   if (!t.categoryId && t.subject?.trim()) {
     import("@/lib/ai/auto-categorize")
       .then((m) => m.autoCategorizeTicketAsync(t.id))
+      .catch(() => {});
+  }
+
+  // Auto-prioritisation IA (fire-and-forget). Contrairement à la catégorie,
+  // on lance TOUJOURS l'analyse — même si le créateur a fourni une priorité
+  // explicite. L'IA n'écrit que si sa confiance est "high" (voir
+  // src/lib/ai/auto-prioritize.ts). La notice "Priorité définie par l'IA"
+  // côté UI est déclenchée par prioritySource="AI".
+  if (t.subject?.trim()) {
+    import("@/lib/ai/auto-prioritize")
+      .then((m) => m.autoPrioritizeTicketAsync(t.id))
       .catch(() => {});
   }
 
@@ -433,7 +459,14 @@ export async function updateTicket(
   if (patch.description !== undefined) data.description = patch.description;
   if (patch.descriptionHtml !== undefined) data.descriptionHtml = patch.descriptionHtml;
   if (patch.status !== undefined) data.status = patch.status.toUpperCase() as any;
-  if (patch.priority !== undefined) data.priority = patch.priority.toUpperCase() as any;
+  // Tout changement explicite de priorité via updateTicket vient d'un agent
+  // (édition UI ou API). On marque prioritySource="MANUAL" pour figer la
+  // valeur : l'auto-prioritisation IA ne la touchera plus et la notice
+  // "Priorité définie par l'IA" disparaîtra de la fiche.
+  if (patch.priority !== undefined) {
+    data.priority = patch.priority.toUpperCase() as any;
+    data.prioritySource = "MANUAL";
+  }
   if (patch.urgency !== undefined) data.urgency = patch.urgency.toUpperCase() as any;
   if (patch.impact !== undefined) data.impact = patch.impact.toUpperCase() as any;
   if (patch.type !== undefined) data.type = typeToDb(patch.type) as any;

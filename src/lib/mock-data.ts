@@ -52,6 +52,14 @@ export interface Ticket {
   descriptionHtml?: string;
   status: TicketStatus;
   priority: TicketPriority;
+  /**
+   * Origine de la valeur courante de `priority` :
+   *   - `"DEFAULT"` (ou null) : valeur initiale (LOW), jamais touchée
+   *   - `"MANUAL"`            : fixée explicitement par un humain
+   *   - `"AI"`                : ajustée par l'IA à la création
+   * Utilisé par l'UI pour afficher une notice quand l'IA est à l'origine.
+   */
+  prioritySource?: "DEFAULT" | "MANUAL" | "AI" | null;
   urgency: TicketUrgency;
   impact: TicketImpact;
   type: TicketType;

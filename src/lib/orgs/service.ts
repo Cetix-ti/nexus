@@ -149,6 +149,13 @@ export async function createOrganization(input: {
       slug,
       domain: input.domain,
       clientCode: input.clientCode?.toUpperCase() || null,
+      // Portail : on duplique ici les defaults du schéma Prisma
+      // pour éviter que les éventuelles overrides applicatives ne
+      // privent une nouvelle org des trois providers. Cette ligne
+      // rend le comportement explicite et documenté côté service.
+      portalEnabled: true,
+      portalAuthProviders: ["microsoft", "google", "local"],
+      portalDefaultRole: "STANDARD",
     },
   });
 }
