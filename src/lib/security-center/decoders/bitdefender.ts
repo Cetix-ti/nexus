@@ -24,36 +24,60 @@ export interface BitdefenderEvent {
   event_type?: string;
   event_id?: string | number;
   severity?: string | number;
+  /** Score de sévérité 0-100 (format "new-incident" de GZ). */
+  severity_score?: number;
   /** Nom du endpoint / machine. */
   computer_name?: string;
   endpoint_name?: string;
   computer_fqdn?: string;
+  computer_ip?: string;
   /** Nom du compte utilisateur. */
   user_name?: string;
   /** Heures / timestamps. */
   timestamp?: string;
   created_on?: string;
+  created?: string;
+  last_updated?: string;
   /** Menace / fichier. */
   threat_name?: string;
   malware_name?: string;
+  detection_name?: string;
   file_path?: string;
+  file_name?: string;
   target_name?: string;
+  process_path?: string;
+  file_hash_sha256?: string;
   /** Client / company (utile si multitenant Bitdefender). */
   company_id?: string;
   company_name?: string;
+  /** MITRE ATT&CK techniques IDs (T1083, T1204, etc.). */
+  att_ck_id?: string[];
+  attack_types?: string[];
+  /** Identifiant unique d'incident (GZ new-incident) — idéal comme externalId. */
+  incident_id?: string;
+  incident_number?: number;
   /** Tout champ supplémentaire. */
   [k: string]: unknown;
 }
 
-function normalizeSeverity(raw: unknown): DecodedAlert["severity"] {
+function normalizeSeverity(raw: unknown, scoreRaw?: unknown): DecodedAlert["severity"] {
+  // Priorité au severity_score (0-100, format new-incident GravityZone)
+  // si disponible : 80+ = critical, 50+ = high, 25+ = warning, <25 = info.
+  if (scoreRaw != null) {
+    const n = Number(scoreRaw);
+    if (Number.isFinite(n)) {
+      if (n >= 80) return "critical";
+      if (n >= 50) return "high";
+      if (n >= 25) return "warning";
+      return "info";
+    }
+  }
   if (raw == null) return undefined;
   const s = String(raw).toLowerCase();
   if (s.includes("critical")) return "critical";
   if (s.includes("high") || s === "3" || s === "10") return "high";
   if (s.includes("warning") || s === "2" || s === "5") return "warning";
   if (s.includes("info") || s === "1") return "info";
-  // Nombres Bitdefender (1=info, 2=medium, 3=high, 4=critical sur certaines
-  // APIs)
   const n = Number(raw);
   if (Number.isFinite(n)) {
     if (n >= 4) return "critical";
@@ -65,13 +89,24 @@ function normalizeSeverity(raw: unknown): DecodedAlert["severity"] {
 }
 
 function pickEndpoint(e: BitdefenderEvent): string | null {
-  return (e.computer_name || e.endpoint_name || e.computer_fqdn || null) as string | null;
+  return (
+    (e.computer_name || e.endpoint_name || e.computer_fqdn || null) as string | null
+  );
+}
+
+function pickThreatName(e: BitdefenderEvent): string | null {
+  return (
+    (e.detection_name || e.threat_name || e.malware_name || null) as string | null
+  );
 }
 
 function externalIdOf(e: BitdefenderEvent): string | undefined {
+  // incident_id de GravityZone = identifiant stable et unique (new-incident).
+  // Priorité dessus, c'est la meilleure clé de dédup.
+  if (e.incident_id) return `bdf-inc-${String(e.incident_id)}`;
   if (e.event_id != null) return `bdf-${String(e.event_id)}`;
   // fallback : clé composite stable
-  const t = e.timestamp || e.created_on || "";
+  const t = e.timestamp || e.created_on || e.created || "";
   const m = e.module_id || e.module || "";
   const ep = pickEndpoint(e) || "";
   if (t && m && ep) return `bdf-${m}-${ep}-${t}`;
@@ -87,9 +122,41 @@ type ModuleDecoder = (
 ) => DecodedAlert;
 
 const MODULE_DECODERS: Record<string, ModuleDecoder> = {
+  // New incident (GravityZone EDR / XDR) — détection corrélée avec
+  // contexte MITRE ATT&CK, process chain, file hash. Le payload réel
+  // observé chez Cetix contient detection_name, severity_score, att_ck_id
+  // (array techniques), process_path, file_hash_sha256, attack_types[].
+  new_incident: (e, base) => {
+    const threat = pickThreatName(e) ?? "détection inconnue";
+    const filePath = (e.file_path || e.process_path || null) as string | null;
+    const ep = base.endpoint ?? "endpoint inconnu";
+    const attackTypes = Array.isArray(e.attack_types) ? e.attack_types.join(", ") : null;
+    const mitre = Array.isArray(e.att_ck_id) ? e.att_ck_id.slice(0, 5).join(", ") : null;
+    const sev = base.severity ?? "high";
+    const summaryLines = [
+      `Détection : ${threat}`,
+      filePath ? `Fichier : ${filePath}` : null,
+      attackTypes ? `Types : ${attackTypes}` : null,
+      mitre ? `MITRE ATT&CK : ${mitre}${Array.isArray(e.att_ck_id) && e.att_ck_id.length > 5 ? ` (+${e.att_ck_id.length - 5})` : ""}` : null,
+      e.file_hash_sha256 ? `SHA256 : ${String(e.file_hash_sha256).slice(0, 16)}…` : null,
+    ].filter(Boolean);
+    return {
+      ...base,
+      source: "bitdefender_api",
+      kind: "critical_incident",
+      severity: sev,
+      title: `Bitdefender [${sev.toUpperCase()}] ${ep} — ${threat}`,
+      summary: summaryLines.join("\n"),
+      // Corrélation par incident_id unique : chaque incident GZ reste un
+      // seul SecurityIncident Nexus, même si réévalué plusieurs fois.
+      correlationKey: e.incident_id
+        ? `bdf-inc:${String(e.incident_id)}`
+        : `bdf-newinc:${base.organizationId ?? "unknown"}:${ep.toLowerCase()}:${threat.toLowerCase()}`,
+    };
+  },
   // Anti-malware : événement de détection / blocage de menace.
   antimalware: (e, base) => {
-    const threat = (e.threat_name || e.malware_name || "menace inconnue") as string;
+    const threat = pickThreatName(e) ?? "menace inconnue";
     const filePath = (e.file_path || e.target_name || null) as string | null;
     const ep = base.endpoint ?? "endpoint inconnu";
     return {
@@ -136,15 +203,17 @@ export async function decodeBitdefenderEvent(
   event: BitdefenderEvent,
 ): Promise<DecodedAlert | null> {
   const ep = pickEndpoint(event);
-  // Cascade : préfixe CODE- du hostname → fallback Asset/Atera si pas de
-  // préfixe (ex: machine "DESKTOP-ABC123" synchronisée dans Atera sous
-  // un client connu). Bitdefender fournit parfois l'IP dans `last_ip` ou
-  // `ip_address` — on l'utilise en complément du hostname.
-  const ip = (event.last_ip || event.ip_address || event.ip) as string | undefined;
+  // Cascade : préfixe CODE- du hostname → fallback Asset/Atera. Payload
+  // réel Cetix utilise `computer_ip`, mais on tolère d'autres clés aussi.
+  const ip = (event.computer_ip || event.last_ip || event.ip_address || event.ip) as
+    | string
+    | undefined;
   let orgId: string | null = null;
   if (ep) orgId = await resolveOrgByEndpoint(ep);
   if (!orgId && (ep || ip)) orgId = await resolveOrgByHostOrIp(ep, ip);
-  const severity = normalizeSeverity(event.severity);
+  // Sévérité : priorité au severity_score (0-100) de new-incident, sinon
+  // lecture classique du champ severity.
+  const severity = normalizeSeverity(event.severity, event.severity_score);
   const externalId = externalIdOf(event);
 
   const base = {
