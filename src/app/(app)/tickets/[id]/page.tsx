@@ -34,6 +34,7 @@ import { OrgLogo } from "@/components/organizations/org-logo";
 import {
   STATUS_CONFIG,
   PRIORITY_CONFIG,
+  ACTIVE_TICKET_STATUSES,
   type TicketStatus,
   type TicketPriority,
 } from "@/lib/mock-data";
@@ -1164,17 +1165,25 @@ export default function TicketDetailPage() {
                   }}
                   className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
                 >
-                  <option value="new">Nouveau</option>
-                  <option value="open">Ouvert</option>
-                  <option value="in_progress">En cours</option>
-                  <option value="on_site">Sur place</option>
-                  <option value="pending">En attente</option>
-                  <option value="waiting_client">En attente client</option>
-                  <option value="waiting_vendor">Attente fournisseur</option>
-                  <option value="scheduled">Planifié</option>
-                  <option value="resolved">Résolu</option>
-                  <option value="closed">Fermé</option>
-                  <option value="cancelled">Annulé</option>
+                  {/* Set réel des statuts Nexus — cf. ACTIVE_TICKET_STATUSES
+                      dans mock-data.ts. Les anciens statuts Freshservice
+                      (open, on_site, pending, waiting_vendor) ont été
+                      consolidés ; "sur place" est désormais un flag distinct
+                      (voir SidebarField "Sur place" plus bas). Si le ticket
+                      courant porte encore un ancien statut, on l'affiche
+                      comme option extra pour éviter de "perdre" sa valeur
+                      à l'écran avant qu'il ne soit migré. */}
+                  {ACTIVE_TICKET_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_CONFIG[s].label}
+                    </option>
+                  ))}
+                  {!ACTIVE_TICKET_STATUSES.includes(ticket.status) &&
+                    ticket.status !== "deleted" && (
+                      <option value={ticket.status}>
+                        {STATUS_CONFIG[ticket.status]?.label ?? ticket.status} (legacy)
+                      </option>
+                    )}
                 </select>
               </SidebarField>
               <SidebarField label="Priorité">

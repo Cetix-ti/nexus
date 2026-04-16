@@ -964,7 +964,7 @@ interface LinkedTicketRow {
   priority: string;
   isInternal: boolean;
   organizationId: string;
-  assignee: { firstName: string; lastName: string } | null;
+  assignee: { firstName: string; lastName: string; avatar?: string | null } | null;
 }
 
 function LinkedTicketsSection({
@@ -1102,6 +1102,80 @@ function LinkedTicketsSection({
           onCancel={() => setPickerOpen(false)}
           onAdd={addTickets}
         />
+      )}
+
+      {/* Section "Tickets à faire sur place" — autres tickets du même client
+          marqués requiresOnSite=true, pas encore planifiés sur cette visite.
+          Vue info : l'agent voit d'un coup d'œil tout ce qui reste à planifier
+          chez ce client. Clic sur une ligne → ajout immédiat à la visite (1
+          ticket à la fois ; le picker multi-select reste disponible via le
+          bouton "Ajouter" de la section ci-dessus). */}
+      {clientPool.length > 0 && (
+        <div className="pt-2 mt-2 border-t border-slate-100">
+          <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            Tickets à faire sur place
+            <span className="ml-1.5 text-slate-400">({clientPool.length})</span>
+          </p>
+          <ul className="space-y-1">
+            {clientPool.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center gap-2 rounded-md border border-slate-100 bg-white/80 px-2 py-1.5 hover:bg-blue-50/40 hover:border-blue-200 transition-colors group"
+              >
+                <Link
+                  href={t.isInternal ? `/internal-tickets/${t.id}` : `/tickets/${t.id}`}
+                  className="flex items-center gap-2 flex-1 min-w-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded border px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wider shrink-0",
+                      priorityClass(t.priority),
+                    )}
+                  >
+                    {t.priority}
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-500 shrink-0">
+                    {t.displayNumber ?? `${t.isInternal ? "INT" : "TK"}-${1000 + t.number}`}
+                  </span>
+                  <span className="text-[12.5px] text-slate-700 truncate flex-1 group-hover:text-blue-600">
+                    {t.subject}
+                  </span>
+                </Link>
+                {/* Avatar + nom de l'agent assigné. On montre l'image si
+                    disponible, sinon les initiales dans un rond de fallback. */}
+                {t.assignee && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {t.assignee.avatar ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={t.assignee.avatar}
+                        alt=""
+                        className="h-5 w-5 rounded-full object-cover ring-1 ring-slate-200"
+                      />
+                    ) : (
+                      <div className="h-5 w-5 rounded-full bg-slate-200 text-[9px] font-semibold text-slate-600 flex items-center justify-center">
+                        {t.assignee.firstName[0]}
+                        {t.assignee.lastName[0]}
+                      </div>
+                    )}
+                    <span className="text-[10.5px] text-slate-500">
+                      {t.assignee.firstName} {t.assignee.lastName[0]}.
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => addTickets([t.id])}
+                  title="Ajouter à cette visite"
+                  className="h-5 w-5 inline-flex items-center justify-center rounded text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-colors shrink-0"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

@@ -29,11 +29,15 @@ import { type TicketStatus } from "@/lib/mock-data";
 
 type ViewMode = "list" | "kanban";
 
+// Les anciens statuts Freshservice (open, on_site, pending, waiting_vendor)
+// restent dans les filtres "legacy" ci-dessous pour que les tickets importés
+// non encore migrés restent visibles — une fois la migration DB appliquée,
+// ils pourront être retirés.
 const STATUS_TABS: { key: string; label: string; filter: TicketStatus[] | null }[] = [
   { key: "all", label: "Tous", filter: null },
-  { key: "open", label: "Ouverts", filter: ["new", "open"] },
+  { key: "new", label: "Nouveaux", filter: ["new", "open"] },
   { key: "in_progress", label: "En cours", filter: ["in_progress", "on_site"] },
-  { key: "waiting", label: "En attente", filter: ["pending", "waiting_client", "waiting_vendor", "scheduled"] },
+  { key: "waiting", label: "En attente", filter: ["waiting_client", "pending", "waiting_vendor", "scheduled"] },
   { key: "resolved", label: "Résolus", filter: ["resolved", "closed", "cancelled"] },
   { key: "trash", label: "Corbeille", filter: ["deleted"] },
 ];

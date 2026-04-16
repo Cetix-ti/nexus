@@ -53,7 +53,7 @@ export async function GET(
       priority: true,
       isInternal: true,
       organizationId: true,
-      assignee: { select: { firstName: true, lastName: true } },
+      assignee: { select: { firstName: true, lastName: true, avatar: true } },
     },
     // ASC car l'enum TicketPriority est CRITICAL → ... → LOW.
     orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
@@ -78,7 +78,7 @@ export async function GET(
         isInternal: true,
         organizationId: true,
         calendarEventId: true,
-        assignee: { select: { firstName: true, lastName: true } },
+        assignee: { select: { firstName: true, lastName: true, avatar: true } },
       },
       orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
       take: 100,

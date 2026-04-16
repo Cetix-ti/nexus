@@ -120,6 +120,48 @@ async function ensureNexusCalendar(): Promise<string> {
   return created.id;
 }
 
+/**
+ * Convertit le body Outlook (HTML ou texte) en plain text propre.
+ *
+ * - Supprime les balises HTML (y compris `<style>`, `<script>` et leur contenu).
+ * - Remplace `<br>` et fin de paragraphe par des sauts de ligne.
+ * - Décode les entités courantes (`&nbsp;`, `&amp;`, etc.).
+ * - Retourne `null` si le résultat final ne contient que du blanc — nécessaire
+ *   car Outlook envoie souvent un squelette HTML vide même quand l'utilisateur
+ *   n'a saisi aucune description.
+ */
+function stripHtmlToText(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let text = raw
+    // Vire les blocs non textuels avec leur contenu.
+    .replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, "")
+    // <br> et fins de blocs → saut de ligne.
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n")
+    // Autres balises → rien.
+    .replace(/<[^>]+>/g, "");
+  // Décodage entités courantes.
+  text = text
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'");
+  // Normalise les espaces : consolide les blancs multiples, garde les
+  // sauts de ligne explicites.
+  text = text
+    .replace(/[\u200B-\u200D\uFEFF]/g, "") // zero-width
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[\t ]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return text.length > 0 ? text : null;
+}
+
 // ---------------------------------------------------------------------------
 // Data helpers — agents et orgs pour le décodeur
 // ---------------------------------------------------------------------------
@@ -330,12 +372,18 @@ async function applyDecodedToNexus(args: {
       ? `Partiel : initiales inconnues ignorées → ${decoded.unknownAgentTokens.join(", ")}`
       : null;
 
-  // Description : Graph fournit `ev.body.content` en HTML (ou texte brut).
-  // On stocke le HTML tel quel côté Nexus — le drawer d'event l'affiche
-  // via `renderDescription`. Si Outlook n'a pas de corps, on garde null
-  // (plutôt que chaîne vide) pour pouvoir distinguer "pas de description"
-  // de "description effacée manuellement".
-  const bodyContent = ev.body?.content?.trim() || null;
+  // Description : Graph fournit `ev.body.content`. Même pour un événement
+  // sans description saisie dans Outlook, Graph renvoie souvent un squelette
+  // HTML (`<html><body></body></html>` ou similaire) avec du contenu
+  // invisible (metadata, zéro-width, &nbsp;). Le drawer calendar affiche
+  // `description` en plain text (whitespace-pre-wrap) → si on stocke le HTML
+  // tel quel, l'utilisateur voit les balises « en brut ».
+  //
+  // Solution : strip HTML + decode entités, puis on traite comme absent si
+  // le résultat est vide/whitespace-only. Couvre les deux symptômes :
+  //   - Outlook sans description → Nexus affiche "Aucune description"
+  //   - Outlook avec vraie description → Nexus affiche le texte propre.
+  const bodyContent = stripHtmlToText(ev.body?.content);
 
   const data = {
     calendarId: args.nexusCalendarId,

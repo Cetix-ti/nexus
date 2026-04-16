@@ -45,6 +45,7 @@ import {
   type TicketStatus,
   type TicketPriority,
   type TicketType,
+  ACTIVE_TICKET_STATUSES,
 } from "@/lib/mock-data";
 
 interface TicketQuickViewModalProps {
@@ -640,11 +641,21 @@ export function TicketQuickViewModal({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(STATUS_LABELS_FR).map(([k, v]) => (
+                    {/* Set actif uniquement — voir ACTIVE_TICKET_STATUSES
+                        dans mock-data.ts. Si le ticket porte encore un
+                        ancien statut (FS import), on l'affiche en extra
+                        avec le suffixe "(legacy)" pour ne pas le perdre. */}
+                    {ACTIVE_TICKET_STATUSES.map((k) => (
                       <SelectItem key={k} value={k}>
-                        {v}
+                        {STATUS_LABELS_FR[k]}
                       </SelectItem>
                     ))}
+                    {!ACTIVE_TICKET_STATUSES.includes(status) &&
+                      status !== "deleted" && (
+                        <SelectItem value={status}>
+                          {STATUS_LABELS_FR[status]} (legacy)
+                        </SelectItem>
+                      )}
                   </SelectContent>
                 </Select>
               </div>

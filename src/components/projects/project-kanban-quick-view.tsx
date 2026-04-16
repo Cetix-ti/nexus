@@ -27,6 +27,7 @@ import {
 import {
   STATUS_CONFIG,
   PRIORITY_CONFIG,
+  ACTIVE_TICKET_STATUSES,
   type Ticket,
   type TicketStatus,
 } from "@/lib/mock-data";
@@ -464,11 +465,17 @@ export function ProjectKanbanQuickView({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(STATUS_LABELS_FR).map(([k, v]) => (
+                    {ACTIVE_TICKET_STATUSES.map((k) => (
                       <SelectItem key={k} value={k}>
-                        {v}
+                        {STATUS_LABELS_FR[k]}
                       </SelectItem>
                     ))}
+                    {!ACTIVE_TICKET_STATUSES.includes(status) &&
+                      status !== "deleted" && (
+                        <SelectItem value={status}>
+                          {STATUS_LABELS_FR[status]} (legacy)
+                        </SelectItem>
+                      )}
                   </SelectContent>
                 </Select>
               </div>

@@ -268,14 +268,38 @@ export const TYPE_CONFIG: Record<
   },
 };
 
+/**
+ * Set actif des statuts de ticket proposés dans les dropdowns et le kanban.
+ *
+ * Les autres valeurs du type `TicketStatus` (`open`, `on_site`, `pending`,
+ * `waiting_vendor`) sont conservées pour le rendu rétrocompatible de tickets
+ * migrés depuis Freshservice ou créés avant le nettoyage. On ne les propose
+ * plus à la saisie :
+ *   - `open`            → remplacé par `in_progress` (une fois pris en charge)
+ *   - `on_site`         → flag `requiresOnSite` au lieu d'un statut distinct
+ *   - `pending`         → `waiting_client`
+ *   - `waiting_vendor`  → `waiting_client` (distinction non utilisée)
+ *   - `deleted`         → géré via la corbeille (pas un statut manuel)
+ */
+export const ACTIVE_TICKET_STATUSES: TicketStatus[] = [
+  "new",
+  "in_progress",
+  "waiting_client",
+  "scheduled",
+  "resolved",
+  "closed",
+  "cancelled",
+];
+
+/**
+ * Colonnes affichées dans les vues Kanban (workflow actif uniquement —
+ * on exclut `closed` / `cancelled` qui sont des états terminaux et encombrent
+ * inutilement le tableau).
+ */
 export const KANBAN_COLUMNS: TicketStatus[] = [
   "new",
-  "open",
   "in_progress",
-  "on_site",
-  "pending",
   "waiting_client",
-  "waiting_vendor",
   "scheduled",
   "resolved",
 ];
