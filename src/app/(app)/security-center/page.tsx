@@ -64,11 +64,10 @@ interface Incident {
 type TabKey = "ad" | "wazuh" | "persistence" | "bitdefender" | "all";
 
 const TABS: { key: TabKey; label: string; sources: string[]; icon: typeof Shield }[] = [
-  { key: "ad", label: "Active Directory", sources: ["ad_email"], icon: Shield },
-  // Onglet Wazuh agrège les deux pipelines (email + API directe) pour que
-  // la migration soit transparente — les anciens incidents ingérés via
-  // email restent visibles à côté des nouveaux tirés de l'API.
+  // Wazuh en premier (tab par défaut) — source principale d'alertes CVE,
+  // comportement suspect et persistence. Agrège email + API directe.
   { key: "wazuh", label: "Wazuh", sources: ["wazuh_email", "wazuh_api"], icon: Zap },
+  { key: "ad", label: "Active Directory", sources: ["ad_email"], icon: Shield },
   // Persistance : logiciels de télé-assistance (AnyDesk/TeamViewer/etc.)
   // détectés par Wazuh syscollector. Kind dédié pour actions whitelist +
   // conversion billable.
@@ -106,7 +105,7 @@ function fmtDate(iso: string): string {
 }
 
 export default function SecurityCenterPage() {
-  const [tab, setTab] = useState<TabKey>("ad");
+  const [tab, setTab] = useState<TabKey>("wazuh");
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -505,6 +504,47 @@ function EndpointRollup({
 }) {
   const groups = useMemo(() => groupByEndpoint(incidents), [incidents]);
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const [busyEndpoint, setBusyEndpoint] = useState<string | null>(null);
+  const router = useRouter();
+
+  async function createEndpointTicket(g: EndpointGroup) {
+    if (!g.organization) {
+      alert("Impossible — l'endpoint n'est pas mappé à une organisation.");
+      return;
+    }
+    // Si TOUS les incidents ont déjà le même ticket, on redirige direct.
+    const existingTickets = new Set(
+      g.incidents.map((i) => i.ticketId).filter((t): t is string => !!t),
+    );
+    if (
+      existingTickets.size === 1 &&
+      g.incidents.every((i) => i.ticketId === [...existingTickets][0])
+    ) {
+      router.push(`/tickets/${[...existingTickets][0]}`);
+      return;
+    }
+    setBusyEndpoint(g.key);
+    try {
+      const res = await fetch("/api/v1/security-center/endpoint-ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizationId: g.organization.id,
+          endpoint: g.endpoint,
+          incidentIds: g.incidents.map((i) => i.id),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || `Erreur HTTP ${res.status}`);
+        return;
+      }
+      const t = await res.json();
+      router.push(`/tickets/${t.id}`);
+    } finally {
+      setBusyEndpoint(null);
+    }
+  }
 
   function toggleGroup(key: string) {
     setOpenGroups((prev) => {
@@ -526,6 +566,7 @@ function EndpointRollup({
             <th className="px-4 py-2.5">Alertes</th>
             <th className="px-4 py-2.5">Sévérité max</th>
             <th className="px-4 py-2.5">Dernière</th>
+            <th className="px-4 py-2.5 w-40">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -590,10 +631,43 @@ function EndpointRollup({
                     <Clock className="inline h-3 w-3 mr-1 text-slate-400" />
                     {fmtDate(g.lastSeen)}
                   </td>
+                  <td
+                    className="px-4 py-3 text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {(() => {
+                      const ticketed = g.incidents.filter((i) => i.ticketId);
+                      const allSame =
+                        ticketed.length === g.incidents.length &&
+                        new Set(ticketed.map((i) => i.ticketId)).size === 1;
+                      if (allSame && ticketed[0]?.ticketId) {
+                        return (
+                          <Link
+                            href={`/tickets/${ticketed[0].ticketId}`}
+                            className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-200 hover:bg-blue-100"
+                          >
+                            <Ticket className="h-3 w-3" />
+                            Ouvrir ticket
+                          </Link>
+                        );
+                      }
+                      return (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busyEndpoint === g.key || !g.organization}
+                          onClick={() => createEndpointTicket(g)}
+                        >
+                          <Ticket className="h-3 w-3" />
+                          {busyEndpoint === g.key ? "Création…" : "Ticket endpoint"}
+                        </Button>
+                      );
+                    })()}
+                  </td>
                 </tr>
                 {open && (
                   <tr className="bg-slate-50/30">
-                    <td colSpan={6} className="px-4 py-3">
+                    <td colSpan={7} className="px-4 py-3">
                       <div className="space-y-2 pl-6 border-l-2 border-slate-200">
                         <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
                           {g.incidents.length} incident{g.incidents.length > 1 ? "s" : ""} sur ce poste

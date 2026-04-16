@@ -330,9 +330,11 @@ model Ticket {
   reminders            TicketReminder[]
   // Events calendrier qui pointent vers ce ticket interne (suivi visuel).
   linkedCalendarEvents CalendarEvent[]      @relation("CalendarEventInternalTicket")
-  // Incident de sécurité éventuellement converti en ce ticket (1:1 — si
-  // besoin d'1 ticket→N incidents plus tard, pivoter vers une join table).
-  securityIncident     SecurityIncident?    @relation("SecurityIncidentTicket")
+  // Incidents de sécurité liés à ce ticket. Un ticket peut regrouper
+  // plusieurs incidents (ex: "ticket endpoint" qui agrège tous les CVE /
+  // persistence / comportements suspects d'un même poste en une seule
+  // intervention facturable).
+  securityIncidents    SecurityIncident[]   @relation("SecurityIncidentTicket")
 
   @@index([organizationId, status])
   @@index([requiresOnSite, status])
@@ -2052,7 +2054,10 @@ model SecurityIncident {
   summary         String?  @db.Text
   status          String   @default("open") // open | investigating | waiting_client | resolved | closed
   assigneeId      String?  @map("assignee_id")
-  ticketId        String?  @unique @map("ticket_id")
+  // 1 ticket → N incidents (ex: ticket endpoint qui regroupe CVE +
+  // persistence + comportements suspects d'un même poste). Pas de @unique
+  // pour autoriser ce mode d'agrégation.
+  ticketId        String?  @map("ticket_id")
   correlationKey  String   @unique @map("correlation_key")
   occurrenceCount Int      @default(1) @map("occurrence_count")
   firstSeenAt     DateTime @default(now()) @map("first_seen_at")

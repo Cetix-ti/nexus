@@ -53,7 +53,17 @@ export function parsePersistenceEmail(opts: {
   if (!subjectMatch) return null;
 
   const hostname = subjectMatch[1] || "";
-  const clientCode = hostname.includes("_") ? hostname.split("_")[0] : "UNKNOWN";
+  // Extrait le code client : soit préfixe_xxx (séparateur underscore),
+  // soit lettres-début suivies de digit/séparateur (ex: "LV36-2509L" → "LV").
+  // Aligné sur resolveOrgByEndpoint pour que le display soit cohérent avec
+  // le mapping organisation.
+  let clientCode = "UNKNOWN";
+  if (hostname.includes("_")) {
+    clientCode = hostname.split("_")[0];
+  } else {
+    const prefixMatch = hostname.match(/^([A-Za-z]{2,8})(?=\d|[-_])/);
+    if (prefixMatch) clientCode = prefixMatch[1].toUpperCase();
+  }
   const ipAddress = subjectMatch[2] || "";
   const moduleName = subjectMatch[3] || "";
   const alertLevel = Number(subjectMatch[4] || 0);

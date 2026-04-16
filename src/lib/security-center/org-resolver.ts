@@ -69,19 +69,27 @@ export async function resolveOrgByDomain(domain: string): Promise<string | null>
  * Extrait le préfixe client d'un nom d'endpoint (hostname Wazuh, computer
  * name AD, etc.) et le matche sur Organization.clientCode.
  *
- * Règle identique à monitoring : on prend 2–8 lettres ASCII au début du
- * nom, suivies d'un `-` ou `_`. Casse ignorée pour le match (clientCode
- * comparé en UPPERCASE).
+ * Règle : 2–8 lettres ASCII au début du nom, suivies soit d'un séparateur
+ * `-`/`_`, soit d'un chiffre (nombreux hostnames legacy écrivent direct
+ * `LV36-2509L` sans underscore entre code et numéro d'unité). Casse
+ * ignorée pour le match (clientCode comparé en UPPERCASE).
  *
  * Exemples :
  *   "BDU-SERVER01"  → prefix "BDU"  → org Baie-D'Urfé
- *   "mrvl_dc01"     → prefix "MRVL" → org Marieville (si clientCode=MRVL)
- *   "server01"      → null (pas de préfixe type CODE-)
+ *   "mrvl_dc01"     → prefix "MRVL" → org Marieville
+ *   "LV36-2509L"    → prefix "LV"   → org Louiseville (nouveau)
+ *   "server01"      → null (pas de préfixe reconnu)
+ *
+ * Note : la regex est greedy (essaie d'abord 8 lettres, backtrack vers 2).
+ * Pour "LV36", "LV" est le prefix puisque "3" est un digit qui termine
+ * le groupe de lettres. Pour "SERVER01", "SERVER" serait matché mais le
+ * code "SERVER" ne figure pas dans clientCodeMap donc retour null — pas
+ * de faux positif.
  */
 export async function resolveOrgByEndpoint(endpoint: string): Promise<string | null> {
   const clean = endpoint.trim();
   if (!clean) return null;
-  const m = clean.match(/^([A-Za-z]{2,8})[-_]/);
+  const m = clean.match(/^([A-Za-z]{2,8})(?=\d|[-_])/);
   if (!m) return null;
   const code = m[1].toUpperCase();
   const maps = await getOrgMaps();
@@ -242,7 +250,8 @@ export async function resolveOrgByText(
   //    souvent comme source de vérité du hostname).
   const zabbixHost = body.match(/^\s*Host:\s*([A-Za-z][A-Za-z0-9_\-\.]+)\s*$/im);
   if (zabbixHost) {
-    const hostPrefix = zabbixHost[1].match(/^([A-Za-z]{2,8})[-_]/);
+    // Idem regex que resolveOrgByEndpoint : accepte digit ou séparateur.
+    const hostPrefix = zabbixHost[1].match(/^([A-Za-z]{2,8})(?=\d|[-_])/);
     if (hostPrefix) {
       const code = hostPrefix[1].toUpperCase();
       if (!seen.has(code)) {
@@ -252,8 +261,11 @@ export async function resolveOrgByText(
     }
   }
 
-  // 2) Tous les tokens CODE-XXX dans le reste du texte.
-  const re = /\b([A-Za-z]{2,8})[-_][A-Za-z0-9]{1,}/g;
+  // 2) Tous les tokens type CODE(digit|sep)CHAR dans le reste du texte.
+  //    Ex : "BDU-DC01", "LV36-2509L", "MRVL_LAP-33". On capture
+  //    uniquement la partie lettres initiale ; le suffixe n'est là que
+  //    pour s'assurer qu'on ne matche pas des mots anglais isolés.
+  const re = /\b([A-Za-z]{2,8})(?:\d|[-_])[A-Za-z0-9]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const code = m[1].toUpperCase();

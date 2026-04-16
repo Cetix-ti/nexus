@@ -82,12 +82,29 @@ function fmtDate(iso: string): string {
 // View
 // ---------------------------------------------------------------------------
 
+type WhitelistFilter = "all" | "main" | "whitelisted";
+
+const FILTER_STORAGE_KEY = "persistence-view:whitelist-filter";
+
 export function PersistenceView({ orgFilter }: { orgFilter: string }) {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [whitelistFor, setWhitelistFor] = useState<Incident | null>(null);
+  // Filtre whitelist — persisté dans localStorage pour que le choix de
+  // l'utilisateur reste entre navigations.
+  const [filter, setFilter] = useState<WhitelistFilter>(() => {
+    if (typeof window === "undefined") return "main";
+    const v = window.localStorage.getItem(FILTER_STORAGE_KEY);
+    return v === "all" || v === "main" || v === "whitelisted" ? v : "main";
+  });
   const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(FILTER_STORAGE_KEY, filter);
+    }
+  }, [filter]);
 
   const load = async () => {
     setLoading(true);
@@ -118,8 +135,10 @@ export function PersistenceView({ orgFilter }: { orgFilter: string }) {
     return incidents.filter((i) => i.organizationId === orgFilter);
   }, [incidents, orgFilter]);
 
-  const mainList = filtered.filter((i) => !i.isLowPriority);
-  const lowList = filtered.filter((i) => i.isLowPriority);
+  const allMain = filtered.filter((i) => !i.isLowPriority);
+  const allLow = filtered.filter((i) => i.isLowPriority);
+  const mainList = filter === "whitelisted" ? [] : allMain;
+  const lowList = filter === "main" ? [] : allLow;
 
   async function convertToTicket(id: string) {
     const res = await fetch(`/api/v1/security-center/incidents/${id}/convert`, {
@@ -146,17 +165,51 @@ export function PersistenceView({ orgFilter }: { orgFilter: string }) {
   }
 
   return (
-    <div className="space-y-6">
-      <Group
-        title="Détections non autorisées"
-        count={mainList.length}
-        items={mainList}
-        emptyMsg="Aucune détection non autorisée."
-        onConvert={convertToTicket}
-        onWhitelist={setWhitelistFor}
-      />
+    <div className="space-y-5">
+      {/* Filtre whitelist */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[11.5px] text-slate-400 mr-1">Afficher :</span>
+        {(
+          [
+            { k: "main", label: "Non autorisées", count: allMain.length },
+            { k: "whitelisted", label: "Whitelistées", count: allLow.length },
+            { k: "all", label: "Toutes", count: allMain.length + allLow.length },
+          ] as const
+        ).map((o) => (
+          <button
+            key={o.k}
+            type="button"
+            onClick={() => setFilter(o.k)}
+            className={`rounded-full px-3 py-1 text-[11.5px] font-medium transition-colors ${
+              filter === o.k
+                ? "bg-blue-600 text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            {o.label}
+            <span
+              className={`ml-1.5 text-[10.5px] ${
+                filter === o.k ? "text-blue-100" : "text-slate-400"
+              }`}
+            >
+              {o.count}
+            </span>
+          </button>
+        ))}
+      </div>
 
-      {lowList.length > 0 && (
+      {filter !== "whitelisted" && (
+        <Group
+          title="Détections non autorisées"
+          count={mainList.length}
+          items={mainList}
+          emptyMsg="Aucune détection non autorisée."
+          onConvert={convertToTicket}
+          onWhitelist={setWhitelistFor}
+        />
+      )}
+
+      {filter !== "main" && lowList.length > 0 && (
         <Group
           title="Détections whitelistées / moins critiques"
           count={lowList.length}
@@ -164,7 +217,7 @@ export function PersistenceView({ orgFilter }: { orgFilter: string }) {
           emptyMsg=""
           onConvert={convertToTicket}
           onWhitelist={setWhitelistFor}
-          isLowBlock
+          isLowBlock={filter === "all"}
         />
       )}
 
