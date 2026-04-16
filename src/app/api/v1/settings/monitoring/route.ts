@@ -24,6 +24,7 @@ export async function PUT(req: Request) {
     mailbox: body.mailbox,
     folders: Array.isArray(body.folders) ? body.folders : [],
     backupFolders: Array.isArray(body.backupFolders) ? body.backupFolders : [],
+    securityFolders: Array.isArray(body.securityFolders) ? body.securityFolders : [],
   });
   return NextResponse.json({ ok: true });
 }

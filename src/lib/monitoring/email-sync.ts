@@ -15,6 +15,12 @@ export interface MonitoringEmailConfig {
   mailbox: string;
   folders: string[]; // Alert monitoring folders, e.g. ["Inbox/ZABBIX", "Inbox/FORTIGATE"]
   backupFolders?: string[]; // Backup status emails folders, e.g. ["Inbox/VEEAM"]
+  /**
+   * Dossiers scannés par le Centre de sécurité (AD, Wazuh, etc.). Chaque
+   * message est passé d'abord dans le décodeur AD (par sujet), puis dans
+   * le décodeur Wazuh en fallback. Les messages non reconnus sont ignorés.
+   */
+  securityFolders?: string[];
 }
 
 interface GraphMessage {

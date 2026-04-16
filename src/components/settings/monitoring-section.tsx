@@ -11,6 +11,7 @@ import {
   Bell,
   Plus,
   Trash2,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,10 +22,16 @@ interface Config {
   mailbox: string;
   folders: string[];
   backupFolders: string[];
+  securityFolders: string[];
 }
 
 export function MonitoringSection() {
-  const [config, setConfig] = useState<Config>({ mailbox: "", folders: [], backupFolders: [] });
+  const [config, setConfig] = useState<Config>({
+    mailbox: "",
+    folders: [],
+    backupFolders: [],
+    securityFolders: [],
+  });
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -33,6 +40,10 @@ export function MonitoringSection() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
   const [syncPeriod, setSyncPeriod] = useState("7");
+  // Synchro historique du Centre de sécurité (AD / Wazuh).
+  const [secSyncing, setSecSyncing] = useState(false);
+  const [secSyncResult, setSecSyncResult] = useState<any>(null);
+  const [secSyncPeriod, setSecSyncPeriod] = useState("7");
 
   useEffect(() => {
     fetch("/api/v1/settings/monitoring")
@@ -43,6 +54,7 @@ export function MonitoringSection() {
             mailbox: d.config.mailbox ?? "",
             folders: d.config.folders ?? [],
             backupFolders: d.config.backupFolders ?? [],
+            securityFolders: d.config.securityFolders ?? [],
           });
         }
       })
@@ -83,18 +95,35 @@ export function MonitoringSection() {
     setSyncing(false);
   }
 
-  function addFolder(f: string, target: "alerts" | "backups" = "alerts") {
-    const key = target === "alerts" ? "folders" : "backupFolders";
+  type FolderTarget = "alerts" | "backups" | "security";
+  const targetToKey = (t: FolderTarget): keyof Pick<Config, "folders" | "backupFolders" | "securityFolders"> =>
+    t === "alerts" ? "folders" : t === "backups" ? "backupFolders" : "securityFolders";
+
+  function addFolder(f: string, target: FolderTarget = "alerts") {
+    const key = targetToKey(target);
     if (!config[key].includes(f)) {
       setConfig((c) => ({ ...c, [key]: [...c[key], f] }));
       setDirty(true); setSaved(false);
     }
   }
 
-  function removeFolder(f: string, target: "alerts" | "backups" = "alerts") {
-    const key = target === "alerts" ? "folders" : "backupFolders";
+  function removeFolder(f: string, target: FolderTarget = "alerts") {
+    const key = targetToKey(target);
     setConfig((c) => ({ ...c, [key]: c[key].filter((x) => x !== f) }));
     setDirty(true); setSaved(false);
+  }
+
+  async function handleSecuritySync() {
+    if (dirty) await handleSave();
+    setSecSyncing(true); setSecSyncResult(null);
+    const sinceDays = secSyncPeriod === "all" ? 0 : Number(secSyncPeriod);
+    const res = await fetch("/api/v1/security-center/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sinceDays }),
+    });
+    setSecSyncResult(await res.json());
+    setSecSyncing(false);
   }
 
   return (
@@ -155,6 +184,21 @@ export function MonitoringSection() {
                     <button key={"backup-" + f} type="button" onClick={() => addFolder(f, "backups")}
                       className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-medium ring-1 ring-inset transition-colors cursor-pointer ${
                         config.backupFolders.includes(f) ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100"
+                      }`}>
+                      <FolderOpen className="h-3 w-3" />{f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[12px] font-medium text-slate-700 mb-2">
+                  Cliquez pour ajouter un dossier au <strong>Centre de sécurité</strong> :
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {testResult.folders.map((f) => (
+                    <button key={"sec-" + f} type="button" onClick={() => addFolder(f, "security")}
+                      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-medium ring-1 ring-inset transition-colors cursor-pointer ${
+                        config.securityFolders.includes(f) ? "bg-indigo-50 text-indigo-700 ring-indigo-200" : "bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100"
                       }`}>
                       <FolderOpen className="h-3 w-3" />{f}
                     </button>
@@ -224,6 +268,93 @@ export function MonitoringSection() {
           </CardContent>
         </Card>
       )}
+
+      {/* Centre de sécurité — dossiers + backfill historique. S'affiche
+          même quand aucun dossier n'est configuré pour que l'admin puisse
+          lancer la synchro une fois qu'il a coché dans la liste ci-dessus. */}
+      <Card className="border-indigo-200/80 bg-indigo-50/30">
+        <CardContent className="p-5 space-y-4">
+          <div>
+            <h3 className="text-[14px] font-semibold text-slate-900 flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-indigo-600" />
+              Centre de sécurité
+            </h3>
+            <p className="text-[12px] text-slate-500 mt-1">
+              Dossiers scannés par le Centre de sécurité. Chaque message est passé
+              dans le décodeur AD (« AD Account Lockout », « Inactive Account »)
+              puis, en fallback, dans le décodeur Wazuh (persistence, CVE, etc.).
+              Les messages non reconnus sont ignorés.
+            </p>
+          </div>
+
+          {config.securityFolders.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-indigo-200 bg-white/60 px-3 py-4 text-center text-[12px] text-slate-500">
+              Aucun dossier sélectionné. Utilise « Tester et lister les dossiers »
+              ci-dessus, puis clique sur un dossier dans la section
+              <strong> « Centre de sécurité »</strong>.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {config.securityFolders.map((f) => (
+                <div key={f} className="flex items-center justify-between rounded-lg border border-indigo-200/60 bg-white px-3 py-2">
+                  <span className="text-[12.5px] text-slate-700 flex items-center gap-1.5">
+                    <FolderOpen className="h-3.5 w-3.5 text-indigo-500" />{f}
+                  </span>
+                  <button onClick={() => removeFolder(f, "security")} className="text-slate-400 hover:text-red-500">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Backfill historique — lit les dossiers sélectionnés avec la
+              fenêtre choisie. Utile après ajout d'un dossier ou après une
+              période d'arrêt du job récurrent. */}
+          <div className="flex items-center justify-between pt-2 border-t border-indigo-100">
+            <div className="text-[11.5px] text-slate-600">
+              <strong>Synchroniser l&apos;historique</strong> — réimporte les
+              courriels de sécurité passés (AD + Wazuh).
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={secSyncPeriod}
+                onChange={(e) => setSecSyncPeriod(e.target.value)}
+                disabled={secSyncing}
+                className="h-8 rounded-lg border border-indigo-200 bg-white px-2.5 text-[12px] text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              >
+                <option value="7">7 derniers jours</option>
+                <option value="30">30 derniers jours</option>
+                <option value="90">90 derniers jours</option>
+                <option value="365">1 an</option>
+                <option value="all">Tout l&apos;historique</option>
+              </select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSecuritySync}
+                disabled={secSyncing || !config.mailbox || config.securityFolders.length === 0}
+              >
+                {secSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                {secSyncing ? "Sync..." : "Synchroniser"}
+              </Button>
+            </div>
+          </div>
+
+          {secSyncResult && (
+            <div className="rounded-lg border border-indigo-200 bg-white px-3 py-2.5 text-[12px] text-slate-700">
+              <strong>{secSyncResult.ingested}</strong> nouvelles alertes,{" "}
+              <strong>{secSyncResult.skipped}</strong> déjà vues,{" "}
+              <strong>{secSyncResult.fetched}</strong> messages examinés
+              {secSyncResult.errors?.length > 0 && (
+                <div className="text-red-600 mt-1">
+                  {secSyncResult.errors.slice(0, 3).join(" · ")}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-4">
