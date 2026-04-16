@@ -25,6 +25,7 @@ import { decodeWazuhApiAlert } from "./decoders/wazuh-api";
 import { isAdSecuritySubject, decodeAdEmail } from "./decoders/ad";
 import { ingestSecurityAlert } from "./correlator";
 import { getWazuhConfig, saveWazuhConfig, fetchWazuhAlerts } from "./wazuh-client";
+import { ingestPersistenceEmail } from "./persistence/ingest";
 
 // ----------------------------------------------------------------------------
 // Wazuh Indexer — pull JSON direct depuis l'API (recommandé vs email)
@@ -179,6 +180,7 @@ async function syncFolder(
         const receivedAt = msg.receivedDateTime ? new Date(msg.receivedDateTime) : undefined;
 
         let decoded = null;
+        let persistenceHandled = false;
         // 1. AD — si le sujet matche, prioritaire.
         if (isAdSecuritySubject(subject)) {
           const already = await prisma.securityAlert.findUnique({
@@ -190,7 +192,9 @@ async function syncFolder(
           }
           decoded = await decodeAdEmail({ subject, bodyPlain: plain, fromEmail, messageId, receivedAt });
         }
-        // 2. Wazuh fallback.
+        // 2. Persistence (Wazuh syscollector) — plus spécifique que le
+        // décodeur Wazuh générique. Gère parse + whitelist + severity +
+        // envoi email d'alerte en une seule passe.
         if (!decoded) {
           const already = await prisma.securityAlert.findUnique({
             where: { source_externalId: { source: "wazuh_email", externalId: messageId } },
@@ -199,8 +203,23 @@ async function syncFolder(
             stats.skipped++;
             continue;
           }
+          const persistenceResult = await ingestPersistenceEmail({
+            subject,
+            bodyPreview: msg.bodyPreview ?? plain.slice(0, 2000),
+            messageId,
+            receivedAt,
+          });
+          if (persistenceResult) {
+            if (persistenceResult.isNew) stats.ingested++;
+            else stats.skipped++;
+            persistenceHandled = true;
+          }
+        }
+        // 3. Wazuh générique (CVE, comportement suspect, etc.)
+        if (!decoded && !persistenceHandled) {
           decoded = await decodeWazuhEmail({ subject, bodyPlain: plain, fromEmail, messageId, receivedAt });
         }
+        if (persistenceHandled) continue;
         if (!decoded) {
           stats.skipped++;
           continue;

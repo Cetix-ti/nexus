@@ -28,12 +28,14 @@ import {
   Shield,
   Bug,
   Zap,
+  Package,
   Maximize2,
   ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { OrgLogo } from "@/components/organizations/org-logo";
+import { PersistenceView } from "@/components/security-center/persistence-view";
 
 interface Incident {
   id: string;
@@ -59,7 +61,7 @@ interface Incident {
   alerts: { id: string; receivedAt: string; severity: string | null; title: string; summary: string | null }[];
 }
 
-type TabKey = "ad" | "wazuh" | "bitdefender" | "all";
+type TabKey = "ad" | "wazuh" | "persistence" | "bitdefender" | "all";
 
 const TABS: { key: TabKey; label: string; sources: string[]; icon: typeof Shield }[] = [
   { key: "ad", label: "Active Directory", sources: ["ad_email"], icon: Shield },
@@ -67,6 +69,10 @@ const TABS: { key: TabKey; label: string; sources: string[]; icon: typeof Shield
   // la migration soit transparente — les anciens incidents ingérés via
   // email restent visibles à côté des nouveaux tirés de l'API.
   { key: "wazuh", label: "Wazuh", sources: ["wazuh_email", "wazuh_api"], icon: Zap },
+  // Persistance : logiciels de télé-assistance (AnyDesk/TeamViewer/etc.)
+  // détectés par Wazuh syscollector. Kind dédié pour actions whitelist +
+  // conversion billable.
+  { key: "persistence", label: "Persistance", sources: ["wazuh_email"], icon: Package },
   { key: "bitdefender", label: "Bitdefender", sources: ["bitdefender_api"], icon: Bug },
   { key: "all", label: "Tous", sources: [], icon: ShieldAlert },
 ];
@@ -296,6 +302,8 @@ export default function SecurityCenterPage() {
           onStatus={updateStatus}
           onConvert={convertToTicket}
         />
+      ) : tab === "persistence" ? (
+        <PersistenceView orgFilter={orgFilter} />
       ) : (
         <IncidentTable
           incidents={filtered}

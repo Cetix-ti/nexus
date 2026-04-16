@@ -57,6 +57,7 @@ import { KanbanBoardsSection } from "@/components/settings/kanban-boards-section
 import { IntegrationsSection } from "@/components/settings/integrations-section";
 import { PortalDomainSection } from "@/components/settings/portal-domain-section";
 import { MonitoringSection } from "@/components/settings/monitoring-section";
+import { PersistenceSecuritySection } from "@/components/settings/persistence-security-section";
 import { PortalPreviewSection } from "@/components/settings/portal-preview-section";
 import { ProjectTypesSection } from "@/components/settings/project-types-section";
 import { EmailToTicketSection } from "@/components/settings/email-to-ticket-section";
@@ -155,6 +156,7 @@ const sectionGroups: SettingsGroup[] = [
     sections: [
       { key: "integrations", label: "Intégrations", icon: Plug },
       { key: "email_monitoring", label: "Synchronisation des alertes", icon: Bell },
+      { key: "persistence_security", label: "Logiciels de persistance", icon: Shield },
       { key: "api", label: "API et webhooks", icon: Key },
       { key: "system", label: "Système", icon: HardDrive, superAdminOnly: true },
     ],
@@ -1120,6 +1122,7 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   project_types: <ProjectTypesSection />,
   integrations: <IntegrationsSection />,
   email_monitoring: <MonitoringSection />,
+  persistence_security: <PersistenceSecuritySection />,
   portal_domain: <PortalDomainSection />,
   api: (
     <PlaceholderSection
