@@ -32,6 +32,11 @@ export interface DecodableOrg {
   isInternal: boolean;
   domain?: string | null;
   domains?: string[];
+  /** Alias ajoutés manuellement par l'admin dans la fiche organisation
+   *  (ex: ["LV"] pour "Ville de Louiseville"). Normalisation insensible
+   *  à la casse et aux accents. Compense un clientCode null ou différent
+   *  de la convention utilisée par les agents dans Outlook. */
+  calendarAliases?: string[];
 }
 
 export interface DecodedLocation {
@@ -278,17 +283,76 @@ function tryUnglueAgentLocation(
 }
 
 /**
- * Tente de matcher un tag à une organisation.
- * Priorité : clientCode exact → puis fuzzy sur nom si rien trouvé.
+ * Génère des alias candidats à partir d'un nom d'organisation. Utilisé
+ * comme dernier recours quand ni le clientCode ni les aliases manuels ne
+ * matchent. Les heuristiques ne couvriront jamais 100% des conventions
+ * maison — pour ces cas, l'admin ajoute un alias dans la fiche org.
+ *
+ * Exemples dérivés :
+ *   "Ville de Marieville"             → ["VDM", "MRVL", "MARIEVILLE"]
+ *   "Ville de Sainte-Adèle"           → ["VDSA", "VDS", "SA", "SAINTEADELE"]
+ *   "Baie-D'Urfé"                     → ["BDU", "BD", "BAIEDURFE"]
+ *   "Cetix Informatique"              → ["CI", "CETIX", "CETIXINFORMATIQUE"]
+ */
+function deriveOrgAliases(name: string): string[] {
+  const candidates = new Set<string>();
+  const cleaned = name.replace(/[.,()]/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return [];
+  // Liste de petits mots ignorés dans les abréviations (liaisons FR/EN).
+  const skip = new Set(["DE", "DU", "D", "DES", "LA", "LE", "LES", "L", "AND", "OF", "THE"]);
+  const words = cleaned.split(/[\s\-']+/).filter(Boolean);
+  // (a) Initiales de tous les mots y compris petits → VDM, BDU…
+  const initialsAll = words.map((w) => norm(w.charAt(0))).join("");
+  if (initialsAll.length >= 2) candidates.add(initialsAll);
+  // (b) Initiales en ignorant les petits mots → MV (Marieville), SA (Sainte-Adèle)
+  const initialsBig = words
+    .filter((w) => !skip.has(norm(w)))
+    .map((w) => norm(w.charAt(0)))
+    .join("");
+  if (initialsBig.length >= 2) candidates.add(initialsBig);
+  // (c) Forme compacte complète (pour les fuzzy "LOUISEVILLE", "MARIEVILLE")
+  candidates.add(words.join("").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+  // (d) Première et dernière consonnes du mot principal pour les
+  //     conventions type "LV" = Louiseville (L + V = première + V comme dans
+  //     "LouiseVille"). Pragmatique mais évite le bruit.
+  for (const w of words.filter((w) => !skip.has(norm(w)))) {
+    const W = norm(w);
+    if (W.length >= 4) {
+      // Alterne consonnes principales : 1ère + 1ère-non-voyelle-après
+      const consonants = W.replace(/[AEIOUY]/g, "");
+      if (consonants.length >= 2) candidates.add(consonants.slice(0, 2));
+      if (consonants.length >= 3) candidates.add(consonants.slice(0, 3));
+      if (consonants.length >= 4) candidates.add(consonants.slice(0, 4));
+    }
+  }
+  return Array.from(candidates).filter((c) => c.length >= 2);
+}
+
+/**
+ * Tente de matcher un tag à une organisation. Priorité :
+ *   1. Match exact sur `clientCode` (normalisé — casse/accents ignorés)
+ *   2. Match exact sur un des `calendarAliases` de l'org
+ *   3. Match sur les alias dérivés automatiquement du nom
+ *      (initiales + consonnes) — pour couvrir les orgs qui n'ont pas
+ *      encore d'alias manuel configuré
  */
 function findOrgByTag(tag: string, orgs: DecodableOrg[]): DecodableOrg | null {
   const T = norm(tag);
-  // 1. Match exact sur clientCode
+  if (!T) return null;
+  // 1. clientCode exact
   const byCode = orgs.find((o) => o.clientCode && norm(o.clientCode) === T);
   if (byCode) return byCode;
-  // 2. Match sur un "nom court" approximé depuis le nom (Louiseville → LV,
-  //    Sainte-Adèle → STA ; mais on ne va pas jusque-là — on se limite au
-  //    code client officiel déjà présent en DB).
+  // 2. Aliases manuels renseignés par l'admin
+  const byAlias = orgs.find((o) =>
+    (o.calendarAliases ?? []).some((a) => norm(a) === T),
+  );
+  if (byAlias) return byAlias;
+  // 3. Aliases auto-dérivés du nom — utile pour les orgs sans alias
+  //    manuel configuré (première utilisation, org récemment créée).
+  for (const o of orgs) {
+    const derived = deriveOrgAliases(o.name);
+    if (derived.includes(T)) return o;
+  }
   return null;
 }
 

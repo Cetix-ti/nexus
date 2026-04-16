@@ -182,10 +182,30 @@ export async function updateOrganization(
     // créés pour elle sont classés comme tickets internes (administratifs
     // Cetix) et donc exclus des vues clients.
     isInternal: boolean;
+    /** Alias de calendrier Outlook — voir Organization.calendarAliases. */
+    calendarAliases: string[];
   }>
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data: any = { ...patch };
+  // Normalisation des alias calendrier : trim, uppercase, strip accents,
+  // dedup. Le décodeur fait déjà `norm()` à la comparaison mais stocker
+  // en forme canonique rend l'affichage propre côté admin UI.
+  if (patch.calendarAliases !== undefined) {
+    data.calendarAliases = Array.from(
+      new Set(
+        patch.calendarAliases
+          .map((a) =>
+            a
+              .trim()
+              .toUpperCase()
+              .normalize("NFD")
+              .replace(/[\u0300-\u036f]/g, ""),
+          )
+          .filter((a) => a.length >= 2),
+      ),
+    );
+  }
   if (patch.clientCode !== undefined) {
     const upper = patch.clientCode ? patch.clientCode.toUpperCase() : null;
     data.clientCode = upper;

@@ -30,6 +30,7 @@ async function main() {
       isInternal: true,
       domain: true,
       domains: true,
+      calendarAliases: true,
     },
   });
 

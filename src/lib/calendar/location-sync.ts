@@ -145,6 +145,7 @@ async function loadOrgs(): Promise<DecodableOrg[]> {
       isInternal: true,
       domain: true,
       domains: true,
+      calendarAliases: true,
     },
   });
   return orgs;

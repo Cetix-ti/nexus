@@ -1176,6 +1176,7 @@ export default function OrganizationDetailPage() {
                 postalCode: (dbOrg as any)?.postalCode || null,
                 country: (dbOrg as any)?.country || null,
                 logo: (dbOrg as any)?.logo || null,
+                calendarAliases: (dbOrg as any)?.calendarAliases ?? [],
               })
             }
           >

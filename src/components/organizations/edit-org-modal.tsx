@@ -36,6 +36,8 @@ export interface EditOrgModalOrg {
   postalCode?: string | null;
   country?: string | null;
   logo?: string | null;
+  /** Alias reconnus par le décodeur de calendrier Outlook. */
+  calendarAliases?: string[];
 }
 
 interface EditOrgModalProps {
@@ -73,6 +75,10 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
   const [tab, setTab] = useState<Tab>("general");
   const [name, setName] = useState("");
   const [clientCode, setClientCode] = useState("");
+  // Aliases utilisés par le décodeur de calendrier Outlook. Stockés en
+  // array côté DB mais éditables via une chaîne CSV côté UI (plus
+  // naturel pour saisir "LV, VDL").
+  const [calendarAliases, setCalendarAliases] = useState("");
   const [slug, setSlug] = useState("");
   const [domain, setDomain] = useState("");
   const [domains, setDomains] = useState<string[]>([]);
@@ -103,6 +109,11 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
       setTab("general");
       setName(org.name || "");
       setClientCode(org.clientCode || "");
+      setCalendarAliases(
+        Array.isArray((org as { calendarAliases?: string[] }).calendarAliases)
+          ? ((org as { calendarAliases?: string[] }).calendarAliases ?? []).join(", ")
+          : "",
+      );
       setSlug(org.slug || "");
       setDomain(org.domain || "");
       const orgDomains = (org as { domains?: string[] }).domains;
@@ -178,6 +189,17 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
           isActive: active,
           isInternal: treatAsInternal,
           clientCode: clientCode.trim().toUpperCase() || null,
+          // Alias calendrier : on parse la chaîne CSV en array, normalise
+          // casse/accents côté UI pour que "lv" et "LV" produisent la même
+          // clé stockée, dédup, filtre les vides.
+          calendarAliases: Array.from(
+            new Set(
+              calendarAliases
+                .split(/[,;\s]+/)
+                .map((a) => a.trim().toUpperCase())
+                .filter((a) => a.length >= 2),
+            ),
+          ),
           website: website || null,
           phone: phone || null,
           address: address || null,
@@ -331,6 +353,28 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Aliases pour le décodeur de calendrier Outlook. Utilisé
+                  quand les agents tapent une abréviation différente du
+                  clientCode officiel dans leurs titres (ex: "VG LV" pour
+                  Louiseville alors que clientCode=VDL). */}
+              <div>
+                <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+                  Alias calendrier
+                </label>
+                <input
+                  value={calendarAliases}
+                  onChange={(e) => setCalendarAliases(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-mono text-slate-900 placeholder:text-slate-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="LV, VDL"
+                />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Codes courts (2-8 caractères) reconnus par le décodeur de
+                  calendrier en plus du code client officiel. Séparer par
+                  virgules. Exemple : « LV » pour que « VG LV » mappe à cette
+                  organisation dans les événements Outlook.
+                </p>
               </div>
 
               {/* Logo + Website with auto-fill */}

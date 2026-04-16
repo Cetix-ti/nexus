@@ -50,6 +50,14 @@ model Organization {
   portalAuthProviders String[]    @default(["microsoft", "google", "local"]) @map("portal_auth_providers")
   portalDefaultRole   PortalRole  @default(STANDARD) @map("portal_default_role")
 
+  /// Alias utilisés dans les titres de calendrier Outlook pour mapper un
+  /// événement à ce client. Vient compléter `clientCode` quand les agents
+  /// écrivent "VG LV" alors que le code officiel n'est pas "LV". Exemple
+  /// pratique : pour "Ville de Louiseville" dont clientCode peut être null
+  /// ou "VDL", on ajoute ["LV"] dans calendarAliases. Match insensible à
+  /// la casse et aux accents (normalisation côté décodeur).
+  calendarAliases     String[]    @default([]) @map("calendar_aliases")
+
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
