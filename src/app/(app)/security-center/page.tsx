@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { OrgLogo } from "@/components/organizations/org-logo";
 
 interface Incident {
   id: string;
@@ -369,7 +370,14 @@ function IncidentTable({
                     )}
                   </td>
                   <td className="px-4 py-3 text-[13px] text-slate-700">
-                    {i.organization?.name ?? <span className="italic text-slate-400">Non mappé</span>}
+                    {i.organization ? (
+                      <div className="flex items-center gap-2 min-w-0">
+                        <OrgLogo name={i.organization.name} size={22} rounded="sm" />
+                        <span className="truncate">{i.organization.name}</span>
+                      </div>
+                    ) : (
+                      <span className="italic text-slate-400">Non mappé</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-[13px] font-mono text-slate-800">{primary}</td>
                   <td className="px-4 py-3 text-[13px] text-slate-800 truncate max-w-md">{i.title}</td>
@@ -535,7 +543,11 @@ function InactiveKanban({
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <Laptop className="h-3 w-3 text-slate-400 shrink-0" />
+                  {i.organization ? (
+                    <OrgLogo name={i.organization.name} size={14} rounded="sm" />
+                  ) : (
+                    <Laptop className="h-3 w-3 text-slate-400 shrink-0" />
+                  )}
                   <p className="text-[11px] text-slate-500 truncate">
                     {i.organization?.name ?? "Non mappé"}
                   </p>

@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { OrgLogo } from "@/components/organizations/org-logo";
 
 interface AlertRow {
   id: string;
@@ -271,6 +272,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
               value={incident.organization?.name ?? "Non mappé"}
               hint={incident.organization?.clientCode ?? undefined}
               muted={!incident.organization}
+              orgLogo={incident.organization?.name ?? null}
             />
             <MetaRow icon={Laptop} label="Endpoint" value={incident.endpoint ?? "—"} mono />
             <MetaRow icon={User} label="Utilisateur" value={incident.userPrincipal ?? "—"} mono />
@@ -356,6 +358,7 @@ function MetaRow({
   hint,
   mono,
   muted,
+  orgLogo,
 }: {
   icon: typeof User;
   label: string;
@@ -363,10 +366,16 @@ function MetaRow({
   hint?: string;
   mono?: boolean;
   muted?: boolean;
+  /** Nom d'organisation — si fourni, remplace l'icône par le logo. */
+  orgLogo?: string | null;
 }) {
   return (
     <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-      <Icon className={cn("h-4 w-4 shrink-0 mt-0.5", muted ? "text-slate-300" : "text-slate-400")} />
+      {orgLogo ? (
+        <OrgLogo name={orgLogo} size={18} rounded="sm" className="mt-0.5 shrink-0" />
+      ) : (
+        <Icon className={cn("h-4 w-4 shrink-0 mt-0.5", muted ? "text-slate-300" : "text-slate-400")} />
+      )}
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
         <p
