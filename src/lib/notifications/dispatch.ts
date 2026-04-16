@@ -100,7 +100,7 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
     if (!ticket) return;
 
     const displayNumber = await formatTicketDisplay(ticket);
-    const agentUrl = await getAgentTicketUrl(ticket.id);
+    const agentUrl = await getAgentTicketUrl(displayNumber);
     const portalUrl = await getPortalTicketUrl(ticket.id);
     // HTML riche de la description si dispo — préserve gras, listes,
     // images inline (cid: réécrits en URLs MinIO par le pipeline
@@ -299,7 +299,7 @@ export async function dispatchCollaboratorAdded(
     });
     if (!ticket) return;
     const displayNumber = await formatTicketDisplay(ticket);
-    const agentUrl = await getAgentTicketUrl(ticket.id);
+    const agentUrl = await getAgentTicketUrl(displayNumber);
 
     let addedByName = "Un agent";
     if (addedByUserId) {
@@ -372,7 +372,7 @@ export async function dispatchTicketStatusChange(
     if (ticket.creatorId) recipients.add(ticket.creatorId);
     for (const c of ticket.collaborators) recipients.add(c.userId);
     const displayNumber = await formatTicketDisplay(ticket);
-    const agentUrl = await getAgentTicketUrl(ticket.id);
+    const agentUrl = await getAgentTicketUrl(displayNumber);
 
     // Choix d'événement : si statut final → "resolved" dédié (opt-in distinct
     // dans les prefs), sinon changement générique.
@@ -451,7 +451,7 @@ export async function dispatchTicketComment(opts: {
     if (!ticket) return;
 
     const displayNumber = await formatTicketDisplay(ticket);
-    const agentUrl = await getAgentTicketUrl(ticket.id);
+    const agentUrl = await getAgentTicketUrl(displayNumber);
 
     let authorName = "Un agent";
     if (opts.authorUserId) {
@@ -556,7 +556,7 @@ export async function dispatchTicketReminder(
     });
     if (!ticket) return;
     const displayNumber = await formatTicketDisplay(ticket);
-    const agentUrl = await getAgentTicketUrl(ticket.id);
+    const agentUrl = await getAgentTicketUrl(displayNumber);
 
     await notifyUser(forUserId, "ticket_reminder", {
       title: `Rappel : ${ticket.subject}`,

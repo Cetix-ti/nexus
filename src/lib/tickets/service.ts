@@ -296,10 +296,40 @@ export async function listTickets(options?: {
   return rows.map((t) => flattenList(t, clientPrefix));
 }
 
+/**
+ * Résout un identifiant de ticket en numéro brut DB. Accepte :
+ *   - cuid     : "cmxxxxxxxxxxxxxxxx"
+ *   - raw num  : "1234" (le format `tickets.number` int)
+ *   - display  : "TK-1234" ou "INT-1234" (formaté). On extrait la portion
+ *     numérique et on retire le décalage 1000 ajouté par formatTicketNumber.
+ *
+ * Retourne `{ id?, number? }` à passer dans `where: { OR: [...] }`.
+ */
+export function parseTicketIdentifier(input: string): { id?: string; number?: number } {
+  const trimmed = input.trim();
+  // TK-NNNN / INT-NNNN — la partie numérique est `1000 + tickets.number`
+  const displayMatch = trimmed.match(/^(?:TK|INT)-(\d+)$/i);
+  if (displayMatch) {
+    const padded = parseInt(displayMatch[1], 10);
+    if (!Number.isNaN(padded) && padded >= 1000) {
+      return { number: padded - 1000 };
+    }
+  }
+  // Numérique pur (l'auto-increment brut)
+  const num = parseInt(trimmed, 10);
+  if (!Number.isNaN(num)) return { number: num };
+  return { id: trimmed };
+}
+
 export async function getTicket(id: string): Promise<UiTicket | null> {
-  // Support lookup by id or ticket number
+  const ident = parseTicketIdentifier(id);
   const t = await prisma.ticket.findFirst({
-    where: { OR: [{ id }, { number: parseInt(id) || -1 }] },
+    where: {
+      OR: [
+        ident.id ? { id: ident.id } : { id: "__never__" },
+        ident.number !== undefined ? { number: ident.number } : { number: -1 },
+      ],
+    },
     include: detailIncludes,
   });
   if (!t) return null;

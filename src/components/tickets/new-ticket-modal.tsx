@@ -163,7 +163,10 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState("incident");
-  const [priority, setPriority] = useState("medium");
+  // Défaut LOW : laisse l'IA d'auto-prioritisation remonter à MEDIUM/HIGH/
+  // CRITICAL si elle détecte un signal fort. Évite que tous les tickets
+  // soient classés MEDIUM par défaut et polluent les vues priorité.
+  const [priority, setPriority] = useState("low");
   const [category, setCategory] = useState("");
   const [aiCategory, setAiCategory] = useState<{
     categoryLevel1: string;

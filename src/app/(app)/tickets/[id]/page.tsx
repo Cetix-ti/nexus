@@ -329,6 +329,21 @@ export default function TicketDetailPage() {
   // directTicket (fetch frais avec HTML) prioritaire sur store (sans HTML).
   const ticket = directTicket ?? ticketFromStore;
 
+  // Réécrit l'URL en /TK-NNNN ou /INT-NNNN dès qu'on connaît le numéro
+  // du ticket. Évite que les liens internes (router.push avec cuid)
+  // affichent une URL technique dans la barre — on remplace par le slug
+  // friendly sans pousser une nouvelle entrée d'historique.
+  useEffect(() => {
+    if (!ticket?.number) return;
+    const formatted = ticket.number; // déjà "TK-NNNN" ou "INT-NNNN" via flattenDetail
+    if (typeof formatted !== "string") return;
+    if (typeof window === "undefined") return;
+    const target = `/${formatted}`;
+    if (window.location.pathname !== target) {
+      window.history.replaceState(null, "", target);
+    }
+  }, [ticket?.number]);
+
   // Direct API patch for fields not in the Zustand Ticket type.
   // On récupère le ticket complet renvoyé par la PATCH et on met à jour
   // soit le store (si le ticket y est) soit l'état direct (cas des tickets
@@ -1557,15 +1572,35 @@ export default function TicketDetailPage() {
                         // name-match à chaque niveau (parent-scoped).
                         // Si un niveau ne matche pas, on s'arrête au
                         // plus profond valide — évite de perdre toute
-                        // la catégorisation à cause d'un typo sur le
-                        // level3.
-                        const byParent = (parentId: string | null, name: string) =>
-                          categories.find(
-                            (c) =>
-                              (c.parentId ?? null) === parentId &&
-                              c.name.trim().toLowerCase() ===
-                                name.trim().toLowerCase(),
+                        // la catégorisation à cause d'un typo.
+                        //
+                        // Match insensible casse + accents pour que
+                        // "Réseau" match "Reseau", "Logiciels" match
+                        // "logiciel" (singulier), etc. L'IA retourne des
+                        // noms parfois normalisés différemment des nôtres.
+                        const norm = (s: string) =>
+                          s
+                            .trim()
+                            .toLowerCase()
+                            .normalize("NFD")
+                            .replace(/[\u0300-\u036f]/g, "");
+                        const byParent = (parentId: string | null, name: string) => {
+                          const target = norm(name);
+                          const siblings = categories.filter(
+                            (c) => (c.parentId ?? null) === parentId,
                           );
+                          // 1. Exact match normalisé
+                          const exact = siblings.find((c) => norm(c.name) === target);
+                          if (exact) return exact;
+                          // 2. Substring : l'un contient l'autre (singulier/
+                          //    pluriel, suffixes courts genre "Logiciel" vs
+                          //    "Logiciels & SaaS")
+                          const sub = siblings.find((c) => {
+                            const n = norm(c.name);
+                            return target.length >= 4 && (n.includes(target) || target.includes(n));
+                          });
+                          return sub ?? null;
+                        };
                         const cat1 = byParent(null, aiCatSuggestion.categoryLevel1);
                         if (!cat1) {
                           alert(
@@ -1576,6 +1611,7 @@ export default function TicketDetailPage() {
                         let l1 = cat1.id;
                         let l2 = "";
                         let l3 = "";
+                        const missingLevels: string[] = [];
                         if (aiCatSuggestion.categoryLevel2) {
                           const cat2 = byParent(
                             l1,
@@ -1589,7 +1625,10 @@ export default function TicketDetailPage() {
                                 aiCatSuggestion.categoryLevel3,
                               );
                               if (cat3) l3 = cat3.id;
+                              else missingLevels.push(`niveau 3 : "${aiCatSuggestion.categoryLevel3}"`);
                             }
+                          } else {
+                            missingLevels.push(`niveau 2 : "${aiCatSuggestion.categoryLevel2}"`);
                           }
                         }
                         setCatLevel1(l1);
@@ -1603,6 +1642,15 @@ export default function TicketDetailPage() {
                         (ticket as { categoryId?: string | null }).categoryId =
                           finalId;
                         setAiCatSuggestion(null);
+                        // Notifie l'admin si la suggestion mentionnait un
+                        // niveau qui n'existe pas comme enfant en BD : il
+                        // saura qu'il faut créer la sous-catégorie pour que
+                        // la prochaine suggestion s'applique entièrement.
+                        if (missingLevels.length > 0) {
+                          console.info(
+                            `[ai-cat] Suggestion partiellement appliquée — manque ${missingLevels.join(", ")}.`,
+                          );
+                        }
                       }}
                       className="w-full inline-flex items-center justify-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-violet-700"
                     >

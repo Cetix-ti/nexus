@@ -60,6 +60,16 @@ export function proxy(request: NextRequest) {
     request.headers.get("x-real-ip") ||
     "unknown";
 
+  // URL courtes pour les tickets : /TK-1234 ou /INT-1234 sont rewrités
+  // côté serveur vers /tickets/TK-1234 (qui contient toute la logique du
+  // ticket detail). L'utilisateur garde l'URL courte dans la barre.
+  const ticketSlugMatch = pathname.match(/^\/((?:TK|INT)-\d+)\/?$/i);
+  if (ticketSlugMatch) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/tickets/${ticketSlugMatch[1].toUpperCase()}`;
+    return NextResponse.rewrite(url);
+  }
+
   // Security headers on every response
   const response = NextResponse.next();
   response.headers.set("X-Frame-Options", "SAMEORIGIN");

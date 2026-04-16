@@ -229,6 +229,28 @@ export async function updateOrganization(
     // slug courant en BD pour ne pas violer la contrainte UNIQUE.
     if (upper) {
       data.slug = upper.toLowerCase();
+      // Auto-ajout du clientCode aux calendarAliases. L'agent qui tape
+      // "MTG MRVL" dans un titre Outlook s'attend à ce que MRVL matche
+      // sans devoir l'ajouter manuellement aux alias. Si calendarAliases
+      // est aussi en cours de patch, on fusionne ; sinon on lit la valeur
+      // actuelle en DB et on l'enrichit.
+      const incomingAliases = Array.isArray(data.calendarAliases)
+        ? (data.calendarAliases as string[])
+        : null;
+      if (incomingAliases !== null) {
+        if (!incomingAliases.includes(upper)) {
+          data.calendarAliases = [...incomingAliases, upper];
+        }
+      } else {
+        const current = await prisma.organization.findUnique({
+          where: { id },
+          select: { calendarAliases: true },
+        });
+        const existing = current?.calendarAliases ?? [];
+        if (!existing.includes(upper)) {
+          data.calendarAliases = [...existing, upper];
+        }
+      }
     }
   }
   // Normalisation des domaines : déduplication, trim, lowercase, et le

@@ -1946,12 +1946,20 @@ function TimeGrid({
                 {/* Events */}
                 {laid.map(({ event: e, top, height, lane, cols }) => {
                   const Icon = KIND_ICONS[e.kind] ?? CalIcon;
-                  // Gap de 2 px entre events dans un cluster (sinon les
-                  // bordures gauches se touchent). Quand cols=1 (aucun
-                  // overlap), on conserve le même padding 4 px qu'avant.
-                  const gap = cols > 1 ? 2 : 0;
+                  // Anchor left+right (au lieu de left+width avec %) pour
+                  // que les events restent CONFINÉS à leur colonne de jour.
+                  // Avec width: calc(100%/cols ...) certains navigateurs
+                  // calculaient le 100% sur le conteneur parent (toute la
+                  // grille 7 jours) → les events débordaient sur le jour
+                  // suivant. left+right est anchored aux DEUX bords de la
+                  // day column (containing block) — pas ambigu.
                   const leftPct = (lane / cols) * 100;
-                  const widthPct = 100 / cols;
+                  const rightPct = ((cols - lane - 1) / cols) * 100;
+                  // Padding interne : 4px aux extrémités du jour, 1px
+                  // entre lanes voisines pour éviter que les bordures
+                  // gauches se touchent.
+                  const leftPad = lane === 0 ? 4 : 1;
+                  const rightPad = lane === cols - 1 ? 4 : 1;
                   return (
                     <button
                       key={e.id}
@@ -1960,8 +1968,8 @@ function TimeGrid({
                       style={{
                         top,
                         height,
-                        left: `calc(${leftPct}% + ${cols > 1 ? gap : 4}px)`,
-                        width: `calc(${widthPct}% - ${cols > 1 ? gap * 2 : 8}px)`,
+                        left: `calc(${leftPct}% + ${leftPad}px)`,
+                        right: `calc(${rightPct}% + ${rightPad}px)`,
                         backgroundColor: e.calendar.color + "22",
                         color: e.calendar.color,
                         borderLeft: `3px solid ${e.calendar.color}`,

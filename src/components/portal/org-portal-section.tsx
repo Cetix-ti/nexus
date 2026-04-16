@@ -202,11 +202,34 @@ export function OrgPortalSection({ organizationId, organizationName }: Props) {
     filteredContacts,
     "lastName",
   );
-  const impersonateFiltered = impersonateSearch
-    ? contacts.filter((c) =>
-        `${c.firstName} ${c.lastName} ${c.email}`.toLowerCase().includes(impersonateSearch.toLowerCase()),
-      )
-    : contacts.slice(0, 5);
+  // Suggestions par défaut : 1 contact aléatoire PAR rôle portail
+  // (admin / manager / standard) pour que l'admin Cetix puisse tester
+  // facilement les 3 vues sans deviner quel contact prendre. Si un rôle
+  // n'a aucun utilisateur, on saute la suggestion. Pendant la recherche,
+  // filtre normal sur tous les contacts.
+  const impersonateFiltered = useMemo(() => {
+    if (impersonateSearch) {
+      const q = impersonateSearch.toLowerCase();
+      return contacts.filter((c) =>
+        `${c.firstName} ${c.lastName} ${c.email}`.toLowerCase().includes(q),
+      );
+    }
+    function pickRandom<T>(arr: T[]): T | null {
+      return arr.length === 0 ? null : arr[Math.floor(Math.random() * arr.length)];
+    }
+    const byRole: Record<string, PortalContact[]> = { ADMIN: [], MANAGER: [], STANDARD: [] };
+    for (const c of contacts) {
+      const role = (c.portalAccess?.portalRole ?? "STANDARD").toUpperCase();
+      if (byRole[role]) byRole[role].push(c);
+      else byRole.STANDARD.push(c);
+    }
+    const suggestions: PortalContact[] = [];
+    for (const role of ["ADMIN", "MANAGER", "STANDARD"] as const) {
+      const pick = pickRandom(byRole[role]);
+      if (pick) suggestions.push(pick);
+    }
+    return suggestions;
+  }, [contacts, impersonateSearch]);
 
   if (loading) {
     return <div className="flex items-center justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>;
@@ -338,18 +361,39 @@ export function OrgPortalSection({ organizationId, organizationName }: Props) {
             <input type="text" value={impersonateSearch} onChange={(e) => setImpersonateSearch(e.target.value)}
               placeholder="Rechercher un contact..." className="h-9 w-full pl-9 pr-3 rounded-lg border border-slate-200 bg-white text-[12px] placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
           </div>
+          {!impersonateSearch && (
+            <p className="text-[11px] text-slate-500 -mt-1">
+              Suggestions : un contact aléatoire par groupe de permission.
+            </p>
+          )}
           <div className="space-y-1">
-            {impersonateFiltered.map((c) => (
-              <div key={c.id} className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-slate-50 transition-colors">
-                <div className="min-w-0">
-                  <span className="text-[12.5px] font-medium text-slate-900">{c.firstName} {c.lastName}</span>
-                  <span className="text-[11px] text-slate-400 ml-2">{c.email}</span>
+            {impersonateFiltered.map((c) => {
+              const role = (c.portalAccess?.portalRole ?? "STANDARD").toUpperCase();
+              const roleLabel =
+                role === "ADMIN" ? "Administrateur" :
+                role === "MANAGER" ? "Gestionnaire" :
+                "Standard";
+              const roleColor =
+                role === "ADMIN" ? "bg-violet-100 text-violet-700 ring-violet-200" :
+                role === "MANAGER" ? "bg-blue-100 text-blue-700 ring-blue-200" :
+                "bg-slate-100 text-slate-600 ring-slate-200";
+              return (
+                <div key={c.id} className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-slate-50 transition-colors gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[12.5px] font-medium text-slate-900 truncate">{c.firstName} {c.lastName}</span>
+                      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1 ${roleColor}`}>
+                        {roleLabel}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-400 truncate block">{c.email}</span>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => handleImpersonate(c)} className="h-7 text-[11px] shrink-0">
+                    <Eye className="h-3 w-3" /> Visualiser
+                  </Button>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => handleImpersonate(c)} className="h-7 text-[11px]">
-                  <Eye className="h-3 w-3" /> Visualiser
-                </Button>
-              </div>
-            ))}
+              );
+            })}
             {impersonateFiltered.length === 0 && <p className="text-[12px] text-slate-400 py-4 text-center">Aucun contact trouvé</p>}
           </div>
         </CardContent>

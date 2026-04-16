@@ -109,7 +109,16 @@ function escapeHtml(s: string): string {
  *     normales) sont ajoutées à la fin du HTML dans un bloc "Pièces
  *     jointes" pour que rien ne soit perdu.
  *
- * Si `hasAttachments=false`, retour immédiat sans appel Graph.
+ * IMPORTANT : on n'utilise PLUS le flag `hasAttachments` de Graph comme
+ * pré-filtre. Outlook le met à `false` quand le mail ne contient QUE des
+ * images inline (logos de signature p.ex.) — résultat : les CID des
+ * signatures n'étaient jamais résolus et les images apparaissaient cassées
+ * dans les tickets. À la place, on déclenche l'appel attachments si :
+ *   - le HTML contient au moins un `cid:` (signal fort qu'on doit résoudre)
+ *   - OU `hasAttachments` est explicitement true (cas des PJ normales)
+ *
+ * `hasAttachments` reste accepté en paramètre pour rétro-compat de signature,
+ * mais c'est le contenu du HTML qui décide vraiment.
  */
 export async function rewriteInlineImages(
   html: string,
@@ -118,7 +127,8 @@ export async function rewriteInlineImages(
   hasAttachments: boolean,
   graphFetch: <T>(path: string) => Promise<T>,
 ): Promise<string> {
-  if (!hasAttachments) return html;
+  const hasCidRef = /cid:[^"'\s>]+/i.test(html);
+  if (!hasCidRef && !hasAttachments) return html;
 
   const attachments = await fetchImageAttachments(mailbox, messageId, graphFetch);
   if (attachments.length === 0) return html;

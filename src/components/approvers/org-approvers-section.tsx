@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   Plus,
   Pencil,
@@ -238,45 +238,18 @@ export function OrgApproversSection({
               {editingId ? "Modifier l'approbateur" : "Nouvel approbateur"}
             </h4>
             <div className="grid grid-cols-1 gap-3">
-              <div>
-                <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-                  Sélectionner un contact existant
-                </label>
-                <Select
-                  value=""
-                  onValueChange={(contactId) => {
-                    const c = orgContacts.find((x) => x.id === contactId);
-                    if (!c) return;
-                    setForm({
-                      ...form,
-                      contactName: `${c.firstName} ${c.lastName}`,
-                      contactEmail: c.email,
-                      contactPhone: c.phone || "",
-                      jobTitle: c.jobTitle || "",
-                    });
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choisir parmi les contacts de l'entreprise..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {orgContacts.length === 0 && (
-                      <div className="px-3 py-2 text-[12px] text-slate-400">
-                        Aucun contact dans l&apos;entreprise
-                      </div>
-                    )}
-                    {orgContacts.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.firstName} {c.lastName} — {c.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  Les champs ci-dessous se rempliront automatiquement. Vous
-                  pouvez les ajuster avant d&apos;enregistrer.
-                </p>
-              </div>
+              <ContactAutocomplete
+                contacts={orgContacts}
+                onPick={(c) => {
+                  setForm({
+                    ...form,
+                    contactName: `${c.firstName} ${c.lastName}`,
+                    contactEmail: c.email,
+                    contactPhone: c.phone || "",
+                    jobTitle: c.jobTitle || "",
+                  });
+                }}
+              />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Input
@@ -528,5 +501,127 @@ export function OrgApproversSection({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ContactAutocomplete — combobox semi-automatique sur les contacts d'une
+// organisation. Tri alphabétique par défaut (lastName, firstName), filtrage
+// substring case-insensitive, sélection au clic ou avec Enter.
+// ---------------------------------------------------------------------------
+interface ContactAutocompleteContact {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  jobTitle?: string;
+}
+
+function ContactAutocomplete({
+  contacts,
+  onPick,
+}: {
+  contacts: ContactAutocompleteContact[];
+  onPick: (c: ContactAutocompleteContact) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Tri alphabétique stable (lastName puis firstName, locale fr-CA pour
+  // gérer les accents correctement).
+  const sortedContacts = useMemo(() => {
+    return [...contacts].sort((a, b) => {
+      const cmp = a.lastName.localeCompare(b.lastName, "fr-CA");
+      if (cmp !== 0) return cmp;
+      return a.firstName.localeCompare(b.firstName, "fr-CA");
+    });
+  }, [contacts]);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return sortedContacts;
+    const q = query.toLowerCase();
+    return sortedContacts.filter((c) =>
+      `${c.firstName} ${c.lastName} ${c.email} ${c.jobTitle ?? ""}`
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [sortedContacts, query]);
+
+  // Ferme le dropdown au clic en dehors.
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  function pick(c: ContactAutocompleteContact) {
+    onPick(c);
+    setQuery(`${c.firstName} ${c.lastName}`);
+    setOpen(false);
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+        Sélectionner un contact existant
+      </label>
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && filtered.length === 1) {
+            e.preventDefault();
+            pick(filtered[0]);
+          } else if (e.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+        placeholder="Tapez un nom, une fonction, un email…"
+        className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+      />
+      {open && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-30 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-[12px] text-slate-400">
+              Aucun contact trouvé
+            </div>
+          ) : (
+            filtered.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => pick(c)}
+                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-blue-50/60"
+              >
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium text-slate-900 truncate">
+                    {c.firstName} {c.lastName}
+                  </div>
+                  <div className="text-[11.5px] text-slate-500 truncate">
+                    {c.email}
+                    {c.jobTitle ? ` · ${c.jobTitle}` : ""}
+                  </div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+      <p className="mt-1 text-[11px] text-slate-500">
+        Les champs ci-dessous se rempliront automatiquement. Vous pouvez les
+        ajuster avant d&apos;enregistrer.
+      </p>
+    </div>
   );
 }

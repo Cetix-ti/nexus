@@ -162,7 +162,7 @@ export async function notifyApprovalDecided(opts: {
       clientPrefix,
     );
     const { getAgentTicketUrl } = await import("@/lib/portal-domain/url");
-    const agentUrl = await getAgentTicketUrl(ticket.id);
+    const agentUrl = await getAgentTicketUrl(displayNumber);
     const approved = opts.decision === "APPROVED";
 
     const recipients = new Set<string>();

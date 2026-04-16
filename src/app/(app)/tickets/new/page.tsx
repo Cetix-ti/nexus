@@ -107,9 +107,11 @@ export default function NewTicketPage() {
     resolver: zodResolver(ticketSchema),
     defaultValues: {
       type: "incident",
-      priority: "medium",
-      urgency: "medium",
-      impact: "medium",
+      // Défauts LOW : l'auto-prioritisation IA (auto-prioritize.ts)
+      // remontera vers MEDIUM/HIGH/CRITICAL si elle détecte un signal fort.
+      priority: "low",
+      urgency: "low",
+      impact: "low",
       category: "",
       queue: "",
       organizationName: "",

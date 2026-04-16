@@ -53,10 +53,17 @@ export async function getPortalTicketUrl(ticketId: string): Promise<string> {
 
 /**
  * URL de la vue agent (équipe Cetix) d'un ticket — pour les courriels
- * internes envoyés aux agents. Même base URL que le portail, mais sur la
- * route `/tickets/` au lieu de `/portal/tickets/`.
+ * internes envoyés aux agents. Privilégie le format court /TK-NNNN
+ * (rewriten par le proxy vers /tickets/TK-NNNN). Si on n'a pas le numéro
+ * formaté, fallback sur l'ancien /tickets/{cuid}.
  */
-export async function getAgentTicketUrl(ticketId: string): Promise<string> {
+export async function getAgentTicketUrl(
+  ticketIdOrSlug: string,
+): Promise<string> {
   const base = await getPortalBaseUrl();
-  return `${base}/tickets/${ticketId}`;
+  // Slug "TK-1234" / "INT-1234" → URL courte au root.
+  if (/^(TK|INT)-\d+$/i.test(ticketIdOrSlug)) {
+    return `${base}/${ticketIdOrSlug.toUpperCase()}`;
+  }
+  return `${base}/tickets/${ticketIdOrSlug}`;
 }
