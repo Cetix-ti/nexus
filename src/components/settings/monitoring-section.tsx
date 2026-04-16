@@ -76,6 +76,7 @@ export function MonitoringSection() {
     ok: boolean;
     version?: string;
     clusterName?: string;
+    count?: number;
     error?: string;
   } | null>(null);
   const [wazuhSyncing, setWazuhSyncing] = useState(false);
@@ -629,8 +630,15 @@ export function MonitoringSection() {
               <div className="flex-1">
                 {wazuhTestResult.ok ? (
                   <span>
-                    Connecté à <strong>{wazuhTestResult.clusterName ?? "cluster"}</strong>
+                    Connecté{wazuhTestResult.clusterName ? (
+                      <>
+                        {" "}à <strong>{wazuhTestResult.clusterName}</strong>
+                      </>
+                    ) : null}
                     {wazuhTestResult.version ? ` · OpenSearch ${wazuhTestResult.version}` : ""}
+                    {typeof wazuhTestResult.count === "number"
+                      ? ` · ${wazuhTestResult.count.toLocaleString("fr-CA")} alertes indexées`
+                      : ""}
                   </span>
                 ) : (
                   <span>{wazuhTestResult.error}</span>

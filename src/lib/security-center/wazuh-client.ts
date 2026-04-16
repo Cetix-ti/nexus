@@ -207,26 +207,56 @@ export async function fetchWazuhAlerts(
 }
 
 /**
- * Test de connexion — vérifie auth + cluster health. Retourne la
- * version + cluster_name si OK, ou l'erreur décrite.
+ * Test de connexion — vérifie que le user peut LIRE l'index wazuh-alerts-*
+ * (la seule permission dont Nexus a vraiment besoin). On évite `GET /` qui
+ * exige `cluster:monitor/main` — un rôle comme `kibana_all_read` n'a pas
+ * cette permission cluster et le test échouait en 403 alors que le sync
+ * réel aurait pu fonctionner.
+ *
+ * Hit : POST /wazuh-alerts-{star}/_count → renvoie juste le count.
+ * Nécessite uniquement la permission indices read sur l'index pattern
+ * cible (wazuh-alerts-*).
  */
 export async function testWazuhConnection(
   cfg: WazuhConfig,
-): Promise<{ ok: boolean; version?: string; clusterName?: string; error?: string }> {
+): Promise<{ ok: boolean; version?: string; clusterName?: string; count?: number; error?: string }> {
   try {
-    const res = await fetch(`${cfg.apiUrl}/`, {
-      method: "GET",
-      headers: { Authorization: authHeader(cfg) },
+    const res = await fetch(`${cfg.apiUrl}/wazuh-alerts-*/_count`, {
+      method: "POST",
+      headers: {
+        Authorization: authHeader(cfg),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: { match_all: {} } }),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+      return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 300)}` };
     }
-    const info = await res.json();
+    const info = (await res.json()) as { count?: number };
+    // Version + cluster_name : tentative best-effort. Si le user n'a pas
+    // `cluster:monitor/main` on ignore silencieusement — le count suffit
+    // pour valider que le sync marchera.
+    let version: string | undefined;
+    let clusterName: string | undefined;
+    try {
+      const rootRes = await fetch(`${cfg.apiUrl}/`, {
+        method: "GET",
+        headers: { Authorization: authHeader(cfg) },
+      });
+      if (rootRes.ok) {
+        const root = await rootRes.json();
+        version = root?.version?.number;
+        clusterName = root?.cluster_name;
+      }
+    } catch {
+      /* version metadata not critical */
+    }
     return {
       ok: true,
-      version: info?.version?.number,
-      clusterName: info?.cluster_name,
+      version,
+      clusterName,
+      count: typeof info.count === "number" ? info.count : undefined,
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

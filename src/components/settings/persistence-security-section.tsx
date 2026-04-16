@@ -12,7 +12,7 @@
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, Edit3, Save, RotateCcw, Mail, Shield } from "lucide-react";
+import { Plus, Trash2, Edit3, Save, RotateCcw, Mail, Shield, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 // ----------------------------------------------------------------------------
@@ -499,6 +499,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 // TEMPLATE PANEL
 // ============================================================================
 
+interface Agent {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  isActive: boolean;
+}
+
 function TemplatePanel() {
   const [tpl, setTpl] = useState<Template | null>(null);
   const [loading, setLoading] = useState(true);
@@ -509,18 +517,27 @@ function TemplatePanel() {
   const [htmlBody, setHtmlBody] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [showAgentPicker, setShowAgentPicker] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/v1/security-center/notification-templates/persistence_tool");
-      const data = await res.json();
-      if (res.ok && data.template) {
+      const [tplRes, agentsRes] = await Promise.all([
+        fetch("/api/v1/security-center/notification-templates/persistence_tool"),
+        fetch("/api/v1/users?role=SUPER_ADMIN,MSP_ADMIN,TECHNICIAN"),
+      ]);
+      const data = await tplRes.json();
+      if (tplRes.ok && data.template) {
         setTpl(data.template);
         setRecipientsText((data.template.recipients || []).join(", "));
         setSubject(data.template.subject);
         setHtmlBody(data.template.htmlBody);
         setEnabled(data.template.enabled);
+      }
+      if (agentsRes.ok) {
+        const users = (await agentsRes.json()) as Agent[];
+        setAgents(users.filter((u) => u.isActive));
       }
     } finally {
       setLoading(false);
@@ -652,9 +669,19 @@ function TemplatePanel() {
       )}
 
       <div>
-        <label className="block text-[12px] font-semibold text-slate-700 mb-1.5">
-          Destinataires (séparés par virgule)
-        </label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-[12px] font-semibold text-slate-700">
+            Destinataires (séparés par virgule)
+          </label>
+          <button
+            type="button"
+            onClick={() => setShowAgentPicker((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-200"
+          >
+            <Users className="h-3 w-3" />
+            Choisir parmi les agents
+          </button>
+        </div>
         <input
           type="text"
           value={recipientsText}
@@ -662,6 +689,57 @@ function TemplatePanel() {
           placeholder="alertes-securite@cetix.ca, ops@cetix.ca"
           className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-[13px] focus:border-blue-500 focus:outline-none"
         />
+        {showAgentPicker && (
+          <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+            <p className="text-[11.5px] text-slate-600 mb-2">
+              Coche les agents qui doivent recevoir les alertes. Leur courriel
+              sera ajouté à la liste ci-dessus.
+            </p>
+            <div className="max-h-56 space-y-0.5 overflow-y-auto">
+              {agents.map((a) => {
+                const list = recipientsText
+                  .split(/[\s,;]+/)
+                  .map((s) => s.trim().toLowerCase())
+                  .filter(Boolean);
+                const checked = list.includes(a.email.toLowerCase());
+                return (
+                  <label
+                    key={a.id}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] hover:bg-white"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const current = recipientsText
+                          .split(/[\s,;]+/)
+                          .map((s) => s.trim())
+                          .filter(Boolean);
+                        if (e.target.checked) {
+                          if (!current.some((x) => x.toLowerCase() === a.email.toLowerCase())) {
+                            current.push(a.email);
+                          }
+                        } else {
+                          const idx = current.findIndex(
+                            (x) => x.toLowerCase() === a.email.toLowerCase(),
+                          );
+                          if (idx >= 0) current.splice(idx, 1);
+                        }
+                        setRecipientsText(current.join(", "));
+                      }}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="flex-1 text-slate-800">{a.name}</span>
+                    <span className="text-[11.5px] text-slate-500">{a.email}</span>
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9.5px] text-slate-500">
+                      {a.role}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div>

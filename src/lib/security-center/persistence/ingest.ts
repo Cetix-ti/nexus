@@ -136,9 +136,13 @@ export async function ingestPersistenceEmail(opts: {
   const ingestResult = await ingestSecurityAlert(decoded);
   if (!ingestResult) return null;
 
-  // Envoi courriel — seulement pour les alertes nouvelles (pas de spam
-  // sur répétition) et en respectant l'option sendEmail.
-  if (opts.sendEmail !== false && ingestResult.isNew) {
+  // Envoi courriel — trois gates :
+  //   1. L'appelant n'a pas explicitement désactivé l'envoi (sendEmail !== false)
+  //   2. L'alerte est nouvelle (dédup par externalId — pas de spam sur répétition)
+  //   3. L'alerte n'est PAS whitelistée — si le soft est autorisé, aucun
+  //      email n'est envoyé. L'alerte reste persistée (info + isLowPriority)
+  //      pour traçabilité, mais plus de notification.
+  if (opts.sendEmail !== false && ingestResult.isNew && !isWhitelisted) {
     try {
       const emailCtx: PersistenceEmailContext = {
         hostname: parsed.hostname,
