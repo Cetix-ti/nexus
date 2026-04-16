@@ -16,6 +16,7 @@ import {
   useNotificationToasts,
   type NotificationToast,
 } from "@/stores/notification-toast-store";
+import { OrgLogo } from "@/components/organizations/org-logo";
 
 const ICON_MAP: Record<
   string,
@@ -42,15 +43,27 @@ function ToastCard({
 
   const content = (
     <div className="flex items-start gap-3">
-      <div
-        className={cn(
-          "shrink-0 h-10 w-10 rounded-xl flex items-center justify-center",
-          cfg.bg,
-          cfg.color,
-        )}
-      >
-        <Icon className="h-5 w-5" />
-      </div>
+      {/* Logo client prioritaire sur l'icône typée — même logique que la
+          cloche : le visuel qui aide à identifier le contexte d'un coup
+          d'œil est le logo du client concerné, pas l'icône d'événement. */}
+      {toast.organizationName ? (
+        <OrgLogo
+          name={toast.organizationName}
+          size={40}
+          rounded="lg"
+          className="shrink-0 ring-1 ring-slate-200/60"
+        />
+      ) : (
+        <div
+          className={cn(
+            "shrink-0 h-10 w-10 rounded-xl flex items-center justify-center",
+            cfg.bg,
+            cfg.color,
+          )}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-semibold text-slate-900 leading-snug">
           {toast.title}
@@ -127,11 +140,20 @@ export function NotificationToasts() {
         // Only push toasts after the first poll (avoid showing old ones on page load)
         if (lastCheckRef.current) {
           for (const n of toShow.slice(0, 3)) {
+            // Extrait organizationName depuis la metadata si présent —
+            // permet au toast de montrer le logo client. Tolère
+            // l'absence (fallback icône typée).
+            const meta = (n.metadata ?? {}) as Record<string, unknown>;
+            const organizationName =
+              typeof meta.organizationName === "string"
+                ? (meta.organizationName as string)
+                : undefined;
             push({
               title: n.title,
               body: n.body ?? undefined,
               link: n.link ?? undefined,
               type: n.type ?? undefined,
+              organizationName,
             });
           }
         }

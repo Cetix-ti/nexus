@@ -6,6 +6,10 @@ export interface NotificationToast {
   body?: string;
   link?: string;
   type?: string;
+  /** Nom d'organisation — si présent, le toast affiche l'OrgLogo à la
+   *  place de l'icône typée. Vient de notification.metadata.organizationName
+   *  côté backend. */
+  organizationName?: string | null;
   createdAt: number;
 }
 

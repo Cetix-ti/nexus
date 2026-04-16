@@ -132,7 +132,13 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
         : `Nouveau ticket à prendre en charge : ${ticket.subject}`,
       body: `${displayNumber} · ${ticket.organization?.name ?? "—"} · Priorité ${ticket.priority.toLowerCase()}`,
       link: `/tickets/${ticket.id}`,
-      metadata: { ticketId: ticket.id, ticketNumber: ticket.number },
+      // organizationName dans la metadata → l'UI de notifications (cloche
+      // + toast) rend l'OrgLogo à la place de l'icône générique.
+      metadata: {
+        ticketId: ticket.id,
+        ticketNumber: ticket.number,
+        organizationName: ticket.organization?.name ?? null,
+      },
       emailSubject: `[${displayNumber}] ${ticket.subject}`,
       email: {
         title: ticket.assigneeId ? "Un ticket vous est assigné" : "Nouveau ticket à prendre en charge",
@@ -308,7 +314,11 @@ export async function dispatchCollaboratorAdded(
       title: `Vous avez été ajouté comme collaborateur : ${ticket.subject}`,
       body: `${displayNumber} · ${ticket.organization?.name ?? "—"} · par ${addedByName}`,
       link: `/tickets/${ticket.id}`,
-      metadata: { ticketId: ticket.id, addedBy: addedByUserId },
+      metadata: {
+        ticketId: ticket.id,
+        addedBy: addedByUserId,
+        organizationName: ticket.organization?.name ?? null,
+      },
       emailSubject: `[${displayNumber}] Vous avez été ajouté en collaboration`,
       email: {
         title: "Vous avez été ajouté comme collaborateur",
@@ -378,7 +388,12 @@ export async function dispatchTicketStatusChange(
           : `Statut changé : ${ticket.subject}`,
         body: `${displayNumber} · ${oldStatus.toLowerCase()} → ${newStatus.toLowerCase()}`,
         link: `/tickets/${ticket.id}`,
-        metadata: { ticketId: ticket.id, oldStatus, newStatus },
+        metadata: {
+          ticketId: ticket.id,
+          oldStatus,
+          newStatus,
+          organizationName: ticket.organization?.name ?? null,
+        },
         emailSubject: `[${displayNumber}] ${isResolution ? "Résolu" : "Statut mis à jour"}`,
         email: {
           title: isResolution ? "Ticket résolu" : "Statut du ticket mis à jour",
@@ -475,7 +490,11 @@ export async function dispatchTicketComment(opts: {
     const commonContent: Omit<NotifyContent, "title"> = {
       body: `${displayNumber} · ${authorName}${opts.isInternal ? " (note interne)" : ""}`,
       link: `/tickets/${ticket.id}`,
-      metadata: { ticketId: ticket.id, authorUserId: opts.authorUserId ?? null },
+      metadata: {
+        ticketId: ticket.id,
+        authorUserId: opts.authorUserId ?? null,
+        organizationName: ticket.organization?.name ?? null,
+      },
       emailSubject: `[${displayNumber}] Nouveau commentaire`,
       email: {
         title: "Nouveau commentaire sur un ticket",
@@ -543,7 +562,11 @@ export async function dispatchTicketReminder(
       title: `Rappel : ${ticket.subject}`,
       body: `${displayNumber}${note ? ` · ${note}` : ""}`,
       link: `/tickets/${ticket.id}`,
-      metadata: { ticketId: ticket.id, note },
+      metadata: {
+        ticketId: ticket.id,
+        note,
+        organizationName: ticket.organization?.name ?? null,
+      },
       emailSubject: `[${displayNumber}] Rappel`,
       email: {
         title: "Rappel de ticket",
