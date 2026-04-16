@@ -212,6 +212,44 @@ export default function TicketDetailPage() {
   const [reminderDate, setReminderDate] = useState("");
   const [reminderNote, setReminderNote] = useState("");
   const [reminderSaving, setReminderSaving] = useState(false);
+
+  /**
+   * Date par défaut quand on ouvre le modal de rappel :
+   *   - rappel existant → on pré-remplit avec sa valeur
+   *   - aucun rappel    → demain à 08:00 local (meilleure heure pour un
+   *     reminder qui sera vu en arrivant au bureau le matin)
+   * Format ISO local sans secondes pour <input type="datetime-local" />.
+   */
+  function defaultReminderDateTime(): string {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(8, 0, 0, 0);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}T08:00`;
+  }
+
+  function formatLocalIso(d: Date): string {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+  }
+
+  function openReminder() {
+    if (!reminderDate) {
+      if (reminder?.remindAt) {
+        setReminderDate(formatLocalIso(new Date(reminder.remindAt)));
+        setReminderNote(reminder.note ?? "");
+      } else {
+        setReminderDate(defaultReminderDateTime());
+      }
+    }
+    setReminderOpen(true);
+  }
   const [editingSubject, setEditingSubject] = useState(false);
   const [subjectDraft, setSubjectDraft] = useState("");
   const [editingDescription, setEditingDescription] = useState(false);
@@ -600,7 +638,7 @@ export default function TicketDetailPage() {
           {reminder ? (
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => setReminderOpen(!reminderOpen)}
+                onClick={openReminder}
                 className="flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[12px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200/60 hover:bg-amber-100 transition-colors"
               >
                 <CalendarClock className="h-3.5 w-3.5" />
@@ -616,56 +654,28 @@ export default function TicketDetailPage() {
             </div>
           ) : (
             <button
-              onClick={() => setReminderOpen(!reminderOpen)}
+              onClick={openReminder}
               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
             >
               <Bell className="h-3.5 w-3.5" />
               Rappel
             </button>
           )}
-
-          {/* Reminder popover */}
-          {reminderOpen && (
-            <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl border border-slate-200 bg-white shadow-xl p-4 space-y-3">
-              <h4 className="text-[13px] font-semibold text-slate-900">Configurer un rappel</h4>
-              <div>
-                <label className="text-[12px] text-slate-500 mb-1 block">Date et heure</label>
-                <input
-                  type="datetime-local"
-                  value={reminderDate}
-                  onChange={(e) => setReminderDate(e.target.value)}
-                  min={new Date().toISOString().slice(0, 16)}
-                  className="w-full h-9 rounded-lg border border-slate-200 px-3 text-[13px] text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="text-[12px] text-slate-500 mb-1 block">Note (optionnel)</label>
-                <textarea
-                  value={reminderNote}
-                  onChange={(e) => setReminderNote(e.target.value)}
-                  rows={2}
-                  placeholder="Ex: Relancer le client..."
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
-                />
-              </div>
-              <div className="flex items-center justify-end gap-2 pt-1">
-                <button
-                  onClick={() => setReminderOpen(false)}
-                  className="px-3 py-1.5 text-[12px] font-medium text-slate-500 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={handleSetReminder}
-                  disabled={!reminderDate || reminderSaving}
-                  className="px-3 py-1.5 text-[12px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  {reminderSaving ? "..." : reminder ? "Modifier" : "Définir le rappel"}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
+
+        {reminderOpen && (
+          <ReminderModal
+            existing={reminder}
+            date={reminderDate}
+            note={reminderNote}
+            saving={reminderSaving}
+            onDateChange={setReminderDate}
+            onNoteChange={setReminderNote}
+            onClose={() => setReminderOpen(false)}
+            onSave={handleSetReminder}
+            formatLocalIso={formatLocalIso}
+          />
+        )}
       </div>
 
       <div className="flex flex-col lg:flex-row flex-1 gap-0">
@@ -1969,6 +1979,191 @@ function TicketAttachments({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Reminder modal — plein écran centré, propre, avec presets de quick-select.
+// Remplace l'ancien popover collé au bouton qui était exigu et illisible.
+// ---------------------------------------------------------------------------
+function ReminderModal({
+  existing,
+  date,
+  note,
+  saving,
+  onDateChange,
+  onNoteChange,
+  onClose,
+  onSave,
+  formatLocalIso,
+}: {
+  existing: { id: string; remindAt: string; note: string | null } | null;
+  date: string;
+  note: string;
+  saving: boolean;
+  onDateChange: (v: string) => void;
+  onNoteChange: (v: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+  formatLocalIso: (d: Date) => string;
+}) {
+  // ESC pour fermer
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && date) onSave();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [date, onClose, onSave]);
+
+  // Presets rapides — calculés à chaque render (léger, pas de useMemo).
+  function buildPresets() {
+    const now = new Date();
+    const inTwoHours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    const tomorrow8 = new Date(now);
+    tomorrow8.setDate(tomorrow8.getDate() + 1);
+    tomorrow8.setHours(8, 0, 0, 0);
+    const monday8 = new Date(now);
+    const daysUntilMonday = (8 - monday8.getDay()) % 7 || 7;
+    monday8.setDate(monday8.getDate() + daysUntilMonday);
+    monday8.setHours(8, 0, 0, 0);
+    const inOneWeek = new Date(now);
+    inOneWeek.setDate(inOneWeek.getDate() + 7);
+    inOneWeek.setHours(8, 0, 0, 0);
+    return [
+      { label: "Dans 2 h", d: inTwoHours },
+      { label: "Demain 8 h", d: tomorrow8 },
+      { label: "Lundi 8 h", d: monday8 },
+      { label: "Dans 1 semaine", d: inOneWeek },
+    ];
+  }
+  const presets = buildPresets();
+
+  const minLocal = formatLocalIso(new Date());
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-start gap-3 px-5 py-4 bg-gradient-to-br from-amber-50 to-white border-b border-slate-200">
+          <div className="h-9 w-9 rounded-xl bg-amber-100 text-amber-700 ring-1 ring-amber-200/60 flex items-center justify-center shrink-0">
+            <Bell className="h-4 w-4" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-[14px] font-semibold text-slate-900">
+              {existing ? "Modifier le rappel" : "Configurer un rappel"}
+            </h3>
+            <p className="mt-0.5 text-[12px] text-slate-500">
+              Vous recevrez une notification dans Nexus à la date choisie.
+            </p>
+          </div>
+        </header>
+
+        <div className="px-5 py-4 space-y-4">
+          {/* Presets rapides */}
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
+              Suggestions
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {presets.map((p) => {
+                const iso = formatLocalIso(p.d);
+                const active = date === iso;
+                return (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => onDateChange(iso)}
+                    className={
+                      active
+                        ? "inline-flex items-center gap-1 rounded-full bg-blue-600 px-3 py-1 text-[12px] font-semibold text-white"
+                        : "inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-[12px] font-medium text-slate-700 hover:bg-slate-200 transition-colors"
+                    }
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Date + heure */}
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2 block">
+              Date et heure personnalisées
+            </label>
+            <div className="relative">
+              <CalendarClock className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                type="datetime-local"
+                value={date}
+                onChange={(e) => onDateChange(e.target.value)}
+                min={minLocal}
+                className="w-full h-10 rounded-lg border border-slate-200 pl-10 pr-3 text-[13px] text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+            {date && (
+              <p className="mt-1.5 text-[11.5px] text-slate-500">
+                Déclenchement :{" "}
+                <span className="font-medium text-slate-700">
+                  {new Date(date).toLocaleDateString("fr-CA", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </p>
+            )}
+          </div>
+
+          {/* Note */}
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2 block">
+              Note (optionnel)
+            </label>
+            <textarea
+              value={note}
+              onChange={(e) => onNoteChange(e.target.value)}
+              rows={3}
+              placeholder="Ex: Relancer le client pour approbation du devis"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+            />
+          </div>
+        </div>
+
+        <footer className="flex items-center justify-between gap-2 border-t border-slate-200 px-5 py-3 bg-slate-50/50">
+          <span className="text-[10.5px] text-slate-400">
+            <kbd className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[9.5px] font-mono">Esc</kbd>{" "}
+            pour fermer ·{" "}
+            <kbd className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[9.5px] font-mono">⌘↵</kbd>{" "}
+            pour enregistrer
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-[12px] font-medium text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={onSave}
+              disabled={!date || saving}
+              className="px-4 py-1.5 text-[12px] font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {saving ? "Enregistrement…" : existing ? "Modifier" : "Définir le rappel"}
+            </button>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }

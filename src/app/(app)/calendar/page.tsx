@@ -459,24 +459,20 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
       </div>
 
       {/* Calendar picker + grid */}
-      {/* Layout sidebar + grille calendrier.
-          - <lg (<1024 px)            : stack vertical (sidebar au-dessus)
-          - lg à 2xl (1024-1535 px)   : sidebar 192 px (plus étroite) pour
-            laisser un max d'espace à la grille — cible les laptops
-            14" à 150% scaling (1920×1200 natif → 1280 CSS px)
-          - 2xl+ (≥1536 px)           : sidebar 240 px, retour au confort
-            original des grands écrans */}
-      <div className="grid grid-cols-1 lg:grid-cols-[192px_1fr] 2xl:grid-cols-[240px_1fr] gap-3 lg:gap-4">
-        {/* Sidebar: calendar toggles */}
+      {/* Layout pleine largeur : les calendriers (toggles) passent en
+          barre horizontale au-dessus de la grille pour libérer la
+          largeur totale pour le contenu. Chaque calendrier = pill
+          compacte cliquable. */}
+      <div className="flex flex-col gap-3 lg:gap-4">
+        {/* Barre horizontale des calendriers */}
         <Card>
-          <CardContent className="p-3">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2 px-1">
-              Calendriers
-            </h3>
-            <div className="space-y-1">
-              {/* Ordre préféré : le calendrier GENERAL (« Localisation »)
-                  en tête, puis Renouvellements, puis Congés, puis le
-                  reste alphabétique. */}
+          <CardContent className="p-2.5 sm:p-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mr-1 shrink-0">
+                Calendriers
+              </span>
+              {/* Ordre préféré : GENERAL (« Localisation ») en tête, puis
+                  Renouvellements, Congés, reste alphabétique. */}
               {[...calendars]
                 .sort((a, b) => {
                   const order: Record<string, number> = { GENERAL: 0, RENEWALS: 1, LEAVE: 2, CUSTOM: 3 };
@@ -486,29 +482,32 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
                   return a.name.localeCompare(b.name, "fr");
                 })
                 .map((c) => {
-                const visible = visibleCalendarIds.has(c.id);
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => toggleCalendar(c.id)}
-                    className={cn(
-                      "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-md text-left text-[12.5px] transition-colors",
-                      visible ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:bg-slate-50",
-                    )}
-                  >
-                    <span
-                      className="h-2.5 w-2.5 rounded-full shrink-0"
-                      style={{
-                        backgroundColor: visible ? c.color : undefined,
-                        borderColor: c.color,
-                        borderWidth: visible ? 0 : 2,
-                        borderStyle: "solid",
-                      }}
-                    />
-                    <span className="truncate flex-1">{c.name}</span>
-                  </button>
-                );
-              })}
+                  const visible = visibleCalendarIds.has(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => toggleCalendar(c.id)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors",
+                        visible
+                          ? "bg-slate-100 text-slate-900 ring-1 ring-slate-200"
+                          : "bg-transparent text-slate-400 hover:bg-slate-50 ring-1 ring-slate-200",
+                      )}
+                      title={visible ? "Masquer ce calendrier" : "Afficher ce calendrier"}
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full shrink-0"
+                        style={{
+                          backgroundColor: visible ? c.color : "transparent",
+                          borderColor: c.color,
+                          borderWidth: visible ? 0 : 2,
+                          borderStyle: "solid",
+                        }}
+                      />
+                      <span className="truncate max-w-[160px]">{c.name}</span>
+                    </button>
+                  );
+                })}
             </div>
           </CardContent>
         </Card>
@@ -1335,7 +1334,7 @@ function EventTile({
       <button
         onClick={onClick}
         className={cn(
-          "flex items-center gap-1.5 w-full px-1.5 py-0.5 rounded text-[10.5px] text-left hover:brightness-95 transition-all min-w-0",
+          "flex items-center gap-1.5 w-full max-w-full px-1.5 py-0.5 rounded text-[10.5px] text-left hover:brightness-95 transition-all min-w-0",
           hasSyncIssue && "ring-1 ring-red-400",
         )}
         style={{ backgroundColor: event.calendar.color + "22", color: event.calendar.color }}
@@ -1447,12 +1446,12 @@ function EventTile({
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] text-left truncate hover:brightness-95 transition-all"
+      className="flex items-center gap-1 w-full min-w-0 max-w-full px-1.5 py-0.5 rounded text-[10.5px] text-left hover:brightness-95 transition-all"
       style={{ backgroundColor: event.calendar.color + "22", color: event.calendar.color }}
       title={event.title}
     >
       <Icon className="h-2.5 w-2.5 shrink-0" />
-      <span className="truncate">{event.title}</span>
+      <span className="truncate min-w-0 flex-1">{event.title}</span>
     </button>
   );
 }
@@ -1778,6 +1777,67 @@ function TimeGrid({
     return { top, height };
   }
 
+  // Algorithme de layout pour empêcher les events qui se chevauchent
+  // de se superposer (auparavant 2 events au même créneau se collaient
+  // l'un sur l'autre → texte illisible). On regroupe les events en
+  // "clusters" d'overlap transitif, puis dans chaque cluster on assigne
+  // une "lane" (colonne) à chaque event selon un placement glouton.
+  // Chaque event se voit attribuer (lane, cols) → width = 1/cols,
+  // left = lane/cols pour partager l'espace horizontal équitablement.
+  function layoutOverlaps(
+    items: { event: CalendarEvent; top: number; height: number }[],
+  ): Array<{ event: CalendarEvent; top: number; height: number; lane: number; cols: number }> {
+    if (items.length === 0) return [];
+    const positioned = items
+      .map((it) => ({ ...it, bottom: it.top + it.height }))
+      .sort((a, b) => a.top - b.top || b.bottom - a.bottom);
+
+    const result: Array<{
+      event: CalendarEvent;
+      top: number;
+      height: number;
+      lane: number;
+      cols: number;
+    }> = [];
+    let cluster: typeof positioned = [];
+    let clusterBottom = -Infinity;
+
+    const flushCluster = () => {
+      if (cluster.length === 0) return;
+      const lanes: { bottom: number }[] = [];
+      const assigned: Array<(typeof cluster)[number] & { lane: number }> = [];
+      for (const it of cluster) {
+        let laneIdx = lanes.findIndex((l) => l.bottom <= it.top);
+        if (laneIdx < 0) {
+          laneIdx = lanes.length;
+          lanes.push({ bottom: it.bottom });
+        } else {
+          lanes[laneIdx] = { bottom: it.bottom };
+        }
+        assigned.push({ ...it, lane: laneIdx });
+      }
+      const cols = lanes.length;
+      for (const a of assigned) {
+        result.push({ event: a.event, top: a.top, height: a.height, lane: a.lane, cols });
+      }
+      cluster = [];
+      clusterBottom = -Infinity;
+    };
+
+    for (const it of positioned) {
+      if (cluster.length === 0 || it.top < clusterBottom) {
+        cluster.push(it);
+        clusterBottom = Math.max(clusterBottom, it.bottom);
+      } else {
+        flushCluster();
+        cluster.push(it);
+        clusterBottom = it.bottom;
+      }
+    }
+    flushCluster();
+    return result;
+  }
+
   // Vue semaine : 7 colonnes étroites sont illisibles sur mobile.
   // On force une largeur minimale par colonne et on rend le tout
   // scrollable horizontalement à l'intérieur de la Card.
@@ -1864,6 +1924,12 @@ function TimeGrid({
           {/* Colonnes des jours */}
           {days.map((d) => {
             const { timed } = splitDayEvents(d);
+            // Calcule les positions puis les répartit en lanes pour
+            // éviter la superposition complète quand 2+ events partagent
+            // le même créneau horaire.
+            const laid = layoutOverlaps(
+              timed.map((e) => ({ event: e, ...positionFor(e, d) })),
+            );
             return (
               <div
                 key={d.toISOString()}
@@ -1878,28 +1944,35 @@ function TimeGrid({
                   />
                 ))}
                 {/* Events */}
-                {timed.map((e) => {
-                  const { top, height } = positionFor(e, d);
+                {laid.map(({ event: e, top, height, lane, cols }) => {
                   const Icon = KIND_ICONS[e.kind] ?? CalIcon;
+                  // Gap de 2 px entre events dans un cluster (sinon les
+                  // bordures gauches se touchent). Quand cols=1 (aucun
+                  // overlap), on conserve le même padding 4 px qu'avant.
+                  const gap = cols > 1 ? 2 : 0;
+                  const leftPct = (lane / cols) * 100;
+                  const widthPct = 100 / cols;
                   return (
                     <button
                       key={e.id}
                       onClick={() => onEventClick(e)}
-                      className="absolute left-1 right-1 rounded px-1.5 py-1 text-left text-[10.5px] overflow-hidden hover:brightness-95 transition-all"
+                      className="absolute rounded px-1.5 py-1 text-left text-[10.5px] overflow-hidden hover:brightness-95 hover:z-10 transition-all"
                       style={{
                         top,
                         height,
+                        left: `calc(${leftPct}% + ${cols > 1 ? gap : 4}px)`,
+                        width: `calc(${widthPct}% - ${cols > 1 ? gap * 2 : 8}px)`,
                         backgroundColor: e.calendar.color + "22",
                         color: e.calendar.color,
                         borderLeft: `3px solid ${e.calendar.color}`,
                       }}
                       title={e.title}
                     >
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 min-w-0">
                         <Icon className="h-2.5 w-2.5 shrink-0" />
-                        <span className="font-semibold truncate">{e.title}</span>
+                        <span className="font-semibold truncate min-w-0">{e.title}</span>
                       </div>
-                      <p className="text-[9.5px] opacity-70 tabular-nums">
+                      <p className="text-[9.5px] opacity-70 tabular-nums truncate">
                         {new Date(e.startsAt).toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })}
                         {" – "}
                         {new Date(e.endsAt).toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })}
