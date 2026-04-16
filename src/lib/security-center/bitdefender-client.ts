@@ -31,8 +31,10 @@ export interface BitdefenderConfig {
 
 export async function getBitdefenderConfig(): Promise<BitdefenderConfig | null> {
   const apiKey = process.env.BITDEFENDER_API_KEY?.trim();
+  // Défaut : région Amérique du Nord. Pour l'UE, l'admin peut surcharger
+  // via BITDEFENDER_API_URL="https://gravityzone.bitdefender.com".
   const apiUrl = (process.env.BITDEFENDER_API_URL?.trim() ||
-    "https://cloudgz.gravityzone.bitdefender.com").replace(/\/$/, "");
+    "https://cloud.gravityzone.bitdefender.com").replace(/\/$/, "");
   if (!apiKey) return null;
 
   const row = await prisma.tenantSetting.findUnique({ where: { key: CONFIG_KEY } });
