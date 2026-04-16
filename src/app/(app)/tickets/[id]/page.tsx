@@ -18,6 +18,9 @@ import {
   Bell,
   BellOff,
   CalendarClock,
+  Sparkles,
+  Loader2,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -135,6 +138,33 @@ function SidebarRow({ label, children }: { label: string; children: React.ReactN
   );
 }
 
+/**
+ * Variante de SidebarRow pour les formulaires (Statut/Priorité/Urgence/…).
+ * - Label dans une colonne à largeur fixe (80px) → tous les contrôles
+ *   démarrent exactement au même endroit à gauche.
+ * - Enfant prend tout l'espace restant (w-full).
+ * - Alignement à gauche plutôt qu'à droite — naturel pour un dropdown.
+ *
+ * On ne réutilise pas SidebarRow parce qu'il met justify-between + text-right
+ * sur le contenu, ce qui faisait que chaque `<select>` avait une largeur
+ * différente (sa content-width) → les bords droits s'alignaient mais les
+ * bords gauches dansaient. Avec cette variante, les boîtes sont uniformes.
+ */
+function SidebarField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-3">
+      <span className="text-xs text-gray-500 whitespace-nowrap">{label}</span>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
 interface LocalComment {
   id: string;
   kind: "comment";
@@ -184,9 +214,31 @@ export default function TicketDetailPage() {
   const [subjectDraft, setSubjectDraft] = useState("");
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState("");
+  // Description très longue → on clip à ~220px avec un bouton « Voir plus ».
+  // `descOverflow` est true uniquement si le contenu dépasse réellement la
+  // hauteur limite (mesuré post-render). Tant qu'on ne sait pas, le bouton
+  // reste caché pour éviter de clignoter sur les descriptions courtes.
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [descOverflow, setDescOverflow] = useState(false);
+  const descRef = useRef<HTMLDivElement | null>(null);
+  const DESC_COLLAPSED_PX = 220;
   const [projects, setProjects] = useState<{ id: string; code: string; name: string }[]>([]);
   const [categories, setCategories] = useState<{ id: string; name: string; parentId: string | null }[]>([]);
   // Category selection at 3 levels — local state so React re-renders reliably
+  // AI category suggestion — l'utilisateur clique "Suggérer par IA"
+  // dans la sidebar, on appelle l'endpoint, on stocke le résultat.
+  // L'IA propose une hiérarchie jusqu'à 3 niveaux (level1 obligatoire,
+  // level2 et level3 optionnels). L'utilisateur peut cliquer
+  // "Appliquer" pour auto-sélectionner le niveau le plus profond.
+  const [aiCatSuggestion, setAiCatSuggestion] = useState<{
+    categoryLevel1: string;
+    categoryLevel2?: string;
+    categoryLevel3?: string;
+    category: string;
+    confidence: string;
+    reasoning: string;
+  } | null>(null);
+  const [aiCatLoading, setAiCatLoading] = useState(false);
   const [catLevel1, setCatLevel1] = useState<string>("");
   const [catLevel2, setCatLevel2] = useState<string>("");
   const [catLevel3, setCatLevel3] = useState<string>("");
@@ -213,20 +265,29 @@ export default function TicketDetailPage() {
   useEffect(() => {
     if (!loaded) loadAll();
   }, [loaded, loadAll]);
-  const ticketFromStore = tickets.find((t) => t.id === params.id);
+  // TOUJOURS fetch la vue détail via l'API — le store est alimenté par
+  // `flattenList` qui omet `descriptionHtml` (trop lourd pour la liste des
+  // tickets : 30+ KB par ticket × 500 lignes = 15 MB). Si on lit depuis
+  // le store pour la fiche détail, on récupère un ticket sans HTML →
+  // descriptionHtml est undefined → le rendu retombe sur le plain text.
+  // Le bug rapporté : "descriptions revenues à du plain text". Fix :
+  // on passe toujours par /api/v1/tickets/[id] qui renvoie `flattenDetail`
+  // (inclut descriptionHtml). Le store sert encore de fallback d'affichage
+  // instantané pendant le fetch, mais la source de vérité est l'API.
   useEffect(() => {
-    // Si le store est chargé mais ne contient pas ce ticket, fetch direct.
-    if (loaded && !ticketFromStore && !directTicket && !directAttempted) {
-      setDirectAttempted(true);
-      setDirectLoading(true);
-      fetch(`/api/v1/tickets/${params.id}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((t) => { if (t) setDirectTicket(t); })
-        .catch(() => {})
-        .finally(() => setDirectLoading(false));
-    }
-  }, [loaded, ticketFromStore, directTicket, directAttempted, params.id]);
-  const ticket = ticketFromStore ?? directTicket;
+    if (!params.id) return;
+    setDirectAttempted(true);
+    setDirectLoading(true);
+    fetch(`/api/v1/tickets/${params.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((t) => { if (t) setDirectTicket(t); })
+      .catch(() => {})
+      .finally(() => setDirectLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.id]);
+  const ticketFromStore = tickets.find((t) => t.id === params.id);
+  // directTicket (fetch frais avec HTML) prioritaire sur store (sans HTML).
+  const ticket = directTicket ?? ticketFromStore;
 
   // Direct API patch for fields not in the Zustand Ticket type.
   // On récupère le ticket complet renvoyé par la PATCH et on met à jour
@@ -673,7 +734,20 @@ export default function TicketDetailPage() {
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Description</h2>
                 {!editingDescription && (
                   <button
-                    onClick={() => { setEditingDescription(true); setDescriptionDraft(ticket.description); }}
+                    onClick={() => {
+                      // On initialise le draft à partir de descriptionHtml
+                      // s'il existe — sinon on retombe sur description
+                      // (plain). Avant : on lisait TOUJOURS description →
+                      // le user éditait une version plain d'un ticket
+                      // originalement rich ⇒ perdait la mise en forme
+                      // Outlook à la sauvegarde.
+                      const initial =
+                        (ticket as { descriptionHtml?: string }).descriptionHtml?.trim() ||
+                        ticket.description ||
+                        "";
+                      setEditingDescription(true);
+                      setDescriptionDraft(initial);
+                    }}
                     className="text-[11px] text-blue-600 hover:text-blue-700 font-medium"
                   >
                     Modifier
@@ -697,8 +771,33 @@ export default function TicketDetailPage() {
                     </button>
                     <button
                       onClick={async () => {
-                        await updateTicket(ticket!.id, { description: descriptionDraft });
-                        ticket.description = descriptionDraft;
+                        // IMPORTANT : on envoie BOTH fields.
+                        // - descriptionHtml : le HTML riche (source de
+                        //   vérité côté rendu via renderDescriptionWithHtml)
+                        // - description : une version plain text pour
+                        //   la recherche, les notifications par email
+                        //   texte, et le fallback legacy.
+                        // Avant : on mettait juste { description: HTML }
+                        // → descriptionHtml restait OLD ⇒ l'édition ne
+                        // s'affichait pas (le rendu lisait toujours
+                        // descriptionHtml en priorité). Bug reporté 3x.
+                        const plainText = (descriptionDraft || "")
+                          .replace(/<br\s*\/?>/gi, "\n")
+                          .replace(/<\/p>/gi, "\n\n")
+                          .replace(/<[^>]+>/g, "")
+                          .replace(/&nbsp;/g, " ")
+                          .replace(/&amp;/g, "&")
+                          .replace(/&lt;/g, "<")
+                          .replace(/&gt;/g, ">")
+                          .replace(/\n{3,}/g, "\n\n")
+                          .trim();
+                        await updateTicket(ticket!.id, {
+                          description: plainText,
+                          descriptionHtml: descriptionDraft || null,
+                        } as Partial<import("@/lib/mock-data").Ticket>);
+                        ticket.description = plainText;
+                        (ticket as { descriptionHtml?: string }).descriptionHtml =
+                          descriptionDraft;
                         setEditingDescription(false);
                       }}
                       className="px-3 py-1.5 text-[12px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
@@ -708,10 +807,66 @@ export default function TicketDetailPage() {
                   </div>
                 </div>
               ) : (
-                <div
-                  className="tiptap text-sm text-gray-700 leading-relaxed prose prose-sm prose-slate max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_em]:italic [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_pre]:bg-slate-100 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:rounded [&_img]:max-w-full [&_img]:rounded-lg"
-                  dangerouslySetInnerHTML={{ __html: renderDescriptionWithHtml(ticket) }}
-                />
+                <div>
+                  {/* Conteneur description : le dégradé fade-to-white est
+                      INTERNE à ce div (pas au parent) pour qu'il ne
+                      recouvre pas le bouton "Voir plus" en dessous. Avant :
+                      le gradient absolute inset-x-0 bottom-0 dépassait
+                      dans la zone du bouton → le bleu était délavé par
+                      l'overlay blanc. */}
+                  <div className="relative">
+                    <div
+                      ref={(el) => {
+                        descRef.current = el;
+                        // Mesure APRÈS que le HTML soit injecté. On lit
+                        // scrollHeight qui reflète la hauteur naturelle du
+                        // contenu même quand un max-height l'écrase
+                        // visuellement.
+                        if (el) {
+                          const overflows = el.scrollHeight > DESC_COLLAPSED_PX + 4;
+                          if (overflows !== descOverflow) setDescOverflow(overflows);
+                        }
+                      }}
+                      style={
+                        descExpanded
+                          ? undefined
+                          : { maxHeight: DESC_COLLAPSED_PX, overflow: "hidden" }
+                      }
+                      className="tiptap text-sm text-gray-700 leading-relaxed prose prose-sm prose-slate max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_em]:italic [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_pre]:bg-slate-100 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:rounded [&_img]:max-w-full [&_img]:rounded-lg"
+                      dangerouslySetInnerHTML={{ __html: renderDescriptionWithHtml(ticket) }}
+                    />
+                    {descOverflow && !descExpanded && (
+                      <div
+                        className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none"
+                        aria-hidden
+                      />
+                    )}
+                  </div>
+                  {/* Bouton HORS du conteneur relative → le gradient ne
+                      peut plus l'atteindre. Style visible : bleu plus
+                      foncé + underline + chevron pour l'affordance. */}
+                  {descOverflow && (
+                    <button
+                      type="button"
+                      onClick={() => setDescExpanded((v) => !v)}
+                      className="mt-3 inline-flex items-center gap-1 text-[13px] font-semibold text-blue-700 hover:text-blue-800 hover:underline underline-offset-2"
+                    >
+                      {descExpanded ? "Voir moins" : "Voir plus"}
+                      <svg
+                        className={cn(
+                          "h-3.5 w-3.5 transition-transform",
+                          descExpanded && "rotate-180",
+                        )}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
@@ -983,9 +1138,12 @@ export default function TicketDetailPage() {
               </div>
             )}
 
-            {/* Status & Priority */}
+            {/* Détails — Statut, Priorité, Urgence, Impact, Type.
+                Tous les <select> partagent la même classe utilitaire
+                (fixed-width column + w-full) pour que les boîtes soient
+                uniformes et alignées à gauche. */}
             <SidebarSection title="Détails">
-              <SidebarRow label="Statut">
+              <SidebarField label="Statut">
                 <select
                   value={ticket.status}
                   onChange={async (e) => {
@@ -996,7 +1154,7 @@ export default function TicketDetailPage() {
                       console.error("Erreur lors de la mise à jour du statut");
                     }
                   }}
-                  className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                  className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
                 >
                   <option value="new">Nouveau</option>
                   <option value="open">Ouvert</option>
@@ -1010,8 +1168,8 @@ export default function TicketDetailPage() {
                   <option value="closed">Fermé</option>
                   <option value="cancelled">Annulé</option>
                 </select>
-              </SidebarRow>
-              <SidebarRow label="Priorité">
+              </SidebarField>
+              <SidebarField label="Priorité">
                 <select
                   value={ticket.priority}
                   onChange={async (e) => {
@@ -1022,15 +1180,15 @@ export default function TicketDetailPage() {
                       console.error("Erreur lors de la mise à jour de la priorité");
                     }
                   }}
-                  className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                  className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
                 >
                   <option value="critical">Critique</option>
                   <option value="high">Élevée</option>
                   <option value="medium">Moyenne</option>
                   <option value="low">Faible</option>
                 </select>
-              </SidebarRow>
-              <SidebarRow label="Urgence">
+              </SidebarField>
+              <SidebarField label="Urgence">
                 <select
                   value={ticket.urgency}
                   onChange={async (e) => {
@@ -1040,15 +1198,15 @@ export default function TicketDetailPage() {
                       console.error("Erreur lors de la mise à jour de l'urgence");
                     }
                   }}
-                  className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                  className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
                 >
                   <option value="critical">Critique</option>
                   <option value="high">Élevée</option>
                   <option value="medium">Moyenne</option>
                   <option value="low">Faible</option>
                 </select>
-              </SidebarRow>
-              <SidebarRow label="Impact">
+              </SidebarField>
+              <SidebarField label="Impact">
                 <select
                   value={ticket.impact}
                   onChange={async (e) => {
@@ -1058,15 +1216,15 @@ export default function TicketDetailPage() {
                       console.error("Erreur lors de la mise à jour de l'impact");
                     }
                   }}
-                  className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                  className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
                 >
                   <option value="critical">Critique</option>
                   <option value="high">Élevée</option>
                   <option value="medium">Moyenne</option>
                   <option value="low">Faible</option>
                 </select>
-              </SidebarRow>
-              <SidebarRow label="Type">
+              </SidebarField>
+              <SidebarField label="Type">
                 <select
                   value={ticket.type}
                   onChange={async (e) => {
@@ -1076,7 +1234,7 @@ export default function TicketDetailPage() {
                       console.error("Erreur lors de la mise à jour du type");
                     }
                   }}
-                  className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
+                  className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none"
                 >
                   <option value="incident">Incident</option>
                   <option value="service_request">Demande de service</option>
@@ -1084,10 +1242,10 @@ export default function TicketDetailPage() {
                   <option value="change">Changement</option>
                   <option value="alert">Alerte</option>
                 </select>
-              </SidebarRow>
+              </SidebarField>
               {/* Flag "à faire sur place" — rend le ticket éligible à être
                   planifié sur un événement WORK_LOCATION du calendrier. */}
-              <SidebarRow label="Sur place">
+              <SidebarField label="Sur place">
                 <label className="flex items-center gap-2 text-[12px] text-slate-600 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1104,12 +1262,14 @@ export default function TicketDetailPage() {
                   />
                   <span>À faire sur place</span>
                 </label>
-              </SidebarRow>
+              </SidebarField>
             </SidebarSection>
 
-            {/* People */}
+            {/* Personnes — assigné + collaborateurs regroupés.
+                Le demandeur a été déplacé dans la section Organisation
+                (il est plus lié au "qui fait la demande" côté client). */}
             <SidebarSection title="Personnes">
-              <SidebarRow label="Assigné à">
+              <SidebarField label="Assigné à">
                 <select
                   value={(ticket as any).assigneeId || ""}
                   onChange={async (e) => {
@@ -1126,80 +1286,70 @@ export default function TicketDetailPage() {
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
-              </SidebarRow>
-              <SidebarRow label="Demandeur">
-                <div className="text-left">
-                  <p className="text-[12.5px] font-semibold text-gray-900 truncate" title={ticket.requesterName}>
-                    {ticket.requesterName}
-                  </p>
-                  <p className="text-[11px] text-gray-500 truncate" title={ticket.requesterEmail}>
-                    {ticket.requesterEmail}
-                  </p>
-                  {requesterPhone && (
-                    <p className="text-[11px] text-gray-500 tabular-nums">
-                      {requesterPhone}
-                    </p>
-                  )}
-                </div>
-              </SidebarRow>
-            </SidebarSection>
+              </SidebarField>
 
-            {/* Collaborateurs */}
-            <SidebarSection title="Collaborateurs">
-              {collaborators.length > 0 ? (
-                <div className="space-y-2">
-                  {collaborators.map((c) => (
-                    <div key={c.id} className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Avatar className="h-5 w-5">
-                          <AvatarFallback className="text-[9px]">
-                            {getInitials(c.user.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-xs text-gray-700 truncate">{c.user.name}</span>
+              {/* Collaborateurs — placés immédiatement sous l'agent assigné
+                  pour donner au technicien toute l'info "qui travaille sur
+                  ce ticket" d'un coup d'œil. */}
+              <div className="pt-1.5 border-t border-slate-100 mt-1">
+                <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-1.5">
+                  Collaborateurs
+                </p>
+                {collaborators.length > 0 ? (
+                  <div className="space-y-2">
+                    {collaborators.map((c) => (
+                      <div key={c.id} className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Avatar className="h-5 w-5">
+                            <AvatarFallback className="text-[9px]">
+                              {getInitials(c.user.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-xs text-gray-700 truncate">{c.user.name}</span>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            await fetch(`/api/v1/tickets/${ticket.id}/collaborators?collaboratorId=${c.id}`, { method: "DELETE" });
+                            setCollaborators((prev) => prev.filter((x) => x.id !== c.id));
+                          }}
+                          className="text-gray-300 hover:text-red-500 transition-colors shrink-0"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
                       </div>
-                      <button
-                        onClick={async () => {
-                          await fetch(`/api/v1/tickets/${ticket.id}/collaborators?collaboratorId=${c.id}`, { method: "DELETE" });
-                          setCollaborators((prev) => prev.filter((x) => x.id !== c.id));
-                        }}
-                        className="text-gray-300 hover:text-red-500 transition-colors shrink-0"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-gray-400">Aucun collaborateur</p>
-              )}
-              <div className="mt-2">
-                <select
-                  className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-600 focus:border-blue-500 focus:outline-none"
-                  value=""
-                  onChange={async (e) => {
-                    const userId = e.target.value;
-                    if (!userId) return;
-                    try {
-                      const res = await fetch(`/api/v1/tickets/${ticket.id}/collaborators`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ userId }),
-                      });
-                      if (res.ok) {
-                        const data = await res.json();
-                        setCollaborators((prev) => [...prev, data.data]);
-                      }
-                    } catch {}
-                  }}
-                >
-                  <option value="">+ Ajouter un collaborateur</option>
-                  {allUsers
-                    .filter((u) => !collaborators.some((c) => c.userId === u.id) && u.id !== (ticket as any).assigneeId)
-                    .map((u) => (
-                      <option key={u.id} value={u.id}>{u.name}</option>
                     ))}
-                </select>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400">Aucun collaborateur</p>
+                )}
+                <div className="mt-2">
+                  <select
+                    className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-600 focus:border-blue-500 focus:outline-none"
+                    value=""
+                    onChange={async (e) => {
+                      const userId = e.target.value;
+                      if (!userId) return;
+                      try {
+                        const res = await fetch(`/api/v1/tickets/${ticket.id}/collaborators`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ userId }),
+                        });
+                        if (res.ok) {
+                          const data = await res.json();
+                          setCollaborators((prev) => [...prev, data.data]);
+                        }
+                      } catch {}
+                    }}
+                  >
+                    <option value="">+ Ajouter un collaborateur</option>
+                    {allUsers
+                      .filter((u) => !collaborators.some((c) => c.userId === u.id) && u.id !== (ticket as any).assigneeId)
+                      .map((u) => (
+                        <option key={u.id} value={u.id}>{u.name}</option>
+                      ))}
+                  </select>
+                </div>
               </div>
             </SidebarSection>
 
@@ -1246,7 +1396,12 @@ export default function TicketDetailPage() {
               )}
             </SidebarSection>
 
-            {/* Organization */}
+            {/* Organisation + Demandeur.
+                Le demandeur est rattaché à l'organisation : les deux
+                décrivent "côté client" (qui a ouvert le ticket, chez
+                quel client). On les regroupe visuellement — c'est ce
+                qu'un technicien lit pour savoir "je parle à qui et pour
+                quelle compagnie". */}
             <SidebarSection title="Organisation">
               <div className="flex items-center gap-2.5 min-w-0">
                 <OrgLogo name={ticket.organizationName} size={28} rounded="md" />
@@ -1254,11 +1409,172 @@ export default function TicketDetailPage() {
                   {ticket.organizationName}
                 </span>
               </div>
+
+              <div className="pt-2 border-t border-slate-100 mt-2">
+                <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-1">
+                  Demandeur
+                </p>
+                <p
+                  className="text-[12.5px] font-semibold text-gray-900 truncate"
+                  title={ticket.requesterName}
+                >
+                  {ticket.requesterName}
+                </p>
+                <p
+                  className="text-[11px] text-gray-500 truncate"
+                  title={ticket.requesterEmail}
+                >
+                  {ticket.requesterEmail}
+                </p>
+                {requesterPhone && (
+                  <p className="text-[11px] text-gray-500 tabular-nums">
+                    {requesterPhone}
+                  </p>
+                )}
+              </div>
             </SidebarSection>
 
             {/* Classification */}
             <SidebarSection title="Classification">
               <div className="space-y-2">
+                {/* Bouton IA — placé AU-DESSUS du sélecteur catégorie.
+                    L'utilisateur peut suggérer + pre-sélectionner la
+                    catégorie sans quitter la fiche. Les tickets créés
+                    manuellement avec une catégorie choisie ne passent
+                    jamais ici sauf demande explicite. */}
+                <button
+                  type="button"
+                  disabled={aiCatLoading || !ticket.subject}
+                  onClick={async () => {
+                    setAiCatLoading(true);
+                    setAiCatSuggestion(null);
+                    try {
+                      const res = await fetch("/api/v1/ai/categorize", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          subject: ticket.subject,
+                          description: ticket.description,
+                        }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        setAiCatSuggestion(data);
+                      }
+                    } catch {
+                      /* silent — l'utilisateur peut réessayer */
+                    } finally {
+                      setAiCatLoading(false);
+                    }
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11.5px] font-medium text-violet-700 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  {aiCatLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3 w-3" />
+                  )}
+                  {aiCatLoading
+                    ? "Analyse en cours…"
+                    : aiCatSuggestion
+                      ? "Re-analyser avec l'IA"
+                      : "Suggérer une catégorie (IA)"}
+                </button>
+
+                {aiCatSuggestion && aiCatSuggestion.categoryLevel1 && (
+                  <div className="rounded-lg border border-violet-200/70 bg-violet-50/70 px-2.5 py-2 text-[11.5px] space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        {/* Affiche la hiérarchie complète : L1 > L2 > L3 */}
+                        <p className="font-semibold text-violet-800 leading-tight">
+                          {[
+                            aiCatSuggestion.categoryLevel1,
+                            aiCatSuggestion.categoryLevel2,
+                            aiCatSuggestion.categoryLevel3,
+                          ]
+                            .filter(Boolean)
+                            .join(" › ")}
+                        </p>
+                        <p className="text-[10px] uppercase tracking-wider text-violet-600/80 mt-0.5">
+                          Confiance : {aiCatSuggestion.confidence}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAiCatSuggestion(null)}
+                        className="shrink-0 text-violet-400 hover:text-violet-700"
+                        title="Ignorer la suggestion"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                    {aiCatSuggestion.reasoning && (
+                      <p className="text-[10.5px] text-violet-700/85 leading-snug">
+                        {aiCatSuggestion.reasoning}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        // Résolution hiérarchique : on descend par
+                        // name-match à chaque niveau (parent-scoped).
+                        // Si un niveau ne matche pas, on s'arrête au
+                        // plus profond valide — évite de perdre toute
+                        // la catégorisation à cause d'un typo sur le
+                        // level3.
+                        const byParent = (parentId: string | null, name: string) =>
+                          categories.find(
+                            (c) =>
+                              (c.parentId ?? null) === parentId &&
+                              c.name.trim().toLowerCase() ===
+                                name.trim().toLowerCase(),
+                          );
+                        const cat1 = byParent(null, aiCatSuggestion.categoryLevel1);
+                        if (!cat1) {
+                          alert(
+                            `La catégorie racine "${aiCatSuggestion.categoryLevel1}" n'existe pas dans Nexus. Crée-la d'abord depuis Paramètres → Catégories.`,
+                          );
+                          return;
+                        }
+                        let l1 = cat1.id;
+                        let l2 = "";
+                        let l3 = "";
+                        if (aiCatSuggestion.categoryLevel2) {
+                          const cat2 = byParent(
+                            l1,
+                            aiCatSuggestion.categoryLevel2,
+                          );
+                          if (cat2) {
+                            l2 = cat2.id;
+                            if (aiCatSuggestion.categoryLevel3) {
+                              const cat3 = byParent(
+                                l2,
+                                aiCatSuggestion.categoryLevel3,
+                              );
+                              if (cat3) l3 = cat3.id;
+                            }
+                          }
+                        }
+                        setCatLevel1(l1);
+                        setCatLevel2(l2);
+                        setCatLevel3(l3);
+                        const finalId = l3 || l2 || l1;
+                        await patchTicketField({ categoryId: finalId });
+                        const cat = categories.find((c) => c.id === finalId);
+                        (ticket as { categoryName?: string }).categoryName =
+                          cat?.name || "—";
+                        (ticket as { categoryId?: string | null }).categoryId =
+                          finalId;
+                        setAiCatSuggestion(null);
+                      }}
+                      className="w-full inline-flex items-center justify-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-violet-700"
+                    >
+                      <Check className="h-3 w-3" />
+                      Appliquer cette catégorie
+                    </button>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-1">Catégorie</label>
                   <select

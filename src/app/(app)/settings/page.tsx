@@ -60,6 +60,7 @@ import { MonitoringSection } from "@/components/settings/monitoring-section";
 import { PortalPreviewSection } from "@/components/settings/portal-preview-section";
 import { ProjectTypesSection } from "@/components/settings/project-types-section";
 import { EmailToTicketSection } from "@/components/settings/email-to-ticket-section";
+import { BackupKanbanSection } from "@/components/settings/backup-kanban-section";
 import { useSession } from "next-auth/react";
 import { EditUserModal, type EditUserModalUser } from "@/components/users/edit-user-modal";
 
@@ -108,6 +109,7 @@ const sectionGroups: SettingsGroup[] = [
       { key: "tags", label: "Tags", icon: Layers },
       { key: "sla", label: "SLA", icon: ShieldCheck },
       { key: "kanban_boards", label: "Tableaux Kanban", icon: LayoutGrid },
+      { key: "backup_kanban", label: "Kanban des sauvegardes", icon: HardDrive },
       { key: "project_types", label: "Types de projet", icon: FolderKanban },
     ],
   },
@@ -1091,6 +1093,7 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
       </div>
     </>
   ),
+  backup_kanban: <BackupKanbanSection />,
   billing_profiles: <BillingProfilesSection />,
   contracts: <ContractsSection />,
   project_types: <ProjectTypesSection />,

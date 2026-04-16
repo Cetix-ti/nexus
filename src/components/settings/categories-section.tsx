@@ -1,11 +1,36 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Pencil, Trash2, ChevronRight, ChevronDown, FolderTree } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  ChevronRight,
+  ChevronDown,
+  FolderTree,
+  Sparkles,
+  Loader2,
+  PlusCircle,
+  ArrowRight,
+  Type,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+
+interface AuditSuggestion {
+  kind: "add" | "rehome" | "rename";
+  path: string;
+  proposedPath?: string;
+  reason: string;
+}
+interface AuditReport {
+  summary: string;
+  suggestions: AuditSuggestion[];
+  generatedAt: string;
+}
 
 interface ItemCategory {
   id: string;
@@ -108,6 +133,29 @@ const initialCategories: Category[] = [
 
 export function CategoriesSection() {
   const [categories, setCategories] = useState<Category[]>(initialCategories);
+  // AI taxonomy audit
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
+  const [auditError, setAuditError] = useState<string | null>(null);
+
+  async function runAudit() {
+    setAuditLoading(true);
+    setAuditError(null);
+    setAuditReport(null);
+    try {
+      const res = await fetch("/api/v1/ai/audit-categories", { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const report: AuditReport = await res.json();
+      setAuditReport(report);
+    } catch (e) {
+      setAuditError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAuditLoading(false);
+    }
+  }
 
   // Load from API
   useEffect(() => {
@@ -209,7 +257,7 @@ export function CategoriesSection() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-[17px] font-semibold tracking-tight text-slate-900">
             Catégories
@@ -218,11 +266,135 @@ export function CategoriesSection() {
             Organisez vos tickets par catégories et sous-catégories
           </p>
         </div>
-        <Button variant="primary" size="md" onClick={addCategory}>
-          <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-          Nouvelle catégorie
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="md"
+            onClick={runAudit}
+            disabled={auditLoading}
+            className="text-violet-700 border-violet-200 hover:bg-violet-50"
+          >
+            {auditLoading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            {auditLoading ? "Analyse…" : "Audit IA"}
+          </Button>
+          <Button variant="primary" size="md" onClick={addCategory}>
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+            Nouvelle catégorie
+          </Button>
+        </div>
       </div>
+
+      {/* Rapport d'audit IA — apparaît après un clic "Audit IA".
+          L'utilisateur ne peut pas appliquer les changements en un clic
+          (risque trop élevé pour l'arborescence) ; chaque suggestion est
+          à évaluer et implémenter manuellement via les boutons + / ✎. */}
+      {auditError && (
+        <Card className="border-red-200 bg-red-50/60">
+          <CardContent className="p-4 text-[12.5px] text-red-800">
+            Échec de l'audit : {auditError}
+          </CardContent>
+        </Card>
+      )}
+      {auditReport && (
+        <Card className="border-violet-200/80 bg-violet-50/40">
+          <CardContent className="p-5">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="flex items-start gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-700 ring-1 ring-inset ring-violet-200/80 shrink-0">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-[14px] font-semibold text-violet-900">
+                    Rapport d'audit IA
+                  </h3>
+                  <p className="text-[11.5px] text-violet-700/85 mt-0.5">
+                    {new Date(auditReport.generatedAt).toLocaleString("fr-CA", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    })}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAuditReport(null)}
+                className="text-violet-400 hover:text-violet-700"
+                title="Fermer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {auditReport.summary && (
+              <p className="text-[13px] text-violet-900/90 leading-relaxed mb-4">
+                {auditReport.summary}
+              </p>
+            )}
+
+            {auditReport.suggestions.length === 0 ? (
+              <p className="text-[12.5px] text-violet-700/85 italic">
+                Aucune suggestion — la taxonomie est cohérente avec l'usage actuel.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {auditReport.suggestions.map((s, i) => {
+                  const KindIcon =
+                    s.kind === "add" ? PlusCircle : s.kind === "rehome" ? ArrowRight : Type;
+                  const kindLabel =
+                    s.kind === "add"
+                      ? "Ajouter"
+                      : s.kind === "rehome"
+                        ? "Déplacer"
+                        : "Renommer";
+                  const kindColor =
+                    s.kind === "add"
+                      ? "bg-emerald-100 text-emerald-800 ring-emerald-200/70"
+                      : s.kind === "rehome"
+                        ? "bg-amber-100 text-amber-800 ring-amber-200/70"
+                        : "bg-sky-100 text-sky-800 ring-sky-200/70";
+                  return (
+                    <div
+                      key={i}
+                      className="rounded-lg border border-violet-200/60 bg-white px-3 py-2.5 space-y-1.5"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ring-1 ring-inset shrink-0 ${kindColor}`}
+                        >
+                          <KindIcon className="h-3 w-3" />
+                          {kindLabel}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12.5px] font-medium text-slate-900 break-words">
+                            <code className="bg-slate-100 px-1 rounded">{s.path}</code>
+                            {s.proposedPath && (
+                              <>
+                                {" "}
+                                <ArrowRight className="inline h-3 w-3 mx-0.5 text-slate-400" />{" "}
+                                <code className="bg-slate-100 px-1 rounded">{s.proposedPath}</code>
+                              </>
+                            )}
+                          </p>
+                          <p className="mt-0.5 text-[11.5px] text-slate-600 leading-snug">
+                            {s.reason}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-[10.5px] text-violet-700/70 mt-3 italic">
+                  💡 Applique les suggestions manuellement via les boutons + / ✎ ci-dessous.
+                  L'IA n'altère pas la hiérarchie automatiquement.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="p-0">

@@ -103,6 +103,28 @@ export async function PATCH(
     }
   }
 
+  // Multi-tickets : si linkedTicketIds[] est fourni, on synchronise
+  // Ticket.calendarEventId. Les tickets anciennement liés et non
+  // re-sélectionnés sont déliés (calendarEventId = null). Les nouveaux
+  // sont liés. Idempotent.
+  if (Array.isArray(body.linkedTicketIds)) {
+    const ids = body.linkedTicketIds.filter(
+      (t: unknown) => typeof t === "string" && !!t,
+    ) as string[];
+    // Déliaison : tickets actuels qui ne sont plus dans la nouvelle liste.
+    await prisma.ticket.updateMany({
+      where: { calendarEventId: id, id: { notIn: ids } },
+      data: { calendarEventId: null },
+    });
+    // Liaison : tickets nouveaux (ou confirmés).
+    if (ids.length > 0) {
+      await prisma.ticket.updateMany({
+        where: { id: { in: ids } },
+        data: { calendarEventId: id },
+      });
+    }
+  }
+
   // Push synchro Outlook (WORK_LOCATION uniquement).
   if (updated.kind === "WORK_LOCATION") {
     import("@/lib/calendar/location-sync")

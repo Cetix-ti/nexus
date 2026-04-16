@@ -188,22 +188,48 @@ export function TicketQuickViewModal({
   const [timeError, setTimeError] = useState<string | null>(null);
   const [timeSaved, setTimeSaved] = useState(false);
 
-  // Reset state when ticket changes
+  // Reset state when the modal switches to a DIFFERENT ticket.
+  //
+  // Important : on dépend UNIQUEMENT de `ticket?.id`. Avant on écoutait
+  // aussi `ticket?.status` et `ticket?.priority`, mais le parent (Kanban)
+  // peut muter ces champs à chaud (drag d'un ticket dans une autre colonne,
+  // changement de priorité depuis le modal lui-même, etc.). À chaque
+  // re-render du ticket, on réinitialisait `timeOpen=false` / `timeMinutes=30`
+  // → l'utilisateur cliquait "Saisir du temps", tapait une durée, puis
+  // pendant la saisie le form disparaissait ou les valeurs se remettaient
+  // à zéro. La saisie "ne s'enregistrait pas" parce que le formulaire
+  // n'existait déjà plus au moment du submit. On reset donc seulement
+  // quand on change vraiment de ticket.
+  //
+  // Les sous-updates de status/priority sont par ailleurs gérés via
+  // useEffect distinct ci-dessous pour garder localStatus/localPriority
+  // en sync sans tuer le reste du state.
   useEffect(() => {
     setReplyText("");
     setIsInternal(false);
     setAttachments([]);
     setSendError(null);
     setLocalComments([]);
-    setLocalStatus(ticket?.status);
-    setLocalPriority(ticket?.priority);
     setTimeOpen(false);
     setTimeMinutes(30);
     setTimeDescription("");
     setTimeError(null);
     setTimeSaved(false);
     setTimeType("remote_work");
-  }, [ticket?.id, ticket?.status, ticket?.priority]);
+    setLocalStatus(ticket?.status);
+    setLocalPriority(ticket?.priority);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket?.id]);
+
+  // Sync localStatus/localPriority avec le ticket si le parent les met
+  // à jour pendant que le modal est ouvert (ex: update optimiste après
+  // drag dans la Kanban). Ne réinitialise PAS le reste du formulaire.
+  useEffect(() => {
+    if (ticket?.status) setLocalStatus(ticket.status);
+  }, [ticket?.status]);
+  useEffect(() => {
+    if (ticket?.priority) setLocalPriority(ticket.priority);
+  }, [ticket?.priority]);
 
   // Close on escape
   useEffect(() => {

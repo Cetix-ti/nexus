@@ -263,7 +263,12 @@ function useViewport() {
   useEffect(() => {
     const check = () => {
       const w = window.innerWidth;
-      setVp({ mobile: w < 640, laptop: w >= 640 && w < 1280 });
+      // "laptop" étendu jusqu'à 1536 px (Tailwind 2xl) pour couvrir les
+      // laptops 14-15" à 150% scaling Windows : 1920×1200 natif → 1280
+      // CSS px. Avant : 1280 pile tombait en "desktop" → widgets côte-à-
+      // côte trop serrés. On bascule maintenant en layout full-width
+      // jusqu'à atteindre un vrai grand écran (1536+ CSS px).
+      setVp({ mobile: w < 640, laptop: w >= 640 && w < 1536 });
     };
     check();
     window.addEventListener("resize", check);
@@ -273,8 +278,17 @@ function useViewport() {
 }
 
 const LAPTOP_FULL_WIDTH_WIDGETS = new Set([
+  // Historique : les tickets récents + « Mes tickets » prenaient déjà
+  // toute la largeur en mode laptop. On ajoute :
+  //   - `w_dash_unassigned` (tableau des tickets non assignés) — le
+  //     tableau compressé sur 5 cols était illisible à 1280 CSS px
+  //   - `w_dash_volume` (graphique "Volume de tickets") — le chart
+  //     respire beaucoup mieux sur toute la largeur, chaque barre gagne
+  //     du padding horizontal.
   "w_dash_recent",
+  "w_dash_unassigned",
   "w_dash_my",
+  "w_dash_volume",
 ]);
 
 export function DashboardGrid({

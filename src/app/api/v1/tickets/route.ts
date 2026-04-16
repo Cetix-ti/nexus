@@ -175,6 +175,10 @@ export async function POST(req: Request) {
     const created = await createTicket({
       subject: body.subject,
       description: body.description ?? "",
+      // Passe le HTML riche si fourni (provient d'AdvancedRichEditor ou
+      // d'une ingestion email qui a déjà préservé le HTML). Sinon null
+      // pour que le rendu retombe sur `description` (plain text).
+      descriptionHtml: body.descriptionHtml ?? null,
       organizationId,
       requesterId,
       assigneeId,
@@ -192,24 +196,46 @@ export async function POST(req: Request) {
 
     // Handle approval workflow if requested
     if (body.requireApproval && Array.isArray(body.approvers) && body.approvers.length > 0) {
-      const approvalData = body.approvers.map((a: any, i: number) => ({
-        ticketId: created.id,
-        approverId: a.contactId || a.id || "",
-        approverName: a.name || a.contactName || "",
-        approverEmail: a.email || a.contactEmail || "",
-        role: i === 0 ? "primary" : "secondary",
-      }));
+      const approvalData = body.approvers
+        .map((a: any, i: number) => ({
+          ticketId: created.id,
+          approverId: a.contactId || a.id || "",
+          approverName: a.name || a.contactName || "",
+          approverEmail: (a.email || a.contactEmail || "").trim().toLowerCase(),
+          role: i === 0 ? "primary" : "secondary",
+        }))
+        // Filtre les approbateurs sans email — on ne peut pas les
+        // notifier, donc inutile de créer une ligne "orpheline" qui
+        // bloque le ticket en PENDING sans jamais pouvoir être
+        // résolue côté client.
+        .filter((a: { approverEmail: string }) => !!a.approverEmail);
 
-      await prisma.$transaction([
-        prisma.ticketApproval.createMany({ data: approvalData }),
-        prisma.ticket.update({
-          where: { id: created.id },
-          data: {
-            requiresApproval: true,
-            approvalStatus: "PENDING",
-          },
-        }),
-      ]);
+      if (approvalData.length > 0) {
+        await prisma.$transaction([
+          prisma.ticketApproval.createMany({ data: approvalData }),
+          prisma.ticket.update({
+            where: { id: created.id },
+            data: {
+              requiresApproval: true,
+              approvalStatus: "PENDING",
+            },
+          }),
+        ]);
+
+        // Envoi des courriels de demande d'approbation — fire-and-forget.
+        // Chaque approbateur reçoit un lien vers le portail client pour
+        // prendre sa décision. Si SMTP n'est pas configuré, sendEmail()
+        // renvoie simplement false — on log et on continue ; la relance
+        // manuelle (bouton « Relancer ») depuis la fiche ticket est
+        // toujours disponible.
+        import("@/lib/approvers/notifications")
+          .then(({ notifyApprovalRequest }) =>
+            notifyApprovalRequest(created.id).catch((e) =>
+              console.warn("[approvals] initial notify failed:", e),
+            ),
+          )
+          .catch(() => {});
+      }
     }
 
     return NextResponse.json(created, { status: 201 });

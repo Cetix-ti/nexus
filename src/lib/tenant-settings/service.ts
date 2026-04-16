@@ -19,10 +19,38 @@ export interface TicketSettings {
   autoCloseDays: number;
 }
 
+/**
+ * Config du Kanban des sauvegardes (page /backups → onglet "Suivi").
+ *
+ * - titlePattern : gabarit du titre quand on génère un template depuis les
+ *   alertes Veeam. Placeholders disponibles :
+ *     {clientName}    → nom de l'organisation
+ *     {clientCode}    → code client (vide si absent)
+ *     {failedCount}   → nombre de jobs en échec
+ *     {date}          → YYYY-MM-DD de la dernière alerte FAILED incluse
+ *
+ * - categoryId / subcategoryId : catégorie (et sous-cat) dans laquelle le
+ *   ticket créé au moment du drop en colonne 2 sera classé. null = aucune
+ *   catégorie (fallback ticket non classé).
+ *
+ * - priority : priorité par défaut sur le ticket créé.
+ *
+ * - lookbackDays : fenêtre (en jours) pour agréger les alertes FAILED
+ *   quand on (re)génère la liste des templates.
+ */
+export interface BackupKanbanSettings {
+  titlePattern: string;
+  categoryId: string | null;
+  subcategoryId: string | null;
+  priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  lookbackDays: number;
+}
+
 const DEFAULTS: {
   "portal.branding": PortalBranding;
   "regional": RegionalSettings;
   "tickets": TicketSettings;
+  "backup-kanban": BackupKanbanSettings;
 } = {
   "portal.branding": {
     logo: null,
@@ -39,6 +67,13 @@ const DEFAULTS: {
     defaultPriority: "medium",
     defaultQueue: "general",
     autoCloseDays: 7,
+  },
+  "backup-kanban": {
+    titlePattern: "Sauvegardes en échec — {clientName}",
+    categoryId: null,
+    subcategoryId: null,
+    priority: "HIGH",
+    lookbackDays: 7,
   },
 };
 

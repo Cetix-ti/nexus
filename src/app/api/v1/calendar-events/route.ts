@@ -56,11 +56,39 @@ export async function GET(req: Request) {
     include: {
       calendar: { select: { id: true, name: true, kind: true, color: true } },
       owner: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-      organization: { select: { id: true, name: true, clientCode: true, slug: true } },
+      organization: {
+        select: {
+          id: true,
+          name: true,
+          clientCode: true,
+          slug: true,
+          // `logo` + `isInternal` nécessaires pour l'UI calendrier :
+          // - logo : thumbnail des events "company_meeting" (CTX BUREAU)
+          //   et avatar secondaire pour les visites chez un client.
+          // - isInternal : distingue un "bureau Cetix" d'un "chez client".
+          logo: true,
+          isInternal: true,
+        },
+      },
       meeting: { select: { id: true, status: true } },
       internalTicket: { select: { id: true, number: true, subject: true, status: true } },
       internalProject: { select: { id: true, code: true, name: true, status: true } },
       site: { select: { id: true, name: true, city: true } },
+      // Multi-agents : pour les WORK_LOCATION "MG/VG MRVL", on a besoin
+      // de la liste complète côté UI (avatars groupés, tooltip). Le
+      // ownerId reste en back-compat mais n'est plus la source de vérité.
+      agents: {
+        select: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          },
+        },
+      },
       linkedTickets: {
         // Filtre display-time : un ticket qui n'est plus "requiresOnSite"
         // OU qui est résolu/fermé/annulé disparait de la liste planifiée
@@ -295,6 +323,25 @@ export async function POST(req: Request) {
       meeting: { select: { id: true } },
     },
   });
+
+  // Multi-tickets : body.linkedTicketIds[] — un event peut être lié à
+  // N tickets via Ticket.calendarEventId. On set ce FK sur chaque ticket
+  // sélectionné. Les tickets anciennement liés et non re-sélectionnés
+  // seront traités par le PATCH (ici on est en CREATE donc pas d'unlink).
+  const linkedTicketIds: string[] = Array.isArray(body.linkedTicketIds)
+    ? body.linkedTicketIds.filter((t: unknown) => typeof t === "string" && !!t)
+    : [];
+  // Legacy : si seul internalTicketId est fourni, on le traite comme un
+  // seul ticket lié (compat back).
+  if (linkedTicketIds.length === 0 && body.internalTicketId) {
+    linkedTicketIds.push(body.internalTicketId);
+  }
+  if (linkedTicketIds.length > 0) {
+    await prisma.ticket.updateMany({
+      where: { id: { in: linkedTicketIds } },
+      data: { calendarEventId: created.id },
+    });
+  }
 
   // Multi-agents : body.agentIds[] — on remplit la table de jointure.
   // Fallback : si seul ownerId est fourni, on le copie dans agents pour

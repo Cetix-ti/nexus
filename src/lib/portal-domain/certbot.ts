@@ -153,6 +153,10 @@ export async function renewCertificate(opts: {
   try {
     const { stdout, stderr } = await exec("certbot", args, {
       maxBuffer: 1024 * 1024 * 5, // 5 MB
+      // Timeout hard à 180s — au-delà le proxy risque de couper et le
+      // client reçoit une réponse vide ("Unexpected end of JSON input").
+      // certbot + DNS-01 + propagation prend typiquement 30-90s.
+      timeout: 180_000,
     });
     return {
       succeeded: true,
@@ -160,7 +164,34 @@ export async function renewCertificate(opts: {
       durationMs: Date.now() - start,
     };
   } catch (err) {
-    const e = err as Error & { stdout?: string; stderr?: string };
+    const e = err as Error & {
+      stdout?: string;
+      stderr?: string;
+      code?: string;
+      signal?: string;
+    };
+    // ENOENT → certbot pas installé. Message dédié pour éviter le
+    // "err.message" cryptique type "spawn certbot ENOENT".
+    if (e.code === "ENOENT") {
+      return {
+        succeeded: false,
+        output:
+          "certbot n'est pas installé sur ce serveur.\n" +
+          "Installation : sudo apt install certbot python3-certbot-dns-cloudflare",
+        errorMessage: "certbot introuvable",
+        durationMs: Date.now() - start,
+      };
+    }
+    // Killed par timeout
+    if (e.signal === "SIGTERM" || /timed out/i.test(e.message)) {
+      return {
+        succeeded: false,
+        output: ((e.stdout || "") + "\n" + (e.stderr || "")).trim(),
+        errorMessage:
+          "Timeout après 180s. La propagation DNS-01 ou le serveur ACME est trop lent. Relance plus tard ou lance manuellement sur le serveur.",
+        durationMs: Date.now() - start,
+      };
+    }
     return {
       succeeded: false,
       output: ((e.stdout || "") + "\n" + (e.stderr || "")).trim(),

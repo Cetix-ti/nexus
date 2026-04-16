@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { MultiSelect } from "@/components/ui/multi-select";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,7 +61,13 @@ interface CalendarEvent {
   meetingId: string | null;
   calendar: { id: string; name: string; kind: string; color: string };
   owner: { id: string; firstName: string; lastName: string; avatar: string | null } | null;
-  organization: { id: string; name: string } | null;
+  organization: {
+    id: string;
+    name: string;
+    clientCode?: string | null;
+    logo?: string | null;
+    isInternal?: boolean;
+  } | null;
   meeting: { id: string; status: string } | null;
   renewalType: string | null;
   renewalAmount: number | null;
@@ -84,6 +91,26 @@ interface CalendarEvent {
     assigneeId: string | null;
     assignee: { firstName: string; lastName: string } | null;
   }>;
+  // Multi-agents : pour les WORK_LOCATION "MG/VG MRVL" (2 agents, 1 event).
+  // Peut être absent (anciens events, ou kinds LEAVE/PERSONAL qui restent
+  // mono-agent via ownerId).
+  agents?: Array<{
+    user: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      avatar: string | null;
+    };
+  }>;
+  // Sync Outlook — permet de distinguer les events créés côté Nexus vs
+  // importés d'Outlook, et de signaler les titres qui n'ont pas pu être
+  // décodés ("MG LOGICIEL" → client inconnu par ex.).
+  outlookEventId?: string | null;
+  outlookCalendarId?: string | null;
+  rawTitle?: string | null;
+  syncStatus?: "OK" | "UNDECODED" | "ERROR" | "PENDING" | null;
+  syncError?: string | null;
+  lastSyncedAt?: string | null;
 }
 
 const KIND_ICONS = {
@@ -178,7 +205,20 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
     const saved = window.localStorage.getItem("calendar.viewMode");
     return (saved === "week" || saved === "day" || saved === "month") ? saved : "month";
   });
-  const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
+  // Cursor initial ALIGNÉ au viewMode restauré depuis localStorage.
+  // Avant : cursor = startOfMonth(today) même si viewMode restauré était
+  // "week" → la vue semaine ouvrait sur la semaine du 1er du mois
+  // (Mar 30–Apr 5 si on est en avril) → zéro événement visible. Le user
+  // voyait "aucune donnée" au chargement tant qu'il n'avait pas cliqué
+  // "Aujourd'hui". On initialise correctement selon la vue.
+  const [cursor, setCursor] = useState(() => {
+    const now = new Date();
+    if (typeof window === "undefined") return startOfMonth(now);
+    const saved = window.localStorage.getItem("calendar.viewMode");
+    if (saved === "week") return startOfWeek(now);
+    if (saved === "day") return startOfDay(now);
+    return startOfMonth(now);
+  });
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
 
@@ -364,13 +404,27 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Switcher Mois / Semaine / Jour */}
           <div className="flex items-center gap-0.5 rounded-lg bg-slate-100/80 p-0.5 ring-1 ring-inset ring-slate-200/60">
             {(["month", "week", "day"] as ViewMode[]).map((v) => (
               <button
                 key={v}
-                onClick={() => setViewMode(v)}
+                onClick={() => {
+                  // Au changement de vue, on snappe le cursor sur la
+                  // période CONTENANT AUJOURD'HUI. Avant : on conservait
+                  // le cursor du mois (=1er du mois) → en switchant vers
+                  // Semaine on atterrissait sur la semaine du 1er (ex:
+                  // Mar 30–Apr 5) — souvent vide → user voit "aucune
+                  // donnée". Snapping à today donne une vue utile par
+                  // défaut. Pour naviguer dans le passé, boutons ‹ ›
+                  // restent disponibles.
+                  setViewMode(v);
+                  const now = new Date();
+                  if (v === "month") setCursor(startOfMonth(now));
+                  else if (v === "week") setCursor(startOfWeek(now));
+                  else setCursor(startOfDay(now));
+                }}
                 className={cn(
                   "px-2.5 h-7 rounded-md text-[11.5px] font-medium transition-all",
                   viewMode === v
@@ -384,17 +438,31 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
           </div>
           <Button variant="outline" size="sm" onClick={reloadEvents} disabled={loading}>
             <RefreshCcw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-            Actualiser
+            {/* Libellé "Actualiser" masqué sur mobile pour économiser la
+                largeur — l'icône + l'état disabled suffisent. */}
+            <span className="hidden sm:inline">Actualiser</span>
           </Button>
           <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
             <Plus className="h-3.5 w-3.5" />
-            Nouvel événement
+            {/* Sur mobile on ne garde que "Nouveau" pour éviter le
+                débordement horizontal du header (l'ensemble switcher+
+                Actualiser+Nouvel-événement dépassait la largeur écran
+                sur < 640 px → le dernier bouton sortait du viewport). */}
+            <span className="hidden sm:inline">Nouvel événement</span>
+            <span className="sm:hidden">Nouveau</span>
           </Button>
         </div>
       </div>
 
       {/* Calendar picker + grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-4">
+      {/* Layout sidebar + grille calendrier.
+          - <lg (<1024 px)            : stack vertical (sidebar au-dessus)
+          - lg à 2xl (1024-1535 px)   : sidebar 192 px (plus étroite) pour
+            laisser un max d'espace à la grille — cible les laptops
+            14" à 150% scaling (1920×1200 natif → 1280 CSS px)
+          - 2xl+ (≥1536 px)           : sidebar 240 px, retour au confort
+            original des grands écrans */}
+      <div className="grid grid-cols-1 lg:grid-cols-[192px_1fr] 2xl:grid-cols-[240px_1fr] gap-3 lg:gap-4">
         {/* Sidebar: calendar toggles */}
         <Card>
           <CardContent className="p-3">
@@ -402,8 +470,9 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
               Calendriers
             </h3>
             <div className="space-y-1">
-              {/* Ordre préféré : Agenda général en tête, puis Renouvellements,
-                  puis Congés, puis le reste alphabétique. */}
+              {/* Ordre préféré : le calendrier GENERAL (« Localisation »)
+                  en tête, puis Renouvellements, puis Congés, puis le
+                  reste alphabétique. */}
               {[...calendars]
                 .sort((a, b) => {
                   const order: Record<string, number> = { GENERAL: 0, RENEWALS: 1, LEAVE: 2, CUSTOM: 3 };
@@ -447,14 +516,40 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
             cursor={cursor}
             eventsForDay={eventsForDay}
             onEventClick={handleEventClick}
+            onDayClick={(d) => {
+              // Uniquement actif sur mobile (sm:cursor-default masque
+              // l'intention sur desktop). Sur desktop la tuile en
+              // elle-même porte déjà l'interaction clic event.
+              setViewMode("day");
+              setCursor(startOfDay(d));
+            }}
           />
         )}
         {viewMode === "week" && (
-          <TimeGrid
-            days={Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(cursor), i))}
-            events={events}
-            onEventClick={handleEventClick}
-          />
+          <>
+            {/* Mobile : grille 2 colonnes × ~4 rangées (style OneCalendar).
+                TimeGrid en timeline horizontale est illisible sur 375 px
+                (cols de ~50 px). Ici chaque jour est une carte avec son
+                en-tête + la liste compacte des events du jour. */}
+            <div className="sm:hidden">
+              <MobileWeekGrid
+                days={Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(cursor), i))}
+                events={events}
+                onEventClick={handleEventClick}
+                onDayClick={(d) => {
+                  setViewMode("day");
+                  setCursor(startOfDay(d));
+                }}
+              />
+            </div>
+            <div className="hidden sm:block">
+              <TimeGrid
+                days={Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(cursor), i))}
+                events={events}
+                onEventClick={handleEventClick}
+              />
+            </div>
+          </>
         )}
         {viewMode === "day" && (
           <TimeGrid
@@ -565,19 +660,149 @@ function EventDetailDrawer({
           <div>
             <p className="text-[11px] font-medium text-slate-500">Quand</p>
             <p className="text-slate-700 tabular-nums">
-              {event.allDay
-                ? new Date(event.startsAt).toLocaleDateString("fr-CA", { dateStyle: "full" })
-                : `${new Date(event.startsAt).toLocaleString("fr-CA", { dateStyle: "medium", timeStyle: "short" })} → ${new Date(event.endsAt).toLocaleString("fr-CA", { timeStyle: "short" })}`}
+              {(() => {
+                const s = new Date(event.startsAt);
+                const e = new Date(event.endsAt);
+                if (event.allDay) {
+                  // Pour un event all-day, l'endsAt a été normalisé à
+                  // 23:59:59.999 du dernier jour. On compare les dates
+                  // calendaires pour savoir si c'est mono-jour ou plage.
+                  const sameDay =
+                    s.getFullYear() === e.getFullYear() &&
+                    s.getMonth() === e.getMonth() &&
+                    s.getDate() === e.getDate();
+                  const startStr = s.toLocaleDateString("fr-CA", { dateStyle: "full" });
+                  if (sameDay) return startStr;
+                  const endStr = e.toLocaleDateString("fr-CA", { dateStyle: "full" });
+                  return `${startStr} → ${endStr}`;
+                }
+                return `${s.toLocaleString("fr-CA", { dateStyle: "medium", timeStyle: "short" })} → ${e.toLocaleString("fr-CA", { timeStyle: "short" })}`;
+              })()}
               {!event.allDay && <span className="text-slate-400 ml-1.5">({dur} min)</span>}
             </p>
           </div>
 
-          {event.owner && (
-            <div>
-              <p className="text-[11px] font-medium text-slate-500">Concerne</p>
-              <p className="text-slate-700">
-                {event.owner.firstName} {event.owner.lastName}
+          {/* Multi-agents : liste complète pour WORK_LOCATION ; fallback
+              sur owner seul pour les autres kinds. */}
+          {(() => {
+            const agentUsers = (event.agents ?? [])
+              .map((a) => a.user)
+              .filter((u): u is NonNullable<typeof u> => !!u);
+            const list =
+              agentUsers.length > 0
+                ? agentUsers
+                : event.owner
+                  ? [event.owner]
+                  : [];
+            if (list.length === 0) return null;
+            return (
+              <div>
+                <p className="text-[11px] font-medium text-slate-500">
+                  {list.length > 1 ? "Agents concernés" : "Concerne"}
+                </p>
+                <div className="mt-0.5 flex flex-wrap gap-1.5">
+                  {list.map((a) => (
+                    <span
+                      key={a.id}
+                      className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[12px] text-slate-700"
+                    >
+                      {a.avatar ? (
+                        <img
+                          src={a.avatar}
+                          alt=""
+                          className="h-4 w-4 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span
+                          className="h-4 w-4 rounded-full flex items-center justify-center text-[8px] font-semibold text-white"
+                          style={{ backgroundColor: event.calendar.color }}
+                        >
+                          {`${a.firstName?.[0] ?? ""}${a.lastName?.[0] ?? ""}`.toUpperCase()}
+                        </span>
+                      )}
+                      {a.firstName} {a.lastName}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Synchronisation Outlook (WORK_LOCATION uniquement) —
+              affiche l'origine, le statut de décodage, le titre brut,
+              pour qu'un admin puisse diagnostiquer un event mal mappé. */}
+          {event.kind === "WORK_LOCATION" && (event.outlookEventId || event.syncStatus) && (
+            <div
+              className={cn(
+                "rounded-lg border p-3 space-y-1.5",
+                event.syncStatus === "UNDECODED" || event.syncStatus === "ERROR"
+                  ? "border-red-200 bg-red-50/60"
+                  : "border-sky-200 bg-sky-50/50",
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <p
+                  className={cn(
+                    "text-[10.5px] font-semibold uppercase tracking-wider",
+                    event.syncStatus === "UNDECODED" || event.syncStatus === "ERROR"
+                      ? "text-red-700"
+                      : "text-sky-700",
+                  )}
+                >
+                  Synchronisation Outlook
+                </p>
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wider",
+                    event.syncStatus === "OK" && "bg-emerald-100 text-emerald-700",
+                    event.syncStatus === "UNDECODED" && "bg-red-100 text-red-700",
+                    event.syncStatus === "ERROR" && "bg-red-100 text-red-700",
+                    event.syncStatus === "PENDING" && "bg-amber-100 text-amber-700",
+                    !event.syncStatus && "bg-slate-100 text-slate-600",
+                  )}
+                >
+                  {event.syncStatus === "OK" && "synchronisé"}
+                  {event.syncStatus === "UNDECODED" && "non décodé"}
+                  {event.syncStatus === "ERROR" && "erreur"}
+                  {event.syncStatus === "PENDING" && "en attente"}
+                  {!event.syncStatus && "—"}
+                </span>
+              </div>
+              <p className="text-[11.5px] text-slate-600">
+                Origine :{" "}
+                <span className="font-medium text-slate-800">
+                  {event.outlookEventId ? "Outlook (calendrier partagé)" : "Nexus"}
+                </span>
               </p>
+              {event.rawTitle && event.rawTitle !== event.title && (
+                <p className="text-[11.5px] text-slate-600">
+                  Titre brut Outlook :{" "}
+                  <code className="rounded bg-white/70 px-1 py-0.5 text-[11px] text-slate-800">
+                    {event.rawTitle}
+                  </code>
+                </p>
+              )}
+              {event.syncError && (
+                <p className="text-[11.5px] text-red-700">
+                  {event.syncError}
+                  {event.syncStatus === "UNDECODED" && (
+                    <span className="block mt-0.5 text-red-600/80">
+                      Corrige le titre côté Outlook (ex: « BR LV ») ou édite
+                      cet événement directement dans Nexus pour forcer le
+                      mapping agents + client.
+                    </span>
+                  )}
+                </p>
+              )}
+              {event.lastSyncedAt && (
+                <p className="text-[10.5px] text-slate-400 tabular-nums">
+                  Dernière synchro :{" "}
+                  {new Date(event.lastSyncedAt).toLocaleString("fr-CA", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })}
+                </p>
+              )}
             </div>
           )}
 
@@ -987,49 +1212,154 @@ function EventTile({
 }) {
   const Icon = KIND_ICONS[event.kind] ?? CalIcon;
   const isWorkLoc = event.kind === "WORK_LOCATION";
-  const ownerInitials = event.owner
-    ? `${event.owner.firstName?.[0] ?? ""}${event.owner.lastName?.[0] ?? ""}`.toUpperCase()
-    : "";
+
+  // Liste d'agents à afficher — pour les WORK_LOCATION "MG/VG MRVL", on a
+  // 2 agents liés via la table de jointure. On fallback sur owner (1 agent)
+  // pour les events créés sans agentIds et pour les autres kinds.
+  const agentUsers = (event.agents ?? [])
+    .map((a) => a.user)
+    .filter((u): u is NonNullable<typeof u> => !!u);
+  const displayedAgents =
+    agentUsers.length > 0
+      ? agentUsers
+      : event.owner
+        ? [event.owner]
+        : [];
+
+  // UNDECODED = titre Outlook qu'on n'a pas pu mapper (agent/client inconnu).
+  // ERROR = push vers Graph a échoué. On signale visuellement pour qu'un
+  // admin puisse cliquer et intervenir.
+  const hasSyncIssue =
+    event.syncStatus === "UNDECODED" || event.syncStatus === "ERROR";
+
+  // Dérive le "kind visuel" d'un event WORK_LOCATION à partir des données.
+  // On n'a pas stocké `locationKind` sur CalendarEvent — on l'infère :
+  //   - agents vide + org interne → réunion d'équipe (company_meeting).
+  //     Affiche le logo Cetix comme thumbnail principal.
+  //   - agents présents + org null → événement perso (RDV, OFF, DENTISTE…).
+  //     Affiche l'avatar agent + mention discrète "Perso".
+  //   - sinon → visite client / bureau / télétravail normal.
+  const isCompanyMeeting =
+    isWorkLoc &&
+    displayedAgents.length === 0 &&
+    !!event.organization?.isInternal;
+  const isPersonal =
+    isWorkLoc &&
+    displayedAgents.length > 0 &&
+    !event.organization &&
+    !hasSyncIssue;
 
   if (isWorkLoc) {
+    const agentsTooltip = displayedAgents
+      .map((a) => `${a.firstName} ${a.lastName}`)
+      .join(", ");
     return (
       <button
         onClick={onClick}
         className={cn(
           "flex items-center gap-1.5 w-full px-1.5 py-0.5 rounded text-[10.5px] text-left hover:brightness-95 transition-all min-w-0",
+          hasSyncIssue && "ring-1 ring-red-400",
         )}
         style={{ backgroundColor: event.calendar.color + "22", color: event.calendar.color }}
-        title={`${event.title}${event.organization ? ` · ${event.organization.name}` : ""}${event.owner ? ` · ${event.owner.firstName} ${event.owner.lastName}` : ""}`}
+        title={
+          hasSyncIssue
+            ? `⚠ ${event.syncError || "Titre non décodé"} — ${event.rawTitle || event.title}`
+            : isCompanyMeeting
+              ? `${event.title} · Réunion d'équipe`
+              : isPersonal
+                ? `${event.title} · Événement personnel${agentsTooltip ? ` · ${agentsTooltip}` : ""}`
+                : `${event.title}${event.organization ? ` · ${event.organization.name}` : ""}${agentsTooltip ? ` · ${agentsTooltip}` : ""}`
+        }
       >
-        {/* Avatar agent à gauche */}
-        {event.owner?.avatar ? (
+        {/* Thumbnail à gauche — varie selon le type d'event. */}
+        {isCompanyMeeting && event.organization?.logo ? (
+          /* Réunion d'équipe → logo Cetix. Pas d'avatar agent (pas d'agent
+             spécifique — la réunion concerne tout le monde). */
           <img
-            src={event.owner.avatar}
-            alt={`${event.owner.firstName} ${event.owner.lastName}`}
-            className="h-4 w-4 rounded-full object-cover ring-1 ring-white/60 shrink-0"
+            src={event.organization.logo}
+            alt={event.organization.name}
+            className="h-4 w-4 rounded-sm object-contain bg-white ring-1 ring-white shrink-0"
           />
-        ) : event.owner ? (
-          <span
-            className="h-4 w-4 rounded-full flex items-center justify-center shrink-0 text-[8px] font-semibold text-white"
-            style={{ backgroundColor: event.calendar.color }}
-          >
-            {ownerInitials}
+        ) : displayedAgents.length > 0 ? (
+          /* Cluster d'avatars agents (overlap en cas de multi, max 3 + badge "+N") */
+          <span className="flex -space-x-1 shrink-0">
+            {displayedAgents.slice(0, 3).map((a) => {
+              const initials =
+                `${a.firstName?.[0] ?? ""}${a.lastName?.[0] ?? ""}`.toUpperCase();
+              return a.avatar ? (
+                <img
+                  key={a.id}
+                  src={a.avatar}
+                  alt={`${a.firstName} ${a.lastName}`}
+                  className="h-4 w-4 rounded-full object-cover ring-1 ring-white"
+                />
+              ) : (
+                <span
+                  key={a.id}
+                  className="h-4 w-4 rounded-full flex items-center justify-center text-[8px] font-semibold text-white ring-1 ring-white"
+                  style={{ backgroundColor: event.calendar.color }}
+                >
+                  {initials}
+                </span>
+              );
+            })}
+            {displayedAgents.length > 3 && (
+              <span
+                className="h-4 w-4 rounded-full flex items-center justify-center text-[8px] font-semibold text-white ring-1 ring-white"
+                style={{ backgroundColor: event.calendar.color }}
+              >
+                +{displayedAgents.length - 3}
+              </span>
+            )}
+          </span>
+        ) : hasSyncIssue ? (
+          <span className="h-4 w-4 rounded-full flex items-center justify-center shrink-0 bg-red-500 text-white text-[8px] font-bold">
+            !
           </span>
         ) : (
           <Icon className="h-2.5 w-2.5 shrink-0" />
         )}
-        {/* Titre (flex-1, truncate) */}
-        <span className="truncate flex-1 min-w-0">{event.title}</span>
-        {/* Client à droite */}
-        {event.organization && (
+        {/* Titre (flex-1, truncate). Pas d'italique : la distinction
+            "personnel" vs "télétravail" se fait déjà via le label à
+            droite ("Perso"/"Équipe"/nom du client). Avant on italisait
+            les events `isPersonal` (détection : agents + pas d'org) mais
+            ce prédicat englobait aussi les TÉLÉTRAVAIL (pas d'org non
+            plus), ce qui italisait des titres qui n'avaient pas lieu de
+            l'être. Tant qu'on ne persiste pas `locationKind` sur le row,
+            on reste neutre. */}
+        <span className="truncate flex-1 min-w-0">
+          {event.title}
+        </span>
+        {/* Indicateur à droite — client / "Équipe" / "Perso". */}
+        {isCompanyMeeting ? (
           <span
             className={cn(
-              "shrink-0 font-medium opacity-75 truncate",
+              "shrink-0 font-semibold opacity-75 truncate",
+              compact ? "max-w-[80px] text-[9.5px]" : "max-w-[120px]",
+            )}
+          >
+            Équipe
+          </span>
+        ) : isPersonal ? (
+          <span
+            className={cn(
+              "shrink-0 font-medium opacity-60 truncate",
               compact ? "max-w-[60px] text-[9.5px]" : "max-w-[120px]",
             )}
           >
-            {event.organization.name}
+            Perso
           </span>
+        ) : (
+          event.organization && (
+            <span
+              className={cn(
+                "shrink-0 font-medium opacity-75 truncate",
+                compact ? "max-w-[60px] text-[9.5px]" : "max-w-[120px]",
+              )}
+            >
+              {event.organization.name}
+            </span>
+          )
         )}
       </button>
     );
@@ -1057,20 +1387,38 @@ function MonthGrid({
   cursor,
   eventsForDay,
   onEventClick,
+  onDayClick,
 }: {
   cells: Date[];
   cursor: Date;
   eventsForDay: (d: Date) => CalendarEvent[];
   onEventClick: (e: CalendarEvent) => void;
+  /** Tap sur une cellule → ouvre la vue Jour pour cette date. Utilisé
+   *  sur mobile (≤640 px) où les events sont affichés en points seulement,
+   *  pas en tuiles cliquables. */
+  onDayClick?: (d: Date) => void;
 }) {
   return (
     <Card className="overflow-hidden">
       <div className="grid grid-cols-7 bg-slate-50/60 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
         {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((d) => (
-          <div key={d} className="px-3 py-2 text-center">{d}</div>
+          <div key={d} className="px-1 sm:px-3 py-2 text-center">
+            {/* Sur mobile : 1ère lettre seule (L/M/M/J/V/S/D) pour que
+                les 7 colonnes tiennent sans scroll horizontal. */}
+            <span className="hidden sm:inline">{d}</span>
+            <span className="sm:hidden">{d.charAt(0)}</span>
+          </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 grid-rows-6 h-[calc(100vh-240px)] min-h-[500px]">
+      {/* Hauteur de la grille mensuelle.
+          - Formule : viewport - 240 px (header + sidebar MSP + marges)
+          - min-h augmenté à 560 px (laptop 14" à 150% scaling = 800 CSS
+            px de haut → 800-240=560 disponibles). Avant : 420 px forçait
+            des cellules de ~70 px de haut, trop petit pour voir >2 events.
+          - max-h 900 px évite que sur un écran ultra-large 4K la grille
+            gonfle au point que chaque cellule fasse 150+ px (excès
+            d'espace vertical). */}
+      <div className="grid grid-cols-7 grid-rows-6 h-[calc(100vh-240px)] min-h-[560px] max-h-[900px]">
         {cells.map((d, i) => {
           const inMonth = d.getMonth() === cursor.getMonth();
           const isToday = isSameDay(d, new Date());
@@ -1078,17 +1426,21 @@ function MonthGrid({
           return (
             <div
               key={i}
+              onClick={() => onDayClick?.(d)}
               className={cn(
-                "border-b border-r border-slate-200 p-1.5 overflow-hidden flex flex-col gap-0.5",
+                "border-b border-r border-slate-200 p-0.5 sm:p-1.5 overflow-hidden flex flex-col gap-0.5",
                 !inMonth && "bg-slate-50/40",
+                // Sur mobile : la cellule entière est tappable (ouvre la
+                // vue Jour). Sur desktop : tap via les tuiles directement.
+                onDayClick && "sm:cursor-default cursor-pointer active:bg-slate-100/70",
               )}
             >
               <div className="flex items-center justify-between shrink-0">
                 <span
                   className={cn(
-                    "text-[11px] font-medium tabular-nums",
+                    "text-[10px] sm:text-[11px] font-medium tabular-nums",
                     isToday
-                      ? "bg-blue-600 text-white rounded-full h-5 w-5 flex items-center justify-center"
+                      ? "bg-blue-600 text-white rounded-full h-4 w-4 sm:h-5 sm:w-5 flex items-center justify-center text-[9px] sm:text-[11px]"
                       : inMonth
                       ? "text-slate-700"
                       : "text-slate-400",
@@ -1097,7 +1449,9 @@ function MonthGrid({
                   {d.getDate()}
                 </span>
               </div>
-              <div className="flex-1 overflow-y-auto flex flex-col gap-0.5 min-h-0">
+
+              {/* Desktop (sm+) : tuiles d'event normales, cliquables. */}
+              <div className="hidden sm:flex flex-1 overflow-y-auto flex-col gap-0.5 min-h-0">
                 {dayEvents.slice(0, 4).map((e) => (
                   <EventTile key={e.id} event={e} onClick={() => onEventClick(e)} />
                 ))}
@@ -1105,6 +1459,168 @@ function MonthGrid({
                   <span className="text-[9.5px] text-slate-500 px-1.5">
                     +{dayEvents.length - 4} autres
                   </span>
+                )}
+              </div>
+
+              {/* Mobile (<sm) : points colorés par calendrier. Les tuiles
+                  complètes sont illisibles sur 50 px de large → on donne
+                  juste un signal visuel "il y a N events ce jour". Tap
+                  sur la cellule → vue Jour. */}
+              <div className="sm:hidden flex-1 flex flex-wrap content-start gap-0.5 pt-0.5 min-h-0 overflow-hidden">
+                {dayEvents.slice(0, 6).map((e) => (
+                  <span
+                    key={e.id}
+                    className="h-1.5 w-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: e.calendar.color }}
+                    title={e.title}
+                  />
+                ))}
+                {dayEvents.length > 6 && (
+                  <span className="text-[8px] text-slate-500 leading-none">
+                    +{dayEvents.length - 6}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MobileWeekGrid — vue semaine sur mobile. 2 colonnes × ~4 rangées (le
+// 7e jour finit tout seul sur la 4e rangée). Chaque cellule = carte
+// "jour" avec numéro + liste compacte des events. Tap → vue Jour.
+//
+// Remplace la TimeGrid en timeline horizontale pour < 640 px, où les 7
+// colonnes étroites rendaient les events illisibles. Format inspiré
+// d'OneCalendar mobile.
+// ---------------------------------------------------------------------------
+function MobileWeekGrid({
+  days,
+  events,
+  onEventClick,
+  onDayClick,
+}: {
+  days: Date[];
+  events: CalendarEvent[];
+  onEventClick: (e: CalendarEvent) => void;
+  onDayClick: (d: Date) => void;
+}) {
+  // Réplique la logique de TimeGrid pour les events d'une journée,
+  // avec la même normalisation all-day (-1ms si fin à minuit) pour éviter
+  // qu'un event apparaisse en double sur 2 jours.
+  function eventsForDay(day: Date): CalendarEvent[] {
+    const dayStart = startOfDay(day);
+    const dayEnd = endOfDay(day);
+    return events.filter((e) => {
+      const s = new Date(e.startsAt);
+      let ed = new Date(e.endsAt);
+      if (
+        e.allDay &&
+        ed.getHours() === 0 &&
+        ed.getMinutes() === 0 &&
+        ed.getSeconds() === 0 &&
+        ed.getMilliseconds() === 0 &&
+        ed.getTime() > s.getTime()
+      ) {
+        ed = new Date(ed.getTime() - 1);
+      }
+      return s <= dayEnd && ed >= dayStart;
+    });
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      {/* 2 cols. 7 jours → 3 rangées pleines + 1 cellule seule en bas-gauche. */}
+      <div className="grid grid-cols-2 divide-x divide-y divide-slate-200">
+        {days.map((d) => {
+          const dayEvents = eventsForDay(d);
+          const isToday = isSameDay(d, new Date());
+          const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+          // Tri : all-day d'abord, puis timed par heure.
+          const sorted = [...dayEvents].sort((a, b) => {
+            if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+            return new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
+          });
+          return (
+            <div
+              key={d.toISOString()}
+              onClick={() => onDayClick(d)}
+              className={cn(
+                "min-h-[128px] px-2 py-2 flex flex-col gap-1 active:bg-slate-100/70 cursor-pointer",
+                isWeekend && "bg-slate-50/40",
+                isToday && "bg-blue-50/40",
+              )}
+            >
+              {/* Header de la carte jour */}
+              <div className="flex items-baseline gap-1.5 shrink-0">
+                <span
+                  className={cn(
+                    "text-[10px] font-semibold uppercase tracking-wider",
+                    isToday ? "text-blue-700" : "text-slate-500",
+                  )}
+                >
+                  {d.toLocaleDateString("fr-CA", { weekday: "short" })}
+                </span>
+                <span
+                  className={cn(
+                    "text-[15px] font-semibold tabular-nums",
+                    isToday
+                      ? "bg-blue-600 text-white rounded-full h-6 w-6 inline-flex items-center justify-center text-[12px]"
+                      : "text-slate-900",
+                  )}
+                >
+                  {d.getDate()}
+                </span>
+                {dayEvents.length > 0 && (
+                  <span className="ml-auto text-[9.5px] text-slate-400 tabular-nums">
+                    {dayEvents.length}
+                  </span>
+                )}
+              </div>
+
+              {/* Liste compacte des events — max 4 visibles, +N le reste.
+                  On intercepte le clic sur la tuile pour éviter que le
+                  click-through ouvre aussi la vue Jour. */}
+              <div className="flex-1 flex flex-col gap-0.5 min-h-0 overflow-hidden">
+                {sorted.length === 0 ? (
+                  <p className="text-[10.5px] text-slate-400 italic">Aucun</p>
+                ) : (
+                  <>
+                    {sorted.slice(0, 4).map((e) => (
+                      <button
+                        key={e.id}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          onEventClick(e);
+                        }}
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-left hover:brightness-95 transition-all min-w-0"
+                        style={{
+                          backgroundColor: e.calendar.color + "22",
+                          color: e.calendar.color,
+                          borderLeft: `2px solid ${e.calendar.color}`,
+                        }}
+                      >
+                        {!e.allDay && (
+                          <span className="text-[9px] tabular-nums opacity-75 shrink-0">
+                            {new Date(e.startsAt).toLocaleTimeString("fr-CA", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        )}
+                        <span className="truncate flex-1 min-w-0">{e.title}</span>
+                      </button>
+                    ))}
+                    {sorted.length > 4 && (
+                      <span className="text-[9.5px] text-slate-500 pl-1.5">
+                        +{sorted.length - 4} autre{sorted.length - 4 > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1132,13 +1648,28 @@ function TimeGrid({
   const totalHours = DAY_END_HOUR - DAY_START_HOUR;
   const gridHeight = totalHours * HOUR_HEIGHT;
 
-  // Sépare all-day vs timed events
+  // Sépare all-day vs timed events.
+  // Pour les events all-day importés depuis Outlook avant la normalisation
+  // (end = minuit du jour suivant), l'overlap retombait sur 2 jours : le
+  // tile apparaissait en double. On normalise ici à nouveau par sécurité
+  // (si un event legacy subsiste non backfillé) en considérant la fin
+  // comme exclusive quand elle est pile à minuit.
   function splitDayEvents(day: Date) {
     const dayStart = startOfDay(day);
     const dayEnd = endOfDay(day);
     const overlap = events.filter((e) => {
       const s = new Date(e.startsAt);
-      const ed = new Date(e.endsAt);
+      let ed = new Date(e.endsAt);
+      if (
+        e.allDay &&
+        ed.getHours() === 0 &&
+        ed.getMinutes() === 0 &&
+        ed.getSeconds() === 0 &&
+        ed.getMilliseconds() === 0 &&
+        ed.getTime() > s.getTime()
+      ) {
+        ed = new Date(ed.getTime() - 1);
+      }
       return s <= dayEnd && ed >= dayStart;
     });
     return {
@@ -1359,8 +1890,10 @@ function CreateEventModal({
   const initStart = editing ? splitIso(editing.startsAt) : { date: today, time: "09:00" };
   const initEnd = editing ? splitIso(editing.endsAt) : { date: today, time: "10:00" };
 
-  // Defaut = calendrier "Agenda général" (kind=GENERAL). Fallback sur le
-  // premier calendrier dispo si le général n'existe pas (cas pathologique).
+  // Défaut = calendrier GENERAL (aujourd'hui « Localisation »). Fallback
+  // sur le premier calendrier dispo si aucun GENERAL n'existe (cas
+  // pathologique). L'ancien « Agenda général » a été fusionné dans
+  // « Localisation » — cf. scripts/remove-agenda-general.ts.
   const defaultCalendarId =
     editing?.calendarId ??
     calendars.find((c) => c.kind === "GENERAL")?.id ??
@@ -1407,9 +1940,32 @@ function CreateEventModal({
   // Défaut = l'agent qui crée l'événement (gain de temps : 95% des
   // WORK_LOCATION sont "ma propre localisation"). Modifiable au besoin.
   const [ownerId, setOwnerId] = useState<string>(editing?.ownerId ?? currentUserId);
+  // Multi-agents : pour WORK_LOCATION "MG/VG MRVL" on peut sélectionner
+  // plusieurs agents. Pour LEAVE/PERSONAL on garde ownerId single-select.
+  // Source de vérité à l'édition : la liste `agents` si présente, sinon
+  // le ownerId en repli. À la création : l'utilisateur courant (cohérent
+  // avec ownerId default).
+  const [agentIds, setAgentIds] = useState<string[]>(() => {
+    if (editing?.agents && editing.agents.length > 0) {
+      return editing.agents.map((a) => a.user.id);
+    }
+    if (editing?.ownerId) return [editing.ownerId];
+    return currentUserId ? [currentUserId] : [];
+  });
   const [internalTickets, setInternalTickets] = useState<Array<{ id: string; number: number; subject: string }>>([]);
   const [internalProjects, setInternalProjects] = useState<Array<{ id: string; code: string; name: string }>>([]);
   const [internalTicketId, setInternalTicketId] = useState<string>(editing?.internalTicketId ?? "");
+  // Multi-liaisons : on tient la liste complète des tickets liés via
+  // Ticket.calendarEventId. Quand l'event est ouvert en édition, on
+  // initialise depuis `editing.linkedTickets` (vue serveur). L'ancien
+  // `internalTicketId` scalaire est fusionné dedans pour back-compat.
+  const [linkedTicketIds, setLinkedTicketIds] = useState<string[]>(() => {
+    const ids = new Set<string>();
+    const lt = (editing as { linkedTickets?: Array<{ id: string }> } | undefined)?.linkedTickets;
+    if (Array.isArray(lt)) for (const t of lt) ids.add(t.id);
+    if (editing?.internalTicketId) ids.add(editing.internalTicketId);
+    return Array.from(ids);
+  });
   const [internalProjectId, setInternalProjectId] = useState<string>(editing?.internalProjectId ?? "");
 
   useEffect(() => {
@@ -1455,6 +2011,14 @@ function CreateEventModal({
     if (ownerId) return;
     if (currentUserId) setOwnerId(currentUserId);
   }, [currentUserId, ownerId, isEdit]);
+
+  // Idem pour agentIds : en création, si la session arrive tardivement,
+  // initialise la liste d'agents avec l'utilisateur courant.
+  useEffect(() => {
+    if (isEdit) return;
+    if (agentIds.length > 0) return;
+    if (currentUserId) setAgentIds([currentUserId]);
+  }, [currentUserId, agentIds, isEdit]);
 
   // Synchronise le kind avec la nature du calendrier sélectionné
   // (uniquement en mode création — en édition on respecte le kind existant).
@@ -1540,6 +2104,17 @@ function CreateEventModal({
       const url = isEdit
         ? `/api/v1/calendar-events/${encodeURIComponent(editing.id)}`
         : "/api/v1/calendar-events";
+      // Pour WORK_LOCATION on utilise agentIds[] comme source de vérité
+      // multi-agents. Le ownerId est positionné sur le premier agent pour
+      // rester cohérent avec le modèle de données (ownerId = "agent principal").
+      // Les autres kinds (LEAVE/PERSONAL) continuent à utiliser ownerId seul.
+      const effectiveOwnerId =
+        kind === "WORK_LOCATION"
+          ? (agentIds[0] ?? ownerId)
+          : ownerId;
+      const effectiveAgentIds =
+        kind === "WORK_LOCATION" ? agentIds : undefined;
+
       const res = await fetch(url, {
         method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -1552,13 +2127,19 @@ function CreateEventModal({
           allDay,
           description: description || undefined,
           location: location || undefined,
-          ownerId: ownerId || undefined,
+          ownerId: effectiveOwnerId || undefined,
+          agentIds: effectiveAgentIds,
           recurrence: recurrence !== "none" ? recurrence : null,
           renewalType: kind === "RENEWAL" ? (renewalType || undefined) : undefined,
           renewalAmount: kind === "RENEWAL" && renewalAmount ? Number(renewalAmount) : undefined,
           renewalNotifyDaysBefore: kind === "RENEWAL" && renewalNotifyDays ? Number(renewalNotifyDays) : undefined,
           renewalExternalRef: kind === "RENEWAL" ? (renewalExternalRef || undefined) : undefined,
-          internalTicketId: internalTicketId || null,
+          // Back-compat : on continue à envoyer internalTicketId (premier
+          // ticket de la liste) pour les pièces qui s'y réfèrent (drawer
+          // event, dashboard interne). La source N-to-1 est maintenant
+          // linkedTicketIds[] côté serveur (Ticket.calendarEventId).
+          internalTicketId: linkedTicketIds[0] || null,
+          linkedTicketIds,
           internalProjectId: internalProjectId || null,
           organizationId: organizationId || null,
           siteId: siteId || null,
@@ -1764,7 +2345,24 @@ function CreateEventModal({
               </div>
             )}
 
-            {(kind === "LEAVE" || kind === "WORK_LOCATION" || kind === "PERSONAL") && (
+            {kind === "WORK_LOCATION" && (
+              <div>
+                <label className="text-[11px] font-medium text-slate-500">
+                  Agents concernés
+                  <span className="ml-1.5 text-[10px] font-normal text-slate-400">
+                    (plusieurs possibles, ex: « MG/VG MRVL »)
+                  </span>
+                </label>
+                <MultiSelect
+                  options={users.map((u) => ({ value: u.id, label: u.name }))}
+                  selected={agentIds}
+                  onChange={setAgentIds}
+                  placeholder="Sélectionner un ou plusieurs agents"
+                  width={520}
+                />
+              </div>
+            )}
+            {(kind === "LEAVE" || kind === "PERSONAL") && (
               <div>
                 <label className="text-[11px] font-medium text-slate-500">Agent concerné</label>
                 <Select value={ownerId} onValueChange={setOwnerId}>
@@ -1837,16 +2435,22 @@ function CreateEventModal({
                 Lier à une ressource interne (optionnel)
               </p>
               <div>
-                <label className="text-[11px] font-medium text-slate-500">Ticket interne</label>
-                <Select value={internalTicketId || "_none"} onValueChange={(v) => setInternalTicketId(v === "_none" ? "" : v)}>
-                  <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">Aucun</SelectItem>
-                    {internalTickets.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>#{t.number} — {t.subject}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <label className="text-[11px] font-medium text-slate-500">
+                  Tickets liés
+                  <span className="ml-1.5 text-[10px] font-normal text-slate-400">
+                    (plusieurs possibles)
+                  </span>
+                </label>
+                <MultiSelect
+                  options={internalTickets.map((t) => ({
+                    value: t.id,
+                    label: `#${t.number} — ${t.subject}`,
+                  }))}
+                  selected={linkedTicketIds}
+                  onChange={setLinkedTicketIds}
+                  placeholder="Aucun ticket lié"
+                  width={520}
+                />
               </div>
               <div>
                 <label className="text-[11px] font-medium text-slate-500">Projet interne</label>

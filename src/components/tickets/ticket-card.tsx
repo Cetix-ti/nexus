@@ -191,15 +191,19 @@ function InlineAssigneePicker({
       const btn = buttonRef.current;
       if (!btn) return;
       const rect = btn.getBoundingClientRect();
-      // Popover : 224px de large (w-56). On l'aligne à droite du bouton
-      // (same right edge). On le place AU-DESSUS du bouton avec un gap
-      // de 8px. Si pas assez d'espace en haut, on bascule en bas.
+      // Popover : 224px de large (w-56). Aligné à droite du bouton
+      // (même bord droit), placé JUSTE EN DESSOUS avec un petit gap de
+      // 4px — l'utilisateur a cliqué sur le coin inférieur droit de la
+      // tuile, le dropdown s'ouvre pile là, mouvement de souris quasi
+      // nul. Si vraiment il n'y a pas assez d'espace en bas (bouton
+      // collé au bas du viewport), on bascule vers le haut en secours
+      // pour ne pas couper le dropdown.
       const POPOVER_WIDTH = 224;
-      const POPOVER_HEIGHT_EST = 260; // estimation ; affiné par maxHeight CSS
-      const GAP = 8;
-      const spaceAbove = rect.top;
-      const openUpward = spaceAbove >= POPOVER_HEIGHT_EST;
-      const top = openUpward
+      const POPOVER_HEIGHT_EST = 260;
+      const GAP = 4;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const flipUp = spaceBelow < POPOVER_HEIGHT_EST && rect.top >= POPOVER_HEIGHT_EST;
+      const top = flipUp
         ? rect.top - POPOVER_HEIGHT_EST - GAP
         : rect.bottom + GAP;
       const left = Math.max(
@@ -224,7 +228,14 @@ function InlineAssigneePicker({
   useEffect(() => {
     if (!open || agents.length > 0) return;
     setLoading(true);
-    fetch("/api/v1/users?role=TECHNICIAN,SUPERVISOR,MSP_ADMIN,SUPER_ADMIN")
+    // `includeAvatar=true` est crucial : par défaut /api/v1/users exclut
+    // le champ avatar pour alléger la réponse. Sans ce paramètre, chaque
+    // agent revient avec avatar=null et le dropdown tombe toujours sur
+    // le fallback "initiales sur fond gris" — le symptôme rapporté par
+    // l'utilisateur (pas de thumbnail).
+    fetch(
+      "/api/v1/users?role=TECHNICIAN,SUPERVISOR,MSP_ADMIN,SUPER_ADMIN&includeAvatar=true",
+    )
       .then((r) => (r.ok ? r.json() : []))
       .then((arr: Array<{ id: string; name: string; avatar: string | null }>) => {
         if (Array.isArray(arr)) setAgents(arr);

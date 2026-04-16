@@ -15,7 +15,6 @@ import {
   Settings,
   ArrowLeft,
   ChevronRight,
-  Sparkles,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
@@ -31,6 +30,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { BackupKanban } from "@/components/backups/backup-kanban";
+import { UnmatchedDomainsSection } from "@/components/backups/unmatched-domains";
+import { LayoutGrid } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -88,9 +90,11 @@ interface OrgSummaryItem {
   lastAlert: string;
 }
 
-// Current view: overview or drilled into a specific org/status
+// Current view: overview, drilled into org/status, or the failures Kanban.
+// L'onglet Kanban est une vue à part entière sur la même page — on garde
+// la même navigation `view` pour ne pas fragmenter le state.
 interface ViewState {
-  type: "overview" | "org" | "status";
+  type: "overview" | "org" | "status" | "kanban";
   orgId?: string | null;
   orgName?: string;
   status?: "SUCCESS" | "WARNING" | "FAILED";
@@ -363,7 +367,15 @@ export default function BackupsPage() {
               <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
                 Sauvegardes
               </h1>
-              {view.type !== "overview" && (
+              {view.type === "kanban" && (
+                <>
+                  <ChevronRight className="h-4 w-4 text-slate-400" />
+                  <span className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
+                    Kanban
+                  </span>
+                </>
+              )}
+              {(view.type === "org" || view.type === "status") && (
                 <>
                   <ChevronRight className="h-4 w-4 text-slate-400" />
                   <span className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
@@ -377,43 +389,61 @@ export default function BackupsPage() {
             <p className="mt-1 text-[13px] text-slate-500">
               {view.type === "overview"
                 ? `État des tâches Veeam — derniers ${days} jours`
-                : view.type === "org"
-                  ? `${filteredAlerts.length} alertes pour ce client`
-                  : `${filteredAlerts.length} alertes avec ce statut`}
+                : view.type === "kanban"
+                  ? "Templates de ticket pour les tâches en échec"
+                  : view.type === "org"
+                    ? `${filteredAlerts.length} alertes pour ce client`
+                    : `${filteredAlerts.length} alertes avec ce statut`}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Select
-            value={String(days)}
-            onValueChange={(v) => setDays(Number(v))}
-          >
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">24 heures</SelectItem>
-              <SelectItem value="3">3 jours</SelectItem>
-              <SelectItem value="7">7 jours</SelectItem>
-              <SelectItem value="14">14 jours</SelectItem>
-              <SelectItem value="30">30 jours</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSync}
-            disabled={syncing}
-          >
-            {syncing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            Synchroniser
-          </Button>
+          {view.type !== "kanban" && (
+            <>
+              <Select
+                value={String(days)}
+                onValueChange={(v) => setDays(Number(v))}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">24 heures</SelectItem>
+                  <SelectItem value="3">3 jours</SelectItem>
+                  <SelectItem value="7">7 jours</SelectItem>
+                  <SelectItem value="14">14 jours</SelectItem>
+                  <SelectItem value="30">30 jours</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setView({ type: "kanban" })}
+                title="Suivi des échecs de sauvegarde"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Kanban
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSync}
+                disabled={syncing}
+              >
+                {syncing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Synchroniser
+              </Button>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Kanban view — short-circuit le reste de la page */}
+      {view.type === "kanban" && <BackupKanban />}
 
       {/* Banners */}
       {expiry?.isExpired && (
@@ -441,6 +471,8 @@ export default function BackupsPage() {
         </div>
       )}
 
+      {/* Dashboard classique — masqué quand on est sur la vue Kanban. */}
+      {view.type !== "kanban" && (<>
       {/* ================================================================ */}
       {/* Stat cards — clickable to filter by status                       */}
       {/* ================================================================ */}
@@ -471,9 +503,16 @@ export default function BackupsPage() {
       </div>
 
       {/* ================================================================ */}
-      {/* AI daily summary                                                 */}
+      {/* Résumé des échecs 24h (tableau déterministe par client)          */}
       {/* ================================================================ */}
       {view.type === "overview" && <AiDailySummary />}
+
+      {/* ================================================================ */}
+      {/* Mappage manuel des alertes orphelines                            */}
+      {/* Ne s'affiche que si au moins un domaine n'a pas pu être matché   */}
+      {/* automatiquement. Silencieux sinon.                                */}
+      {/* ================================================================ */}
+      {view.type === "overview" && <UnmatchedDomainsSection onChange={load} />}
 
       {/* ================================================================ */}
       {/* Org detail header (when drilled into a client)                   */}
@@ -844,6 +883,7 @@ export default function BackupsPage() {
           )}
         </Card>
       </div>
+      </>)}
     </div>
   );
 }
@@ -892,6 +932,10 @@ function OrgAvatar({
   );
 }
 
+// Le panneau s'appelait « Rapport matinal IA » quand il appelait OpenAI.
+// Il est maintenant 100% déterministe : résumé texte + tableau des échecs
+// regroupés par client, rien d'autre (pas de warnings, pas de conseils).
+// On garde le nom de composant pour éviter de casser les imports.
 function AiDailySummary() {
   const [data, setData] = useState<{
     html: string;
@@ -941,17 +985,17 @@ function AiDailySummary() {
       <CardContent className="p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600 ring-1 ring-inset ring-violet-200/60">
-              <Sparkles className="h-4 w-4" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600 ring-1 ring-inset ring-red-200/60">
+              <XCircle className="h-4 w-4" />
             </div>
             <div>
               <h3 className="text-[14px] font-semibold text-slate-900">
-                Rapport matinal IA
+                Échecs des dernières 24 heures
               </h3>
               {data?.generatedAt && (
                 <p className="text-[11px] text-slate-400">
-                  Généré {fmtDate(data.generatedAt)} — {data.failed} échec
-                  {data.failed > 1 ? "s" : ""}, {data.warning} avert.
+                  Mis à jour {fmtDate(data.generatedAt)} — {data.failed} échec
+                  {data.failed > 1 ? "s" : ""}
                 </p>
               )}
             </div>
@@ -979,13 +1023,9 @@ function AiDailySummary() {
               {loading ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <Sparkles className="h-3.5 w-3.5" />
+                <RefreshCw className="h-3.5 w-3.5" />
               )}
-              {loading
-                ? "Analyse..."
-                : data
-                  ? "Rafraîchir"
-                  : "Générer le rapport"}
+              {loading ? "Mise à jour..." : "Actualiser"}
             </Button>
           </div>
         </div>
@@ -996,28 +1036,24 @@ function AiDailySummary() {
 
         {data && !collapsed && (
           <div className="mt-4">
-            {/* Quick stat pills */}
+            {/* Stat pill — uniquement le compteur d'échecs. Les warnings
+                et succès sont visibles ailleurs sur la page (stat cards
+                cliquables). On ne veut pas leur donner d'importance ici. */}
             {data.failed > 0 && (
               <div className="flex items-center gap-3 mb-3">
                 <span className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1 text-[12px] font-semibold text-red-700 ring-1 ring-inset ring-red-200/60">
                   <XCircle className="h-3 w-3" />
-                  {data.failed} échec{data.failed > 1 ? "s" : ""}
+                  {data.failed} tâche{data.failed > 1 ? "s" : ""} en échec
                 </span>
-                {data.warning > 0 && (
-                  <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200/60">
-                    <AlertTriangle className="h-3 w-3" />
-                    {data.warning} avert.
-                  </span>
-                )}
                 <span className="text-[11px] text-slate-400">
-                  sur {data.alertCount} alertes totales
+                  sur {data.alertCount} alertes reçues
                 </span>
               </div>
             )}
 
-            {/* Rich HTML content from AI */}
+            {/* Tableau déterministe : client / serveur / tâche / statut */}
             <div
-              className="ai-summary-content rounded-xl border border-slate-200/80 bg-white p-4 overflow-x-auto max-w-full [&_table]:text-[11px] [&_table]:w-full [&_pre]:overflow-x-auto [&_pre]:text-[11px] [&_img]:max-w-full"
+              className="ai-summary-content rounded-xl border border-slate-200/80 bg-white p-4 overflow-x-auto max-w-full [&_table]:text-[11px] [&_table]:w-full"
               dangerouslySetInnerHTML={{ __html: data.html }}
             />
           </div>
@@ -1025,8 +1061,8 @@ function AiDailySummary() {
 
         {!data && !loading && (
           <p className="mt-3 text-[12px] text-slate-400">
-            Cliquez sur « Générer le rapport » pour une analyse IA des
-            échecs et avertissements des dernières 24 heures.
+            Cliquez sur « Actualiser » pour afficher le tableau des tâches en échec
+            des dernières 24 heures.
           </p>
         )}
       </CardContent>

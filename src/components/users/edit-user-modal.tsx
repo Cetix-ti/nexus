@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { X, UserCog, Upload, KeyRound, Save, Loader2, Mail, Link2, Copy, CheckCircle2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { X, UserCog, Upload, KeyRound, Save, Loader2, Mail, Link2, Copy, CheckCircle2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,6 +21,8 @@ export interface EditUserModalUser {
   /** "Actif" | "Inactif" — UI label. */
   status: string;
   phone?: string;
+  /** Data URL ou chemin vers l'avatar. Chargé au mount si absent. */
+  avatar?: string | null;
 }
 
 interface EditUserModalProps {
@@ -77,8 +79,66 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
   const [status, setStatus] = useState<"Actif" | "Inactif">(
     safeUser.status === "Inactif" ? "Inactif" : "Actif"
   );
+  // Avatar : optionnel sur le props (l'UI parente peut ne pas l'avoir
+  // chargé). On part de l'initial et on fetch l'avatar existant en
+  // background — l'endpoint de liste exclut le champ par défaut pour
+  // garder les payloads légers, donc sans ce fetch on démarre toujours
+  // à null et on effacerait l'avatar existant au PATCH.
+  const [avatar, setAvatar] = useState<string | null>(safeUser.avatar ?? null);
+  const [avatarDirty, setAvatarDirty] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (safeUser.avatar !== undefined) return; // déjà fourni par le parent
+    let cancelled = false;
+    fetch(
+      `/api/v1/users?includeAvatar=true&role=${encodeURIComponent(safeUser.role)}`,
+    )
+      .then((r) => (r.ok ? r.json() : []))
+      .then((arr: Array<{ id: string; avatar: string | null }>) => {
+        if (cancelled) return;
+        const hit = Array.isArray(arr) ? arr.find((u) => u.id === safeUser.id) : null;
+        if (hit && hit.avatar) setAvatar(hit.avatar);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [safeUser.id, safeUser.avatar, safeUser.role]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function onAvatarFileSelected(file: File) {
+    setAvatarError(null);
+    // Limite côté client : 2 Mo avant compression. L'API re-optimise en
+    // WebP 192px via optimizeAvatar, donc même une grosse image rentrera
+    // ensuite dans la contrainte serveur (max 700 KB data-URL).
+    if (file.size > 2 * 1024 * 1024) {
+      setAvatarError("Image trop lourde (max 2 Mo)");
+      return;
+    }
+    if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) {
+      setAvatarError("Format non supporté (PNG/JPG/WebP)");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUri = typeof reader.result === "string" ? reader.result : "";
+      if (!dataUri.startsWith("data:image/")) {
+        setAvatarError("Lecture de l'image impossible");
+        return;
+      }
+      setAvatar(dataUri);
+      setAvatarDirty(true);
+    };
+    reader.onerror = () => setAvatarError("Lecture de l'image impossible");
+    reader.readAsDataURL(file);
+  }
+
+  function clearAvatar() {
+    setAvatar(null);
+    setAvatarDirty(true);
+    setAvatarError(null);
+  }
 
   function handleClose() {
     if (submitting) return;
@@ -101,6 +161,9 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
           phone: phone.trim() || null,
           role,
           isActive: status === "Actif",
+          // On n'envoie avatar que s'il a été modifié — évite de renvoyer
+          // inutilement un gros data-URL à chaque submit.
+          ...(avatarDirty ? { avatar } : {}),
         }),
       });
       if (!res.ok) {
@@ -146,17 +209,59 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Avatar */}
           <div className="flex items-center gap-4">
-            <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-lg font-semibold shadow-sm ring-2 ring-white">
-              {initials(fullName)}
-            </div>
-            <div>
-              <Button type="button" variant="outline" size="sm" disabled>
-                <Upload className="h-4 w-4" />
-                Changer la photo
-              </Button>
+            {avatar ? (
+              <img
+                src={avatar}
+                alt={fullName}
+                className="h-16 w-16 rounded-full object-cover shadow-sm ring-2 ring-white"
+              />
+            ) : (
+              <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-lg font-semibold shadow-sm ring-2 ring-white">
+                {initials(fullName)}
+              </div>
+            )}
+            <div className="flex-1">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) onAvatarFileSelected(f);
+                  // Reset pour pouvoir re-sélectionner le même fichier si besoin.
+                  e.target.value = "";
+                }}
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="h-4 w-4" />
+                  {avatar ? "Changer la photo" : "Téléverser une photo"}
+                </Button>
+                {avatar && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearAvatar}
+                    className="text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Retirer
+                  </Button>
+                )}
+              </div>
               <p className="mt-1.5 text-[12px] text-slate-500">
-                PNG ou JPG, max. 2 Mo
+                PNG, JPG ou WebP — max. 2 Mo. Automatiquement optimisé en WebP 192 px.
               </p>
+              {avatarError && (
+                <p className="mt-1 text-[12px] text-red-600">{avatarError}</p>
+              )}
             </div>
           </div>
 

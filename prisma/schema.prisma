@@ -67,6 +67,7 @@ model Organization {
   projects       Project[]
   sharedResources SharedResource[] @relation("SharedWithOrg")
   calendarEvents  CalendarEvent[]
+  backupTicketTemplates BackupTicketTemplate[]
 
   @@map("organizations")
 }
@@ -1425,6 +1426,40 @@ enum VeeamJobStatus {
   FAILED
 }
 
+/// Templates de ticket générés depuis les alertes Veeam en échec. Ce sont
+/// des "pré-tickets" manipulables dans le Kanban /backups colonne 1 :
+/// l'utilisateur peut éditer leur titre. Quand il les déplace vers la
+/// colonne 2, ils sont convertis en vrais `Ticket` (liés à la bonne org,
+/// classés dans la catégorie configurée) et le template est supprimé.
+///
+/// Invariants :
+///   - Un seul template actif par organization à la fois (unique).
+///   - `refresh` remplace les templates existants sans toucher aux
+///     tickets déjà convertis (colonne 2).
+///   - `failedTasks` = liste distincte des `jobName` Veeam FAILED récents
+///     pour cette org, stockée en JSON pour éviter une table-enfant.
+model BackupTicketTemplate {
+  id              String   @id @default(cuid())
+  organizationId  String   @unique @map("organization_id")
+  /// Titre éditable par l'agent. Initialisé depuis settings.titlePattern.
+  subject         String
+  /// Liste des noms de jobs Veeam en échec (dédupliqués, ordonnés).
+  failedTasks     String[] @map("failed_tasks")
+  /// Date de l'alerte FAILED la plus récente incluse dans ce template.
+  latestAlertAt   DateTime @map("latest_alert_at")
+  /// Ids VeeamBackupAlert utilisés pour générer ce template — permet
+  /// de détecter si de nouvelles alertes ont paru depuis.
+  sourceAlertIds  String[] @map("source_alert_ids")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([latestAlertAt])
+  @@map("backup_ticket_templates")
+}
+
 // ===========================================================================
 // Expense Reports & Entries
 // ===========================================================================
@@ -1699,7 +1734,7 @@ model Notification {
 enum CalendarKind {
   RENEWALS      // Licences, SSL, abonnements
   LEAVE         // Congés, vacances, absences
-  GENERAL       // Agenda général : localisation agents, rencontres, perso
+  GENERAL       // Calendrier général (« Localisation ») : localisation agents, rencontres, perso
   CUSTOM        // Extensible
 }
 

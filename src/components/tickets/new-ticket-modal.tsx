@@ -24,6 +24,19 @@ interface ContactOption {
   name: string;
   email: string;
   isApprover?: boolean;
+  contactId?: string;
+}
+
+// Approbateur officiel d'une organisation (modèle OrgApprover). Distinct
+// d'un "Contact" — un approbateur est souvent aussi contact, mais peut
+// avoir des champs/métadonnées propres (rôle, scope, etc.). On fetch
+// cette liste à part pour l'organisation sélectionnée (pas besoin de
+// pré-charger les 20 premières orgs comme avant).
+interface ApproverOption {
+  id: string;
+  contactId: string | null;
+  name: string;
+  email: string;
 }
 
 // Queues are loaded dynamically from the API
@@ -32,9 +45,14 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
   const [organization, setOrganization] = useState<string>("");
   const [requester, setRequester] = useState<string>("");
   const [orgList, setOrgList] = useState<string[]>([]);
+  const [orgIdByName, setOrgIdByName] = useState<Record<string, string>>({});
   const [requestersByOrg, setRequestersByOrg] = useState<
     Record<string, ContactOption[]>
   >({});
+  // Approbateurs de l'organisation sélectionnée. Rechargés quand on
+  // change d'organisation — évite de pré-fetch 20+ orgs au démarrage.
+  const [orgApprovers, setOrgApprovers] = useState<ApproverOption[]>([]);
+  const [orgApproversLoading, setOrgApproversLoading] = useState(false);
   const [techniciansList, setTechniciansList] = useState<string[]>([]);
   const [techniciansLoading, setTechniciansLoading] = useState(false);
   const [queuesList, setQueuesList] = useState<{ id: string; name: string }[]>([]);
@@ -42,50 +60,42 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
 
   useEffect(() => {
     if (!open) return;
+    // Charge la liste des orgs + un index id/name pour retrouver l'id à
+    // partir du nom au moment du fetch approvers (car l'autocomplete
+    // travaille sur le nom).
     fetch("/api/v1/organizations")
       .then((r) => r.json())
-      .then((orgs: { name: string }[]) => {
+      .then((orgs: { id: string; name: string }[]) => {
         if (Array.isArray(orgs) && orgs.length > 0) {
           setOrgList(orgs.map((o) => o.name));
+          setOrgIdByName(
+            Object.fromEntries(orgs.map((o) => [o.name, o.id])),
+          );
         }
       })
       .catch(() => {});
-    // Fetch contacts and approvers in parallel, then merge
-    Promise.all([
-      fetch("/api/v1/contacts").then((r) => r.json()).catch(() => []),
-      fetch("/api/v1/organizations").then((r) => r.json()).catch(() => []),
-    ]).then(async ([contacts, orgs]) => {
-      if (!Array.isArray(contacts)) return;
-      // Fetch approvers for each org
-      const approverEmails = new Set<string>();
-      if (Array.isArray(orgs)) {
-        const approverFetches = orgs.slice(0, 20).map((org: any) =>
-          fetch(`/api/v1/approvers?organizationId=${org.id}`)
-            .then((r) => r.ok ? r.json() : [])
-            .catch(() => [])
-        );
-        const approverResults = await Promise.all(approverFetches);
-        for (const list of approverResults) {
-          if (Array.isArray(list)) {
-            for (const a of list) {
-              if (a.contactEmail) approverEmails.add(a.contactEmail.toLowerCase());
-            }
-          }
+
+    // Contacts : pour peupler le dropdown Demandeur. Plus besoin de
+    // matcher les approbateurs ici — ils sont fetch à part pour l'org
+    // sélectionnée (cf. second useEffect).
+    fetch("/api/v1/contacts")
+      .then((r) => r.json())
+      .then((contacts) => {
+        if (!Array.isArray(contacts)) return;
+        const map: Record<string, ContactOption[]> = {};
+        for (const c of contacts) {
+          const orgName = c.organization || c.organizationName;
+          if (!orgName) continue;
+          if (!map[orgName]) map[orgName] = [];
+          map[orgName].push({
+            name: `${c.firstName} ${c.lastName}`,
+            email: c.email,
+            contactId: c.id,
+          });
         }
-      }
-      const map: Record<string, ContactOption[]> = {};
-      for (const c of contacts) {
-        const orgName = c.organization || c.organizationName;
-        if (!orgName) continue;
-        if (!map[orgName]) map[orgName] = [];
-        map[orgName].push({
-          name: `${c.firstName} ${c.lastName}`,
-          email: c.email,
-          isApprover: approverEmails.has(c.email?.toLowerCase()),
-        });
-      }
-      if (Object.keys(map).length > 0) setRequestersByOrg(map);
-    }).catch(() => {});
+        if (Object.keys(map).length > 0) setRequestersByOrg(map);
+      })
+      .catch(() => {});
 
     // Fetch technicians
     setTechniciansLoading(true);
@@ -107,13 +117,68 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
       .catch(() => {})
       .finally(() => setQueuesLoading(false));
   }, [open]);
+
+  // Recharge les approbateurs quand l'organisation change. On fetch
+  // directement `/api/v1/approvers?organizationId=X` pour avoir la
+  // vraie liste (OrgApprover) — pas un match fuzzy entre contacts +
+  // approbateurs comme avant, qui ratait tout ce qui n'était pas dans
+  // les 20 premières orgs ou dont l'email ne matchait pas pile un
+  // Contact existant.
+  useEffect(() => {
+    if (!open) return;
+    const orgName = organization.trim();
+    if (!orgName) {
+      setOrgApprovers([]);
+      return;
+    }
+    const orgId = orgIdByName[orgName];
+    if (!orgId) {
+      setOrgApprovers([]);
+      return;
+    }
+    setOrgApproversLoading(true);
+    fetch(`/api/v1/approvers?organizationId=${orgId}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(
+        (arr: Array<{
+          id: string;
+          contactId: string | null;
+          contactName: string;
+          contactEmail: string;
+        }>) => {
+          if (!Array.isArray(arr)) { setOrgApprovers([]); return; }
+          setOrgApprovers(
+            arr.map((a) => ({
+              id: a.id,
+              contactId: a.contactId,
+              name: a.contactName,
+              email: a.contactEmail,
+            })),
+          );
+        },
+      )
+      .catch(() => setOrgApprovers([]))
+      .finally(() => setOrgApproversLoading(false));
+  }, [open, organization, orgIdByName]);
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState("incident");
   const [priority, setPriority] = useState("medium");
   const [category, setCategory] = useState("");
-  const [aiCategory, setAiCategory] = useState<{ category: string; confidence: string; reasoning: string } | null>(null);
+  const [aiCategory, setAiCategory] = useState<{
+    categoryLevel1: string;
+    categoryLevel2?: string;
+    categoryLevel3?: string;
+    category: string;
+    confidence: string;
+    reasoning: string;
+  } | null>(null);
   const [aiCategorizing, setAiCategorizing] = useState(false);
+  // Seed pour le CategoryCascade — incrémente le stamp pour déclencher
+  // l'application de la suggestion IA dans les 3 dropdowns.
+  const [catSeed, setCatSeed] = useState<{
+    l1: string; l2?: string; l3?: string; stamp: number;
+  } | null>(null);
   const [queue, setQueue] = useState("");
   const [assignee, setAssignee] = useState("");
   const [requireApproval, setRequireApproval] = useState(false);
@@ -140,12 +205,29 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
     if (!subject.trim()) return;
 
     try {
+      // AdvancedRichEditor fournit du HTML dans `description`. On envoie
+      // le HTML dans `descriptionHtml` (source de vérité pour le rendu
+      // riche + images inline) ET une version plain text dans
+      // `description` (fallback pour recherche, vues listes, et
+      // envois notifications texte).
+      const plainText = (description || "")
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/p>/gi, "\n\n")
+        .replace(/<[^>]+>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+
       const res = await fetch("/api/v1/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           subject,
-          description,
+          description: plainText,
+          descriptionHtml: description || null,
           organizationName: organization,
           requesterName: requester,
           type,
@@ -154,10 +236,19 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
           queue,
           assigneeName: assignee,
           requireApproval,
+          // On passe le vrai contactId de l'OrgApprover (pas une chaîne
+          // vide) pour que le serveur puisse créer une TicketApproval
+          // traçable côté client (jointure vers Contact possible plus
+          // tard). selectedApprovers contient les NOMS ; on les résout
+          // depuis la liste orgApprovers chargée pour l'org courante.
           approvers: requireApproval
             ? selectedApprovers.map((name) => {
-                const contact = requesters.find((r) => r.name === name);
-                return { name, email: contact?.email ?? "", contactId: "" };
+                const a = orgApprovers.find((x) => x.name === name);
+                return {
+                  name,
+                  email: a?.email ?? "",
+                  contactId: a?.contactId ?? "",
+                };
               })
             : undefined,
         }),
@@ -201,7 +292,10 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
   const requesters: ContactOption[] = organization
     ? requestersByOrg[organization] || []
     : [];
-  const availableApprovers = requesters.filter((r) => r.isApprover);
+  // Approbateurs = liste OrgApprover fetchée pour l'org sélectionnée.
+  // Plus fiable que l'ancienne heuristique "contact dont l'email est
+  // dans la liste d'approbateurs".
+  const availableApprovers = orgApprovers;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4 sm:p-6">
@@ -341,7 +435,18 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
                       if (res.ok) {
                         const data = await res.json();
                         setAiCategory(data);
-                        if (data.category) setCategory(data.category);
+                        // Déclenche le seed du CategoryCascade pour que
+                        // les 3 dropdowns se remplissent automatiquement
+                        // (level1/2/3) avec la suggestion IA.
+                        if (data.categoryLevel1) {
+                          setCatSeed({
+                            l1: data.categoryLevel1,
+                            l2: data.categoryLevel2 || undefined,
+                            l3: data.categoryLevel3 || undefined,
+                            stamp: Date.now(),
+                          });
+                          setCategory(data.category || data.categoryLevel1);
+                        }
                       }
                     } catch { /* ignore */ }
                     finally { setAiCategorizing(false); }
@@ -356,16 +461,24 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
                   Suggérer par IA
                 </button>
               </div>
-              {aiCategory && (
+              {aiCategory && aiCategory.categoryLevel1 && (
                 <div className="mb-2 rounded-lg bg-violet-50 border border-violet-200/60 px-3 py-2 text-[11.5px]">
-                  <span className="font-medium text-violet-700">{aiCategory.category}</span>
+                  <span className="font-medium text-violet-700">
+                    {[
+                      aiCategory.categoryLevel1,
+                      aiCategory.categoryLevel2,
+                      aiCategory.categoryLevel3,
+                    ]
+                      .filter(Boolean)
+                      .join(" › ")}
+                  </span>
                   <span className="text-violet-500 ml-2">({aiCategory.confidence})</span>
                   {aiCategory.reasoning && (
                     <p className="text-violet-500 mt-0.5">{aiCategory.reasoning}</p>
                   )}
                 </div>
               )}
-              <CategoryCascade value={category} onChange={setCategory} />
+              <CategoryCascade value={category} onChange={setCategory} seed={catSeed} />
             </div>
             <div>
               <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
@@ -455,9 +568,16 @@ export function NewTicketModal({ open, onClose }: NewTicketModalProps) {
                     approbateurs disponibles
                   </p>
                 )}
-                {organization && availableApprovers.length === 0 && (
+                {organization && orgApproversLoading && (
+                  <p className="text-[11.5px] text-slate-400 italic inline-flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Chargement des approbateurs…
+                  </p>
+                )}
+                {organization && !orgApproversLoading && availableApprovers.length === 0 && (
                   <p className="text-[11.5px] text-slate-400 italic">
-                    Aucun approbateur défini pour cette organisation
+                    Aucun approbateur défini pour cette organisation. Ajoutez-en
+                    un depuis la fiche de l&apos;organisation (onglet Contacts).
                   </p>
                 )}
                 {organization && availableApprovers.length > 0 && (
@@ -555,7 +675,24 @@ interface CatNode {
   children?: CatNode[];
 }
 
-function CategoryCascade({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function CategoryCascade({
+  value,
+  onChange,
+  seed,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  /** Quand défini, les 3 niveaux internes du cascade sont pré-remplis
+   *  à partir des noms fournis (insensible à la casse). Utilisé pour
+   *  appliquer une suggestion IA. L'effet ne se déclenche qu'au CHANGE
+   *  de `seed.stamp` — évite des loops si le parent re-render. */
+  seed?: {
+    l1: string;
+    l2?: string;
+    l3?: string;
+    stamp: number;
+  } | null;
+}) {
   const [categories, setCategories] = useState<CatNode[]>([]);
   const [level1, setLevel1] = useState("");
   const [level2, setLevel2] = useState("");
@@ -571,6 +708,48 @@ function CategoryCascade({ value, onChange }: { value: string; onChange: (v: str
       })
       .catch(() => {});
   }, []);
+
+  // Applique un seed (ex: suggestion IA) : résout chaque nom vers un id
+  // en descendant la hiérarchie. S'arrête au plus profond qui matche.
+  const lastSeedStamp = useRef<number | null>(null);
+  useEffect(() => {
+    if (!seed || categories.length === 0) return;
+    if (lastSeedStamp.current === seed.stamp) return;
+    lastSeedStamp.current = seed.stamp;
+
+    const norm = (s: string) => s.trim().toLowerCase();
+    const byNameAt = (parentId: string | null, name: string) =>
+      categories.find(
+        (c) => (c.parentId ?? null) === parentId && norm(c.name) === norm(name),
+      );
+
+    const cat1 = seed.l1 ? byNameAt(null, seed.l1) : undefined;
+    if (!cat1) return;
+    setLevel1(cat1.id);
+    if (seed.l2) {
+      const cat2 = byNameAt(cat1.id, seed.l2);
+      setLevel2(cat2?.id ?? "");
+      if (cat2 && seed.l3) {
+        const cat3 = byNameAt(cat2.id, seed.l3);
+        setLevel3(cat3?.id ?? "");
+        if (cat3) {
+          onChange(cat3.name);
+          return;
+        }
+      } else {
+        setLevel3("");
+      }
+      if (cat2) {
+        onChange(cat2.name);
+        return;
+      }
+    } else {
+      setLevel2("");
+      setLevel3("");
+    }
+    onChange(cat1.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed?.stamp, categories]);
 
   const roots = categories.filter((c) => !c.parentId);
   const level2Options = level1 ? categories.filter((c) => c.parentId === level1) : [];

@@ -45,19 +45,39 @@ async function cfFetch<T>(
 }
 
 /**
- * Test the API token by listing accounts the token can access.
+ * Test the API token — à la fois la validité formelle du token
+ * (/user/tokens/verify) ET les permissions (Zone:Read) en essayant
+ * de lister les zones. Sans ce deuxième check, un token qui marche
+ * seulement pour `tokens/verify` mais pas pour les zones
+ * (permissions insuffisantes) affichait trompeusement "valide".
  */
 export async function testCloudflareToken(): Promise<{
   ok: boolean;
   error?: string;
+  hasZoneAccess?: boolean;
 }> {
+  // 1. Token verify (vérifie que le token existe + n'est pas expiré)
   try {
     await cfFetch("/user/tokens/verify");
-    return { ok: true };
   } catch (err) {
     return {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
+    };
+  }
+  // 2. Zone access (vérifie la permission Zone:Read)
+  try {
+    await cfFetch<unknown>(`/zones?per_page=1`);
+    return { ok: true, hasZoneAccess: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Distingue erreur de permissions vs erreur réseau.
+    return {
+      ok: false,
+      hasZoneAccess: false,
+      error: msg.includes("1000")
+        ? "Token valide, mais il n'a pas la permission Zone:Read. Ajoute Zone:Read (et DNS:Edit) sur la zone cetix.ca dans le dashboard Cloudflare → My Profile → API Tokens."
+        : msg,
     };
   }
 }

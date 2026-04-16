@@ -279,7 +279,19 @@ if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
 
 // Detect if behind a reverse proxy (HTTPS terminated at proxy, HTTP to app)
 const isProduction = process.env.NODE_ENV === "production";
-const useSecureCookies = process.env.AUTH_URL?.startsWith("https://") ?? false;
+// Cookies : on force des cookies NON-sécurisés (pas de préfixe
+// `__Secure-`, pas de flag Secure). Motif :
+//   - L'AUTH_URL est https://nexus.cetix.ca (FQDN prod).
+//   - Les agents accèdent aussi au serveur directement par IP en HTTP
+//     depuis le LAN (http://192.168.200.41:3000 ou .42:3000). Avec
+//     `__Secure-*` + Secure=true, le navigateur REFUSE les cookies
+//     envoyés par une réponse HTTP → login impossible hors FQDN.
+//   - En interne sur LAN, pas de risque d'interception. En HTTPS (FQDN)
+//     la transport-layer reste chiffrée même sans flag Secure.
+// Si un jour on expose Nexus à Internet sans proxy HTTPS, repasser en
+// useSecureCookies=true (mais à ce moment-là, le LAN-HTTP ne sera plus
+// un use case).
+const useSecureCookies = false;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -289,31 +301,46 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     "dev-secret-please-change-in-production",
   session: { strategy: "jwt", maxAge: 24 * 60 * 60 },
   pages: { signIn: "/login", error: "/login" },
-  // Cookie config for reverse proxy: when proxy terminates SSL,
-  // the app runs on HTTP but browser sees HTTPS. We need to set
-  // secure cookies only when the public URL is HTTPS.
-  cookies: useSecureCookies
-    ? {
-        sessionToken: {
-          name: "__Secure-authjs.session-token",
-          options: {
-            httpOnly: true,
-            sameSite: "lax",
-            path: "/",
-            secure: true,
-          },
-        },
-        csrfToken: {
-          name: "__Host-authjs.csrf-token",
-          options: {
-            httpOnly: true,
-            sameSite: "lax",
-            path: "/",
-            secure: true,
-          },
-        },
-      }
-    : undefined,
+  // Cookie config — on override EXPLICITEMENT les noms + flags pour
+  // retirer le préfixe `__Secure-` et le flag Secure=true. Sinon
+  // NextAuth v5 auto-détecte depuis AUTH_URL et, comme AUTH_URL est
+  // HTTPS, forçait des cookies sécurisés partout → login impossible
+  // en LAN via http://192.168.200.xx:3000.
+  //
+  // Avec cette config, un seul nom de cookie (`authjs.session-token`)
+  // sans flag Secure :
+  //   - fonctionne sur HTTP (IP directe en LAN)
+  //   - fonctionne sur HTTPS (FQDN nexus.cetix.ca) — le transport reste
+  //     chiffré par le reverse proxy, la bande passante interne reste
+  //     en clair (acceptable sur un LAN MSP)
+  cookies: {
+    sessionToken: {
+      name: "authjs.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: false,
+      },
+    },
+    csrfToken: {
+      name: "authjs.csrf-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: false,
+      },
+    },
+    callbackUrl: {
+      name: "authjs.callback-url",
+      options: {
+        sameSite: "lax",
+        path: "/",
+        secure: false,
+      },
+    },
+  },
   providers,
   callbacks: {
     async signIn({ user, account, profile }) {

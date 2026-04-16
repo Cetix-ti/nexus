@@ -299,11 +299,48 @@ async function applyDecodedToNexus(args: {
     ? ev.end.dateTime
     : ev.end.dateTime + "Z";
   const startsAt = new Date(startIso);
-  const endsAt = new Date(endIso);
+  let endsAt = new Date(endIso);
+
+  // Outlook encode les events all-day avec une fin EXCLUSIVE : un event
+  // "journée entière" du 15 avril a start=2026-04-15T00:00 et
+  // end=2026-04-16T00:00. Nexus affiche alors le 16 avril comme "fin" et
+  // l'event tuile s'étale sur 2 jours dans le grid. On normalise à
+  // l'import : fin = veille à 23:59:59.999 (fin INCLUSIVE, convention
+  // Nexus). Fait uniquement si la fin est pile à minuit ET qu'elle est
+  // strictement après le start — signal qu'on est bien sur le pattern
+  // Outlook "exclusive end".
+  if (ev.isAllDay && endsAt.getTime() > startsAt.getTime()) {
+    const h = endsAt.getUTCHours();
+    const m = endsAt.getUTCMinutes();
+    const s = endsAt.getUTCSeconds();
+    const ms = endsAt.getUTCMilliseconds();
+    const isMidnight = h === 0 && m === 0 && s === 0 && ms === 0;
+    if (isMidnight) {
+      endsAt = new Date(endsAt.getTime() - 1); // 23:59:59.999 du jour précédent
+    }
+  }
+
+  // Match partiel : decoded.ok=true mais certaines initiales agent étaient
+  // inconnues. On garde syncStatus=OK mais on note l'info en syncError
+  // pour que l'admin UI puisse afficher un avertissement discret.
+  const partialAgentsNote =
+    decoded.ok &&
+    decoded.unknownAgentTokens &&
+    decoded.unknownAgentTokens.length > 0
+      ? `Partiel : initiales inconnues ignorées → ${decoded.unknownAgentTokens.join(", ")}`
+      : null;
+
+  // Description : Graph fournit `ev.body.content` en HTML (ou texte brut).
+  // On stocke le HTML tel quel côté Nexus — le drawer d'event l'affiche
+  // via `renderDescription`. Si Outlook n'a pas de corps, on garde null
+  // (plutôt que chaîne vide) pour pouvoir distinguer "pas de description"
+  // de "description effacée manuellement".
+  const bodyContent = ev.body?.content?.trim() || null;
 
   const data = {
     calendarId: args.nexusCalendarId,
     title: rawTitle,
+    description: bodyContent,
     kind: "WORK_LOCATION" as const,
     startsAt,
     endsAt,
@@ -315,7 +352,7 @@ async function applyDecodedToNexus(args: {
     outlookCalendarId: "Localisation",
     rawTitle,
     syncStatus: decoded.ok ? "OK" : "UNDECODED",
-    syncError: decoded.ok ? null : decoded.message,
+    syncError: decoded.ok ? partialAgentsNote : decoded.message,
     lastSyncedAt: new Date(),
     status: "active",
   };
@@ -385,9 +422,18 @@ export async function pushEventToOutlook(
         eventId: event.outlookEventId,
         payload,
       });
+      // Anti-boucle : on stocke `lastSyncedAt` >= `lastModifiedDateTime`
+      // que Graph vient de retourner. Le prochain pull comparera
+      // `evModified (Graph) > lastSyncedAt (Nexus)` et sautera cet event
+      // (ne re-déclenche PAS un re-decode qui écraserait nos agents).
+      // Fallback +2s si Graph ne renvoie pas lastModifiedDateTime (on
+      // veut juste une borne > new Date() pour couvrir le skew Graph).
+      const anchor = res.lastModifiedDateTime
+        ? new Date(res.lastModifiedDateTime)
+        : new Date(Date.now() + 2000);
       await prisma.calendarEvent.update({
         where: { id: event.id },
-        data: { lastSyncedAt: new Date(), syncStatus: "OK", syncError: null },
+        data: { lastSyncedAt: anchor, syncStatus: "OK", syncError: null },
       });
       return { ok: true, outlookEventId: res.id };
     } else {
@@ -396,12 +442,15 @@ export async function pushEventToOutlook(
         calendarId,
         payload,
       });
+      const anchor = created.lastModifiedDateTime
+        ? new Date(created.lastModifiedDateTime)
+        : new Date(Date.now() + 2000);
       await prisma.calendarEvent.update({
         where: { id: event.id },
         data: {
           outlookEventId: created.id,
           outlookCalendarId: cfg.calendarName,
-          lastSyncedAt: new Date(),
+          lastSyncedAt: anchor,
           syncStatus: "OK",
           syncError: null,
         },

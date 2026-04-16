@@ -898,10 +898,23 @@ MÉMOIRE PERSISTANTE:
 // Category suggestion with feedback loop
 // ---------------------------------------------------------------------------
 
+export interface CategorySuggestion {
+  /** Niveau 1 obligatoire. Catégorie racine. */
+  categoryLevel1: string;
+  /** Niveau 2 : sous-catégorie sous level1. Vide si non applicable. */
+  categoryLevel2?: string;
+  /** Niveau 3 : item sous level2. Vide si non applicable. */
+  categoryLevel3?: string;
+  /** Nom de la catégorie la plus PROFONDE choisie. Dérivé des 3 levels. */
+  category: string;
+  confidence: "high" | "medium" | "low";
+  reasoning: string;
+}
+
 export async function suggestCategory(
   subject: string,
   description: string,
-): Promise<{ category: string; confidence: string; reasoning: string }> {
+): Promise<CategorySuggestion> {
   const [categories, feedback] = await Promise.all([
     getCategoriesList(),
     getRecentFeedback(),
@@ -916,12 +929,24 @@ export async function suggestCategory(
       role: "system",
       content: `Tu es un assistant de catégorisation de tickets pour un MSP.
 
-Catégories disponibles:
+Catégories disponibles (format hiérarchique "Niveau1 > Niveau2 > Niveau3") :
 ${categories}
 ${feedbackSection}
 
-Retourne UNIQUEMENT du JSON valide (sans markdown, sans backticks):
-{"category": "Nom exact de la catégorie", "confidence": "high|medium|low", "reasoning": "Explication courte en français"}`,
+Règles :
+1. Choisis la catégorie la PLUS PROFONDE applicable (niveau 3 > niveau 2 > niveau 1).
+2. Si aucune sous-catégorie ne matche, reste à un niveau supérieur (level2 seul ou level1 seul).
+3. N'invente PAS de catégorie qui n'est pas dans la liste.
+4. Les noms retournés doivent être EXACTS (casse, accents, espaces).
+
+Retourne UNIQUEMENT du JSON valide (sans markdown, sans backticks) :
+{
+  "categoryLevel1": "Nom exact du niveau 1",
+  "categoryLevel2": "Nom exact du niveau 2 (ou chaîne vide si N/A)",
+  "categoryLevel3": "Nom exact du niveau 3 (ou chaîne vide si N/A)",
+  "confidence": "high|medium|low",
+  "reasoning": "Explication courte en français (1 phrase)"
+}`,
     },
     {
       role: "user",
@@ -931,9 +956,34 @@ Retourne UNIQUEMENT du JSON valide (sans markdown, sans backticks):
 
   const response = await chatCompletion(messages, { temperature: 0.1 });
   try {
-    return JSON.parse(response);
+    const parsed = JSON.parse(response) as Partial<CategorySuggestion> & {
+      // Back-compat : l'ancien prompt renvoyait `category` seul. Si un
+      // appelant externe garde l'ancien shape, on le traite aussi.
+      category?: string;
+    };
+    const l1 = (parsed.categoryLevel1 || "").trim();
+    const l2 = (parsed.categoryLevel2 || "").trim();
+    const l3 = (parsed.categoryLevel3 || "").trim();
+    // La "category" effective = la plus profonde non-vide. Utilisée
+    // par le feedback loop + le code legacy qui ne connaît qu'un
+    // niveau. Fallback vers le vieux champ `category` si présent (vieux
+    // modèle qui aurait renvoyé que `category`).
+    const effective = l3 || l2 || l1 || parsed.category || "";
+    return {
+      categoryLevel1: l1 || parsed.category || "",
+      categoryLevel2: l2 || undefined,
+      categoryLevel3: l3 || undefined,
+      category: effective,
+      confidence: (parsed.confidence as CategorySuggestion["confidence"]) || "low",
+      reasoning: parsed.reasoning || "",
+    };
   } catch {
-    return { category: "", confidence: "low", reasoning: response };
+    return {
+      categoryLevel1: "",
+      category: "",
+      confidence: "low",
+      reasoning: response,
+    };
   }
 }
 
@@ -956,4 +1006,154 @@ export async function saveCategoryFeedback(
       wasCorrect: suggestedCategory === confirmedCategory,
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Audit IA des catégories existantes
+// ---------------------------------------------------------------------------
+
+export interface CategoryAuditSuggestion {
+  /** "add" → nouvelle catégorie à créer. "rehome" → déplacer. "rename" → renommer. */
+  kind: "add" | "rehome" | "rename";
+  /** Chemin actuel (pour rehome/rename) ou chemin proposé (pour add). */
+  path: string;
+  /** Si kind=rehome ou rename : chemin proposé. */
+  proposedPath?: string;
+  /** Explication courte en français. */
+  reason: string;
+}
+
+export interface CategoryAuditReport {
+  summary: string;
+  suggestions: CategoryAuditSuggestion[];
+  generatedAt: string;
+}
+
+/**
+ * Demande à l'IA d'auditer la hiérarchie actuelle de catégories.
+ *
+ * On lui fournit :
+ *   1. La hiérarchie complète avec compteur de tickets par nœud
+ *   2. Un échantillon de tickets récents (subject + categoryName)
+ *   3. Les feedback de catégorisation récents (suggestion vs
+ *      confirmation) — permet de détecter les désaccords systématiques
+ *      qui signalent un trou dans la taxonomie
+ *
+ * Retourne un rapport structuré : liste de suggestions d'ajout /
+ * rehoming / renommage. L'utilisateur applique manuellement (on ne
+ * mute PAS la DB automatiquement — trop risqué pour l'arborescence).
+ */
+export async function auditCategoryTaxonomy(): Promise<CategoryAuditReport> {
+  // 1. Hiérarchie complète avec compteurs
+  const cats = await prisma.category.findMany({
+    where: { isActive: true },
+    select: {
+      id: true,
+      name: true,
+      parentId: true,
+      _count: { select: { tickets: true } },
+    },
+    orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }],
+  });
+  const byId = new Map(cats.map((c) => [c.id, c]));
+  function fullPath(c: (typeof cats)[number]): string {
+    const chain: string[] = [c.name];
+    let cursor = c.parentId ? byId.get(c.parentId) : undefined;
+    while (cursor) {
+      chain.unshift(cursor.name);
+      cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
+    }
+    return chain.join(" > ");
+  }
+  const hierarchyText = cats
+    .map((c) => `- ${fullPath(c)} (${(c._count as { tickets: number }).tickets} tickets)`)
+    .join("\n");
+
+  // 2. Échantillon de tickets récents (pour voir les patterns réels)
+  const recent = await prisma.ticket.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 60,
+    select: {
+      subject: true,
+      category: { select: { name: true } },
+    },
+  });
+  const ticketsText = recent
+    .map((t) => `- "${t.subject.slice(0, 80)}" → ${t.category?.name ?? "(sans catégorie)"}`)
+    .join("\n");
+
+  // 3. Feedbacks récents (désaccords)
+  const feedback = await prisma.aiCategoryFeedback.findMany({
+    where: { wasCorrect: false },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+    select: { subject: true, suggestedCategory: true, confirmedCategory: true },
+  });
+  const feedbackText = feedback.length > 0
+    ? feedback
+        .map(
+          (f) =>
+            `- "${f.subject.slice(0, 60)}" : IA voulait "${f.suggestedCategory}", agent a choisi "${f.confirmedCategory}"`,
+        )
+        .join("\n")
+    : "(aucun désaccord récent)";
+
+  const messages: ChatMessage[] = [
+    {
+      role: "system",
+      content: `Tu es un consultant en architecture de support IT pour un MSP.
+Analyse la taxonomie actuelle des catégories de tickets et propose des
+améliorations concrètes. Concentre-toi sur :
+  - catégories MANQUANTES (issues fréquentes sans nœud dédié)
+  - catégories MAL HIÉRARCHISÉES (ex: "Réseau" devrait être sous
+    "Infrastructure" plutôt qu'à la racine)
+  - catégories à RENOMMER pour clarté
+
+IMPORTANT :
+  - Reste pragmatique. Ne propose pas plus de 8 suggestions.
+  - Ne duplique PAS une catégorie qui existe déjà sous un autre chemin.
+  - Si tout est déjà bien organisé, renvoie une liste vide + un
+    summary positif.
+
+Retourne UNIQUEMENT du JSON valide (sans markdown) :
+{
+  "summary": "Résumé en 1-2 phrases de l'état général",
+  "suggestions": [
+    {
+      "kind": "add" | "rehome" | "rename",
+      "path": "Chemin actuel OU chemin proposé si kind=add",
+      "proposedPath": "Chemin proposé (uniquement pour rehome/rename)",
+      "reason": "Explication courte en français"
+    }
+  ]
+}`,
+    },
+    {
+      role: "user",
+      content: `Hiérarchie actuelle (${cats.length} catégories) :
+${hierarchyText}
+
+Échantillon de 60 tickets récents et leur catégorie :
+${ticketsText}
+
+Désaccords récents IA vs agent (catégorisations corrigées) :
+${feedbackText}`,
+    },
+  ];
+
+  const response = await chatCompletion(messages, { temperature: 0.3 });
+  try {
+    const parsed = JSON.parse(response) as Omit<CategoryAuditReport, "generatedAt">;
+    return {
+      summary: parsed.summary || "",
+      suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+      generatedAt: new Date().toISOString(),
+    };
+  } catch {
+    return {
+      summary: "Impossible de parser la réponse IA.",
+      suggestions: [],
+      generatedAt: new Date().toISOString(),
+    };
+  }
 }

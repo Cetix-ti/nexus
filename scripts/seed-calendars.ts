@@ -25,12 +25,18 @@ const DEFAULTS = [
     kind: "LEAVE" as const,
     color: "#8B5CF6", // violet
   },
+  // Le GENERAL par défaut est "Localisation" — synchronisé bidir avec
+  // le calendrier partagé Outlook du même nom. C'est le calendrier
+  // principal où les techs saisissent où ils sont (client, bureau,
+  // télétravail). Si la synchro Outlook n'a jamais tourné, on le crée
+  // quand même ici pour que les modales de création d'event aient un
+  // calendrier GENERAL par défaut. L'ancien « Agenda général » a été
+  // retiré (cf. scripts/remove-agenda-general.ts).
   {
-    name: "Agenda général",
-    description:
-      "Où travaillent les techs (client, bureau, télétravail), rencontres internes, événements perso, indisponibilités.",
+    name: "Localisation",
+    description: "Localisation des agents (synchronisé avec Outlook).",
     kind: "GENERAL" as const,
-    color: "#3B82F6", // blue
+    color: "#0EA5E9", // sky — cohérent avec location-sync.ts
   },
 ];
 

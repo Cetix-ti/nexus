@@ -38,11 +38,21 @@ export function parseForwardedSender(
   subject: string,
   rawBody: string,
   fallbackSender: { email: string; name: string },
+  options?: {
+    /**
+     * Si true, on tente l'extraction de l'expéditeur original MÊME si le
+     * sujet n'a pas de préfixe Fw/Tr. Utile quand l'email vient de notre
+     * propre boîte partagée (billets@cetix.ca) — c'est forcément un
+     * transfert d'un agent, même si Outlook a "nettoyé" le préfixe.
+     */
+    forceBodyScan?: boolean;
+  },
 ): ForwardedInfo {
   const subj = (subject || "").trim();
   // Les préfixes de transfert (Outlook FR/EN, Apple Mail, etc.).
   const fwdSubjectRe = /^(?:fw|fwd|tr|rv|transfert|transféré|wg)\s*:/i;
-  if (!fwdSubjectRe.test(subj)) {
+  const hasForwardPrefix = fwdSubjectRe.test(subj);
+  if (!hasForwardPrefix && !options?.forceBodyScan) {
     return { isForward: false };
   }
 

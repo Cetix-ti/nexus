@@ -333,9 +333,18 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
       orderBy: { createdAt: "desc" },
       select: { createdAt: true },
     });
+    // Anti-cold-start-backlog :
+    //   - Steady state : on relit 1h en arrière pour couvrir les emails
+    //     arrivés entre 2 ticks.
+    //   - Premier run (aucun ticket EMAIL dans la DB) : on limite à 24h.
+    //     Une fenêtre plus large (7j) générait des batches de 200+ mails
+    //     à l'init, qui tenaient le job occupé pendant 2-3 min et
+    //     retardaient tout le reste → l'utilisateur voit "les tickets
+    //     arrivent en retard de 1-2h". Avec 24h on couvre un weekend
+    //     long sans créer un gros blocage.
     const since = lastTicket
-      ? new Date(lastTicket.createdAt.getTime() - 60 * 60 * 1000) // 1h overlap
-      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // first run: 7 days
+      ? new Date(lastTicket.createdAt.getTime() - 60 * 60 * 1000)
+      : new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // Fetch unread messages (or all recent if markAsRead is false)
     const filterParts = [`receivedDateTime ge ${since.toISOString()}`];
@@ -467,10 +476,25 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
           }
 
           // --- Nouveau ticket : détection forward pour le demandeur --------
-          const forward = parseForwardedSender(rawSubject, forwardText, {
-            email: senderEmail,
-            name: senderName,
-          });
+          // Quand le sender appartient au domaine interne (ex: billets@
+          // cetix.ca ou bruno.robert@cetix.ca écrivant à billets@), c'est
+          // presque toujours un transfert par un agent. Outlook peut avoir
+          // stripé le préfixe "Tr :" si l'agent a juste répondu-tout-en-
+          // annotant. On force le scan du body pour chercher l'expéditeur
+          // original — évite que le ticket soit classé sur Cetix (interne)
+          // alors qu'un client l'a émis à l'origine.
+          const internalDomain = cfg.mailbox.split("@")[1]?.toLowerCase() || "";
+          const senderIsInternalDomain =
+            !!internalDomain &&
+            senderEmail.toLowerCase().endsWith(`@${internalDomain}`);
+          const senderIsSharedMailbox =
+            senderEmail.toLowerCase() === cfg.mailbox.toLowerCase();
+          const forward = parseForwardedSender(
+            rawSubject,
+            forwardText,
+            { email: senderEmail, name: senderName },
+            { forceBodyScan: senderIsInternalDomain },
+          );
           const actualEmail = forward.originalSenderEmail ?? senderEmail;
           const actualName = forward.originalSenderName ?? senderName;
 
@@ -535,8 +559,29 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
             const forwarderDomain = senderEmail.split("@")[1] || "";
             org = domainMap.get(forwarderDomain);
           }
+          // Dernier fallback : si aucune org n'a pu être matchée (domaine
+          // inconnu, pas de forward détecté, pas de [CODE] dans le sujet),
+          // on assigne à la PREMIÈRE org active. Avant : on skip → l'email
+          // est silencieusement ignoré → le user ne voit jamais son ticket.
+          // C'est le bug qui cause "test bruno nexus #3" de hotmail.ca à
+          // disparaître. Mieux vaut créer un ticket mal classé (que l'admin
+          // peut réassigner) que de le perdre entièrement.
+          if (!org) {
+            const fallback = await prisma.organization.findFirst({
+              where: { isActive: true },
+              orderBy: { isInternal: "asc" }, // prend un client d'abord, interne en dernier
+              select: { id: true, name: true },
+            });
+            if (fallback) {
+              org = { id: fallback.id, name: fallback.name };
+              console.warn(
+                `[email-to-ticket] aucune org pour <${senderEmail}> — fallback sur "${fallback.name}" (à réassigner)`,
+              );
+            }
+          }
           if (!org) {
             skipped++;
+            errors.push(`Aucune org disponible pour <${senderEmail}>`);
             continue;
           }
 
@@ -559,10 +604,44 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
             continue;
           }
 
-          // Clé: on stocke l'HTML SANITIZÉ dans descriptionHtml (le full
-          // fil Outlook est conservé), et un plain extrait pour la recherche
-          // et le fallback. isInternal propagé depuis l'org pour que les
-          // tickets Cetix atterrissent dans /internal-tickets.
+          // Classification interne vs client :
+          //
+          // Principe : billets@cetix.ca est une mailbox CLIENT-facing.
+          // Tout email qui y arrive devrait devenir un ticket client par
+          // défaut. L'exception : les emails de sources monitoring
+          // connues (alertes@, zabbix, atera, etc.) qui sont
+          // légitimement internes.
+          //
+          // Avant : la règle était trop restrictive (senderIsSharedMailbox
+          // only + requiert originalSenderEmail extrait). Résultat : un
+          // agent qui forward depuis bruno@cetix.ca, ou un email entrant
+          // depuis alertes@cetix.ca, était classé en Cetix/internal. Les
+          // forwards dont Outlook avait nettoyé les marqueurs se
+          // perdaient aussi.
+          //
+          // Nouvelle règle : on regarde si le sender est une source
+          // monitoring. Si oui → interne. Sinon → client (isInternal=false)
+          // dès qu'on retombe sur l'org interne (c'est clairement un
+          // ticket reçu par billets@ et pas un ticket d'admin Cetix).
+          let isMonitoringSource = false;
+          if (orgRow?.isInternal) {
+            const senderLower = senderEmail.toLowerCase();
+            const sources = await prisma.monitoringAlertSource.findMany({
+              where: { isActive: true },
+              select: { emailOrPattern: true },
+            });
+            isMonitoringSource = sources.some((s) => {
+              const pattern = s.emailOrPattern.toLowerCase();
+              if (pattern.startsWith("@")) {
+                return senderLower.endsWith(pattern);
+              }
+              return senderLower === pattern || senderLower.includes(pattern);
+            });
+          }
+          const effectiveIsInternal = orgRow?.isInternal
+            ? isMonitoringSource
+            : false;
+
           await prisma.ticket.create({
             data: {
               organizationId: org.id,
@@ -577,7 +656,7 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
               source: "EMAIL",
               externalSource: "email",
               externalId: messageId,
-              isInternal: !!orgRow?.isInternal,
+              isInternal: effectiveIsInternal,
             },
           });
           created++;

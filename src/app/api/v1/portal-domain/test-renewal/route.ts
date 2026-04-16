@@ -8,6 +8,12 @@ import {
 import { ROOT_DOMAIN } from "@/lib/portal-domain/types";
 import { renewCertificate } from "@/lib/portal-domain/certbot";
 
+// Cert renewal peut prendre jusqu'à ~3 min (propagation DNS-01 + ACME).
+// Augmenter le maxDuration au-delà du défaut Next évite que la fonction
+// soit tuée avant la fin et renvoie une réponse vide côté client.
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+
 /**
  * POST /api/v1/portal-domain/test-renewal
  * Body: { dryRun?: boolean }  (default: true)

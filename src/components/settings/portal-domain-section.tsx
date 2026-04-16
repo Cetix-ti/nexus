@@ -118,18 +118,27 @@ export function PortalDomainSection() {
   async function loadAll() {
     setLoading(true);
     try {
+      async function safeJson<T>(url: string): Promise<T | null> {
+        try {
+          const r = await fetch(url);
+          const raw = await r.text();
+          return raw ? (JSON.parse(raw) as T) : null;
+        } catch {
+          return null;
+        }
+      }
       const [c, s] = await Promise.all([
-        fetch("/api/v1/portal-domain").then((r) => r.json()),
-        fetch("/api/v1/portal-domain/cert-status").then((r) => r.json()),
+        safeJson<{ success?: boolean; data?: any }>("/api/v1/portal-domain"),
+        safeJson<{ success?: boolean; data?: any }>("/api/v1/portal-domain/cert-status"),
       ]);
-      if (c.success) {
+      if (c?.success) {
         setConfig(c.data);
         setSubdomain(c.data.subdomain);
         setAcmeEmail(c.data.acmeEmail || "");
         setForceHttps(c.data.forceHttps);
         setAutoRenew(c.data.autoRenewEnabled);
       }
-      if (s.success) {
+      if (s?.success) {
         setCertStatus(s.data.certificate);
         setAvailability(s.data.availability);
       }
@@ -173,8 +182,23 @@ export function PortalDomainSection() {
     setCfTest(null);
     try {
       const res = await fetch("/api/v1/portal-domain/test-cloudflare");
-      const json = await res.json();
-      setCfTest(json.data);
+      const raw = await res.text();
+      let json: { data?: Record<string, unknown> } | null = null;
+      try {
+        json = raw ? JSON.parse(raw) : null;
+      } catch {
+        /* body non-JSON — le proxy a peut-être coupé */
+      }
+      if (!json) {
+        setCfTest({
+          tokenValid: false,
+          tokenError: `HTTP ${res.status} — réponse vide. Vérifie les logs serveur.`,
+          zoneFound: false,
+          dnsConfigured: false,
+        });
+        return;
+      }
+      setCfTest(json.data ?? null);
     } finally {
       setTestingCf(false);
     }
@@ -190,13 +214,36 @@ export function PortalDomainSection() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dryRun }),
       });
-      const json = await res.json();
-      setRenewalSuccess(json.success);
+      // Lire le body d'abord en texte — ça nous permet de tolérer un
+      // body vide (ex: nginx a tué la requête après un timeout en amont
+      // du handler qui fait tourner certbot longtemps) et de donner un
+      // message clair au lieu du cryptique "Unexpected end of JSON input".
+      const raw = await res.text();
+      let json: {
+        success?: boolean;
+        error?: string;
+        data?: { output?: string; error?: string };
+      } | null = null;
+      try {
+        json = raw ? JSON.parse(raw) : null;
+      } catch {
+        /* body non-JSON */
+      }
+      if (!json) {
+        setRenewalSuccess(false);
+        setRenewalOutput(
+          res.status === 504 || !res.ok
+            ? `HTTP ${res.status} — Timeout ou proxy a coupé la requête avant la fin de certbot. L'opération peut avoir réussi côté serveur — rafraîchis le statut du certificat dans quelques minutes, ou lance la commande certbot manuellement sur le serveur.`
+            : "Le serveur a renvoyé une réponse vide. Vérifie les logs systemd (journalctl -u nexus -n 50).",
+        );
+        return;
+      }
+      setRenewalSuccess(!!json.success);
       setRenewalOutput(
         json.data?.output ||
           json.data?.error ||
           json.error ||
-          "Aucune sortie"
+          "Aucune sortie",
       );
       // Refresh cert status after a real renewal
       if (!dryRun && json.success) {

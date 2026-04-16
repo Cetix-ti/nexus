@@ -32,6 +32,11 @@ type Job = {
 const jobs = new Map<string, Job>();
 let started = false;
 
+// Dernier motif d'erreur du sync email. Sert à dédupliquer les logs
+// quand la même erreur se répète à chaque tick (30s) — sinon 4h de
+// "AZURE_* requis" pollueraient les journaux.
+let _emailSyncLastErrorKey: string | null = null;
+
 function scheduleJob(job: Job) {
   jobs.set(job.name, job);
 
@@ -106,6 +111,24 @@ export function startBackgroundJobs() {
         console.log(
           `[email-to-ticket] +${result.created} ticket(s) depuis ${result.fetched} email(s)`,
         );
+      }
+      // Rend les erreurs VISIBLES. Avant : result.errors pouvait
+      // contenir "AZURE_* requis" depuis 4h sans aucun log → le user
+      // voyait « les tickets n'arrivent plus » sans indice côté ops.
+      // Maintenant, dès qu'une erreur apparaît, elle est loguée en
+      // warning. Si la même erreur se répète à chaque tick, on évite
+      // le spam en ne loguant qu'une fois jusqu'au prochain succès.
+      if (result.errors && result.errors.length > 0) {
+        const key = result.errors.join("||");
+        if (!_emailSyncLastErrorKey || _emailSyncLastErrorKey !== key) {
+          console.warn(
+            `[email-to-ticket] erreur(s) : ${result.errors.slice(0, 3).join(" | ")}`,
+          );
+          _emailSyncLastErrorKey = key;
+        }
+      } else if (_emailSyncLastErrorKey) {
+        console.log("[email-to-ticket] erreurs précédentes résolues");
+        _emailSyncLastErrorKey = null;
       }
     },
   });

@@ -289,7 +289,10 @@ export async function getTicket(id: string): Promise<UiTicket | null> {
 export async function createTicket(input: {
   organizationId: string;
   subject: string;
+  /** Texte plain — fallback pour la recherche et les vues sans HTML. */
   description: string;
+  /** HTML riche (TipTap, email entrant) — source de vérité pour l'affichage. */
+  descriptionHtml?: string | null;
   status?: string;
   priority?: string;
   urgency?: string;
@@ -310,6 +313,7 @@ export async function createTicket(input: {
       organizationId: input.organizationId,
       subject: input.subject,
       description: input.description,
+      descriptionHtml: input.descriptionHtml ?? null,
       status: (input.status?.toUpperCase() || "NEW") as any,
       priority: (input.priority?.toUpperCase() || "MEDIUM") as any,
       urgency: (input.urgency?.toUpperCase() || "MEDIUM") as any,
@@ -329,6 +333,17 @@ export async function createTicket(input: {
 
   // Auto-calculate SLA due date for the new ticket
   enforceSlaForTicket(t.id).catch(() => {});
+
+  // Auto-catégorisation IA (fire-and-forget) — si aucun categoryId
+  // n'a été fourni ET qu'on a un subject. Seuls les tickets non
+  // classés sont concernés : si le créateur a pris la peine de choisir
+  // une catégorie, on respecte son choix. Idempotent : le helper
+  // revérifie categoryId avant d'écrire pour éviter les races.
+  if (!t.categoryId && t.subject?.trim()) {
+    import("@/lib/ai/auto-categorize")
+      .then((m) => m.autoCategorizeTicketAsync(t.id))
+      .catch(() => {});
+  }
 
   // Notify the assignee by email (fire-and-forget)
   if (t.assigneeId) {
@@ -362,6 +377,7 @@ export async function updateTicket(
   patch: Partial<{
     subject: string;
     description: string;
+    descriptionHtml: string | null;
     status: string;
     priority: string;
     urgency: string;
@@ -395,6 +411,7 @@ export async function updateTicket(
 
   if (patch.subject !== undefined) data.subject = patch.subject;
   if (patch.description !== undefined) data.description = patch.description;
+  if (patch.descriptionHtml !== undefined) data.descriptionHtml = patch.descriptionHtml;
   if (patch.status !== undefined) data.status = patch.status.toUpperCase() as any;
   if (patch.priority !== undefined) data.priority = patch.priority.toUpperCase() as any;
   if (patch.urgency !== undefined) data.urgency = patch.urgency.toUpperCase() as any;
