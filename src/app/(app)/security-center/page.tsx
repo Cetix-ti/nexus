@@ -28,6 +28,8 @@ import {
   Shield,
   Bug,
   Zap,
+  Maximize2,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -393,20 +395,31 @@ function IncidentTable({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    {i.ticketId ? (
+                    <div className="flex items-center justify-end gap-1.5">
+                      {/* Lien vers la page détaillée — UX plus confortable
+                          pour examiner un incident que l'expand inline. */}
                       <Link
-                        href={`/tickets/${i.ticketId}`}
-                        className="inline-flex items-center gap-1 text-[12px] text-blue-600 hover:text-blue-700"
+                        href={`/security-center/incidents/${i.id}`}
+                        className="inline-flex items-center gap-1 h-7 px-2 rounded text-[11.5px] text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                        title="Ouvrir la fiche détaillée"
                       >
-                        <Ticket className="h-3 w-3" />
-                        Voir le ticket
+                        <Maximize2 className="h-3 w-3" />
                       </Link>
-                    ) : (
-                      <Button size="sm" variant="primary" onClick={() => onConvert(i.id)}>
-                        <Ticket className="h-3 w-3" />
-                        Créer un ticket
-                      </Button>
-                    )}
+                      {i.ticketId ? (
+                        <Link
+                          href={`/tickets/${i.ticketId}`}
+                          className="inline-flex items-center gap-1 text-[12px] text-blue-600 hover:text-blue-700"
+                        >
+                          <Ticket className="h-3 w-3" />
+                          Voir le ticket
+                        </Link>
+                      ) : (
+                        <Button size="sm" variant="primary" onClick={() => onConvert(i.id)}>
+                          <Ticket className="h-3 w-3" />
+                          Créer un ticket
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
                 {isOpen && (
@@ -452,6 +465,21 @@ function IncidentTable({
                             </ul>
                           </div>
                         )}
+                        <div className="pt-1 flex items-center gap-3">
+                          <Link
+                            href={`/security-center/incidents/${i.id}`}
+                            className="inline-flex items-center gap-1 text-[11.5px] text-blue-600 hover:text-blue-700"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            Voir la fiche détaillée
+                          </Link>
+                          <button
+                            onClick={() => onExpand(i.id)}
+                            className="text-[11.5px] text-slate-400 hover:text-slate-700"
+                          >
+                            Fermer
+                          </button>
+                        </div>
                       </div>
                     </td>
                   </tr>
