@@ -11,6 +11,10 @@ const PUBLIC_PATHS = [
   "/api/v1/integrations/quickbooks/callback",
   "/api/v1/users/reset-password/confirm",
   "/api/v1/users/reset-password/request",
+  // Bitdefender GravityZone pousse vers /api/v1/integrations/bitdefender/webhook.
+  // L'endpoint a sa propre auth (header Authorization contre
+  // BITDEFENDER_WEBHOOK_SECRET) — bypass de la session cookie Nexus.
+  "/api/v1/integrations/bitdefender/webhook",
   "/_next",
   "/favicon",
   "/images",
