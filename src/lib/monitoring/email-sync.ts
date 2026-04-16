@@ -373,6 +373,15 @@ function extractClientPrefix(subject: string): string | null {
 // Test connection
 // ---------------------------------------------------------------------------
 
+/**
+ * Liste récursivement les dossiers sous Inbox (jusqu'à `MAX_DEPTH` niveaux).
+ * Chaque entrée renvoie à la fois `path` (utilisé par resolveFolderId, ex:
+ * "Boîte de réception/WAZUH/Syscollector") et `depth` pour que l'UI puisse
+ * indenter l'affichage. On limite la profondeur pour éviter d'hammer Graph
+ * sur des arborescences monstres (archives IMAP legacy, etc.).
+ */
+const MAX_FOLDER_DEPTH = 4;
+
 export async function testMonitoringConnection(mailbox: string): Promise<{
   ok: boolean;
   error?: string;
@@ -380,11 +389,29 @@ export async function testMonitoringConnection(mailbox: string): Promise<{
 }> {
   try {
     await getAccessToken();
-    const res = await graphFetch<{ value: GraphFolder[] }>(
-      `/users/${encodeURIComponent(mailbox)}/mailFolders/Inbox/childFolders?$top=50`,
-    );
-    const folders = res.value.map((f: GraphFolder) => `Boîte de réception/${f.displayName}`);
-    return { ok: true, folders };
+    const base = `/users/${encodeURIComponent(mailbox)}`;
+    const results: string[] = [];
+
+    async function walk(parentId: string, trail: string[], depth: number) {
+      if (depth > MAX_FOLDER_DEPTH) return;
+      const res = await graphFetch<{ value: GraphFolder[] }>(
+        `${base}/mailFolders/${parentId}/childFolders?$top=100&$select=id,displayName`,
+      );
+      // Itère séquentiellement : on veut un ordre stable dans la réponse
+      // (parent avant enfants) pour que l'UI puisse indenter proprement.
+      for (const f of res.value) {
+        const path = [...trail, f.displayName].join("/");
+        results.push(path);
+        await walk(f.id, [...trail, f.displayName], depth + 1);
+      }
+    }
+
+    // Départ depuis Inbox — on expose le label francophone pour rester
+    // cohérent avec l'UI et avec resolveFolderId qui mappe via WELL_KNOWN.
+    const inbox = await graphFetch<GraphFolder>(`${base}/mailFolders/Inbox`);
+    await walk(inbox.id, ["Boîte de réception"], 1);
+
+    return { ok: true, folders: results };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
