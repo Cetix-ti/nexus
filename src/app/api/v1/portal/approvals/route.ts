@@ -130,6 +130,19 @@ export async function PATCH(req: NextRequest) {
     data: { approvalStatus: overallStatus },
   });
 
+  // Notification aux agents watchers (assignee, créateur, collaborateurs)
+  // que l'approbateur a rendu sa décision — fire-and-forget, respect prefs.
+  import("@/lib/approvers/notifications")
+    .then((m) =>
+      m.notifyApprovalDecided({
+        ticketId: approval.ticketId,
+        decision,
+        approverName: approval.approverName || user.email,
+        comment: comment || null,
+      }),
+    )
+    .catch(() => {});
+
   // Create activity log
   await prisma.activity.create({
     data: {

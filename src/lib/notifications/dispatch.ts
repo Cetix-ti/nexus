@@ -675,32 +675,8 @@ export async function dispatchMonitoringAlert(opts: {
   }
 }
 
-// ----------------------------------------------------------------------------
-// Compat : ancienne API `createInAppNotification` utilisée par d'autres modules.
-// On la conserve pour ne pas casser les imports externes. Nouveau code doit
-// préférer notifyUser() qui respecte les préférences.
-// ----------------------------------------------------------------------------
-
-export async function createInAppNotification(opts: {
-  userId: string;
-  type: string;
-  title: string;
-  body?: string;
-  link?: string;
-  metadata?: Record<string, unknown>;
-}): Promise<void> {
-  try {
-    await prisma.notification.create({
-      data: {
-        userId: opts.userId,
-        type: opts.type,
-        title: opts.title,
-        body: opts.body,
-        link: opts.link,
-        metadata: opts.metadata as never,
-      },
-    });
-  } catch (err) {
-    console.warn("[createInAppNotification] erreur :", err);
-  }
-}
+// Note : `createInAppNotification` (ancienne API plate qui bypassait les
+// préférences utilisateur) a été retirée. Utiliser `notifyUser` de
+// src/lib/notifications/notify.ts — il crée la notification in-app
+// exactement comme l'ancienne fonction si l'utilisateur a activé ce canal
+// pour l'événement, et s'abstient sinon.

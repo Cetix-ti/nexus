@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { loadSmtpConfig, isConfigured } from "@/lib/smtp/storage";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { buildBrandedEmailHtml } from "@/lib/email/branded-template";
+import { buildNexusEmail } from "@/lib/email/nexus-template";
 
 export async function POST(req: Request) {
   const me = await getCurrentUser();
@@ -30,19 +30,18 @@ export async function POST(req: Request) {
     tls: { rejectUnauthorized: !cfg.allowInvalidCerts },
   });
 
-  const html = buildBrandedEmailHtml({
-    headerGradient: "linear-gradient(135deg,#1E3A5F 0%,#2563EB 100%)",
+  const html = buildNexusEmail({
+    event: "weekly_digest",
     preheader: "Test SMTP Nexus",
-    title: "Test SMTP",
-    subtitle: "Verification de la configuration email",
-    bodyHtml: `
-      <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.65;">
-        Ceci est un email de test envoye depuis <strong>Nexus</strong>.
-      </p>
-      <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:14px 18px;font-size:13px;color:#166534;font-weight:600;">
-        Votre configuration SMTP fonctionne correctement.
-      </div>
-    `,
+    title: "Test SMTP réussi",
+    intro: "Votre configuration SMTP fonctionne correctement.",
+    metadata: [
+      { label: "Hôte", value: cfg.host },
+      { label: "Port", value: String(cfg.port) },
+      { label: "Mode", value: cfg.secure.toUpperCase() },
+      { label: "Expéditeur", value: cfg.fromEmail },
+    ],
+    body: `<p style="margin:0;">Ce courriel de test confirme que Nexus parvient à dialoguer avec votre serveur SMTP et utilise correctement le template unifié. Vous pouvez maintenant activer les notifications sortantes.</p>`,
   });
 
   try {

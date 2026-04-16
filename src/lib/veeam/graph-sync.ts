@@ -520,6 +520,21 @@ export async function syncVeeamAlerts(
             },
           });
           newAlerts++;
+
+          // Notification agents uniquement sur échec de sauvegarde —
+          // on ne spamme pas sur les runs OK. Fire-and-forget + respect
+          // des préférences utilisateur (backup_failed event).
+          if (alert.status === "FAILED") {
+            import("@/lib/notifications/dispatch")
+              .then((m) =>
+                m.dispatchBackupAlert({
+                  organizationName: org?.name ?? alert.senderDomain,
+                  jobName: alert.jobName,
+                  detail: alert.bodySnippet?.slice(0, 200),
+                }),
+              )
+              .catch(() => {});
+          }
         } catch (err) {
           errors.push(
             `Message ${msg.id}: ${err instanceof Error ? err.message : String(err)}`,

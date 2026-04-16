@@ -10,6 +10,8 @@
 // ============================================================================
 
 import prisma from "@/lib/prisma";
+import { notifyUser } from "@/lib/notifications/notify";
+import { getPortalBaseUrl } from "@/lib/portal-domain/url";
 
 // Étapes d'alerte (en jours avant l'échéance). La plus pertinente est
 // celle qu'on vient de franchir (ou qu'on est en train de franchir).
@@ -95,40 +97,66 @@ export async function runRenewalNotifications(): Promise<{
       .filter(Boolean)
       .join(" · ");
 
+    const base = await getPortalBaseUrl();
+    const dateStr = e.startsAt.toLocaleDateString("fr-CA", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
     for (const userId of recipients) {
-      // Dédup : ne re-crée pas une notif pour le même event + milestone
+      // Dédup : ne re-crée pas une notif pour le même event + milestone.
       const exists = await prisma.notification.findFirst({
         where: {
           userId,
           type: "renewal_reminder",
-          metadata: {
-            path: ["eventId"],
-            equals: e.id,
-          },
-          // Même jalon ? On stocke le milestone dans metadata.
+          metadata: { path: ["eventId"], equals: e.id },
         },
-        select: {
-          id: true,
-          metadata: true,
-        },
+        select: { id: true, metadata: true },
       });
       if (exists) {
         const meta = (exists.metadata as Record<string, unknown> | null) ?? {};
         if (meta.milestone === activeMilestone) continue;
       }
 
-      await prisma.notification.create({
-        data: {
-          userId,
-          type: "renewal_reminder",
-          title,
-          body: body || null,
-          link: "/calendar",
-          metadata: {
-            eventId: e.id,
-            milestone: activeMilestone,
-            daysUntil,
-          } as unknown as object,
+      await notifyUser(userId, "renewal_reminder", {
+        title,
+        body: body || undefined,
+        link: "/calendar",
+        metadata: { eventId: e.id, milestone: activeMilestone, daysUntil },
+        emailSubject:
+          daysUntil === 0
+            ? `⚠ Renouvellement AUJOURD'HUI — ${e.title}`
+            : `Rappel renouvellement (${daysUntil} j) — ${e.title}`,
+        email: {
+          title:
+            daysUntil === 0
+              ? "Renouvellement échu aujourd'hui"
+              : daysUntil === 1
+                ? "Renouvellement échu demain"
+                : `Renouvellement dans ${daysUntil} jours`,
+          intro: e.title,
+          metadata: [
+            { label: "Date d'échéance", value: dateStr },
+            ...(e.renewalType ? [{ label: "Type", value: e.renewalType }] : []),
+            ...(orgName ? [{ label: "Client", value: orgName }] : []),
+            ...(e.renewalAmount
+              ? [
+                  {
+                    label: "Montant",
+                    value: e.renewalAmount.toLocaleString("fr-CA", {
+                      style: "currency",
+                      currency: "CAD",
+                    }),
+                  },
+                ]
+              : []),
+            ...(e.renewalExternalRef
+              ? [{ label: "Référence", value: e.renewalExternalRef }]
+              : []),
+          ],
+          ctaUrl: `${base}/calendar`,
+          ctaLabel: "Ouvrir le calendrier",
         },
       });
       created++;

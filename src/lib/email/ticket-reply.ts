@@ -101,6 +101,28 @@ export async function sendTicketReplyEmail(commentId: string): Promise<{
   if (comment.emailSent) return { ok: false, skipped: "already-sent" };
   if (!comment.ticket.requester?.email) return { ok: false, skipped: "no-requester-email" };
 
+  // Garde dev-safety : le demandeur est un contact externe. On ne lui
+  // envoie le courriel que s'il est dans l'allowlist (ou si le guard
+  // est désactivé en production). Évite les fuites vers de vrais
+  // clients pendant la cohabitation avec Freshservice.
+  const { isAllowedContactEmail } = await import("@/lib/notifications/allowlist");
+  const contactEmail = comment.ticket.requester.email.trim().toLowerCase();
+  const allowed = await isAllowedContactEmail(contactEmail);
+  if (!allowed) {
+    console.info(
+      `[ticket-reply] email bloqué par allowlist : ${contactEmail} (comment ${commentId})`,
+    );
+    // On marque quand même emailSent=true pour ne pas bloquer le
+    // ticket dans un état "en attente d'envoi" qui réessaierait à
+    // chaque ingestion. L'admin peut vérifier dans Paramètres
+    // → Notifications quels emails sont autorisés.
+    await prisma.comment.update({
+      where: { id: comment.id },
+      data: { emailSent: true, emailSentAt: new Date() },
+    });
+    return { ok: false, skipped: "allowlist" };
+  }
+
   const { ticket, author, ticket: { requester } } = comment;
 
   // Numéro affiché : préfixe selon org (TK-/INT-).

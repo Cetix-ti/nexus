@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { buildBrandedEmailHtml } from "@/lib/email/branded-template";
+import { buildNexusEmail } from "@/lib/email/nexus-template";
+import { getPortalBaseUrl } from "@/lib/portal-domain/url";
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser();
@@ -21,7 +22,9 @@ export async function POST(req: NextRequest) {
         userId: me.id,
         type: "test",
         title: "Notification de test",
-        body: "Ceci est une notification de test envoyee depuis les parametres Nexus. Si vous la voyez, les notifications in-app fonctionnent correctement.",
+        body:
+          "Ceci est une notification de test envoyée depuis les paramètres Nexus. " +
+          "Si vous la voyez, les notifications in-app fonctionnent correctement.",
         link: "/settings",
         metadata: { test: true, sentAt: new Date().toISOString() },
       },
@@ -29,34 +32,29 @@ export async function POST(req: NextRequest) {
     results.inapp = true;
   }
 
-  // Email test notification
+  // Email test via le template Nexus unifié — vérifie en même temps SMTP
+  // + rendu branding (logo Cetix, palette, footer, CTA).
   if ((type === "email" || type === "both") && emailTo) {
-    const html = buildBrandedEmailHtml({
-      headerGradient: "linear-gradient(135deg,#1E3A5F 0%,#2563EB 100%)",
-      preheader: "Test de notification",
-      title: "Test de notification email",
-      subtitle: "Configuration Nexus",
-      bodyHtml: `
-        <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.65;">
-          Ceci est un email de test envoy&eacute; depuis les param&egrave;tres Nexus.
-        </p>
-        <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.65;">
-          Si vous lisez ce message, votre configuration SMTP et vos mod&egrave;les d'email fonctionnent correctement.
-        </p>
-        <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:14px 18px;font-size:13px;color:#166534;font-weight:600;">
-          Les notifications email sont op&eacute;rationnelles.
-        </div>
-      `,
-      ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/settings`,
-      ctaLabel: "Ouvrir les parametres",
-      ctaColor: "#2563EB",
+    const base = await getPortalBaseUrl();
+    const html = buildNexusEmail({
+      event: "weekly_digest",
+      preheader: "Test de notification Nexus",
+      title: "Tout fonctionne correctement",
+      intro:
+        "Ce courriel confirme que votre configuration SMTP et le template " +
+        "Nexus-branded sont opérationnels.",
+      metadata: [
+        { label: "Testé par", value: `${me.firstName} ${me.lastName}`.trim() },
+        { label: "Envoyé à", value: emailTo },
+        { label: "Horodatage", value: new Date().toLocaleString("fr-CA") },
+      ],
+      body: `<p style="margin:0;">Si vous lisez ce message, toutes les pièces sont en place : connexion SMTP, moteur de template, et branding. Vous pouvez dès maintenant configurer vos préférences par type d'événement dans « Mon compte » → « Notifications ».</p>`,
+      ctaUrl: `${base}/account?tab=notifications`,
+      ctaLabel: "Ouvrir mes préférences",
+      prefsUrl: `${base}/account?tab=notifications`,
     });
 
-    results.email = await sendEmail(
-      emailTo,
-      "Test de notification Nexus",
-      html,
-    );
+    results.email = await sendEmail(emailTo, "Test de notification Nexus", html);
   }
 
   return NextResponse.json({ ok: true, results });

@@ -1,27 +1,23 @@
 // ============================================================================
-// Notifications d'approbation — envoi du courriel initial aux approbateurs
-// quand un ticket est créé avec `requiresApproval=true`.
+// Notifications d'approbation — envoi du courriel initial + relance aux
+// approbateurs (tous des contacts côté client) quand un ticket requiert
+// une décision.
 //
-// La logique de relance (bouton « Relancer ») vit dans
-// /api/v1/tickets/[id]/approvals/resend — on garde une implémentation
-// séparée pour distinguer la première demande (subject "Approbation
-// demandée") de la relance (subject "Relance — ...").
+// Utilise le template Nexus-branded partagé (buildNexusEmail) + gate
+// l'envoi via l'allowlist dev-safety puisque les approbateurs sont des
+// contacts externes (pas des agents Cetix).
 // ============================================================================
 
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email/send";
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+import { buildNexusEmail } from "@/lib/email/nexus-template";
+import { isAllowedContactEmail } from "@/lib/notifications/allowlist";
+import { getPortalTicketUrl, getPortalBaseUrl } from "@/lib/portal-domain/url";
 
 export async function notifyApprovalRequest(ticketId: string): Promise<{
   sent: number;
   failures: number;
+  skipped: number;
   total: number;
 }> {
   const ticket = await prisma.ticket.findUnique({
@@ -31,24 +27,26 @@ export async function notifyApprovalRequest(ticketId: string): Promise<{
       number: true,
       subject: true,
       description: true,
+      descriptionHtml: true,
+      priority: true,
       isInternal: true,
       organization: { select: { name: true } },
       requester: { select: { firstName: true, lastName: true, email: true } },
     },
   });
-  if (!ticket) return { sent: 0, failures: 0, total: 0 };
+  if (!ticket) return { sent: 0, failures: 0, skipped: 0, total: 0 };
 
   const pending = await prisma.ticketApproval.findMany({
     where: { ticketId, status: "PENDING" },
     select: { id: true, approverEmail: true, approverName: true },
   });
-  if (pending.length === 0) return { sent: 0, failures: 0, total: 0 };
+  if (pending.length === 0) return { sent: 0, failures: 0, skipped: 0, total: 0 };
 
   const { getClientTicketPrefix, formatTicketNumber } = await import(
     "@/lib/tenant-settings/service"
   );
   const clientPrefix = await getClientTicketPrefix();
-  const ticketNumber = formatTicketNumber(
+  const displayNumber = formatTicketNumber(
     ticket.number,
     !!ticket.isInternal,
     clientPrefix,
@@ -57,54 +55,143 @@ export async function notifyApprovalRequest(ticketId: string): Promise<{
     ? `${ticket.requester.firstName} ${ticket.requester.lastName}`.trim()
     : "—";
   const orgName = ticket.organization?.name ?? "—";
-  const appUrl = process.env.NEXTAUTH_URL ?? "";
+  const portalUrl = await getPortalTicketUrl(ticket.id);
+  const prefsUrl = `${await getPortalBaseUrl()}/account?tab=notifications`;
 
-  const subject = `Approbation demandée : ${ticket.subject}`;
+  // Description en HTML riche si dispo — sinon fallback plain text.
+  let richDescription: string | null = null;
+  if (ticket.descriptionHtml && ticket.descriptionHtml.trim()) {
+    try {
+      const { sanitizeEmailHtml } = await import("@/lib/email-to-ticket/html");
+      richDescription = sanitizeEmailHtml(ticket.descriptionHtml);
+    } catch {
+      /* fallback to excerpt below */
+    }
+  }
+  const excerpt = (ticket.description || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 400);
+
+  const subject = `Approbation requise — ${displayNumber} ${ticket.subject}`;
   let sent = 0;
   let failures = 0;
+  let skipped = 0;
 
   for (const a of pending) {
     if (!a.approverEmail) {
       failures++;
       continue;
     }
-    // Extrait court de la description (plain-text, sans HTML), max
-    // 300 caractères — donne le contexte au décideur sans remplir
-    // tout le courriel.
-    const excerpt = (ticket.description || "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 300);
+    // Garde dev-safety : un contact externe ne reçoit un courriel que
+    // s'il est dans l'allowlist (ou si le guard est désactivé en prod).
+    const allowed = await isAllowedContactEmail(a.approverEmail);
+    if (!allowed) {
+      console.info(
+        `[approvals] email bloqué par allowlist : ${a.approverEmail} (ticket ${displayNumber})`,
+      );
+      skipped++;
+      continue;
+    }
 
-    const html = `
-      <div style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#0f172a;max-width:560px;">
-        <p style="font-size:15px;">Bonjour ${escapeHtml(a.approverName || "")},</p>
-        <p>Une demande d'approbation requiert votre décision :</p>
-        <div style="border-left:3px solid #2563eb;padding:12px 16px;background:#eff6ff;border-radius:0 6px 6px 0;margin:16px 0;">
-          <p style="margin:0;font-weight:600;font-size:15px;">${escapeHtml(ticket.subject)}</p>
-          <p style="margin:6px 0 0;font-size:13px;color:#475569;">
-            ${escapeHtml(ticketNumber)} · ${escapeHtml(orgName)} · Demandé par ${escapeHtml(requesterName)}
-          </p>
-          ${excerpt ? `<p style="margin:10px 0 0;font-size:13px;color:#334155;">${escapeHtml(excerpt)}${ticket.description && ticket.description.length > 300 ? "…" : ""}</p>` : ""}
-        </div>
-        <p style="margin:20px 0;">
-          <a href="${appUrl}/portal/tickets/${ticket.id}"
-             style="display:inline-block;background:#2563eb;color:white;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:500;">
-             Voir et décider
-          </a>
-        </p>
-        <p style="font-size:12px;color:#94a3b8;margin-top:24px;">
-          Le ticket restera bloqué tant qu'un ou plusieurs approbateurs n'auront
-          pas validé la demande. Vous pouvez approuver ou rejeter directement
-          depuis le portail client.
-        </p>
-      </div>
-    `;
+    const html = buildNexusEmail({
+      event: "ticket_collaborator_added", // accent violet proche "collaboration"
+      preheader: `Décision d'approbation requise pour ${displayNumber}`,
+      title: "Une approbation vous est demandée",
+      intro: `${a.approverName ? `Bonjour ${a.approverName}, un` : "Un"} ticket attend votre décision pour être pris en charge.`,
+      metadata: [
+        { label: "Référence", value: displayNumber },
+        { label: "Sujet", value: ticket.subject },
+        { label: "Organisation", value: orgName },
+        { label: "Demandeur", value: requesterName },
+        { label: "Priorité", value: ticket.priority.toLowerCase() },
+      ],
+      quote: richDescription
+        ? { author: "Détails de la demande", contentHtml: richDescription }
+        : excerpt
+          ? { author: "Détails de la demande", content: excerpt + (excerpt.length === 400 ? "…" : "") }
+          : undefined,
+      ctaUrl: portalUrl,
+      ctaLabel: "Voir et décider",
+      prefsUrl,
+    });
     const ok = await sendEmail(a.approverEmail, subject, html);
     if (ok) sent++;
     else failures++;
   }
 
-  return { sent, failures, total: pending.length };
+  return { sent, failures, skipped, total: pending.length };
+}
+
+/**
+ * Notification aux agents (demandeur + créateur + collaborateurs) quand
+ * un approbateur prend sa décision. Émise côté route PATCH
+ * /api/v1/tickets/[id]/approvals/[approvalId]. Passe par le dispatcher
+ * central donc respecte les préférences "ticket_approval_decided".
+ */
+export async function notifyApprovalDecided(opts: {
+  ticketId: string;
+  decision: "APPROVED" | "REJECTED";
+  approverName: string;
+  comment?: string | null;
+}): Promise<void> {
+  try {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: opts.ticketId },
+      select: {
+        id: true,
+        number: true,
+        subject: true,
+        isInternal: true,
+        assigneeId: true,
+        creatorId: true,
+        collaborators: { select: { userId: true } },
+        organization: { select: { name: true } },
+      },
+    });
+    if (!ticket) return;
+    const { notifyUsers } = await import("@/lib/notifications/notify");
+    const { getClientTicketPrefix, formatTicketNumber } = await import(
+      "@/lib/tenant-settings/service"
+    );
+    const clientPrefix = await getClientTicketPrefix();
+    const displayNumber = formatTicketNumber(
+      ticket.number,
+      !!ticket.isInternal,
+      clientPrefix,
+    );
+    const { getAgentTicketUrl } = await import("@/lib/portal-domain/url");
+    const agentUrl = await getAgentTicketUrl(ticket.id);
+    const approved = opts.decision === "APPROVED";
+
+    const recipients = new Set<string>();
+    if (ticket.assigneeId) recipients.add(ticket.assigneeId);
+    if (ticket.creatorId) recipients.add(ticket.creatorId);
+    for (const c of ticket.collaborators) recipients.add(c.userId);
+
+    await notifyUsers(Array.from(recipients), "ticket_approval_decided", {
+      title: approved
+        ? `Approbation accordée : ${ticket.subject}`
+        : `Approbation refusée : ${ticket.subject}`,
+      body: `${displayNumber} · ${opts.approverName} a ${approved ? "approuvé" : "rejeté"}${opts.comment ? ` — ${opts.comment.slice(0, 80)}` : ""}`,
+      link: `/tickets/${ticket.id}`,
+      metadata: { ticketId: ticket.id, decision: opts.decision },
+      emailSubject: `[${displayNumber}] ${approved ? "Approuvé" : "Rejeté"} par ${opts.approverName}`,
+      email: {
+        title: approved ? "Approbation accordée" : "Approbation refusée",
+        intro: `${displayNumber} — ${ticket.subject}`,
+        metadata: [
+          { label: "Décision", value: approved ? "Approuvé" : "Rejeté" },
+          { label: "Approbateur", value: opts.approverName },
+          { label: "Organisation", value: ticket.organization?.name ?? "—" },
+        ],
+        quote: opts.comment ? { author: opts.approverName, content: opts.comment } : undefined,
+        ctaUrl: agentUrl,
+        ctaLabel: "Ouvrir le ticket",
+      },
+    });
+  } catch (err) {
+    console.error("[notifyApprovalDecided] erreur :", err);
+  }
 }

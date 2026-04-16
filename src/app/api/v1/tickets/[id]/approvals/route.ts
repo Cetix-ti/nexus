@@ -92,7 +92,7 @@ export async function PATCH(
   // Verify the approval exists and the caller is authorized (approver or agent)
   const approval = await prisma.ticketApproval.findUnique({
     where: { id: approvalId },
-    select: { id: true, approverId: true, ticketId: true },
+    select: { id: true, approverId: true, ticketId: true, approverName: true },
   });
   if (!approval || approval.ticketId !== id) {
     return NextResponse.json({ error: "Approbation introuvable" }, { status: 404 });
@@ -137,6 +137,18 @@ export async function PATCH(
     where: { id },
     data: { approvalStatus: overallStatus },
   });
+
+  // Notification aux agents watchers de la décision.
+  import("@/lib/approvers/notifications")
+    .then((m) =>
+      m.notifyApprovalDecided({
+        ticketId: id,
+        decision,
+        approverName: approval.approverName,
+        comment: comment || null,
+      }),
+    )
+    .catch(() => {});
 
   return NextResponse.json({
     success: true,

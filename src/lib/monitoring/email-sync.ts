@@ -666,6 +666,26 @@ export async function syncMonitoringAlerts(
                   );
                 }
               }
+              // Notification agents sur les VRAIES alertes (pas les
+              // messages de résolution ni les notifications système). Le
+              // dispatcher central respecte les préférences "monitoring_alert"
+              // des utilisateurs.
+              if (
+                detected.messageKind === "ALERT" &&
+                !detected.isResolution &&
+                (detected.severity === "CRITICAL" || detected.severity === "HIGH")
+              ) {
+                import("@/lib/notifications/dispatch")
+                  .then((m) =>
+                    m.dispatchMonitoringAlert({
+                      organizationName: org?.name ?? senderDomain,
+                      alertTitle: msg.subject || "Alerte sans sujet",
+                      severity: detected.severity.toLowerCase(),
+                      body: bodyText.slice(0, 400),
+                    }),
+                  )
+                  .catch(() => {});
+              }
               created++;
             } catch (err) {
               errors.push(`${msg.id}: ${err instanceof Error ? err.message : String(err)}`);

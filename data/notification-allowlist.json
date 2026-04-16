@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "allowedEmails": [
+    "informatique@baie-durfe.qc.ca",
+    "informatique@hvac.ca"
+  ],
+  "updatedAt": "2026-04-16T10:34:39.354Z",
+  "updatedBy": "Bruno Robert"
+}

@@ -2,18 +2,18 @@
 // Notifications de rappel pour les rencontres
 //
 // Pour chaque Meeting status=scheduled qui démarre dans les 30 prochaines
-// minutes, crée une Notification "meeting_reminder" à chaque participant +
-// au créateur.
+// minutes, émet un rappel via le dispatcher central (notifyUser) à chaque
+// participant + au créateur. L'utilisateur peut couper le rappel via
+// Paramètres → Notifications → "Rappel de rencontre".
 //
 // Idempotent : si une notif du même meetingId existe déjà pour ce user,
 // on ne re-crée pas (un seul rappel par rencontre).
 // ============================================================================
 
 import prisma from "@/lib/prisma";
+import { notifyUser } from "@/lib/notifications/notify";
+import { getPortalBaseUrl } from "@/lib/portal-domain/url";
 
-// Fenêtre d'alerte : on rappelle tout meeting dont le startsAt est entre
-// `now` et `now + REMINDER_LEAD_MS`. Un job tournant aux 5 min suffit pour
-// couvrir cette fenêtre sans rater de meeting (avec marge).
 const REMINDER_LEAD_MS = 30 * 60 * 1000; // 30 minutes
 
 export async function runMeetingReminders(): Promise<{
@@ -33,9 +33,9 @@ export async function runMeetingReminders(): Promise<{
       createdBy: { select: { id: true } },
     },
   });
-
   if (meetings.length === 0) return { checked: 0, created: 0 };
 
+  const base = await getPortalBaseUrl();
   let created = 0;
   for (const m of meetings) {
     const recipients = new Set<string>();
@@ -44,13 +44,12 @@ export async function runMeetingReminders(): Promise<{
     if (recipients.size === 0) continue;
 
     const minutesUntil = Math.max(0, Math.round((m.startsAt.getTime() - now.getTime()) / 60000));
-    const title =
+    const timeStr = m.startsAt.toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" });
+    const inAppTitle =
       minutesUntil <= 1
         ? `▶ Rencontre commence : ${m.title}`
         : `⏰ Rencontre dans ${minutesUntil} min : ${m.title}`;
-    const body = m.location
-      ? `Lieu : ${m.location} · ${m.startsAt.toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })}`
-      : `Démarre à ${m.startsAt.toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })}`;
+    const inAppBody = m.location ? `Lieu : ${m.location} · ${timeStr}` : `Démarre à ${timeStr}`;
 
     for (const userId of recipients) {
       // Dédup : un seul rappel par rencontre + utilisateur.
@@ -64,14 +63,25 @@ export async function runMeetingReminders(): Promise<{
       });
       if (exists) continue;
 
-      await prisma.notification.create({
-        data: {
-          userId,
-          type: "meeting_reminder",
-          title,
-          body,
-          link: `/calendar/meetings/${m.id}`,
-          metadata: { meetingId: m.id, minutesUntil } as unknown as object,
+      await notifyUser(userId, "meeting_reminder", {
+        title: inAppTitle,
+        body: inAppBody,
+        link: `/calendar/meetings/${m.id}`,
+        metadata: { meetingId: m.id, minutesUntil },
+        emailSubject: `Rappel — ${m.title} (${timeStr})`,
+        email: {
+          title: "Rappel de rencontre",
+          intro:
+            minutesUntil <= 1
+              ? "Votre rencontre commence maintenant"
+              : `Votre rencontre commence dans ${minutesUntil} minutes`,
+          metadata: [
+            { label: "Titre", value: m.title },
+            { label: "Heure", value: timeStr },
+            ...(m.location ? [{ label: "Lieu", value: m.location }] : []),
+          ],
+          ctaUrl: `${base}/calendar/meetings/${m.id}`,
+          ctaLabel: "Ouvrir la rencontre",
         },
       });
       created++;
@@ -93,7 +103,7 @@ export async function notifyMeetingInvite(
 
   const m = await prisma.meeting.findUnique({
     where: { id: meetingId },
-    select: { title: true, startsAt: true, location: true },
+    select: { title: true, startsAt: true, location: true, description: true },
   });
   if (!m) return;
 
@@ -101,24 +111,31 @@ export async function notifyMeetingInvite(
     where: { id: inviterId },
     select: { firstName: true, lastName: true },
   });
-  const inviterName = inviter ? `${inviter.firstName} ${inviter.lastName}` : "Un agent";
+  const inviterName = inviter ? `${inviter.firstName} ${inviter.lastName}`.trim() : "Un agent";
 
-  const startStr = m.startsAt.toLocaleString("fr-CA", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  const startStr = m.startsAt.toLocaleString("fr-CA", { dateStyle: "medium", timeStyle: "short" });
+  const base = await getPortalBaseUrl();
 
-  await prisma.notification.createMany({
-    data: userIds
-      .filter((uid) => uid !== inviterId) // Pas la peine de notifier l'inviter de sa propre invitation.
-      .map((userId) => ({
-        userId,
-        type: "meeting_invite",
-        title: `Invité à : ${m.title}`,
-        body: `${inviterName} t'a ajouté à la rencontre du ${startStr}${m.location ? ` (${m.location})` : ""}`,
-        link: `/calendar/meetings/${meetingId}`,
-        metadata: { meetingId } as unknown as object,
-      })),
-    skipDuplicates: true,
-  });
+  for (const userId of userIds) {
+    if (userId === inviterId) continue; // pas la peine de s'auto-notifier
+    await notifyUser(userId, "meeting_invite", {
+      title: `Invité à : ${m.title}`,
+      body: `${inviterName} t'a ajouté à la rencontre du ${startStr}${m.location ? ` (${m.location})` : ""}`,
+      link: `/calendar/meetings/${meetingId}`,
+      metadata: { meetingId },
+      emailSubject: `Invitation — ${m.title}`,
+      email: {
+        title: "Vous êtes invité à une rencontre",
+        intro: `${inviterName} vous a ajouté à la rencontre.`,
+        metadata: [
+          { label: "Titre", value: m.title },
+          { label: "Date et heure", value: startStr },
+          ...(m.location ? [{ label: "Lieu", value: m.location }] : []),
+        ],
+        body: m.description ? `<p style="margin:0;">${m.description}</p>` : undefined,
+        ctaUrl: `${base}/calendar/meetings/${meetingId}`,
+        ctaLabel: "Voir la rencontre",
+      },
+    });
+  }
 }

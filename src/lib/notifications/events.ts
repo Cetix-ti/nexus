@@ -91,6 +91,14 @@ export const EVENTS: EventSpec[] = [
     category: "tickets",
     defaults: { inApp: true, email: true },
   },
+  {
+    key: "ticket_approval_decided",
+    label: "Décision d'approbation",
+    description:
+      "Un approbateur a approuvé ou rejeté un ticket qui requérait votre autorisation.",
+    category: "tickets",
+    defaults: { inApp: true, email: true },
+  },
   // ---------- Projets ---------------------------------------------------
   {
     key: "project_assigned",
