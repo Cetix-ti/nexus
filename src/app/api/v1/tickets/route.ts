@@ -17,6 +17,16 @@ export async function GET(req: Request) {
   const limitParam = url.searchParams.get("limit");
   const limit = limitParam ? parseInt(limitParam, 10) : undefined;
 
+  // Corbeille :
+  //   ?trash=only    → liste la corbeille
+  //   ?trash=include → inclut les supprimés dans les résultats
+  //                    (utile pour retrouver un ticket supprimé par
+  //                    erreur via une recherche par sujet/numéro)
+  //   par défaut     → exclut les supprimés
+  const trashParam = url.searchParams.get("trash");
+  const trash: "only" | "include" | undefined =
+    trashParam === "only" || trashParam === "include" ? trashParam : undefined;
+
   const tickets = await listTickets({
     organizationId: url.searchParams.get("organizationId") || undefined,
     status: url.searchParams.get("status") || undefined,
@@ -34,6 +44,7 @@ export async function GET(req: Request) {
         : url.searchParams.get("internal") === "all"
         ? "all"
         : false,
+    trash,
   });
   return NextResponse.json(tickets);
 }

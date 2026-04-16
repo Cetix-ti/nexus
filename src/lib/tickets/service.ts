@@ -241,6 +241,14 @@ export async function listTickets(options?: {
    * tout.
    */
   internal?: boolean | "all";
+  /**
+   * Filtre corbeille :
+   *   - undefined (défaut) : exclut les tickets DELETED des vues
+   *   - "only" : RETOURNE uniquement les tickets DELETED (vue corbeille)
+   *   - "include" : les inclut dans la recherche normale (recherche
+   *     globale par sujet/numéro pour retrouver un ticket supprimé)
+   */
+  trash?: "only" | "include";
 }): Promise<UiTicket[]> {
   const where: Prisma.TicketWhereInput = {};
   if (options?.organizationId) where.organizationId = options.organizationId;
@@ -263,6 +271,17 @@ export async function listTickets(options?: {
       ...((where.AND as Prisma.TicketWhereInput[] | undefined) ?? []),
       { source: { not: "MONITORING" } },
       { type: { not: "ALERT" } },
+    ];
+  }
+  // Corbeille : par défaut on exclut les DELETED. "only" = que la
+  // corbeille. "include" = tout (utile pour les recherches globales
+  // pour retrouver un ticket supprimé par erreur).
+  if (options?.trash === "only") {
+    where.status = "DELETED" as any;
+  } else if (options?.trash !== "include") {
+    where.AND = [
+      ...((where.AND as Prisma.TicketWhereInput[] | undefined) ?? []),
+      { status: { not: "DELETED" } },
     ];
   }
   const rows = await prisma.ticket.findMany({
@@ -523,6 +542,57 @@ export async function updateTicket(
   return flattenDetail(t, clientPrefix);
 }
 
+/**
+ * Soft-delete : le ticket passe en status=DELETED mais reste en DB.
+ * La DELETE cascade native (activités, commentaires, attachements)
+ * est évitée pour permettre la restauration intégrale. L'admin peut
+ * trouver le ticket via recherche (trash:"include") ou la corbeille
+ * dédiée (trash:"only").
+ *
+ * Idempotent : supprimer un ticket déjà supprimé ne change rien.
+ */
 export async function deleteTicket(id: string): Promise<void> {
-  await prisma.ticket.delete({ where: { id } });
+  await prisma.ticket.update({
+    where: { id },
+    data: { status: "DELETED" as any },
+  });
+}
+
+/**
+ * Soft-delete en lot. Retourne le nombre de tickets affectés.
+ * Skippe les ids déjà supprimés ou inexistants (idempotent).
+ */
+export async function softDeleteTickets(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const res = await prisma.ticket.updateMany({
+    where: { id: { in: ids }, status: { not: "DELETED" as any } },
+    data: { status: "DELETED" as any },
+  });
+  return res.count;
+}
+
+/**
+ * Restaure des tickets depuis la corbeille → status=NEW.
+ * L'agent peut ensuite re-classer manuellement si besoin.
+ */
+export async function restoreTickets(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const res = await prisma.ticket.updateMany({
+    where: { id: { in: ids }, status: "DELETED" as any },
+    data: { status: "NEW" as any },
+  });
+  return res.count;
+}
+
+/**
+ * Suppression DÉFINITIVE (hard delete) — utilisée uniquement depuis
+ * la corbeille par un SUPER_ADMIN pour purger. Cascade DB (cf.
+ * schéma : onDelete: Cascade sur les relations Ticket).
+ */
+export async function purgeTickets(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const res = await prisma.ticket.deleteMany({
+    where: { id: { in: ids }, status: "DELETED" as any },
+  });
+  return res.count;
 }

@@ -35,6 +35,7 @@ const STATUS_TABS: { key: string; label: string; filter: TicketStatus[] | null }
   { key: "in_progress", label: "En cours", filter: ["in_progress", "on_site"] },
   { key: "waiting", label: "En attente", filter: ["pending", "waiting_client", "waiting_vendor", "scheduled"] },
   { key: "resolved", label: "Résolus", filter: ["resolved", "closed", "cancelled"] },
+  { key: "trash", label: "Corbeille", filter: ["deleted"] },
 ];
 
 
@@ -87,10 +88,14 @@ function TicketsPageInner() {
   const filtered = useMemo(() => {
     let result = [...tickets];
 
-    // Status tab filter
+    // Status tab filter.
+    // Cas spécial : TOUS les onglets SAUF "trash" masquent les
+    // tickets supprimés. Seul l'onglet "Corbeille" les montre.
     const tab = STATUS_TABS.find((t) => t.key === activeTab);
     if (tab?.filter) {
       result = result.filter((t) => tab.filter!.includes(t.status));
+    } else if (activeTab !== "trash") {
+      result = result.filter((t) => t.status !== "deleted");
     }
 
     // Search

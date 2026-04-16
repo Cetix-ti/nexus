@@ -111,6 +111,7 @@ const statusBadgeVariant: Record<TicketStatus, "primary" | "default" | "warning"
   resolved: "success",
   closed: "default",
   cancelled: "default",
+  deleted: "danger",
 };
 
 const priorityBadgeVariant: Record<TicketPriority, "danger" | "warning" | "default" | "success"> = {

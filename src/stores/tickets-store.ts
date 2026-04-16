@@ -28,7 +28,11 @@ export const useTicketsStore = create<TicketsState>()((set, get) => ({
       // colonnes et pas seulement des 100 tickets les plus récents (qui se
       // retrouvent tous dans "Nouveau"). Au-delà, on compte sur des filtres
       // serveur-side pour ne pas saturer.
-      const res = await fetch("/api/v1/tickets?limit=500");
+      // trash=include : inclut les tickets DELETED dans la liste pour
+      // alimenter l'onglet "Corbeille". Le filtrage client via les
+      // onglets STATUS_TABS masque ensuite les supprimés partout SAUF
+      // dans "Corbeille".
+      const res = await fetch("/api/v1/tickets?limit=500&trash=include");
       const tickets = (await res.json()) as Ticket[];
       // Replace (not append) to prevent memory accumulation
       set({ tickets, loaded: true, loading: false });

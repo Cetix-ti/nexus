@@ -328,6 +328,11 @@ enum TicketStatus {
   RESOLVED
   CLOSED
   CANCELLED
+  /// Soft-delete : le ticket reste en DB (corbeille) mais est exclu
+  /// des vues par défaut. Restorable vers NEW. Recherche par sujet/
+  /// numéro continue de le trouver pour permettre la récupération
+  /// d'un ticket supprimé par erreur.
+  DELETED
 }
 
 enum TicketPriority {

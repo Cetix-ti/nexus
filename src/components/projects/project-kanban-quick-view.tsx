@@ -57,6 +57,7 @@ const STATUS_LABELS_FR: Record<TicketStatus, string> = {
   resolved: "Résolu",
   closed: "Fermé",
   cancelled: "Annulé",
+  deleted: "Supprimé",
 };
 
 function getInitials(name: string): string {

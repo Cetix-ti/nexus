@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow, format } from "date-fns";
-import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Trash2, RotateCcw, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
+import { useTicketsStore } from "@/stores/tickets-store";
 import {
   STATUS_CONFIG,
   PRIORITY_CONFIG,
@@ -44,6 +45,7 @@ const statusBadgeVariant: Record<TicketStatus, "primary" | "default" | "warning"
   resolved: "success",
   closed: "default",
   cancelled: "default",
+  deleted: "danger",
 };
 
 const priorityBadgeVariant: Record<TicketPriority, "danger" | "warning" | "default" | "success"> = {
@@ -104,6 +106,50 @@ export function TicketListView({ tickets }: TicketListViewProps) {
     }
   }
 
+  // Bulk ops — soft-delete ou restauration selon le contexte.
+  // Si TOUS les tickets sélectionnés sont déjà DELETED → opération
+  // "restore". Sinon → "delete" (corbeille).
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const refreshTickets = useTicketsStore((s) => s.refresh);
+  const selectedTickets = tickets.filter((t) => selectedIds.has(t.id));
+  const allSelectedDeleted =
+    selectedTickets.length > 0 &&
+    selectedTickets.every((t) => t.status === "deleted");
+
+  async function bulkOp(op: "delete" | "restore") {
+    if (selectedIds.size === 0 || bulkBusy) return;
+    const ids = Array.from(selectedIds);
+    const label = op === "delete" ? "Supprimer" : "Restaurer";
+    const count = ids.length;
+    const msg =
+      op === "delete"
+        ? `${label} ${count} ticket${count > 1 ? "s" : ""} ? Ils seront déplacés dans la corbeille (récupérables).`
+        : `${label} ${count} ticket${count > 1 ? "s" : ""} depuis la corbeille ?`;
+    if (!window.confirm(msg)) return;
+
+    setBulkBusy(true);
+    try {
+      const res = await fetch("/api/v1/tickets/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op, ids }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      setSelectedIds(new Set());
+      // Reload tickets (l'appel store.refresh re-fetch /api/v1/tickets)
+      await refreshTickets();
+    } catch (e) {
+      alert(
+        `Erreur : ${e instanceof Error ? e.message : String(e)}`,
+      );
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   function SortIcon({ field }: { field: SortField }) {
     if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
     return sortDir === "asc" ? (
@@ -115,6 +161,49 @@ export function TicketListView({ tickets }: TicketListViewProps) {
 
   return (
     <>
+      {/* Barre d'action flottante — apparaît dès qu'un ticket est
+          sélectionné. Affiche le compteur + bouton contextuel
+          (Supprimer si tickets actifs, Restaurer si ils sont déjà
+          dans la corbeille). Position fixed bottom + sticky sur
+          mobile pour ne pas couvrir le contenu. */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-[0_10px_30px_-10px_rgba(15,23,42,0.3)]">
+          <span className="text-[13px] font-medium text-slate-700">
+            {selectedIds.size} ticket{selectedIds.size > 1 ? "s" : ""} sélectionné{selectedIds.size > 1 ? "s" : ""}
+          </span>
+          <div className="h-4 w-px bg-slate-200" />
+          {allSelectedDeleted ? (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={() => bulkOp("restore")}
+              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1 text-[12px] font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {bulkBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+              Restaurer
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={() => bulkOp("delete")}
+              className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-[12px] font-medium text-white hover:bg-red-700 disabled:opacity-60"
+            >
+              {bulkBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              Supprimer
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[12px] text-slate-500 hover:bg-slate-100"
+            title="Annuler la sélection"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Mobile card layout */}
       <div className="md:hidden space-y-2">
         {sorted.map((ticket) => {

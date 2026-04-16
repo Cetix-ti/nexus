@@ -66,6 +66,7 @@ const STATUS_LABELS_FR: Record<TicketStatus, string> = {
   resolved: "Résolu",
   closed: "Fermé",
   cancelled: "Annulé",
+  deleted: "Supprimé",
 };
 
 const PRIORITY_LABELS_FR: Record<TicketPriority, string> = {
@@ -100,6 +101,7 @@ const statusBadgeVariant: Record<
   resolved: "success",
   closed: "default",
   cancelled: "default",
+  deleted: "danger",
 };
 
 const priorityBadgeVariant: Record<

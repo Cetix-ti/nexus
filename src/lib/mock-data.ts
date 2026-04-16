@@ -9,7 +9,8 @@ export type TicketStatus =
   | "scheduled"
   | "resolved"
   | "closed"
-  | "cancelled";
+  | "cancelled"
+  | "deleted";
 
 export type TicketPriority = "critical" | "high" | "medium" | "low";
 export type TicketUrgency = "critical" | "high" | "medium" | "low";
@@ -183,6 +184,13 @@ export const STATUS_CONFIG: Record<
     bgClass: "bg-gray-100",
     textClass: "text-gray-500",
     dotClass: "bg-gray-400",
+  },
+  deleted: {
+    label: "Supprimé",
+    color: "#DC2626",
+    bgClass: "bg-red-50",
+    textClass: "text-red-700",
+    dotClass: "bg-red-500",
   },
 };
 
