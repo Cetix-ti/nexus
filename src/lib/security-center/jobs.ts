@@ -1,13 +1,16 @@
 // ============================================================================
 // SECURITY CENTER — jobs d'ingestion
 //
-//   - syncBitdefender()         pull JSON-RPC (défaut 10 min)
 //   - syncWazuhEmails()         polling récurrent des securityFolders
 //                               (défaut 2 min) — passe chaque message dans
 //                               AD puis Wazuh (fallback)
+//   - syncWazuhApi()            pull JSON direct depuis l'Indexer (2 min)
 //   - syncSecurityHistorical()  backfill manuel déclenché depuis Paramètres
 //                               > Synchronisation des alertes > Sécurité,
 //                               accepte sinceDays et folders explicites.
+//
+// Note : Bitdefender GravityZone fonctionne exclusivement en PUSH. Voir
+// /api/v1/integrations/bitdefender/webhook — pas de job pull ici.
 //
 // Toutes les fonctions sont résilientes (ne throw jamais) pour que le
 // scheduler background ne soit pas interrompu par une erreur de parsing.
@@ -17,39 +20,11 @@ import prisma from "@/lib/prisma";
 import { normalizeEmailBodyToHtml, htmlToPlainText } from "@/lib/email-to-ticket/html";
 import { graphFetch, resolveFolderId } from "@/lib/email-to-ticket/service";
 import { getMonitoringConfig } from "@/lib/monitoring/email-sync";
-import { decodeBitdefenderEvent, type BitdefenderEvent } from "./decoders/bitdefender";
 import { decodeWazuhEmail } from "./decoders/wazuh";
 import { decodeWazuhApiAlert } from "./decoders/wazuh-api";
 import { isAdSecuritySubject, decodeAdEmail } from "./decoders/ad";
 import { ingestSecurityAlert } from "./correlator";
-import {
-  getBitdefenderConfig,
-  fetchBitdefenderEvents,
-  saveBitdefenderLastSync,
-} from "./bitdefender-client";
 import { getWazuhConfig, saveWazuhConfig, fetchWazuhAlerts } from "./wazuh-client";
-
-// ----------------------------------------------------------------------------
-// Bitdefender
-// ----------------------------------------------------------------------------
-export async function syncBitdefender(): Promise<{ fetched: number; ingested: number }> {
-  const cfg = await getBitdefenderConfig();
-  if (!cfg) return { fetched: 0, ingested: 0 };
-
-  const events = await fetchBitdefenderEvents(cfg, cfg.lastSyncAt);
-  let ingested = 0;
-  for (const raw of events) {
-    const decoded = await decodeBitdefenderEvent(raw as BitdefenderEvent);
-    if (!decoded) continue;
-    const res = await ingestSecurityAlert(decoded);
-    if (res?.isNew) ingested++;
-  }
-  await saveBitdefenderLastSync(new Date().toISOString());
-  if (events.length > 0) {
-    console.log(`[security/bitdefender] ${events.length} events, ${ingested} nouvelles`);
-  }
-  return { fetched: events.length, ingested };
-}
 
 // ----------------------------------------------------------------------------
 // Wazuh Indexer — pull JSON direct depuis l'API (recommandé vs email)

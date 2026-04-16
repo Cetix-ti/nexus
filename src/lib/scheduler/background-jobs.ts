@@ -169,22 +169,10 @@ export function startBackgroundJobs() {
     },
   });
 
-  // Centre de sécurité — pull Bitdefender (10 min) + Wazuh subfolder (2 min).
-  scheduleJob({
-    name: "security-bitdefender",
-    intervalMs: Number(process.env.SECURITY_BITDEFENDER_INTERVAL_MS) || 600_000,
-    isRunning: false,
-    lastRun: null,
-    lastError: null,
-    consecutiveErrors: 0,
-    run: async () => {
-      const { syncBitdefender } = await import("@/lib/security-center/jobs");
-      const res = await syncBitdefender();
-      if (res.ingested > 0) {
-        console.log(`[security/bitdefender] +${res.ingested} nouvelles alertes`);
-      }
-    },
-  });
+  // Note : il n'y a PAS de job pull Bitdefender. L'API GravityZone
+  // n'expose pas getEvents — elle fonctionne en push (webhook).
+  // Voir /api/v1/integrations/bitdefender/webhook + le script
+  // scripts/bitdefender-register-webhook.ts pour le setup.
 
   scheduleJob({
     name: "security-wazuh-email",
