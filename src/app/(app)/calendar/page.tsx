@@ -239,12 +239,16 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
         let initial: Set<string> = new Set(ids);
         if (typeof window !== "undefined") {
           try {
-            const saved = window.localStorage.getItem("calendar.visibleIds");
+            // Clé versionnée v2 : après la fusion "Agenda général" →
+            // "Localisation", l'ancienne clé pouvait contenir uniquement
+            // des ids de calendriers cachés (ou l'ancien Agenda général
+            // supprimé) → la vue apparaissait VIDE même si la DB avait
+            // des events. On force un reset avec v2 et on nettoie l'ancienne.
+            window.localStorage.removeItem("calendar.visibleIds");
+            const saved = window.localStorage.getItem("calendar.visibleIds.v2");
             if (saved) {
               const parsed = JSON.parse(saved) as string[];
               if (Array.isArray(parsed)) {
-                // Garde uniquement les ids qui existent encore (un calendrier
-                // peut avoir été supprimé depuis la dernière session).
                 const filtered = parsed.filter((id) => ids.includes(id));
                 if (filtered.length > 0) initial = new Set(filtered);
               }
@@ -259,10 +263,10 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
   // Persiste la sélection visible à chaque changement.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (visibleCalendarIds.size === 0) return; // ne pas écraser avant init
+    if (visibleCalendarIds.size === 0) return;
     try {
       window.localStorage.setItem(
-        "calendar.visibleIds",
+        "calendar.visibleIds.v2",
         JSON.stringify(Array.from(visibleCalendarIds)),
       );
     } catch {}

@@ -808,40 +808,47 @@ export default function TicketDetailPage() {
                 </div>
               ) : (
                 <div>
-                  {/* Conteneur description : le dégradé fade-to-white est
-                      INTERNE à ce div (pas au parent) pour qu'il ne
-                      recouvre pas le bouton "Voir plus" en dessous. Avant :
-                      le gradient absolute inset-x-0 bottom-0 dépassait
-                      dans la zone du bouton → le bleu était délavé par
-                      l'overlay blanc. */}
-                  <div className="relative">
-                    <div
-                      ref={(el) => {
-                        descRef.current = el;
-                        // Mesure APRÈS que le HTML soit injecté. On lit
-                        // scrollHeight qui reflète la hauteur naturelle du
-                        // contenu même quand un max-height l'écrase
-                        // visuellement.
-                        if (el) {
-                          const overflows = el.scrollHeight > DESC_COLLAPSED_PX + 4;
-                          if (overflows !== descOverflow) setDescOverflow(overflows);
-                        }
-                      }}
-                      style={
-                        descExpanded
-                          ? undefined
-                          : { maxHeight: DESC_COLLAPSED_PX, overflow: "hidden" }
-                      }
-                      className="tiptap text-sm text-gray-700 leading-relaxed prose prose-sm prose-slate max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_em]:italic [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_pre]:bg-slate-100 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:rounded [&_img]:max-w-full [&_img]:rounded-lg"
-                      dangerouslySetInnerHTML={{ __html: renderDescriptionWithHtml(ticket) }}
-                    />
-                    {descOverflow && !descExpanded && (
+                  {/* Description : on attend que directTicket (fetch API
+                      détail avec descriptionHtml) soit chargé AVANT de
+                      rendre, pour éviter le flash plain text → rich du
+                      store. Avant : le store fournissait une version
+                      plain (via flattenList qui omet descriptionHtml
+                      pour garder le payload léger), puis la fiche
+                      flashait en rich après 2-3s. Maintenant on montre
+                      un skeleton de loading jusqu'à l'arrivée du
+                      directTicket. */}
+                  {!directTicket && directLoading ? (
+                    <div className="space-y-2" aria-label="Chargement de la description">
+                      <div className="h-3 w-11/12 bg-slate-100 rounded animate-pulse" />
+                      <div className="h-3 w-10/12 bg-slate-100 rounded animate-pulse" />
+                      <div className="h-3 w-9/12 bg-slate-100 rounded animate-pulse" />
+                    </div>
+                  ) : (
+                    <div className="relative">
                       <div
-                        className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none"
-                        aria-hidden
+                        ref={(el) => {
+                          descRef.current = el;
+                          if (el) {
+                            const overflows = el.scrollHeight > DESC_COLLAPSED_PX + 4;
+                            if (overflows !== descOverflow) setDescOverflow(overflows);
+                          }
+                        }}
+                        style={
+                          descExpanded
+                            ? undefined
+                            : { maxHeight: DESC_COLLAPSED_PX, overflow: "hidden" }
+                        }
+                        className="tiptap text-sm text-gray-700 leading-relaxed prose prose-sm prose-slate max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_em]:italic [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_pre]:bg-slate-100 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:rounded [&_img]:max-w-full [&_img]:rounded-lg"
+                        dangerouslySetInnerHTML={{ __html: renderDescriptionWithHtml(directTicket ?? ticket) }}
                       />
-                    )}
-                  </div>
+                      {descOverflow && !descExpanded && (
+                        <div
+                          className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none"
+                          aria-hidden
+                        />
+                      )}
+                    </div>
+                  )}
                   {/* Bouton HORS du conteneur relative → le gradient ne
                       peut plus l'atteindre. Style visible : bleu plus
                       foncé + underline + chevron pour l'affordance. */}

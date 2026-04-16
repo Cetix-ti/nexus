@@ -399,11 +399,37 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
           // On stocke TOUJOURS un HTML safe dans descriptionHtml/bodyHtml.
           // Le plain text de fallback est extrait depuis le HTML (pas
           // l'inverse) pour préserver au mieux la structure.
-          const htmlBody = normalizeEmailBodyToHtml(
+          let htmlBody = normalizeEmailBodyToHtml(
             msg.body?.contentType,
             msg.body?.content,
             msg.bodyPreview,
           );
+
+          // Inline images (logos, captures, signatures) : le HTML
+          // contient `<img src="cid:image001@...">` qui référence des
+          // attachments MIME. Sans traitement, le navigateur ne peut
+          // pas résoudre `cid:` → images cassées. On fetch les
+          // attachments inline via Graph, on les upload vers MinIO,
+          // on réécrit les src. Opération idempotente + non-bloquante
+          // en cas d'échec (le ticket est créé malgré tout).
+          try {
+            const { rewriteInlineImages } = await import(
+              "@/lib/email-to-ticket/inline-images"
+            );
+            htmlBody = await rewriteInlineImages(
+              htmlBody,
+              cfg.mailbox,
+              msg.id,
+              !!msg.hasAttachments,
+              graphFetch,
+            );
+          } catch (e) {
+            console.warn(
+              `[email-to-ticket] inline images rewrite failed for <${senderEmail}>:`,
+              e instanceof Error ? e.message : String(e),
+            );
+          }
+
           const plainBody = htmlToPlainText(htmlBody);
           // Texte utilisé pour la détection forward (plus robuste que HTML).
           const forwardText = msg.body?.contentType === "html"
