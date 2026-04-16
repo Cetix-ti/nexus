@@ -14,11 +14,26 @@
 // ============================================================================
 
 import type { DecodedAlert, SecurityKind, SecuritySeverity } from "../types";
-import type { WazuhAlert } from "../wazuh-client";
+import { type WazuhAlert, getWazuhConfig } from "../wazuh-client";
 import {
   resolveOrgByEndpoint,
   resolveOrgByHostOrIp,
 } from "../org-resolver";
+
+/**
+ * True si le texte (titre + summary + raw JSON partiel) contient un
+ * mot-clé "downgrade" configuré par l'admin. Appelé par le décodeur
+ * API juste avant le return pour marquer isLowPriority.
+ */
+async function matchesDowngradeKeyword(...texts: (string | undefined | null)[]): Promise<boolean> {
+  const cfg = await getWazuhConfig();
+  if (!cfg.downgradeKeywords || cfg.downgradeKeywords.length === 0) return false;
+  const haystack = texts
+    .filter((t): t is string => typeof t === "string" && t.length > 0)
+    .join("\n")
+    .toLowerCase();
+  return cfg.downgradeKeywords.some((k) => haystack.includes(k));
+}
 
 /**
  * Mapping des groupes de règles Wazuh vers nos `kind` métier. Première
@@ -151,6 +166,14 @@ export async function decodeWazuhApiAlert(alert: WazuhAlert): Promise<DecodedAle
       : src.rule.description ?? `Alerte Wazuh rule ${src.rule.id ?? "?"}`;
 
   const correlationKey = buildCorrelationKey(alert, kind, organizationId);
+  const summary = buildSummary(src);
+  const isLowPriority = await matchesDowngradeKeyword(
+    title,
+    summary,
+    src.rule.description,
+    JSON.stringify(src.rule.groups ?? []),
+    src.location,
+  );
 
   return {
     source: "wazuh_api",
@@ -163,10 +186,11 @@ export async function decodeWazuhApiAlert(alert: WazuhAlert): Promise<DecodedAle
     userPrincipal: null,
     cveId: cveId ?? undefined,
     title,
-    summary: buildSummary(src),
+    summary,
     correlationKey,
     rawPayload: alert._source,
     occurredAt: src.timestamp ? new Date(src.timestamp) : undefined,
+    isLowPriority,
   };
 }
 

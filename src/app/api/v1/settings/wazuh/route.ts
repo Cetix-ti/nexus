@@ -43,6 +43,11 @@ export async function PUT(req: Request) {
     patch.password = body.password;
   }
   if (typeof body.minLevel === "number") patch.minLevel = body.minLevel;
+  if (Array.isArray(body.downgradeKeywords)) {
+    patch.downgradeKeywords = body.downgradeKeywords.filter(
+      (k: unknown): k is string => typeof k === "string",
+    );
+  }
   const saved = await saveWazuhConfig(patch);
   return NextResponse.json(sanitize(saved));
 }
@@ -61,6 +66,7 @@ export async function POST(req: Request) {
     enabled: stored.enabled,
     apiUrl: (typeof body.apiUrl === "string" ? body.apiUrl : stored.apiUrl).replace(/\/$/, ""),
     username: typeof body.username === "string" ? body.username : stored.username,
+    downgradeKeywords: stored.downgradeKeywords,
     password:
       typeof body.password === "string" && !/^•+$/.test(body.password)
         ? body.password

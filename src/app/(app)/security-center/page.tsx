@@ -52,6 +52,7 @@ interface Incident {
   firstSeenAt: string;
   lastSeenAt: string;
   ticketId: string | null;
+  isLowPriority: boolean;
   organization: { id: string; name: string; clientCode: string | null } | null;
   assignee: { id: string; firstName: string; lastName: string; avatar: string | null } | null;
   ticket: { id: string; number: number; subject: string; status: string } | null;
@@ -112,16 +113,22 @@ export default function SecurityCenterPage() {
     setError(null);
     try {
       const active = TABS.find((t) => t.key === tab);
-      const params = new URLSearchParams();
-      if (active && active.sources.length > 0) {
-        // Le backend accepte CSV → on peut passer plusieurs sources
-        // pour l'onglet Wazuh qui agrège email + API.
-        params.set("source", active.sources.join(","));
-      }
-      const res = await fetch(`/api/v1/security-center/incidents?${params.toString()}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as Incident[];
-      setIncidents(data);
+      // On charge les DEUX buckets en parallèle (main + low) pour ne pas
+      // re-requêter quand l'utilisateur déplie la section basse priorité.
+      const mkParams = (priority: "main" | "low") => {
+        const p = new URLSearchParams();
+        if (active && active.sources.length > 0) p.set("source", active.sources.join(","));
+        p.set("priority", priority);
+        return p;
+      };
+      const [resMain, resLow] = await Promise.all([
+        fetch(`/api/v1/security-center/incidents?${mkParams("main").toString()}`),
+        fetch(`/api/v1/security-center/incidents?${mkParams("low").toString()}`),
+      ]);
+      if (!resMain.ok) throw new Error(`HTTP ${resMain.status}`);
+      const main = (await resMain.json()) as Incident[];
+      const low = resLow.ok ? ((await resLow.json()) as Incident[]) : [];
+      setIncidents([...main, ...low]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -281,6 +288,14 @@ export default function SecurityCenterPage() {
             )}
           </Section>
         </div>
+      ) : tab === "wazuh" ? (
+        <WazuhEndpointView
+          incidents={filtered}
+          expanded={expanded}
+          onExpand={toggleExpand}
+          onStatus={updateStatus}
+          onConvert={convertToTicket}
+        />
       ) : (
         <IncidentTable
           incidents={filtered}
@@ -288,7 +303,7 @@ export default function SecurityCenterPage() {
           onExpand={toggleExpand}
           onStatus={updateStatus}
           onConvert={convertToTicket}
-          primaryCol={tab === "wazuh" ? "endpoint" : "endpoint"}
+          primaryCol="endpoint"
           primaryLabel="Endpoint"
           showOccurrences
         />
@@ -308,6 +323,380 @@ function Section({ title, count, children }: { title: string; count: number; chi
       </h2>
       {children}
     </section>
+  );
+}
+
+// --- Wazuh vue agrégée par endpoint ------------------------------------
+// Au lieu d'afficher chaque CVE comme une ligne séparée (bruit vite
+// ingérable), on agrège par (organisation + endpoint) : une ligne par
+// poste, avec compteurs par type (CVE / persistence / autre), expandable
+// pour voir chaque incident individuel. Les alertes low-priority sont
+// affichées dans une section séparée repliable en bas.
+function WazuhEndpointView({
+  incidents,
+  expanded,
+  onExpand,
+  onStatus,
+  onConvert,
+}: {
+  incidents: Incident[];
+  expanded: Set<string>;
+  onExpand: (id: string) => void;
+  onStatus: (id: string, status: string) => void;
+  onConvert: (id: string) => void;
+}) {
+  const main = incidents.filter((i) => !i.isLowPriority);
+  const low = incidents.filter((i) => i.isLowPriority);
+  const [lowOpen, setLowOpen] = useState(false);
+
+  return (
+    <div className="space-y-6">
+      {main.length === 0 ? (
+        <Empty msg="Aucune alerte Wazuh significative." />
+      ) : (
+        <EndpointRollup
+          incidents={main}
+          expanded={expanded}
+          onExpand={onExpand}
+          onStatus={onStatus}
+          onConvert={onConvert}
+        />
+      )}
+
+      {/* Section repliable pour les alertes que l'admin a marquées
+          "moins importantes" via les mots-clés configurés. Affichée par
+          défaut fermée pour ne pas distraire des vraies alertes. */}
+      {low.length > 0 && (
+        <div>
+          <button
+            onClick={() => setLowOpen((v) => !v)}
+            className="w-full flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-2.5 hover:bg-slate-100 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Alertes moins importantes
+              </span>
+              <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-full bg-slate-200 px-1.5 text-[10.5px] font-semibold text-slate-600">
+                {low.length}
+              </span>
+            </div>
+            <span className="text-[11.5px] text-slate-500">
+              {lowOpen ? "Masquer" : "Afficher"}
+            </span>
+          </button>
+          {lowOpen && (
+            <div className="mt-2 opacity-80">
+              <EndpointRollup
+                incidents={low}
+                expanded={expanded}
+                onExpand={onExpand}
+                onStatus={onStatus}
+                onConvert={onConvert}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Nettoie un hostname Wazuh en retirant le préfixe clientCode (ex:
+ * "LV_DG-10" → "DG-10") quand il matche le code d'organisation détecté.
+ * Préserve le nom tel quel si aucun préfixe ne correspond.
+ */
+function cleanEndpoint(hostname: string | null, clientCode?: string | null): string {
+  if (!hostname) return "—";
+  if (!clientCode) return hostname;
+  const prefix = clientCode.toUpperCase();
+  const rx = new RegExp(`^${prefix}[-_]`, "i");
+  return hostname.replace(rx, "");
+}
+
+interface EndpointGroup {
+  key: string;
+  organization: Incident["organization"];
+  endpoint: string;
+  cleanEndpoint: string;
+  incidents: Incident[];
+  severities: Record<string, number>;
+  kindCounts: Record<string, number>;
+  maxSeverity: string | null;
+  anyStatus: Set<string>;
+  lastSeen: string;
+}
+
+function groupByEndpoint(incidents: Incident[]): EndpointGroup[] {
+  const severityRank: Record<string, number> = { info: 0, warning: 1, high: 2, critical: 3 };
+  const map = new Map<string, EndpointGroup>();
+  for (const i of incidents) {
+    const endpoint = i.endpoint ?? "—";
+    const orgKey = i.organization?.id ?? "no-org";
+    const key = `${orgKey}::${endpoint.toLowerCase()}`;
+    let g = map.get(key);
+    if (!g) {
+      g = {
+        key,
+        organization: i.organization,
+        endpoint,
+        cleanEndpoint: cleanEndpoint(endpoint, i.organization?.clientCode ?? null),
+        incidents: [],
+        severities: {},
+        kindCounts: {},
+        maxSeverity: null,
+        anyStatus: new Set(),
+        lastSeen: i.lastSeenAt,
+      };
+      map.set(key, g);
+    }
+    g.incidents.push(i);
+    g.kindCounts[i.kind] = (g.kindCounts[i.kind] ?? 0) + 1;
+    if (i.severity) {
+      g.severities[i.severity] = (g.severities[i.severity] ?? 0) + 1;
+      if (
+        !g.maxSeverity ||
+        (severityRank[i.severity] ?? 0) > (severityRank[g.maxSeverity] ?? 0)
+      ) {
+        g.maxSeverity = i.severity;
+      }
+    }
+    g.anyStatus.add(i.status);
+    if (i.lastSeenAt > g.lastSeen) g.lastSeen = i.lastSeenAt;
+  }
+  // Tri : critical/high d'abord, puis lastSeen décroissant
+  return Array.from(map.values()).sort((a, b) => {
+    const rA = severityRank[a.maxSeverity ?? "info"] ?? 0;
+    const rB = severityRank[b.maxSeverity ?? "info"] ?? 0;
+    if (rA !== rB) return rB - rA;
+    return b.lastSeen.localeCompare(a.lastSeen);
+  });
+}
+
+const KIND_LABEL: Record<string, string> = {
+  cve: "CVE",
+  persistence_tool: "Logiciel persistance",
+  suspicious_behavior: "Comportement suspect",
+  malware: "Malware",
+  ransomware: "Rançongiciel",
+  critical_incident: "Incident critique",
+};
+
+function EndpointRollup({
+  incidents,
+  expanded,
+  onExpand,
+  onStatus,
+  onConvert,
+}: {
+  incidents: Incident[];
+  expanded: Set<string>;
+  onExpand: (id: string) => void;
+  onStatus: (id: string, status: string) => void;
+  onConvert: (id: string) => void;
+}) {
+  const groups = useMemo(() => groupByEndpoint(incidents), [incidents]);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+
+  function toggleGroup(key: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <table className="w-full text-left">
+        <thead>
+          <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <th className="px-4 py-2.5 w-10"></th>
+            <th className="px-4 py-2.5">Client</th>
+            <th className="px-4 py-2.5">Endpoint</th>
+            <th className="px-4 py-2.5">Alertes</th>
+            <th className="px-4 py-2.5">Sévérité max</th>
+            <th className="px-4 py-2.5">Dernière</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {groups.map((g) => {
+            const open = openGroups.has(g.key);
+            return (
+              <>
+                <tr
+                  key={g.key}
+                  className="hover:bg-slate-50/60 cursor-pointer"
+                  onClick={() => toggleGroup(g.key)}
+                >
+                  <td className="px-4 py-3 text-slate-400">
+                    <span className={cn("inline-block transition-transform", open && "rotate-90")}>
+                      ▸
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-[13px] text-slate-700">
+                    {g.organization ? (
+                      <div className="flex items-center gap-2 min-w-0">
+                        <OrgLogo name={g.organization.name} size={22} rounded="sm" />
+                        <span className="truncate">{g.organization.name}</span>
+                      </div>
+                    ) : (
+                      <span className="italic text-slate-400">Non mappé</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-[13px] font-mono text-slate-800">
+                    {g.cleanEndpoint}
+                    {g.cleanEndpoint !== g.endpoint && (
+                      <span className="ml-1.5 text-[10.5px] text-slate-400" title={`Nom Wazuh : ${g.endpoint}`}>
+                        ↳ {g.endpoint}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(g.kindCounts).map(([kind, count]) => (
+                        <span
+                          key={kind}
+                          className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-slate-700 ring-1 ring-inset ring-slate-200"
+                        >
+                          {count} {KIND_LABEL[kind] ?? kind}
+                          {count > 1 ? "s" : ""}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {g.maxSeverity && (
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ring-1 ring-inset uppercase",
+                          SEVERITY_CLASS[g.maxSeverity] ?? "bg-slate-100 text-slate-600 ring-slate-200",
+                        )}
+                      >
+                        {g.maxSeverity}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">
+                    <Clock className="inline h-3 w-3 mr-1 text-slate-400" />
+                    {fmtDate(g.lastSeen)}
+                  </td>
+                </tr>
+                {open && (
+                  <tr className="bg-slate-50/30">
+                    <td colSpan={6} className="px-4 py-3">
+                      <div className="space-y-2 pl-6 border-l-2 border-slate-200">
+                        <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+                          {g.incidents.length} incident{g.incidents.length > 1 ? "s" : ""} sur ce poste
+                        </p>
+                        {g.incidents.map((i) => {
+                          const isOpen = expanded.has(i.id);
+                          return (
+                            <div
+                              key={i.id}
+                              className="rounded-md border border-slate-200 bg-white"
+                            >
+                              <div
+                                className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50/80 cursor-pointer"
+                                onClick={() => onExpand(i.id)}
+                              >
+                                {i.severity && (
+                                  <span
+                                    className={cn(
+                                      "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset uppercase shrink-0",
+                                      SEVERITY_CLASS[i.severity] ?? "bg-slate-100 text-slate-600 ring-slate-200",
+                                    )}
+                                  >
+                                    {i.severity}
+                                  </span>
+                                )}
+                                <span className="text-[11.5px] font-mono text-slate-500 shrink-0">
+                                  {i.cveId ?? KIND_LABEL[i.kind] ?? i.kind}
+                                </span>
+                                <span className="text-[12.5px] text-slate-800 truncate flex-1">
+                                  {i.title}
+                                </span>
+                                {i.occurrenceCount > 1 && (
+                                  <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-slate-100 text-[10.5px] font-semibold text-slate-700 px-1.5 shrink-0">
+                                    ×{i.occurrenceCount}
+                                  </span>
+                                )}
+                                <span className="text-[10.5px] text-slate-400 shrink-0 whitespace-nowrap">
+                                  {fmtDate(i.lastSeenAt)}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold shrink-0",
+                                    STATUS_CLASS[i.status] ?? "bg-slate-100 text-slate-700",
+                                  )}
+                                >
+                                  {STATUS_LABEL[i.status] ?? i.status}
+                                </span>
+                              </div>
+                              {isOpen && (
+                                <div
+                                  className="px-3 py-2 border-t border-slate-100 bg-slate-50/50 space-y-2"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {i.summary && (
+                                    <p className="text-[11.5px] text-slate-700 whitespace-pre-wrap">
+                                      {i.summary.slice(0, 600)}
+                                    </p>
+                                  )}
+                                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                                    <span>Statut :</span>
+                                    <select
+                                      value={i.status}
+                                      onChange={(e) => onStatus(i.id, e.target.value)}
+                                      className="h-6 rounded border border-slate-200 bg-white px-1 text-[11px]"
+                                    >
+                                      {Object.entries(STATUS_LABEL).map(([k, v]) => (
+                                        <option key={k} value={k}>
+                                          {v}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <Link
+                                      href={`/security-center/incidents/${i.id}`}
+                                      className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 ml-2"
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                      Fiche détaillée
+                                    </Link>
+                                    {i.ticketId ? (
+                                      <Link
+                                        href={`/tickets/${i.ticketId}`}
+                                        className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 ml-2"
+                                      >
+                                        <Ticket className="h-3 w-3" />
+                                        Voir le ticket
+                                      </Link>
+                                    ) : (
+                                      <button
+                                        onClick={() => onConvert(i.id)}
+                                        className="inline-flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-800 ml-2"
+                                      >
+                                        <Ticket className="h-3 w-3" />
+                                        Créer un ticket
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

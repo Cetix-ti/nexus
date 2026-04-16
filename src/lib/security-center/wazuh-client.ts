@@ -40,6 +40,14 @@ export interface WazuhConfig {
    * niveau (5-6). 10+ = critique.
    */
   minLevel: number;
+  /**
+   * Liste de mots-clés (insensibles à la casse) qui, s'ils sont
+   * présents dans le titre ou le corps d'une alerte Wazuh, poussent
+   * l'incident vers la section "moins importantes" de l'UI. Utile
+   * pour étouffer le bruit prévisible (ex: "fortigate" pour les events
+   * périphériques réseau sans action requise).
+   */
+  downgradeKeywords: string[];
   lastSyncAt?: string;
 }
 
@@ -49,6 +57,10 @@ export const DEFAULT_WAZUH_CONFIG: WazuhConfig = {
   username: "",
   password: "",
   minLevel: 7,
+  // Défauts raisonnables pour un MSP — les alertes FortiGate sont
+  // souvent du bruit réseau sans action. L'admin peut enrichir depuis
+  // les paramètres.
+  downgradeKeywords: ["fortigate", "fortigates"],
 };
 
 export async function getWazuhConfig(): Promise<WazuhConfig> {
@@ -64,6 +76,9 @@ export async function getWazuhConfig(): Promise<WazuhConfig> {
     username: stored.username || envUser || DEFAULT_WAZUH_CONFIG.username,
     password: stored.password || envPass || DEFAULT_WAZUH_CONFIG.password,
     minLevel: stored.minLevel ?? DEFAULT_WAZUH_CONFIG.minLevel,
+    downgradeKeywords: Array.isArray(stored.downgradeKeywords)
+      ? stored.downgradeKeywords
+      : DEFAULT_WAZUH_CONFIG.downgradeKeywords,
     lastSyncAt: stored.lastSyncAt,
   };
 }
@@ -76,6 +91,16 @@ export async function saveWazuhConfig(patch: Partial<WazuhConfig>): Promise<Wazu
     username: patch.username ?? current.username,
     password: patch.password ?? current.password,
     minLevel: patch.minLevel ?? current.minLevel,
+    downgradeKeywords: Array.isArray(patch.downgradeKeywords)
+      ? // Normalise : trim + lowercase + dedup + min 2 char
+        Array.from(
+          new Set(
+            patch.downgradeKeywords
+              .map((k) => k.trim().toLowerCase())
+              .filter((k) => k.length >= 2),
+          ),
+        )
+      : current.downgradeKeywords,
     lastSyncAt: patch.lastSyncAt ?? current.lastSyncAt,
   };
   await prisma.tenantSetting.upsert({

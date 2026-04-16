@@ -54,6 +54,9 @@ export function MonitoringSection() {
     username: string;
     password: string;
     minLevel: number;
+    /** Mots-clés qui, s'ils apparaissent dans une alerte, la relèguent
+     *  dans la section "moins importantes" de l'UI. */
+    downgradeKeywords: string[];
     lastSyncAt?: string;
   }
   const [wazuh, setWazuh] = useState<WazuhCfg>({
@@ -62,7 +65,10 @@ export function MonitoringSection() {
     username: "",
     password: "",
     minLevel: 7,
+    downgradeKeywords: [],
   });
+  // Édition CSV des mots-clés — plus naturel pour l'admin.
+  const [downgradeKeywordsText, setDowngradeKeywordsText] = useState("");
   const [wazuhDirty, setWazuhDirty] = useState(false);
   const [wazuhSaving, setWazuhSaving] = useState(false);
   const [wazuhTesting, setWazuhTesting] = useState(false);
@@ -95,7 +101,10 @@ export function MonitoringSection() {
     fetch("/api/v1/settings/wazuh")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (d) setWazuh(d);
+        if (d) {
+          setWazuh(d);
+          setDowngradeKeywordsText((d.downgradeKeywords ?? []).join(", "));
+        }
       })
       .catch(() => {});
   }, []);
@@ -103,14 +112,25 @@ export function MonitoringSection() {
   async function saveWazuh() {
     setWazuhSaving(true);
     try {
+      // On parse le CSV éditable en array juste avant l'envoi pour ne
+      // rien perdre de la saisie utilisateur.
+      const keywords = Array.from(
+        new Set(
+          downgradeKeywordsText
+            .split(/[,;\n]+/)
+            .map((k) => k.trim().toLowerCase())
+            .filter((k) => k.length >= 2),
+        ),
+      );
       const res = await fetch("/api/v1/settings/wazuh", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(wazuh),
+        body: JSON.stringify({ ...wazuh, downgradeKeywords: keywords }),
       });
       if (res.ok) {
         const next = await res.json();
         setWazuh(next);
+        setDowngradeKeywordsText((next.downgradeKeywords ?? []).join(", "));
         setWazuhDirty(false);
       }
     } finally {
@@ -518,6 +538,34 @@ export function MonitoringSection() {
                 — Wazuh note de 0 à 15.
               </p>
             </div>
+          </div>
+
+          {/* Mots-clés downgrade — alertes contenant ces expressions
+              sont poussées dans la section "moins importantes" du
+              Centre de sécurité. Utile pour amortir le bruit prévisible
+              comme les events FortiGate. S'applique aux deux pipelines
+              (email + API) et rétroactivement au prochain run du
+              backfill script. */}
+          <div className="pt-3 border-t border-purple-100">
+            <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+              Mots-clés pour alertes moins importantes
+            </label>
+            <input
+              type="text"
+              value={downgradeKeywordsText}
+              onChange={(e) => {
+                setDowngradeKeywordsText(e.target.value);
+                setWazuhDirty(true);
+              }}
+              placeholder="fortigate, fortigates"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-mono text-slate-900 placeholder:text-slate-400 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+            />
+            <p className="mt-1 text-[11px] text-slate-500">
+              Séparer par virgules. Les alertes Wazuh contenant l&apos;une
+              de ces expressions (titre, description, règle, corps) seront
+              affichées dans une section repliable « Alertes moins
+              importantes » à la place du flux principal.
+            </p>
           </div>
 
           <div className="flex items-center justify-between pt-3 border-t border-purple-100">

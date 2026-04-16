@@ -33,6 +33,16 @@ export async function GET(req: Request) {
       ? { assigneeId: null }
       : {};
 
+  // Filtre priorité : "main" = incidents importants (default),
+  // "low" = section "moins importantes", "all" = les deux.
+  const priorityParam = url.searchParams.get("priority") ?? "main";
+  const priorityFilter =
+    priorityParam === "low"
+      ? { isLowPriority: true }
+      : priorityParam === "all"
+      ? {}
+      : { isLowPriority: false };
+
   const incidents = await prisma.securityIncident.findMany({
     where: {
       ...(sourceList.length === 1
@@ -44,6 +54,7 @@ export async function GET(req: Request) {
       ...(status ? { status } : {}),
       ...(orgId ? { organizationId: orgId } : {}),
       ...assigneeFilter,
+      ...priorityFilter,
     },
     include: {
       organization: { select: { id: true, name: true, clientCode: true } },

@@ -72,6 +72,7 @@ export async function ingestSecurityAlert(
           rawPayload: (decoded.rawPayload ?? null) as never,
           correlationKey: decoded.correlationKey,
           receivedAt: decoded.occurredAt ?? new Date(),
+          isLowPriority: !!decoded.isLowPriority,
         },
       });
     }
@@ -100,6 +101,7 @@ export async function ingestSecurityAlert(
           firstSeenAt: alert.receivedAt,
           lastSeenAt: alert.receivedAt,
           metadata: null as never,
+          isLowPriority: !!decoded.isLowPriority,
         },
       });
     } else if (isNew && existingIncident) {

@@ -65,4 +65,8 @@ export interface DecodedAlert {
   rawPayload: unknown;
   /** Horodatage de l'événement source (souvent différent du receivedAt). */
   occurredAt?: Date;
+  /** Flag "moins important" — l'UI relègue dans une section repliable
+   *  pour ne pas noyer les alertes significatives. Généralement défini
+   *  par le décodeur quand un mot-clé configuré matche (ex: "fortigate"). */
+  isLowPriority?: boolean;
 }

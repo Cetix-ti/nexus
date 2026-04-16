@@ -2022,6 +2022,10 @@ model SecurityAlert {
   receivedAt      DateTime @default(now()) @map("received_at")
   correlationKey  String   @map("correlation_key")
   incidentId      String?  @map("incident_id")
+  /// True quand le corps de l'alerte matche un mot-clé "downgrade"
+  /// configuré par l'admin (ex: "fortigate"). Ces alertes vont dans
+  /// une section "moins importantes" de l'UI.
+  isLowPriority   Boolean  @default(false) @map("is_low_priority")
 
   organization    Organization?    @relation(fields: [organizationId], references: [id])
   incident        SecurityIncident? @relation(fields: [incidentId], references: [id], onDelete: SetNull)
@@ -2053,6 +2057,10 @@ model SecurityIncident {
   firstSeenAt     DateTime @default(now()) @map("first_seen_at")
   lastSeenAt      DateTime @default(now()) @map("last_seen_at")
   metadata        Json?    @db.JsonB
+  /// Miroir du flag sur SecurityAlert : une fois qu'une alerte low
+  /// priority est ingérée, l'incident hérite du flag pour que l'UI
+  /// puisse filtrer sans rejoindre la table alerts.
+  isLowPriority   Boolean  @default(false) @map("is_low_priority")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

@@ -24,6 +24,19 @@ import {
   resolveOrgByText,
   resolveOrgByHostOrIp,
 } from "../org-resolver";
+import { getWazuhConfig } from "../wazuh-client";
+
+/**
+ * True si le texte (sujet + body) contient au moins un mot-clé déclaré
+ * comme "downgrade" par l'admin. Match insensible à la casse, mot
+ * entier ou sous-chaîne. Appelé par les deux décodeurs Wazuh.
+ */
+async function matchesDowngradeKeyword(subject: string, body: string): Promise<boolean> {
+  const cfg = await getWazuhConfig();
+  if (!cfg.downgradeKeywords || cfg.downgradeKeywords.length === 0) return false;
+  const haystack = `${subject}\n${body}`.toLowerCase();
+  return cfg.downgradeKeywords.some((k) => haystack.includes(k));
+}
 
 const PERSISTENCE_SOFTWARES = [
   "anydesk",
@@ -170,6 +183,12 @@ export async function decodeWazuhEmail(opts: {
     if (senderDomain) orgId = await resolveOrgByDomain(senderDomain);
   }
 
+  // Matching des mots-clés "downgrade" : si le texte contient "fortigate",
+  // "fortigates", etc. (configuré dans Paramètres → Synchro → Wazuh API),
+  // on remonte isLowPriority=true. L'UI reléguera l'incident dans la
+  // section "moins importantes".
+  const isLowPriority = await matchesDowngradeKeyword(subject, body);
+
   // 1. Persistence tool
   const software = detectPersistenceSoftware(combined);
   if (software) {
@@ -188,6 +207,7 @@ export async function decodeWazuhEmail(opts: {
       correlationKey: `persistence:${orgKey}:${endpointKey}:${software}`,
       rawPayload: { subject, body: body.slice(0, 4000) },
       occurredAt: opts.receivedAt,
+      isLowPriority,
     };
   }
 
@@ -210,6 +230,7 @@ export async function decodeWazuhEmail(opts: {
       correlationKey: `cve:${orgKey}:${endpointKey}:${cveId}`,
       rawPayload: { subject, body: body.slice(0, 4000) },
       occurredAt: opts.receivedAt,
+      isLowPriority,
     };
   }
 
@@ -227,6 +248,7 @@ export async function decodeWazuhEmail(opts: {
     endpoint,
     title: subject || "Alerte Wazuh",
     summary: body.slice(0, 500),
+    isLowPriority,
     correlationKey: ruleId
       ? `wazuh:${orgKey}:${endpointKey}:${ruleId}`
       : `wazuh-msg:${opts.messageId}`,
