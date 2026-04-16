@@ -668,7 +668,7 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
             ? isMonitoringSource
             : false;
 
-          await prisma.ticket.create({
+          const newTicket = await prisma.ticket.create({
             data: {
               organizationId: org.id,
               requesterId: contactId,
@@ -684,8 +684,16 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
               externalId: messageId,
               isInternal: effectiveIsInternal,
             },
+            select: { id: true },
           });
           created++;
+
+          // Notifications (fire-and-forget) : agents (tous si non assigné)
+          // + contact demandeur (via garde allowlist pour éviter d'envoyer
+          // aux vrais clients en développement).
+          import("@/lib/notifications/dispatch")
+            .then((m) => m.dispatchTicketCreatedNotifications(newTicket.id))
+            .catch(() => {});
 
           if (cfg.markAsRead && !msg.isRead) {
             await markAsRead(cfg.mailbox, msg.id).catch(() => {});

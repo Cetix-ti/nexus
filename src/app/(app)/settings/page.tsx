@@ -722,6 +722,11 @@ function UsersSection() {
   const [users, setUsers] = useState<DbUserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
+  // Par défaut, on cache les utilisateurs désactivés pour que l'action
+  // "Désactiver" les fasse effectivement disparaître de la liste (sinon
+  // l'admin a l'impression que la suppression n'a pas fonctionné). Un
+  // toggle permet de les réafficher pour réactiver un compte.
+  const [showDeactivated, setShowDeactivated] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -803,16 +808,27 @@ function UsersSection() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-neutral-900">Utilisateurs</h2>
           <p className="text-sm text-neutral-500">
             Gérez les comptes utilisateurs de votre organisation
           </p>
         </div>
-        <Button variant="primary" size="sm" onClick={handleCreate}>
-          Ajouter un utilisateur
-        </Button>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-neutral-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 rounded border-neutral-300"
+              checked={showDeactivated}
+              onChange={(e) => setShowDeactivated(e.target.checked)}
+            />
+            Afficher les désactivés
+          </label>
+          <Button variant="primary" size="sm" onClick={handleCreate}>
+            Ajouter un utilisateur
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -842,7 +858,9 @@ function UsersSection() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {users.map((user) => (
+                {users
+                  .filter((u) => showDeactivated || u.status === "Actif")
+                  .map((user) => (
                   <tr key={user.id} className="hover:bg-neutral-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">

@@ -364,12 +364,13 @@ export async function createTicket(input: {
       .catch(() => {});
   }
 
-  // Notify the assignee by email (fire-and-forget)
-  if (t.assigneeId) {
-    import("@/lib/email/ticket-notifications")
-      .then((m) => m.notifyTicketCreated(t.id))
-      .catch(() => {});
-  }
+  // Notifications (fire-and-forget) : agents (in-app + email) et contact
+  // demandeur (courriel de confirmation, gated par l'allowlist en dev).
+  // Si aucun assignee → tous les agents actifs reçoivent "à prendre en
+  // charge". Voir `src/lib/notifications/dispatch.ts`.
+  import("@/lib/notifications/dispatch")
+    .then((m) => m.dispatchTicketCreatedNotifications(t.id))
+    .catch(() => {});
 
   // Run automation rules (fire-and-forget)
   runAutomations("ticket_created", {

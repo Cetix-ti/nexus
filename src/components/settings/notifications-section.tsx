@@ -23,6 +23,7 @@ import {
   EditEmailTemplateModal,
   type EmailTemplate,
 } from "./edit-email-template-modal";
+import { NotificationAllowlistSection } from "./notification-allowlist-section";
 
 // NOTE: Channel preferences (email/in-app on/off per user) are managed
 // in "Mon profil > Notifications" since they are user-specific settings.
@@ -193,6 +194,11 @@ export function NotificationsSection() {
           Configurez les canaux et les modèles de notifications
         </p>
       </div>
+
+      {/* Garde-fou dev-safety : placé tout en haut car c'est le levier le
+          plus critique — un envoi à un vrai contact pendant la cohabitation
+          avec Freshservice est le scénario à éviter absolument. */}
+      <NotificationAllowlistSection />
 
       {/* Test result banner */}
       {testResult && (
