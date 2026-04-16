@@ -14,7 +14,7 @@
 // ============================================================================
 
 import type { DecodedAlert } from "../types";
-import { resolveOrgByEndpoint } from "../org-resolver";
+import { resolveOrgByEndpoint, resolveOrgByHostOrIp } from "../org-resolver";
 
 /** Format générique d'un événement Bitdefender — on n'est pas strict sur
  *  tous les champs parce que l'API peut en ajouter/retirer selon versions. */
@@ -136,7 +136,14 @@ export async function decodeBitdefenderEvent(
   event: BitdefenderEvent,
 ): Promise<DecodedAlert | null> {
   const ep = pickEndpoint(event);
-  const orgId = ep ? await resolveOrgByEndpoint(ep) : null;
+  // Cascade : préfixe CODE- du hostname → fallback Asset/Atera si pas de
+  // préfixe (ex: machine "DESKTOP-ABC123" synchronisée dans Atera sous
+  // un client connu). Bitdefender fournit parfois l'IP dans `last_ip` ou
+  // `ip_address` — on l'utilise en complément du hostname.
+  const ip = (event.last_ip || event.ip_address || event.ip) as string | undefined;
+  let orgId: string | null = null;
+  if (ep) orgId = await resolveOrgByEndpoint(ep);
+  if (!orgId && (ep || ip)) orgId = await resolveOrgByHostOrIp(ep, ip);
   const severity = normalizeSeverity(event.severity);
   const externalId = externalIdOf(event);
 

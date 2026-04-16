@@ -18,7 +18,12 @@
 // ============================================================================
 
 import type { DecodedAlert } from "../types";
-import { resolveOrgByDomain, resolveOrgByEndpoint } from "../org-resolver";
+import {
+  resolveOrgByDomain,
+  resolveOrgByEndpoint,
+  resolveOrgByText,
+  resolveOrgByHostOrIp,
+} from "../org-resolver";
 
 const PERSISTENCE_SOFTWARES = [
   "anydesk",
@@ -64,15 +69,35 @@ export async function decodeWazuhEmail(opts: {
   const combined = `${subject}\n${body}`;
 
   // Endpoint / agent — souvent exposé par Wazuh comme "Agent name" ou
-  // "srcip"/"dstip". On essaie plusieurs clés.
+  // "Hostname". On essaie plusieurs clés.
   const endpoint =
-    extractField(body, ["Agent name", "Agent", "Hostname", "Computer", "Endpoint", "Source IP"]) ??
+    extractField(body, ["Agent name", "Agent", "Hostname", "Computer", "Endpoint"]) ??
     null;
+  // IP séparée (utile si l'agent Wazuh n'a pas de préfixe client dans son
+  // hostname mais expose son IP — on matchera par IP côté Atera/Asset).
+  const ipAddress =
+    extractField(body, ["Source IP", "srcip", "IP Address", "IP", "Address"]) ?? null;
 
-  // Client : d'abord on tente de remonter depuis l'endpoint (préfixe de
-  // hostname = clientCode dans la plupart des conventions Cetix).
+  // Résolution d'organisation — cascade conçue pour maximiser le mapping
+  // automatique, même quand le hostname ne suit pas la convention
+  // CODE-XXXX (ex: machines héritées, postes personnels, endpoints
+  // anciens clients) :
+  //
+  //   1. Préfixe CODE- extrait du nom d'endpoint  → Organization.clientCode
+  //   2. Scan du sujet + body pour tokens CODE-XXX
+  //   3. Lookup RMM (Asset local puis Atera API)  → matche hostname ou IP
+  //      et remonte à l'organisation via le mapping Atera existant
+  //   4. Domaine expéditeur                       → Organization.domain
+  //
+  // La cascade s'arrête au premier match. Le lookup RMM (étape 3) couvre
+  // le cas "le hostname n'a pas le clientCode" — Nexus interroge alors
+  // son index local des assets synchronisés (ou Atera directement).
   let orgId: string | null = null;
   if (endpoint) orgId = await resolveOrgByEndpoint(endpoint);
+  if (!orgId) orgId = await resolveOrgByText(subject, body);
+  if (!orgId && (endpoint || ipAddress)) {
+    orgId = await resolveOrgByHostOrIp(endpoint, ipAddress);
+  }
   if (!orgId) {
     const senderDomain = (opts.fromEmail.match(/@([^>\s]+)/)?.[1] ?? "").toLowerCase();
     if (senderDomain) orgId = await resolveOrgByDomain(senderDomain);

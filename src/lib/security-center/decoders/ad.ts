@@ -18,7 +18,12 @@
 // ============================================================================
 
 import type { DecodedAlert } from "../types";
-import { resolveOrgByDomain } from "../org-resolver";
+import {
+  resolveOrgByDomain,
+  resolveOrgByEndpoint,
+  resolveOrgByText,
+  resolveOrgByHostOrIp,
+} from "../org-resolver";
 
 /** Retourne true si le sujet correspond à un pattern AD que nous traitons. */
 export function isAdSecuritySubject(subject: string): boolean {
@@ -70,7 +75,30 @@ export async function decodeAdEmail(opts: {
   const isInactive = lower.includes("inactive");
 
   const sender = extractSender(opts.fromEmail);
-  const orgId = sender.domain ? await resolveOrgByDomain(sender.domain) : null;
+
+  // Résolution d'organisation — on privilégie le préfixe du Caller Computer
+  // (« BDU-DC01 » → org BDU) parce que sender.domain est quasi-toujours
+  // "cetix.ca" pour les DC-emitters et ne permet pas de distinguer les
+  // clients. Cascade : endpoint → scan texte → domaine expéditeur.
+  const computerFieldEarly =
+    extractField(opts.bodyPlain, [
+      "Caller Computer Name",
+      "CallerComputer",
+      "Source Computer",
+      "Computer",
+      "Host",
+      "Poste",
+    ]) ?? null;
+  let orgId: string | null = null;
+  if (computerFieldEarly) orgId = await resolveOrgByEndpoint(computerFieldEarly);
+  if (!orgId) orgId = await resolveOrgByText(opts.subject, opts.bodyPlain);
+  // Si le Caller Computer ne porte pas de préfixe client (ex: "DC01"
+  // sans code), on essaie de résoudre via le RMM : Asset local puis
+  // Atera API. Couvre les DCs nommés sobrement dans les petits tenants.
+  if (!orgId && computerFieldEarly) {
+    orgId = await resolveOrgByHostOrIp(computerFieldEarly, null);
+  }
+  if (!orgId && sender.domain) orgId = await resolveOrgByDomain(sender.domain);
 
   // Tente d'extraire l'utilisateur cible. Les formats courants listent
   // "User", "Account Name", "UserPrincipalName", "Target", etc.
@@ -88,15 +116,8 @@ export async function decodeAdEmail(opts: {
       "Compte",
     ]) ?? null;
 
-  const computer =
-    extractField(opts.bodyPlain, [
-      "Caller Computer Name",
-      "CallerComputer",
-      "Source Computer",
-      "Computer",
-      "Host",
-      "Poste",
-    ]) ?? null;
+  // Déjà extrait plus haut pour la résolution d'org. Même valeur réutilisée.
+  const computer = computerFieldEarly;
 
   const userKey = (user ?? "unknown").toLowerCase();
   const orgKey = orgId ?? `domain:${sender.domain || "unknown"}`;
