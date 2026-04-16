@@ -26,6 +26,7 @@ import {
   ChevronDown,
   LogOut,
   UserCircle,
+  ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/stores/sidebar";
@@ -73,6 +74,15 @@ const NAV_SECTIONS: NavSection[] = [
         ],
       },
       { label: "Projets clients", href: "/projects", icon: FolderKanban },
+      // Centre de sécurité placé AVANT "Alertes monitoring" : les
+      // événements de sécurité (AD lockouts, Wazuh, Bitdefender) sont
+      // plus critiques et doivent être au premier plan.
+      {
+        label: "Centre de sécurité",
+        href: "/security-center",
+        icon: ShieldAlert,
+        minRole: "TECHNICIAN",
+      },
       { label: "Alertes monitoring", href: "/monitoring", icon: Bell },
       { label: "Sauvegardes", href: "/backups", icon: HardDrive },
       { label: "Mon espace", href: "/my-space", icon: UserCircle },

@@ -73,6 +73,8 @@ model Organization {
   sharedResources SharedResource[] @relation("SharedWithOrg")
   calendarEvents  CalendarEvent[]
   backupTicketTemplates BackupTicketTemplate[]
+  securityAlerts     SecurityAlert[]
+  securityIncidents  SecurityIncident[]
 
   @@map("organizations")
 }
@@ -145,6 +147,7 @@ model User {
   sharedResources SharedResource[] @relation("SharedByUser")
   ticketReminders TicketReminder[]
   notifications   Notification[]
+  assignedSecurityIncidents SecurityIncident[] @relation("SecurityIncidentAssignee")
 
   // Calendrier + rencontres
   createdCalendars    Calendar[]
@@ -318,6 +321,9 @@ model Ticket {
   reminders      TicketReminder[]
   // Events calendrier qui pointent vers ce ticket interne (suivi visuel).
   linkedCalendarEvents CalendarEvent[] @relation("CalendarEventInternalTicket")
+  // Incident de sécurité éventuellement converti en ce ticket (1:1 — si
+  // besoin d'1 ticket→N incidents plus tard, pivoter vers une join table).
+  securityIncident SecurityIncident? @relation("SecurityIncidentTicket")
 
   @@index([organizationId, status])
   @@index([requiresOnSite, status])
@@ -1971,4 +1977,85 @@ model MeetingParticipant {
   @@unique([meetingId, userId])
   @@index([userId])
   @@map("meeting_participants")
+}
+
+// ============================================================================
+// SECURITY CENTER — vue 360 des alertes de sécurité (AD, Wazuh, Bitdefender…)
+//
+// Modèle à deux niveaux :
+//   - SecurityAlert     : un événement brut (un courriel, une réponse API)
+//   - SecurityIncident  : groupement logique de plusieurs alertes similaires,
+//                         unique par `correlationKey`. C'est l'objet affiché
+//                         dans l'UI et éventuellement converti en ticket.
+//
+// La corrélation suit des règles simples :
+//   - AD Account Lockout   → org + userPrincipal
+//   - Inactive Account     → org + userPrincipal
+//   - Persistence (Wazuh)  → org + endpoint + software
+//   - CVE (Wazuh)          → org + endpoint + cveId
+//   - Bitdefender malware  → org + endpoint + threatName
+//
+// Extensible : tout nouveau décodeur produit une `SecurityAlert` avec une
+// `correlationKey` stable, et le corrélateur s'occupe de l'incident.
+// ============================================================================
+
+model SecurityAlert {
+  id              String   @id @default(cuid())
+  source          String   // "ad_email" | "wazuh_email" | "bitdefender_api" | ...
+  kind            String   // "account_lockout" | "inactive_account" | "persistence_tool" | "cve" | "malware" | ...
+  severity        String?  // "critical" | "high" | "warning" | "info"
+  externalId      String?  @map("external_id") // dedup key (messageId ou id API)
+  organizationId  String?  @map("organization_id")
+  endpoint        String?
+  userPrincipal   String?  @map("user_principal")
+  title           String
+  summary         String?  @db.Text
+  rawPayload      Json?    @db.JsonB @map("raw_payload")
+  receivedAt      DateTime @default(now()) @map("received_at")
+  correlationKey  String   @map("correlation_key")
+  incidentId      String?  @map("incident_id")
+
+  organization    Organization?    @relation(fields: [organizationId], references: [id])
+  incident        SecurityIncident? @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@unique([source, externalId])
+  @@index([source, kind, receivedAt])
+  @@index([correlationKey])
+  @@index([organizationId, receivedAt])
+  @@map("security_alerts")
+}
+
+model SecurityIncident {
+  id              String   @id @default(cuid())
+  source          String
+  kind            String
+  severity        String?
+  organizationId  String?  @map("organization_id")
+  endpoint        String?
+  userPrincipal   String?  @map("user_principal")
+  software        String?
+  cveId           String?  @map("cve_id")
+  title           String
+  summary         String?  @db.Text
+  status          String   @default("open") // open | investigating | waiting_client | resolved | closed
+  assigneeId      String?  @map("assignee_id")
+  ticketId        String?  @unique @map("ticket_id")
+  correlationKey  String   @unique @map("correlation_key")
+  occurrenceCount Int      @default(1) @map("occurrence_count")
+  firstSeenAt     DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt      DateTime @default(now()) @map("last_seen_at")
+  metadata        Json?    @db.JsonB
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+  assignee        User?         @relation("SecurityIncidentAssignee", fields: [assigneeId], references: [id])
+  ticket          Ticket?       @relation("SecurityIncidentTicket", fields: [ticketId], references: [id])
+  alerts          SecurityAlert[]
+
+  @@index([source, kind, status])
+  @@index([organizationId, status])
+  @@index([assigneeId])
+  @@index([lastSeenAt])
+  @@map("security_incidents")
 }

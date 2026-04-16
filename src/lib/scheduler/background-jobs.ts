@@ -169,6 +169,39 @@ export function startBackgroundJobs() {
     },
   });
 
+  // Centre de sécurité — pull Bitdefender (10 min) + Wazuh subfolder (2 min).
+  scheduleJob({
+    name: "security-bitdefender",
+    intervalMs: Number(process.env.SECURITY_BITDEFENDER_INTERVAL_MS) || 600_000,
+    isRunning: false,
+    lastRun: null,
+    lastError: null,
+    consecutiveErrors: 0,
+    run: async () => {
+      const { syncBitdefender } = await import("@/lib/security-center/jobs");
+      const res = await syncBitdefender();
+      if (res.ingested > 0) {
+        console.log(`[security/bitdefender] +${res.ingested} nouvelles alertes`);
+      }
+    },
+  });
+
+  scheduleJob({
+    name: "security-wazuh",
+    intervalMs: Number(process.env.SECURITY_WAZUH_INTERVAL_MS) || 120_000,
+    isRunning: false,
+    lastRun: null,
+    lastError: null,
+    consecutiveErrors: 0,
+    run: async () => {
+      const { syncWazuhEmails } = await import("@/lib/security-center/jobs");
+      const res = await syncWazuhEmails();
+      if (res.ingested > 0) {
+        console.log(`[security/wazuh] +${res.ingested} nouvelles alertes`);
+      }
+    },
+  });
+
   scheduleJob({
     name: "renewal-notifications",
     // 1 h — les échéances ne bougent pas à la minute. Suffisant pour

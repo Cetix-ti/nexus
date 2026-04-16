@@ -111,7 +111,7 @@ async function getAccessToken(): Promise<string> {
   return cachedToken.accessToken;
 }
 
-async function graphFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function graphFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getAccessToken();
   const url = path.startsWith("http")
     ? path
@@ -133,7 +133,7 @@ const WELL_KNOWN: Record<string, string> = {
   "boîte de réception": "Inbox",
 };
 
-async function resolveFolderId(mailbox: string, folderPath: string): Promise<string> {
+export async function resolveFolderId(mailbox: string, folderPath: string): Promise<string> {
   const parts = folderPath.split("/").filter(Boolean);
   const base = `/users/${encodeURIComponent(mailbox)}`;
 
@@ -435,6 +435,40 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
           const forwardText = msg.body?.contentType === "html"
             ? msg.body.content
             : (msg.body?.content || msg.bodyPreview || "");
+
+          // --- Routage Centre de sécurité ---------------------------------
+          // Avant toute logique "ticket", on regarde si l'objet matche un
+          // pattern AD que le Security Center doit absorber. Cela évite
+          // de créer un ticket client pour un événement AD — l'incident
+          // vit dans sa propre table (SecurityIncident) et n'est converti
+          // en ticket qu'à la demande d'un agent via l'UI Security Center.
+          try {
+            const { isAdSecuritySubject, decodeAdEmail } = await import(
+              "@/lib/security-center/decoders/ad"
+            );
+            if (isAdSecuritySubject(cleanSubject)) {
+              const decoded = await decodeAdEmail({
+                subject: cleanSubject,
+                bodyPlain: plainBody,
+                fromEmail: senderEmail,
+                messageId,
+                receivedAt: new Date(msg.receivedDateTime),
+              });
+              if (decoded) {
+                const { ingestSecurityAlert } = await import(
+                  "@/lib/security-center/correlator"
+                );
+                await ingestSecurityAlert(decoded);
+                if (cfg.markAsRead && !msg.isRead) {
+                  await markAsRead(cfg.mailbox, msg.id).catch(() => {});
+                }
+                created++;
+                continue; // skip regular ticket path
+              }
+            }
+          } catch (err) {
+            console.warn("[security-center] AD decode failed:", err);
+          }
 
           // --- Threading : est-ce une réponse à un ticket existant ? -------
           const targetTicketId = await findThreadedTicket(
