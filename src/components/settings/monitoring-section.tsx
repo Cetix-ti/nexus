@@ -12,6 +12,8 @@ import {
   Plus,
   Trash2,
   ShieldAlert,
+  Zap,
+  Plug,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,10 +42,39 @@ export function MonitoringSection() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
   const [syncPeriod, setSyncPeriod] = useState("7");
-  // Synchro historique du Centre de sécurité (AD / Wazuh).
+  // Synchro historique du Centre de sécurité (AD / Wazuh email).
   const [secSyncing, setSecSyncing] = useState(false);
   const [secSyncResult, setSecSyncResult] = useState<any>(null);
   const [secSyncPeriod, setSecSyncPeriod] = useState("7");
+
+  // Wazuh API — intégration JSON directe (alternative aux emails).
+  interface WazuhCfg {
+    enabled: boolean;
+    apiUrl: string;
+    username: string;
+    password: string;
+    minLevel: number;
+    lastSyncAt?: string;
+  }
+  const [wazuh, setWazuh] = useState<WazuhCfg>({
+    enabled: false,
+    apiUrl: "",
+    username: "",
+    password: "",
+    minLevel: 7,
+  });
+  const [wazuhDirty, setWazuhDirty] = useState(false);
+  const [wazuhSaving, setWazuhSaving] = useState(false);
+  const [wazuhTesting, setWazuhTesting] = useState(false);
+  const [wazuhTestResult, setWazuhTestResult] = useState<{
+    ok: boolean;
+    version?: string;
+    clusterName?: string;
+    error?: string;
+  } | null>(null);
+  const [wazuhSyncing, setWazuhSyncing] = useState(false);
+  const [wazuhSyncResult, setWazuhSyncResult] = useState<any>(null);
+  const [wazuhSyncPeriod, setWazuhSyncPeriod] = useState("7");
 
   useEffect(() => {
     fetch("/api/v1/settings/monitoring")
@@ -59,7 +90,64 @@ export function MonitoringSection() {
         }
       })
       .catch(() => {});
+    // Wazuh API config — endpoint séparé parce que stocké sous une
+    // autre clé tenant_settings (security.wazuh vs monitoring.email).
+    fetch("/api/v1/settings/wazuh")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d) setWazuh(d);
+      })
+      .catch(() => {});
   }, []);
+
+  async function saveWazuh() {
+    setWazuhSaving(true);
+    try {
+      const res = await fetch("/api/v1/settings/wazuh", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(wazuh),
+      });
+      if (res.ok) {
+        const next = await res.json();
+        setWazuh(next);
+        setWazuhDirty(false);
+      }
+    } finally {
+      setWazuhSaving(false);
+    }
+  }
+
+  async function testWazuh() {
+    setWazuhTesting(true);
+    setWazuhTestResult(null);
+    try {
+      const res = await fetch("/api/v1/settings/wazuh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(wazuh),
+      });
+      setWazuhTestResult(await res.json());
+    } catch (e) {
+      setWazuhTestResult({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setWazuhTesting(false);
+    }
+  }
+
+  async function syncWazuh() {
+    if (wazuhDirty) await saveWazuh();
+    setWazuhSyncing(true);
+    setWazuhSyncResult(null);
+    const sinceDays = wazuhSyncPeriod === "all" ? 0 : Number(wazuhSyncPeriod);
+    const res = await fetch("/api/v1/security-center/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: "wazuh-api", sinceDays }),
+    });
+    setWazuhSyncResult(await res.json());
+    setWazuhSyncing(false);
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -349,6 +437,203 @@ export function MonitoringSection() {
               {secSyncResult.errors?.length > 0 && (
                 <div className="text-red-600 mt-1">
                   {secSyncResult.errors.slice(0, 3).join(" · ")}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Wazuh API — intégration directe à l'Indexer (OpenSearch).
+          Alternative plus propre que l'ingestion email pour Wazuh. */}
+      <Card className="border-purple-200/80 bg-purple-50/30">
+        <CardContent className="p-5 space-y-4">
+          <div className="flex items-start gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-purple-100 text-purple-700 ring-1 ring-purple-200/60 flex items-center justify-center shrink-0">
+              <Zap className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-[14px] font-semibold text-slate-900">
+                Wazuh Indexer (API directe)
+              </h3>
+              <p className="text-[12px] text-slate-500 mt-1">
+                Tire les alertes directement depuis l&apos;index
+                <span className="font-mono"> wazuh-alerts-*</span> (OpenSearch).
+                Recommandé vs les emails : JSON structuré, tous les champs
+                natifs (agent.id / agent.name / agent.ip, rule.level, CVE,
+                MITRE ATT&amp;CK). Dédup par <span className="font-mono">_id</span> du doc.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input
+              label="URL de l'Indexer"
+              placeholder="https://wazuh-indexer.cetix.local:9200"
+              value={wazuh.apiUrl}
+              onChange={(e) => {
+                setWazuh((w) => ({ ...w, apiUrl: e.target.value }));
+                setWazuhDirty(true);
+              }}
+            />
+            <Input
+              label="Utilisateur"
+              placeholder="nexus-reader"
+              value={wazuh.username}
+              onChange={(e) => {
+                setWazuh((w) => ({ ...w, username: e.target.value }));
+                setWazuhDirty(true);
+              }}
+            />
+            <Input
+              label="Mot de passe"
+              type="password"
+              placeholder="••••••••"
+              value={wazuh.password}
+              onChange={(e) => {
+                setWazuh((w) => ({ ...w, password: e.target.value }));
+                setWazuhDirty(true);
+              }}
+            />
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+                Niveau minimum
+              </label>
+              <select
+                value={wazuh.minLevel}
+                onChange={(e) => {
+                  setWazuh((w) => ({ ...w, minLevel: Number(e.target.value) }));
+                  setWazuhDirty(true);
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-900 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+              >
+                <option value={1}>1 (toutes alertes, inclut le bruit)</option>
+                <option value={4}>4 (avertissements et plus)</option>
+                <option value={7}>7 (recommandé — significatifs)</option>
+                <option value={10}>10 (critiques uniquement)</option>
+                <option value={12}>12 (très haute sévérité)</option>
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Filtre <span className="font-mono">rule.level &gt;= N</span>
+                — Wazuh note de 0 à 15.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-3 border-t border-purple-100">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                checked={wazuh.enabled}
+                onChange={(e) => {
+                  setWazuh((w) => ({ ...w, enabled: e.target.checked }));
+                  setWazuhDirty(true);
+                }}
+              />
+              <span className="text-[13px] font-medium text-slate-800">
+                Activer le pull API (toutes les 2 min)
+              </span>
+            </label>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={testWazuh}
+                disabled={wazuhTesting || !wazuh.apiUrl || !wazuh.username}
+              >
+                {wazuhTesting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plug className="h-3.5 w-3.5" />
+                )}
+                Tester
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={saveWazuh}
+                disabled={wazuhSaving || !wazuhDirty}
+              >
+                {wazuhSaving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="h-3.5 w-3.5" />
+                )}
+                Enregistrer
+              </Button>
+            </div>
+          </div>
+
+          {wazuhTestResult && (
+            <div
+              className={`rounded-lg border px-3 py-2.5 text-[12px] flex items-start gap-2 ${
+                wazuhTestResult.ok
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-red-200 bg-red-50 text-red-800"
+              }`}
+            >
+              {wazuhTestResult.ok ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+              ) : (
+                <XCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1">
+                {wazuhTestResult.ok ? (
+                  <span>
+                    Connecté à <strong>{wazuhTestResult.clusterName ?? "cluster"}</strong>
+                    {wazuhTestResult.version ? ` · OpenSearch ${wazuhTestResult.version}` : ""}
+                  </span>
+                ) : (
+                  <span>{wazuhTestResult.error}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Backfill historique API */}
+          <div className="flex items-center justify-between pt-3 border-t border-purple-100">
+            <div className="text-[11.5px] text-slate-600">
+              <strong>Synchroniser l&apos;historique</strong> — pull JSON depuis
+              l&apos;Indexer sur la fenêtre choisie.
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={wazuhSyncPeriod}
+                onChange={(e) => setWazuhSyncPeriod(e.target.value)}
+                disabled={wazuhSyncing}
+                className="h-8 rounded-lg border border-purple-200 bg-white px-2.5 text-[12px] text-slate-700 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+              >
+                <option value="1">24h</option>
+                <option value="7">7 derniers jours</option>
+                <option value="30">30 derniers jours</option>
+                <option value="90">90 derniers jours</option>
+                <option value="all">Tout l&apos;historique (depuis lastSyncAt)</option>
+              </select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={syncWazuh}
+                disabled={wazuhSyncing || !wazuh.enabled || !wazuh.apiUrl}
+              >
+                {wazuhSyncing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Synchroniser
+              </Button>
+            </div>
+          </div>
+
+          {wazuhSyncResult && (
+            <div className="rounded-lg border border-purple-200 bg-white px-3 py-2.5 text-[12px] text-slate-700">
+              <strong>{wazuhSyncResult.ingested}</strong> nouvelles alertes,{" "}
+              <strong>{wazuhSyncResult.skipped}</strong> déjà vues,{" "}
+              <strong>{wazuhSyncResult.fetched}</strong> examinées
+              {wazuhSyncResult.errors?.length > 0 && (
+                <div className="text-red-600 mt-1">
+                  {wazuhSyncResult.errors.slice(0, 3).join(" · ")}
                 </div>
               )}
             </div>

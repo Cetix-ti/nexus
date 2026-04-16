@@ -19,6 +19,7 @@ import { graphFetch, resolveFolderId } from "@/lib/email-to-ticket/service";
 import { getMonitoringConfig } from "@/lib/monitoring/email-sync";
 import { decodeBitdefenderEvent, type BitdefenderEvent } from "./decoders/bitdefender";
 import { decodeWazuhEmail } from "./decoders/wazuh";
+import { decodeWazuhApiAlert } from "./decoders/wazuh-api";
 import { isAdSecuritySubject, decodeAdEmail } from "./decoders/ad";
 import { ingestSecurityAlert } from "./correlator";
 import {
@@ -26,6 +27,7 @@ import {
   fetchBitdefenderEvents,
   saveBitdefenderLastSync,
 } from "./bitdefender-client";
+import { getWazuhConfig, saveWazuhConfig, fetchWazuhAlerts } from "./wazuh-client";
 
 // ----------------------------------------------------------------------------
 // Bitdefender
@@ -47,6 +49,77 @@ export async function syncBitdefender(): Promise<{ fetched: number; ingested: nu
     console.log(`[security/bitdefender] ${events.length} events, ${ingested} nouvelles`);
   }
   return { fetched: events.length, ingested };
+}
+
+// ----------------------------------------------------------------------------
+// Wazuh Indexer — pull JSON direct depuis l'API (recommandé vs email)
+// ----------------------------------------------------------------------------
+
+export async function syncWazuhApi(options?: { sinceDays?: number }): Promise<{
+  fetched: number;
+  ingested: number;
+  skipped: number;
+  errors: string[];
+}> {
+  const stats = { fetched: 0, ingested: 0, skipped: 0, errors: [] as string[] };
+  const cfg = await getWazuhConfig();
+  if (!cfg.enabled || !cfg.apiUrl) return stats;
+
+  // Curseur : soit on demande les alertes depuis `sinceDays` (backfill
+  // manuel déclenché depuis les paramètres), soit on repart du dernier
+  // timestamp connu (poll récurrent).
+  const since =
+    options?.sinceDays && options.sinceDays > 0
+      ? new Date(Date.now() - options.sinceDays * 86_400_000).toISOString()
+      : cfg.lastSyncAt;
+
+  try {
+    // Pagination manuelle par cursor timestamp. Un simple `search_after`
+    // OpenSearch serait plus élégant mais une boucle avec avancement du
+    // cursor suffit pour ingérer N pages d'au plus 500 alertes.
+    let cursor = since;
+    let maxTimestampSeen: string | null = null;
+    for (let page = 0; page < 20; page++) {
+      const { alerts } = await fetchWazuhAlerts(cfg, { since: cursor, size: 500 });
+      if (alerts.length === 0) break;
+      stats.fetched += alerts.length;
+      for (const hit of alerts) {
+        try {
+          const decoded = await decodeWazuhApiAlert(hit);
+          if (!decoded) {
+            stats.skipped++;
+            continue;
+          }
+          const res = await ingestSecurityAlert(decoded);
+          if (res?.isNew) stats.ingested++;
+          else stats.skipped++;
+          const ts = hit._source.timestamp;
+          if (ts && (!maxTimestampSeen || ts > maxTimestampSeen)) maxTimestampSeen = ts;
+        } catch (e) {
+          stats.errors.push(e instanceof Error ? e.message : String(e));
+        }
+      }
+      // Avance le cursor — si on n'a pas avancé, on brise la boucle pour
+      // éviter un spin sur la même dernière alerte.
+      if (maxTimestampSeen && maxTimestampSeen !== cursor) {
+        cursor = maxTimestampSeen;
+      } else {
+        break;
+      }
+    }
+    if (maxTimestampSeen) {
+      await saveWazuhConfig({ lastSyncAt: maxTimestampSeen });
+    }
+    if (stats.ingested > 0) {
+      console.log(
+        `[security/wazuh-api] ${stats.fetched} alertes examinées, ${stats.ingested} nouvelles`,
+      );
+    }
+  } catch (e) {
+    stats.errors.push(e instanceof Error ? e.message : String(e));
+    console.error("[security/wazuh-api] sync échoué :", e);
+  }
+  return stats;
 }
 
 // ----------------------------------------------------------------------------

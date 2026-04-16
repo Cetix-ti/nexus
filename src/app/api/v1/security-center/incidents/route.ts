@@ -13,7 +13,13 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
-  const source = url.searchParams.get("source") || undefined;
+  // `source` accepte soit un seul code ("ad_email") soit plusieurs
+  // séparés par virgule ("wazuh_email,wazuh_api") pour que l'onglet
+  // Wazuh puisse agréger les deux pipelines.
+  const sourceRaw = url.searchParams.get("source");
+  const sourceList = sourceRaw
+    ? sourceRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
   const kind = url.searchParams.get("kind") || undefined;
   const status = url.searchParams.get("status") || undefined;
   const orgId = url.searchParams.get("organizationId") || undefined;
@@ -29,7 +35,11 @@ export async function GET(req: Request) {
 
   const incidents = await prisma.securityIncident.findMany({
     where: {
-      ...(source ? { source } : {}),
+      ...(sourceList.length === 1
+        ? { source: sourceList[0] }
+        : sourceList.length > 1
+          ? { source: { in: sourceList } }
+          : {}),
       ...(kind ? { kind } : {}),
       ...(status ? { status } : {}),
       ...(orgId ? { organizationId: orgId } : {}),

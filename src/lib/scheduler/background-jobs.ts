@@ -187,7 +187,7 @@ export function startBackgroundJobs() {
   });
 
   scheduleJob({
-    name: "security-wazuh",
+    name: "security-wazuh-email",
     intervalMs: Number(process.env.SECURITY_WAZUH_INTERVAL_MS) || 120_000,
     isRunning: false,
     lastRun: null,
@@ -197,7 +197,27 @@ export function startBackgroundJobs() {
       const { syncWazuhEmails } = await import("@/lib/security-center/jobs");
       const res = await syncWazuhEmails();
       if (res.ingested > 0) {
-        console.log(`[security/wazuh] +${res.ingested} nouvelles alertes`);
+        console.log(`[security/wazuh-email] +${res.ingested} nouvelles alertes`);
+      }
+    },
+  });
+
+  // Pull JSON direct depuis l'API Wazuh — recommandé vs email. Les deux
+  // jobs tournent en parallèle : dès que l'admin active l'API dans les
+  // paramètres, le décodeur API prend le relais (dédup via _id, donc
+  // pas de double-ingestion).
+  scheduleJob({
+    name: "security-wazuh-api",
+    intervalMs: Number(process.env.SECURITY_WAZUH_API_INTERVAL_MS) || 120_000,
+    isRunning: false,
+    lastRun: null,
+    lastError: null,
+    consecutiveErrors: 0,
+    run: async () => {
+      const { syncWazuhApi } = await import("@/lib/security-center/jobs");
+      const res = await syncWazuhApi();
+      if (res.ingested > 0) {
+        console.log(`[security/wazuh-api] +${res.ingested} nouvelles alertes`);
       }
     },
   });

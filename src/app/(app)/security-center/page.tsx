@@ -62,7 +62,10 @@ type TabKey = "ad" | "wazuh" | "bitdefender" | "all";
 
 const TABS: { key: TabKey; label: string; sources: string[]; icon: typeof Shield }[] = [
   { key: "ad", label: "Active Directory", sources: ["ad_email"], icon: Shield },
-  { key: "wazuh", label: "Wazuh", sources: ["wazuh_email"], icon: Zap },
+  // Onglet Wazuh agrège les deux pipelines (email + API directe) pour que
+  // la migration soit transparente — les anciens incidents ingérés via
+  // email restent visibles à côté des nouveaux tirés de l'API.
+  { key: "wazuh", label: "Wazuh", sources: ["wazuh_email", "wazuh_api"], icon: Zap },
   { key: "bitdefender", label: "Bitdefender", sources: ["bitdefender_api"], icon: Bug },
   { key: "all", label: "Tous", sources: [], icon: ShieldAlert },
 ];
@@ -110,7 +113,11 @@ export default function SecurityCenterPage() {
     try {
       const active = TABS.find((t) => t.key === tab);
       const params = new URLSearchParams();
-      if (active?.sources.length === 1) params.set("source", active.sources[0]);
+      if (active && active.sources.length > 0) {
+        // Le backend accepte CSV → on peut passer plusieurs sources
+        // pour l'onglet Wazuh qui agrège email + API.
+        params.set("source", active.sources.join(","));
+      }
       const res = await fetch(`/api/v1/security-center/incidents?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as Incident[];
