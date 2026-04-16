@@ -73,6 +73,11 @@ const NAV_SECTIONS: NavSection[] = [
           { label: "Ma journée", href: "/tickets/my-day" },
         ],
       },
+      // Supervision — visible uniquement pour les agents qui supervisent
+      // d'autres agents. La visibilité est contrôlée côté client par
+      // l'existence de la clé supervisedAgents dans le profil user, pas
+      // par un rôle statique.
+      { label: "Supervision", href: "/supervision", icon: BarChart3, minRole: "SUPERVISOR" },
       { label: "Projets clients", href: "/projects", icon: FolderKanban },
       // Centre de sécurité placé AVANT "Alertes monitoring" : les
       // événements de sécurité (AD lockouts, Wazuh, Bitdefender) sont

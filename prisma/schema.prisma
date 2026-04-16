@@ -176,7 +176,36 @@ model User {
   meetingAgendaItems    MeetingAgendaItem[]
   meetingParticipations MeetingParticipant[]
 
+  // Supervision d'agents — un superviseur peut gérer N agents, un agent
+  // peut avoir au plus un superviseur (1:N). Menu "Supervision" visible
+  // uniquement pour les users qui ont au moins un entry dans supervisedAgents.
+  supervisedAgents AgentSupervision[] @relation("Supervisor")
+  supervisedBy     AgentSupervision[] @relation("SupervisedAgent")
+
   @@map("users")
+}
+
+// ============================================================================
+// SUPERVISION D'AGENTS
+//
+// Relation explicite superviseur → agent. Gérée dans Paramètres (super-admin
+// uniquement). La page /supervision utilise cette table pour déterminer
+// quels agents le user connecté supervise et afficher leurs métriques.
+// ============================================================================
+
+model AgentSupervision {
+  id           String   @id @default(cuid())
+  supervisorId String   @map("supervisor_id")
+  agentId      String   @map("agent_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  supervisor User @relation("Supervisor", fields: [supervisorId], references: [id], onDelete: Cascade)
+  agent      User @relation("SupervisedAgent", fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([supervisorId, agentId])
+  @@index([supervisorId])
+  @@index([agentId])
+  @@map("agent_supervisions")
 }
 
 enum UserRole {

@@ -58,6 +58,7 @@ import { IntegrationsSection } from "@/components/settings/integrations-section"
 import { PortalDomainSection } from "@/components/settings/portal-domain-section";
 import { MonitoringSection } from "@/components/settings/monitoring-section";
 import { PersistenceSecuritySection } from "@/components/settings/persistence-security-section";
+import { SupervisionSection } from "@/components/settings/supervision-section";
 import { PortalPreviewSection } from "@/components/settings/portal-preview-section";
 import { ProjectTypesSection } from "@/components/settings/project-types-section";
 import { EmailToTicketSection } from "@/components/settings/email-to-ticket-section";
@@ -95,6 +96,7 @@ const sectionGroups: SettingsGroup[] = [
     sections: [
       { key: "general", label: "Général", icon: Settings, superAdminOnly: true },
       { key: "users", label: "Agents", icon: Users, superAdminOnly: true },
+      { key: "supervision", label: "Supervision", icon: Users, superAdminOnly: true },
       { key: "roles", label: "Rôles & Permissions", icon: Shield, superAdminOnly: true },
     ],
   },
@@ -1123,6 +1125,7 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   integrations: <IntegrationsSection />,
   email_monitoring: <MonitoringSection />,
   persistence_security: <PersistenceSecuritySection />,
+  supervision: <SupervisionSection />,
   portal_domain: <PortalDomainSection />,
   api: (
     <PlaceholderSection
