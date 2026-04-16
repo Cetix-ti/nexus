@@ -85,6 +85,7 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
         number: true,
         subject: true,
         description: true,
+        descriptionHtml: true,
         priority: true,
         isInternal: true,
         assigneeId: true,
@@ -101,6 +102,18 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
     const displayNumber = await formatTicketDisplay(ticket);
     const agentUrl = await getAgentTicketUrl(ticket.id);
     const portalUrl = await getPortalTicketUrl(ticket.id);
+    // HTML riche de la description si dispo — préserve gras, listes,
+    // images inline (cid: réécrits en URLs MinIO par le pipeline
+    // email-to-ticket). Si absent, on retombe sur un extrait plain text.
+    let richDescription: string | null = null;
+    if (ticket.descriptionHtml && ticket.descriptionHtml.trim()) {
+      try {
+        const { sanitizeEmailHtml } = await import("@/lib/email-to-ticket/html");
+        richDescription = sanitizeEmailHtml(ticket.descriptionHtml);
+      } catch (e) {
+        console.warn("[dispatchTicketCreatedNotifications] HTML sanitize échoué :", e);
+      }
+    }
     const excerpt = (ticket.description || "")
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
@@ -125,7 +138,20 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
         title: ticket.assigneeId ? "Un ticket vous est assigné" : "Nouveau ticket à prendre en charge",
         intro: `${displayNumber} — ${ticket.subject}`,
         metadata: ticketMetadata(ticket),
-        body: excerpt ? `<p style="margin:0;">${excerpt}${excerpt.length === 300 ? "…" : ""}</p>` : undefined,
+        // Carte "description" : si HTML riche dispo → on l'affiche dans
+        // un quote block pour préserver formattage + images. Sinon,
+        // extrait plain text dans le body.
+        body: richDescription
+          ? undefined
+          : excerpt
+            ? `<p style="margin:0;">${excerpt}${excerpt.length === 300 ? "…" : ""}</p>`
+            : undefined,
+        quote: richDescription
+          ? {
+              author: "Description",
+              contentHtml: richDescription,
+            }
+          : undefined,
         ctaUrl: agentUrl,
         ctaLabel: "Ouvrir le ticket",
       },
@@ -159,6 +185,85 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
     }
   } catch (err) {
     console.error("[dispatchTicketCreatedNotifications] erreur :", err);
+  }
+}
+
+// ============================================================================
+// TICKET ASSIGNED — notification au DEMANDEUR que son ticket a été pris
+// en charge. Envoyée quand `assigneeId` passe de null → user via un
+// updateTicket. Respecte l'allowlist (comme toute notif contact).
+// ============================================================================
+
+export async function dispatchTicketTakenOver(
+  ticketId: string,
+  newAssigneeId: string,
+): Promise<void> {
+  try {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: {
+        id: true,
+        number: true,
+        subject: true,
+        priority: true,
+        isInternal: true,
+        organization: { select: { name: true } },
+        requester: {
+          select: { firstName: true, lastName: true, email: true, isActive: true },
+        },
+      },
+    });
+    if (!ticket) return;
+    // On ne notifie que pour les tickets client — un ticket interne Cetix
+    // n'a pas de contact demandeur à informer.
+    if (ticket.isInternal) return;
+    if (!ticket.requester?.email || !ticket.requester.isActive) return;
+
+    const contactEmail = ticket.requester.email.trim().toLowerCase();
+    const allowed = await isAllowedContactEmail(contactEmail);
+    if (!allowed) {
+      console.info(
+        `[dispatch] assignment confirmation bloquée par allowlist : ${contactEmail}`,
+      );
+      return;
+    }
+
+    const assignee = await prisma.user.findUnique({
+      where: { id: newAssigneeId },
+      select: { firstName: true, lastName: true },
+    });
+    const assigneeName = assignee
+      ? `${assignee.firstName} ${assignee.lastName}`.trim()
+      : "notre équipe";
+
+    const displayNumber = await formatTicketDisplay(ticket);
+    const portalUrl = await getPortalTicketUrl(ticket.id);
+
+    const html = buildNexusEmail({
+      event: "ticket_assigned",
+      preheader: `Votre demande ${displayNumber} est prise en charge par ${assigneeName}`,
+      title: "Votre demande est prise en charge",
+      intro: `Référence ${displayNumber}`,
+      metadata: [
+        { label: "Sujet", value: ticket.subject },
+        { label: "Prise en charge par", value: assigneeName },
+        { label: "Priorité", value: ticket.priority.toLowerCase() },
+        ...(ticket.organization?.name
+          ? [{ label: "Organisation", value: ticket.organization.name }]
+          : []),
+      ],
+      body: `<p style="margin:0;">Bonjour ${ticket.requester.firstName},</p><p style="margin:12px 0 0;">${assigneeName} vient d'être assigné(e) à votre demande et s'en occupe dès maintenant. Vous serez notifié de chaque mise à jour et pourrez suivre le traitement directement depuis le portail.</p>`,
+      ctaUrl: portalUrl,
+      ctaLabel: "Voir ma demande",
+    });
+
+    sendEmail(
+      contactEmail,
+      `Pris en charge — ${displayNumber} ${ticket.subject}`,
+      html,
+    ).catch((e) => console.warn("[dispatch] takenover email failed", e));
+  } catch (err) {
+    console.error("[dispatchTicketTakenOver] erreur :", err);
   }
 }
 
@@ -301,7 +406,15 @@ export async function dispatchTicketStatusChange(
 export async function dispatchTicketComment(opts: {
   ticketId: string;
   authorUserId?: string | null;
+  /** Plain text — toujours fourni pour preview / notification in-app. */
   commentBody: string;
+  /**
+   * HTML riche du commentaire tel que saisi (TipTap côté agent, ou HTML
+   * préservé des emails entrants). Si fourni, la notification email
+   * conservera la mise en forme (gras, listes, images inline…). Sinon
+   * on retombe sur le plain text.
+   */
+  commentBodyHtml?: string | null;
   isInternal: boolean;
   mentionedUserIds?: string[];
 }): Promise<void> {
@@ -346,6 +459,18 @@ export async function dispatchTicketComment(opts: {
     for (const uid of mentions) watchers.delete(uid);
 
     const excerpt = opts.commentBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+    // Préparation du HTML riche pour l'email — on sanitize si l'appelant
+    // a fourni bodyHtml, sinon l'email retombe sur l'extrait plain text.
+    // Évite de faire confiance à du HTML brut sorti de TipTap / Graph.
+    let richHtml: string | null = null;
+    if (opts.commentBodyHtml && opts.commentBodyHtml.trim()) {
+      try {
+        const { sanitizeEmailHtml } = await import("@/lib/email-to-ticket/html");
+        richHtml = sanitizeEmailHtml(opts.commentBodyHtml);
+      } catch (e) {
+        console.warn("[dispatchTicketComment] HTML sanitize échoué :", e);
+      }
+    }
 
     const commonContent: Omit<NotifyContent, "title"> = {
       body: `${displayNumber} · ${authorName}${opts.isInternal ? " (note interne)" : ""}`,
@@ -360,7 +485,11 @@ export async function dispatchTicketComment(opts: {
           organization: ticket.organization,
           priority: ticket.priority,
         }),
-        quote: excerpt ? { author: authorName, content: excerpt + (excerpt.length === 300 ? "…" : "") } : undefined,
+        quote: richHtml
+          ? { author: authorName, contentHtml: richHtml }
+          : excerpt
+            ? { author: authorName, content: excerpt + (excerpt.length === 300 ? "…" : "") }
+            : undefined,
         ctaUrl: agentUrl,
         ctaLabel: "Voir le commentaire",
       },

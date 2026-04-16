@@ -81,8 +81,15 @@ export interface NexusEmailOptions {
   metadata?: { label: string; value: string }[];
   /** Corps principal (texte libre — court de préférence). */
   body?: string;
-  /** Citation encadrée (ex: extrait de commentaire, description). */
-  quote?: { author?: string; content: string };
+  /**
+   * Citation encadrée (ex: extrait de commentaire, description de ticket).
+   * - `content`       : plain text — sera échappé automatiquement.
+   * - `contentHtml`   : HTML déjà assaini (via sanitizeEmailHtml) — rendu
+   *                     tel quel pour préserver gras, listes, couleurs,
+   *                     images inline d'un commentaire ou d'une description.
+   * Si les deux sont fournis, contentHtml prime.
+   */
+  quote?: { author?: string; content?: string; contentHtml?: string };
   /** CTA principal. */
   ctaUrl?: string;
   ctaLabel?: string;
@@ -131,11 +138,22 @@ export function buildNexusEmail(opts: NexusEmailOptions): string {
         // divider du dernier row, visuellement OK avec le padding.
     : "";
 
+  const quoteBody = opts.quote
+    ? opts.quote.contentHtml && opts.quote.contentHtml.trim()
+      ? // HTML pré-sanitisé → on le rend tel quel, préserve la mise en
+        //   page riche (gras, listes, couleurs, images, signatures…).
+        //   On force un `white-space: normal` pour ne pas que les clients
+        //   mail qui héritent du pre-wrap du span parent dupliquent les
+        //   sauts de ligne du HTML.
+        `<div class="nexus-rich" style="font-size:14px;color:${P.textSecondary};line-height:1.6;white-space:normal;">${opts.quote.contentHtml}</div>`
+      : // Plain text → on échappe + on garde les sauts de ligne via pre-wrap.
+        `<div style="font-size:14px;color:${P.textSecondary};line-height:1.6;white-space:pre-wrap;">${escapeHtml(opts.quote.content ?? "")}</div>`
+    : "";
   const quoteBlock = opts.quote
     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-left:3px solid ${accent.fg};background:${P.softBg};border-radius:0 8px 8px 0;margin:0 0 20px;">
          <tr><td style="padding:14px 18px;">
            ${opts.quote.author ? `<p style="margin:0 0 6px;font-size:12px;color:${P.textMuted};font-weight:600;">${escapeHtml(opts.quote.author)}</p>` : ""}
-           <div style="font-size:14px;color:${P.textSecondary};line-height:1.6;white-space:pre-wrap;">${escapeHtml(opts.quote.content)}</div>
+           ${quoteBody}
          </td></tr>
        </table>`
     : "";

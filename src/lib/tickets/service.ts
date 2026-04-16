@@ -578,6 +578,15 @@ export async function updateTicket(
         newValue: newAssignee ? `${newAssignee.firstName} ${newAssignee.lastName}` : null,
         metadata: { content: "a changé l'assignation" },
       });
+      // Prise en charge initiale (null → user) → notifie le demandeur.
+      // Les ré-assignations entre agents ne déclenchent pas cette notif
+      // pour éviter le spam (le client n'a pas à savoir qu'on se passe
+      // le ticket en interne).
+      if (!oldTicket.assigneeId && patch.assigneeId) {
+        import("@/lib/notifications/dispatch")
+          .then((m) => m.dispatchTicketTakenOver(id, patch.assigneeId as string))
+          .catch(() => {});
+      }
     }
     if (activities.length > 0) {
       await prisma.activity.createMany({ data: activities });

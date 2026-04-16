@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
-import { notifyCommentAdded } from "@/lib/email/ticket-notifications";
 
 export async function POST(
   request: NextRequest,
@@ -104,12 +103,20 @@ export async function POST(
     data: { status: "OPEN", resolvedAt: null, closedAt: null },
   });
 
-  notifyCommentAdded(ticket.id, {
-    authorName: `${comment.author.firstName} ${comment.author.lastName}`,
-    authorId: comment.authorId,
-    content: body.content.trim(),
-    isInternal: false,
-  }).catch((err) => console.error("[portal comment notification]", err));
+  // Dispatcher central qui notifie l'assigné + collaborateurs avec
+  // préservation du HTML riche pour que l'email conserve gras / listes /
+  // images. Même pipeline que les comments agents.
+  import("@/lib/notifications/dispatch")
+    .then((m) =>
+      m.dispatchTicketComment({
+        ticketId: ticket.id,
+        authorUserId: comment.authorId,
+        commentBody: bodyText,
+        commentBodyHtml: bodyHtml,
+        isInternal: false,
+      }),
+    )
+    .catch(() => {});
 
   // Update ticket updatedAt timestamp
   await prisma.ticket.update({

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { notifyCommentAdded } from "@/lib/email/ticket-notifications";
 import { sendTicketReplyEmail } from "@/lib/email/ticket-reply";
 import { htmlToPlainText } from "@/lib/email-to-ticket/html";
 
@@ -102,15 +101,10 @@ export async function POST(
     );
   }
 
-  // Garde le legacy notifyCommentAdded pour les canaux internes (agent
-  // assigné notifié d'une note interne, etc.) — sendTicketReplyEmail est
-  // dédié au pipeline client omnicanal.
-  notifyCommentAdded(ticket.id, {
-    authorName,
-    authorId: me.id,
-    content: plainText,
-    isInternal: body.isInternal ?? false,
-  }).catch((err) => console.error("[comment notification]", err));
+  // NB : notifyCommentAdded (legacy, email seulement) est remplacé par
+  // dispatchTicketComment ci-dessous qui gère aussi les notifications
+  // in-app, les mentions, et les collaborateurs. sendTicketReplyEmail
+  // reste dédié au pipeline client omnicanal (threading MIME propre).
 
   // Notification in-app + email aux watchers + mentions via dispatcher
   // central qui respecte les préférences. Les @mentions sont extraites
@@ -126,6 +120,9 @@ export async function POST(
         ticketId: ticket.id,
         authorUserId: me.id,
         commentBody: plainText,
+        // HTML riche TipTap si l'agent a saisi une mise en forme. Sans
+        // ça, les emails sortants perdaient les listes / images / gras.
+        commentBodyHtml: bodyHtml,
         isInternal: body.isInternal ?? false,
         mentionedUserIds,
       }),
