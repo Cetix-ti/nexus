@@ -58,6 +58,15 @@ model Organization {
   /// la casse et aux accents (normalisation côté décodeur).
   calendarAliases String[] @default([]) @map("calendar_aliases")
 
+  /// Patterns de hostname utilisés par le résolveur d'organisation du
+  /// Centre de sécurité. Match en SUBSTRING insensible à la casse — utile
+  /// quand le nom de poste ne suit pas la convention CODE-XXX. Exemples :
+  ///   - Hulix Construction : ["STATION-LAV"] → matche "STATION-LAV-36"
+  ///   - École X : ["LAB-INFO", "PORTABLE-PROF"]
+  /// Vient compléter `clientCode` (priorité au prefix code, fallback aux
+  /// patterns substring si pas de match).
+  endpointPatterns String[] @default([]) @map("endpoint_patterns")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

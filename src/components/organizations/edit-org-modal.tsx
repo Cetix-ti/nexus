@@ -79,6 +79,9 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
   // array côté DB mais éditables via une chaîne CSV côté UI (plus
   // naturel pour saisir "LV, VDL").
   const [calendarAliases, setCalendarAliases] = useState("");
+  // Patterns hostname (substring match) pour le résolveur du Centre de
+  // sécurité. Stocké en array DB, édité en CSV côté UI.
+  const [endpointPatterns, setEndpointPatterns] = useState("");
   const [slug, setSlug] = useState("");
   const [domain, setDomain] = useState("");
   const [domains, setDomains] = useState<string[]>([]);
@@ -112,6 +115,11 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
       setCalendarAliases(
         Array.isArray((org as { calendarAliases?: string[] }).calendarAliases)
           ? ((org as { calendarAliases?: string[] }).calendarAliases ?? []).join(", ")
+          : "",
+      );
+      setEndpointPatterns(
+        Array.isArray((org as { endpointPatterns?: string[] }).endpointPatterns)
+          ? ((org as { endpointPatterns?: string[] }).endpointPatterns ?? []).join(", ")
           : "",
       );
       setSlug(org.slug || "");
@@ -198,6 +206,17 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
                 .split(/[,;\s]+/)
                 .map((a) => a.trim().toUpperCase())
                 .filter((a) => a.length >= 2),
+            ),
+          ),
+          // Patterns hostname pour le résolveur Sécurité — séparés par
+          // virgules (et non par espaces, parce que les patterns peuvent
+          // contenir des "-" comme "STATION-LAV").
+          endpointPatterns: Array.from(
+            new Set(
+              endpointPatterns
+                .split(/[,;\n]+/)
+                .map((p) => p.trim().toUpperCase())
+                .filter((p) => p.length >= 2),
             ),
           ),
           website: website || null,
@@ -374,6 +393,26 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
                   calendrier en plus du code client officiel. Séparer par
                   virgules. Exemple : « LV » pour que « VG LV » mappe à cette
                   organisation dans les événements Outlook.
+                </p>
+              </div>
+
+              {/* Patterns hostname pour le résolveur Centre de sécurité. */}
+              <div>
+                <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+                  Patterns hostname (Centre de sécurité)
+                </label>
+                <input
+                  value={endpointPatterns}
+                  onChange={(e) => setEndpointPatterns(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-mono text-slate-900 placeholder:text-slate-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="STATION-LAV, LAB-INFO"
+                />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Substrings recherchés dans les noms d&apos;ordinateur des
+                  alertes Wazuh / Bitdefender. Utile quand le poste ne suit
+                  pas la convention <code>CODE-XXX</code>. Exemple : ajouter
+                  « STATION-LAV » mappe automatiquement « STATION-LAV-36 »
+                  à cette organisation. Séparer par virgules.
                 </p>
               </div>
 

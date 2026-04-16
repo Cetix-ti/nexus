@@ -184,6 +184,8 @@ export async function updateOrganization(
     isInternal: boolean;
     /** Alias de calendrier Outlook — voir Organization.calendarAliases. */
     calendarAliases: string[];
+    /** Patterns hostname pour le résolveur Centre de sécurité. */
+    endpointPatterns: string[];
   }>
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -203,6 +205,18 @@ export async function updateOrganization(
               .replace(/[\u0300-\u036f]/g, ""),
           )
           .filter((a) => a.length >= 2),
+      ),
+    );
+  }
+  if (patch.endpointPatterns !== undefined) {
+    // Patterns hostname : trim + uppercase + dedup. Pas de strip d'accents
+    // (les hostnames Windows sont en ASCII pur, mais on garde "STATION-LAV"
+    // tel quel sans normalisation diacritique).
+    data.endpointPatterns = Array.from(
+      new Set(
+        patch.endpointPatterns
+          .map((p) => p.trim().toUpperCase())
+          .filter((p) => p.length >= 2),
       ),
     );
   }

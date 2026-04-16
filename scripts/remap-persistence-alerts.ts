@@ -6,7 +6,12 @@
 // Ne touche pas aux alertes déjà mappées — idempotent.
 
 import prisma from "@/lib/prisma";
-import { resolveOrgByEndpoint, resolveOrgByText } from "@/lib/security-center/org-resolver";
+import {
+  resolveOrgByEndpoint,
+  resolveOrgByEndpointPattern,
+  resolveOrgByText,
+  resolveOrgByHostOrIp,
+} from "@/lib/security-center/org-resolver";
 
 async function main() {
   const unmapped = await prisma.securityAlert.findMany({
@@ -33,9 +38,14 @@ async function main() {
     const subject = String(payload.subject ?? a.title ?? "");
     const body = String(payload.body ?? a.summary ?? "");
 
+    const ip = String((payload.ipAddress as string) ?? "").trim() || null;
     let orgId: string | null = null;
     if (a.endpoint) orgId = await resolveOrgByEndpoint(a.endpoint);
+    if (!orgId && a.endpoint) orgId = await resolveOrgByEndpointPattern(a.endpoint);
     if (!orgId) orgId = await resolveOrgByText(subject, body);
+    if (!orgId && (a.endpoint || ip)) {
+      orgId = await resolveOrgByHostOrIp(a.endpoint, ip);
+    }
 
     if (!orgId) continue;
 

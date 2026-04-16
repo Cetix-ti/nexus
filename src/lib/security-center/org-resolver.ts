@@ -24,6 +24,9 @@ const ORG_CACHE_TTL_MS = 60_000;
 interface OrgMaps {
   domainMap: Map<string, string>; // domain lowercase → orgId
   clientCodeMap: Map<string, string>; // CODE uppercase → orgId
+  /** Liste de (pattern uppercase, orgId). Match en substring insensible
+   *  à la casse — pour les hostnames qui ne suivent pas CODE-XXX. */
+  endpointPatterns: Array<{ pattern: string; orgId: string }>;
   loadedAt: number;
 }
 let cachedMaps: OrgMaps | null = null;
@@ -33,18 +36,37 @@ async function getOrgMaps(): Promise<OrgMaps> {
     return cachedMaps;
   }
   const orgs = await prisma.organization.findMany({
-    select: { id: true, domain: true, domains: true, clientCode: true },
+    select: {
+      id: true,
+      domain: true,
+      domains: true,
+      clientCode: true,
+      endpointPatterns: true,
+    },
   });
   const domainMap = new Map<string, string>();
   const clientCodeMap = new Map<string, string>();
+  const endpointPatterns: Array<{ pattern: string; orgId: string }> = [];
   for (const o of orgs) {
     if (o.domain) domainMap.set(o.domain.toLowerCase(), o.id);
     for (const d of o.domains ?? []) {
       if (d) domainMap.set(d.toLowerCase(), o.id);
     }
     if (o.clientCode) clientCodeMap.set(o.clientCode.toUpperCase(), o.id);
+    for (const p of o.endpointPatterns ?? []) {
+      const trimmed = p.trim().toUpperCase();
+      if (trimmed.length >= 2) endpointPatterns.push({ pattern: trimmed, orgId: o.id });
+    }
   }
-  cachedMaps = { domainMap, clientCodeMap, loadedAt: Date.now() };
+  // Tri par longueur décroissante : un pattern plus spécifique (plus long)
+  // matche avant un pattern plus court ambigu.
+  endpointPatterns.sort((a, b) => b.pattern.length - a.pattern.length);
+  cachedMaps = {
+    domainMap,
+    clientCodeMap,
+    endpointPatterns,
+    loadedAt: Date.now(),
+  };
   return cachedMaps;
 }
 
@@ -97,6 +119,23 @@ export async function resolveOrgByEndpoint(endpoint: string): Promise<string | n
 }
 
 /**
+ * Résout via les `endpointPatterns` configurés sur les organisations.
+ * Match en SUBSTRING insensible à la casse. Le pattern le plus long
+ * gagne (ordre du cache déjà trié par longueur décroissante). Utilisé
+ * comme fallback quand le hostname ne porte pas de code client à son
+ * début (ex: "STATION-LAV-36" → pattern "STATION-LAV" → Hulix).
+ */
+export async function resolveOrgByEndpointPattern(endpoint: string): Promise<string | null> {
+  const upper = endpoint.trim().toUpperCase();
+  if (!upper) return null;
+  const maps = await getOrgMaps();
+  for (const { pattern, orgId } of maps.endpointPatterns) {
+    if (upper.includes(pattern)) return orgId;
+  }
+  return null;
+}
+
+/**
  * Scanne un texte libre (sujet + body) à la recherche de tokens
  * "CODE-XXX" et renvoie le PREMIER clientCode matchant une organisation
  * existante. Pattern identique à `extractAllClientCodePrefixes` de
@@ -123,15 +162,26 @@ export async function resolveOrgByEndpoint(endpoint: string): Promise<string | n
  */
 const rmmCache = new Map<string, string | null>();
 
+/**
+ * Normalise une adresse MAC en supprimant les séparateurs (`:`, `-`, `.`)
+ * et en passant en lowercase. Permet de comparer "AA:BB:CC:DD:EE:FF" et
+ * "AA-BB-CC-DD-EE-FF" et "AABB.CCDD.EEFF" comme équivalents.
+ */
+function normalizeMac(mac: string): string {
+  return mac.replace(/[:\-.]/g, "").toLowerCase();
+}
+
 export async function resolveOrgByHostOrIp(
   hostname?: string | null,
   ipAddress?: string | null,
+  macAddress?: string | null,
 ): Promise<string | null> {
   const host = hostname?.trim();
   const ip = ipAddress?.trim();
-  if (!host && !ip) return null;
+  const mac = macAddress?.trim();
+  if (!host && !ip && !mac) return null;
 
-  const cacheKey = `${(host ?? "").toLowerCase()}|${ip ?? ""}`;
+  const cacheKey = `${(host ?? "").toLowerCase()}|${ip ?? ""}|${mac ? normalizeMac(mac) : ""}`;
   if (rmmCache.has(cacheKey)) return rmmCache.get(cacheKey) ?? null;
 
   // 1) Local Asset table — match hostname, puis IP.
@@ -168,7 +218,7 @@ export async function resolveOrgByHostOrIp(
   //    existante) ou en tentant de matcher par Customer.Name.
   if (process.env.ATERA_API_KEY) {
     try {
-      const orgId = await resolveViaAteraApi(host, ip);
+      const orgId = await resolveViaAteraApi(host, ip, mac);
       rmmCache.set(cacheKey, orgId);
       return orgId;
     } catch (e) {
@@ -181,40 +231,73 @@ export async function resolveOrgByHostOrIp(
 }
 
 /**
- * Lookup Atera — on évite de lister tous les agents du tenant (peut être
- * très large). Stratégie : si on a un hostname, on liste un échantillon
- * d'agents et on filtre côté client. Pour une implémentation plus
- * efficace future, Atera supporte `?searchOnly=...` sur certains endpoints.
+ * Lookup Atera — scan TOUS les customers du tenant (plafonné à 200 par
+ * sécurité) et matche l'agent par :
+ *   1. MachineName / AgentName exact (case-insensitive)
+ *   2. MachineName / AgentName substring (case-insensitive) — robuste
+ *      aux variations comme "COMM-W11" vs "COMM-W11.cetix.local"
+ *   3. IP exacte dans IpAddresses
+ *   4. MAC exacte (avec/sans séparateurs ":-." normalisés) dans MacAddresses
+ *
+ * La cascade s'arrête au premier match. Cap de 200 customers évite de
+ * marteler Atera sur des tenants très larges ; les résultats sont mis
+ * en cache 60 s par `ateraFetch`.
  */
 async function resolveViaAteraApi(
   hostname?: string,
   ip?: string,
+  mac?: string,
 ): Promise<string | null> {
   const { listAteraCustomers, listAteraAgentsForCustomer } = await import(
     "@/lib/integrations/atera-client"
   );
-  const needleName = hostname?.toLowerCase();
-  const needleIp = ip;
-  if (!needleName && !needleIp) return null;
+  const needleName = hostname?.toLowerCase().trim();
+  const needleIp = ip?.trim();
+  const needleMac = mac ? normalizeMac(mac) : null;
+  if (!needleName && !needleIp && !needleMac) return null;
 
   const customers = await listAteraCustomers();
-  // On ne scanne pas TOUS les customers (peut être 50+ avec 100+ agents
-  // chacun). On plafonne à 30 customers — suffisant pour les tenants MSP
-  // Cetix. Si besoin, remplacer par une vraie API de recherche quand
-  // Atera l'expose.
-  for (const cust of customers.slice(0, 30)) {
+  for (const cust of customers.slice(0, 200)) {
     let agents;
     try {
       agents = await listAteraAgentsForCustomer(cust.CustomerID);
     } catch {
       continue;
     }
-    const match = agents.find(
-      (a) =>
-        (needleName && a.MachineName?.toLowerCase() === needleName) ||
-        (needleName && (a.AgentName ?? "").toLowerCase() === needleName) ||
-        (needleIp && Array.isArray(a.IpAddresses) && a.IpAddresses.includes(needleIp)),
-    );
+    const match = agents.find((a) => {
+      const machine = a.MachineName?.toLowerCase() ?? "";
+      const agentName = (a.AgentName ?? "").toLowerCase();
+      // 1. Exact match name (le plus fiable)
+      if (needleName && (machine === needleName || agentName === needleName)) return true;
+      // 2. Substring : le needle doit être contenu dans la valeur Atera
+      //    (cas FQDN côté Atera). Garde-fou contre empty strings :
+      //    needleName et la valeur scannée doivent toutes deux faire
+      //    >=4 char pour éviter qu'un MachineName vide ou très court
+      //    matche par accident (`"comm-w11".includes("")` = true sinon).
+      if (needleName && needleName.length >= 4) {
+        if (machine.length >= 4 && machine.includes(needleName)) return true;
+        if (agentName.length >= 4 && agentName.includes(needleName)) return true;
+        // Cas inverse : Atera a la version courte, Wazuh envoie le FQDN.
+        // On exige que la valeur Atera fasse au moins 4 char ET soit
+        // strictement plus courte que le needle (sinon l'exact match
+        // l'aurait déjà attrapé).
+        if (machine.length >= 4 && machine.length < needleName.length && needleName.includes(machine)) {
+          return true;
+        }
+        if (agentName.length >= 4 && agentName.length < needleName.length && needleName.includes(agentName)) {
+          return true;
+        }
+      }
+      // 3. IP exacte
+      if (needleIp && Array.isArray(a.IpAddresses) && a.IpAddresses.includes(needleIp)) {
+        return true;
+      }
+      // 4. MAC normalisée
+      if (needleMac && Array.isArray(a.MacAddresses)) {
+        if (a.MacAddresses.some((m) => normalizeMac(m) === needleMac)) return true;
+      }
+      return false;
+    });
     if (!match) continue;
 
     // Resolve Atera CustomerID → Nexus Organization via OrgIntegrationMapping

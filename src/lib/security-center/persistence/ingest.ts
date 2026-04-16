@@ -21,7 +21,12 @@ import { lookupPersistenceWhitelist } from "./whitelist";
 import { computePersistenceSeverity } from "./severity";
 import { sendPersistenceAlertEmail, type PersistenceEmailContext } from "./email";
 import { ingestSecurityAlert, type IngestResult } from "../correlator";
-import { resolveOrgByEndpoint, resolveOrgByText } from "../org-resolver";
+import {
+  resolveOrgByEndpoint,
+  resolveOrgByEndpointPattern,
+  resolveOrgByText,
+  resolveOrgByHostOrIp,
+} from "../org-resolver";
 import type { DecodedAlert } from "../types";
 
 /**
@@ -46,11 +51,20 @@ export async function ingestPersistenceEmail(opts: {
 
   const softwareNormalized = normalizeSoftwareName(parsed.softwareName);
 
-  // Résolution org : priorité au hostname (préfixe clientCode), fallback
-  // sur scan complet du sujet/body (cas des hostnames custom).
+  // Résolution org — cascade du plus fiable au plus coûteux :
+  //   1. Préfixe clientCode du hostname           (gratuit, le plus rapide)
+  //   2. endpointPatterns custom configurés       (gratuit, substring match)
+  //   3. Scan tokens CODE-XXX dans sujet+body     (gratuit, regex)
+  //   4. Lookup RMM Atera par MachineName/IP      (réseau, dernier recours)
   let organizationId: string | null = await resolveOrgByEndpoint(parsed.hostname);
   if (!organizationId) {
+    organizationId = await resolveOrgByEndpointPattern(parsed.hostname);
+  }
+  if (!organizationId) {
     organizationId = await resolveOrgByText(parsed.rawSubject, parsed.rawBodyPreview);
+  }
+  if (!organizationId && (parsed.hostname || parsed.ipAddress)) {
+    organizationId = await resolveOrgByHostOrIp(parsed.hostname, parsed.ipAddress);
   }
 
   let organizationName: string | null = null;
