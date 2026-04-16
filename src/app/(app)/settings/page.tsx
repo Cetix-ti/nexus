@@ -725,7 +725,10 @@ function UsersSection() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/v1/users?includeInactive=true&includeSystem=true")
+    // includeAvatar=true — sans ce param, l'endpoint omet la colonne
+    // `avatar` (pour alléger les listes de 500 users). Mais ici on est
+    // SUR la liste d'utilisateurs et on a besoin des thumbnails.
+    fetch("/api/v1/users?includeInactive=true&includeSystem=true&includeAvatar=true")
       .then((r) => r.json())
       .then((data) => {
         if (cancelled || !Array.isArray(data)) return;

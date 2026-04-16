@@ -107,31 +107,58 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function onAvatarFileSelected(file: File) {
+  /**
+   * Compresse et redimensionne l'image côté client AVANT d'envoyer au
+   * serveur. Raisons :
+   *  - Next.js a un body-limit de ~1 Mo sur les Route Handlers → un
+   *    upload brut de 2-5 Mo (JPG pleine résolution, photo de phone)
+   *    déclenche un 413 avant même d'atteindre l'API.
+   *  - Le serveur re-optimise ensuite en WebP 192 px (optimizeAvatar),
+   *    donc envoyer plus gros est de toute façon gaspillé.
+   * Cible : 384 px de côté max (2× la taille serveur pour gérer le
+   * retina), JPEG qualité 0.85 → typiquement < 50 KB data-URL.
+   */
+  async function compressAvatar(file: File): Promise<string> {
+    const MAX_DIM = 384;
+    const QUALITY = 0.85;
+    // On passe par createImageBitmap pour décoder sans saturer le DOM.
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_DIM / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D indisponible");
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    // JPEG pour compatibilité maximale. Le serveur re-encodera en WebP.
+    return canvas.toDataURL("image/jpeg", QUALITY);
+  }
+
+  async function onAvatarFileSelected(file: File) {
     setAvatarError(null);
-    // Limite côté client : 2 Mo avant compression. L'API re-optimise en
-    // WebP 192px via optimizeAvatar, donc même une grosse image rentrera
-    // ensuite dans la contrainte serveur (max 700 KB data-URL).
-    if (file.size > 2 * 1024 * 1024) {
-      setAvatarError("Image trop lourde (max 2 Mo)");
+    // Garde-fou raisonnable avant même la compression : 10 Mo max en
+    // entrée (photos RAW de smartphones). Au-delà c'est probablement
+    // pas une photo de profil.
+    if (file.size > 10 * 1024 * 1024) {
+      setAvatarError("Image trop lourde (max 10 Mo en entrée)");
       return;
     }
     if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) {
       setAvatarError("Format non supporté (PNG/JPG/WebP)");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUri = typeof reader.result === "string" ? reader.result : "";
-      if (!dataUri.startsWith("data:image/")) {
-        setAvatarError("Lecture de l'image impossible");
-        return;
-      }
-      setAvatar(dataUri);
+    try {
+      const compressed = await compressAvatar(file);
+      setAvatar(compressed);
       setAvatarDirty(true);
-    };
-    reader.onerror = () => setAvatarError("Lecture de l'image impossible");
-    reader.readAsDataURL(file);
+    } catch (e) {
+      setAvatarError(
+        "Impossible de traiter l'image : " +
+          (e instanceof Error ? e.message : String(e)),
+      );
+    }
   }
 
   function clearAvatar() {
@@ -257,7 +284,7 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
                 )}
               </div>
               <p className="mt-1.5 text-[12px] text-slate-500">
-                PNG, JPG ou WebP — max. 2 Mo. Automatiquement optimisé en WebP 192 px.
+                PNG, JPG ou WebP. Compressée automatiquement avant envoi et optimisée en WebP 192 px côté serveur.
               </p>
               {avatarError && (
                 <p className="mt-1 text-[12px] text-red-600">{avatarError}</p>
