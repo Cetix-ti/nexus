@@ -391,7 +391,7 @@ export default function ReportsPage() {
   function handleGridRemove(id: string) { saveDashLayout(dashItems.filter((i) => i.id !== id)); }
   function handleGridResize(id: string, w: number, h: number) { saveDashLayout(dashItems.map((i) => i.id === id ? { ...i, w, h } : i)); }
   function handleGridAdd(widgetId: string) {
-    const newItem: DashboardItem = { id: `di_${widgetId}_${Date.now()}`, widgetId, w: 10, h: 3 };
+    const newItem: DashboardItem = { id: `di_${widgetId}_${Date.now()}`, widgetId, w: 20, h: 3 };
     saveDashLayout([...dashItems, newItem]);
   }
 

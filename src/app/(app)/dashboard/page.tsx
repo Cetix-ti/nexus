@@ -49,15 +49,12 @@ const EMPTY: DashboardData = {
 const LAYOUT_KEY = "nexus:dashboard:layout:v3";
 const LEGACY_LAYOUT_KEYS = ["nexus:dashboard:layout:v2", "nexus:dashboard:layout"];
 const DEFAULT_ITEMS: DashboardItem[] = [
-  { id: "d_kpis", widgetId: "w_dash_kpis", w: 10, h: 2 },
-  // Le calendrier prend la vedette — pleine largeur en haut du dashboard.
-  { id: "d_calendar", widgetId: "w_dash_calendar", w: 10, h: 10 },
-  // Volume et Tickets non assignés côte-à-côte, même hauteur.
-  { id: "d_volume", widgetId: "w_dash_volume", w: 5, h: 5 },
-  { id: "d_unassigned", widgetId: "w_dash_unassigned", w: 5, h: 5 },
-  // Mes tickets — pleine largeur, seul sur sa ligne.
-  { id: "d_my", widgetId: "w_dash_my", w: 10, h: 5 },
-  { id: "d_orgs", widgetId: "w_dash_orgs", w: 10, h: 4 },
+  { id: "d_kpis", widgetId: "w_dash_kpis", w: 20, h: 2 },
+  { id: "d_calendar", widgetId: "w_dash_calendar", w: 20, h: 10 },
+  { id: "d_volume", widgetId: "w_dash_volume", w: 10, h: 5 },
+  { id: "d_unassigned", widgetId: "w_dash_unassigned", w: 10, h: 5 },
+  { id: "d_my", widgetId: "w_dash_my", w: 20, h: 5 },
+  { id: "d_orgs", widgetId: "w_dash_orgs", w: 20, h: 4 },
 ];
 
 function loadLayout(): DashboardItem[] {
@@ -90,25 +87,27 @@ function loadLayout(): DashboardItem[] {
 
     // Normalisation côté tailles pour respecter la nouvelle maquette :
     //   volume+unassigned côte-à-côte (w=5, h=5), my pleine largeur (w=10)
+    // Migration 10→20 cols : double les w <= 10 pour occuper le même
+    // pourcentage visuel sur la grille 20 colonnes.
     const normalized = migrated.map((item) => {
-      if (item.widgetId === "w_dash_volume") return { ...item, w: 5, h: 5 };
-      if (item.widgetId === "w_dash_unassigned") return { ...item, w: 5, h: 5 };
-      if (item.widgetId === "w_dash_my") return { ...item, w: 10, h: 5 };
-      return item;
+      const w = item.w <= 10 ? item.w * 2 : item.w;
+      if (item.widgetId === "w_dash_volume") return { ...item, w: 10, h: 5 };
+      if (item.widgetId === "w_dash_unassigned") return { ...item, w: 10, h: 5 };
+      if (item.widgetId === "w_dash_my") return { ...item, w: 20, h: 5 };
+      return { ...item, w: Math.min(w, 20) };
     });
 
-    // Garantit la présence des widgets clés.
     const hasCalendar = normalized.some((it) => it.widgetId === "w_dash_calendar");
     if (!hasCalendar) {
       const kpiIdx = normalized.findIndex((it) => it.widgetId === "w_dash_kpis");
-      const calItem: DashboardItem = { id: "d_calendar", widgetId: "w_dash_calendar", w: 10, h: 10 };
+      const calItem: DashboardItem = { id: "d_calendar", widgetId: "w_dash_calendar", w: 20, h: 10 };
       if (kpiIdx >= 0) normalized.splice(kpiIdx + 1, 0, calItem);
       else normalized.unshift(calItem);
     }
     const hasUnassigned = normalized.some((it) => it.widgetId === "w_dash_unassigned");
     if (!hasUnassigned) {
       const volumeIdx = normalized.findIndex((it) => it.widgetId === "w_dash_volume");
-      const unItem: DashboardItem = { id: "d_unassigned", widgetId: "w_dash_unassigned", w: 5, h: 5 };
+      const unItem: DashboardItem = { id: "d_unassigned", widgetId: "w_dash_unassigned", w: 10, h: 5 };
       if (volumeIdx >= 0) normalized.splice(volumeIdx + 1, 0, unItem);
       else normalized.push(unItem);
     }
@@ -258,7 +257,7 @@ export default function DashboardPage() {
         onClose={() => setShowSidebar(false)}
         activeWidgetIds={items.map((i) => i.widgetId)}
         onAdd={(defId) => {
-          const newItem: DashboardItem = { id: `d_${defId}_${Date.now()}`, widgetId: defId, w: 10, h: 3 };
+          const newItem: DashboardItem = { id: `d_${defId}_${Date.now()}`, widgetId: defId, w: 20, h: 3 };
           const u = [...items, newItem];
           setItems(u);
           saveLayout(u);

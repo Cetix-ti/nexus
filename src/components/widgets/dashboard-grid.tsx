@@ -15,15 +15,15 @@ import { cn } from "@/lib/utils";
 // ---------------------------------------------------------------------------
 // Grid config
 // ---------------------------------------------------------------------------
-const GRID_COLS = 10;
+const GRID_COLS = 20;
 const ROW_PX = 60; // Height of 1 row unit in pixels
 const MAX_ROWS = 12;
 
 export interface DashboardItem {
   id: string;
   widgetId: string;
-  w: number; // 1-10 columns
-  h: number; // 1-10 row units
+  w: number; // 1-20 columns
+  h: number; // 1-12 row units
 }
 
 interface DashboardGridProps {

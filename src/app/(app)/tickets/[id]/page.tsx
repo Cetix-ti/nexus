@@ -1326,10 +1326,11 @@ export default function TicketDetailPage() {
                   value={(ticket as any).assigneeId || ""}
                   onChange={async (e) => {
                     const assigneeId = e.target.value || null;
-                    await updateTicket(ticket!.id, { assigneeId });
+                    await patchTicketField({ assigneeId });
                     const u = allUsers.find((u) => u.id === assigneeId);
-                    ticket.assigneeName = u?.name || null;
-                    (ticket as any).assigneeId = assigneeId;
+                    if (directTicket) {
+                      setDirectTicket({ ...directTicket, assigneeName: u?.name || null, assigneeId } as any);
+                    }
                   }}
                   className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-600 focus:border-blue-500 focus:outline-none"
                 >
