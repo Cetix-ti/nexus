@@ -107,6 +107,10 @@ export function ProjectKanbanQuickView({
   }, []);
   const [timeType, setTimeType] = useState<TimeType>("remote_work");
   const [duration, setDuration] = useState<string>("30");
+  const [timeDate, setTimeDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
   const [description, setDescription] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
@@ -183,8 +187,8 @@ export function ProjectKanbanQuickView({
     }
     setSaving(true);
     try {
-      const now = new Date();
-      const startedAt = new Date(now.getTime() - mins * 60_000);
+      const startedAt = new Date(`${timeDate}T09:00:00`);
+      const endedAt = new Date(startedAt.getTime() + mins * 60_000);
       const res = await fetch("/api/v1/time-entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -193,7 +197,7 @@ export function ProjectKanbanQuickView({
           organizationId: orgId,
           timeType,
           startedAt: startedAt.toISOString(),
-          endedAt: now.toISOString(),
+          endedAt: endedAt.toISOString(),
           durationMinutes: mins,
           description: description || TIME_TYPE_LABELS[timeType],
           isOnsite: timeType === "onsite_work",
@@ -342,6 +346,13 @@ export function ProjectKanbanQuickView({
                       ))}
                     </SelectContent>
                   </Select>
+                  <input
+                    type="date"
+                    value={timeDate}
+                    onChange={(e) => setTimeDate(e.target.value)}
+                    max={new Date().toISOString().slice(0, 10)}
+                    className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                  />
                   <div className="relative">
                     <input
                       type="number"

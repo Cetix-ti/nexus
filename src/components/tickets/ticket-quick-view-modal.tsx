@@ -187,6 +187,13 @@ export function TicketQuickViewModal({
     "remote_work"
   );
   const [timeMinutes, setTimeMinutes] = useState<number>(30);
+  // Date de la saisie — par défaut aujourd'hui. L'utilisateur peut la
+  // changer pour saisir du temps rétroactivement (ex: travail fait le 5
+  // mais saisi le 10 → comptabilisé au 5).
+  const [timeDate, setTimeDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
   const [timeDescription, setTimeDescription] = useState("");
   const [timeSaving, setTimeSaving] = useState(false);
   const [timeError, setTimeError] = useState<string | null>(null);
@@ -309,8 +316,10 @@ export function TicketQuickViewModal({
     setTimeSaving(true);
     setTimeError(null);
     try {
-      const now = new Date();
-      const startedAt = new Date(now.getTime() - timeMinutes * 60_000);
+      // startedAt = date choisie par l'utilisateur (09:00 par convention).
+      // Le temps est comptabilisé à cette date, pas à la date de saisie.
+      const startedAt = new Date(`${timeDate}T09:00:00`);
+      const endedAt = new Date(startedAt.getTime() + timeMinutes * 60_000);
       const res = await fetch("/api/v1/time-entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -319,7 +328,7 @@ export function TicketQuickViewModal({
           organizationId: orgId,
           timeType,
           startedAt: startedAt.toISOString(),
-          endedAt: now.toISOString(),
+          endedAt: endedAt.toISOString(),
           durationMinutes: Math.round(timeMinutes),
           description: timeDescription.trim() || undefined,
           isOnsite: timeType === "onsite_work",
@@ -877,6 +886,18 @@ export function TicketQuickViewModal({
                     </Select>
 
                     <div>
+                      <label className="block text-[10px] font-medium text-slate-500 mb-1">Date du travail</label>
+                      <input
+                        type="date"
+                        value={timeDate}
+                        onChange={(e) => setTimeDate(e.target.value)}
+                        max={new Date().toISOString().slice(0, 10)}
+                        className="w-full h-8 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-500 mb-1">Durée</label>
                       <div className="flex items-center gap-1.5">
                         <input
                           type="number"
