@@ -16,6 +16,7 @@ export async function GET() {
         email: true,
         avatar: true,
         role: true,
+        capabilities: true,
         preferences: true,
         mfaEnabled: true,
         signature: true,

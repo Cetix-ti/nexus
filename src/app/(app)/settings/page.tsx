@@ -77,6 +77,7 @@ interface SettingsSection {
   label: string;
   icon: any;
   superAdminOnly?: boolean;
+  requiredCapability?: string;
 }
 
 interface SettingsGroup {
@@ -127,7 +128,7 @@ const sectionGroups: SettingsGroup[] = [
     sections: [
       { key: "billing_profiles", label: "Profils de facturation", icon: DollarSign },
       { key: "contracts", label: "Contrats", icon: FileText },
-      { key: "billing_locks", label: "Verrouillage facturation", icon: Lock, superAdminOnly: true },
+      { key: "billing_locks", label: "Verrouillage facturation", icon: Lock, requiredCapability: "billing" },
     ],
   },
   {
@@ -702,6 +703,7 @@ interface DbUserRow {
   status: string;
   lastLogin: string;
   avatar: string | null;
+  capabilities: string[];
 }
 
 function ROLE_BADGE(role: string): DbUserRow["roleBadge"] {
@@ -721,6 +723,7 @@ interface ApiUser {
   role: string;
   avatar: string | null;
   isActive: boolean;
+  capabilities: string[];
   lastLoginAt: string | null;
 }
 
@@ -756,6 +759,7 @@ function UsersSection() {
               ? new Date(u.lastLoginAt).toLocaleDateString("fr-CA")
               : "Jamais",
             avatar: u.avatar ?? null,
+            capabilities: u.capabilities ?? [],
           }))
         );
       })
@@ -911,6 +915,7 @@ function UsersSection() {
                               email: user.email,
                               role: user.role,
                               status: user.status,
+                              capabilities: user.capabilities ?? [],
                             })
                           }
                         >
@@ -1151,15 +1156,20 @@ export default function SettingsPage() {
   const { data: session } = useSession();
   const role = (session?.user as any)?.role;
   const isSuperAdmin = role === "SUPER_ADMIN" || role === "MSP_ADMIN";
+  const userCapabilities: string[] = (session?.user as any)?.capabilities ?? [];
 
   // Sync with URL param changes
   useEffect(() => {
     setActiveSection(searchParams.get("section") as SectionKey | null);
   }, [searchParams]);
 
-  // Filter out super-admin only sections for regular users
+  // Filter out sections by admin-only + capabilities
   const visibleSections = sections.filter((s) => {
     if ("superAdminOnly" in s && s.superAdminOnly) return isSuperAdmin;
+    if ("requiredCapability" in s && s.requiredCapability) {
+      if (role === "SUPER_ADMIN") return true;
+      return userCapabilities.includes(s.requiredCapability!);
+    }
     return true;
   });
 

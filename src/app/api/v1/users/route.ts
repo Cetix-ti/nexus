@@ -41,6 +41,7 @@ const userUpdateSchema = z
     avatar: z.string().max(700_000).nullable().optional(),
     signature: z.string().max(5000).nullable().optional(),
     signatureHtml: z.string().max(20000).nullable().optional(),
+    capabilities: z.array(z.string().max(50)).optional(),
   })
   .refine((d) => Object.keys(d).length > 1, {
     message: "no fields to update",
@@ -118,6 +119,7 @@ export async function GET(req: Request) {
       role: true,
       phone: true,
       isActive: true,
+      capabilities: true,
       lastLoginAt: true,
       ...(includeAvatar ? { avatar: true } : {}),
       ...(includeSignature ? { signature: true, signatureHtml: true } : {}),
@@ -135,6 +137,7 @@ export async function GET(req: Request) {
       avatar: (u as any).avatar ?? null,
       phone: u.phone,
       isActive: u.isActive,
+      capabilities: (u as any).capabilities ?? [],
       lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
       ...(includeSignature
         ? {
@@ -223,12 +226,12 @@ export async function PATCH(req: Request) {
       { status: 400 }
     );
   }
-  const { id, password, role, isActive, email, avatar, ...rest } = parsed.data;
+  const { id, password, role, isActive, email, avatar, capabilities, ...rest } = parsed.data;
   const isSelf = id === me.id;
   const isAdmin = hasMinimumRole(me.role, "MSP_ADMIN");
   if (!isSelf && !isAdmin) return forbidden();
-  // Only admins can change role / activation / email of other users.
-  if ((role !== undefined || isActive !== undefined) && !isAdmin) {
+  // Only admins can change role / activation / email / capabilities.
+  if ((role !== undefined || isActive !== undefined || capabilities !== undefined) && !isAdmin) {
     return forbidden();
   }
 
@@ -240,6 +243,7 @@ export async function PATCH(req: Request) {
         ...(email !== undefined ? { email: email.toLowerCase() } : {}),
         ...(role !== undefined ? { role } : {}),
         ...(isActive !== undefined ? { isActive } : {}),
+        ...(capabilities !== undefined ? { capabilities } : {}),
         ...(avatar !== undefined ? { avatar: avatar ? await optimizeAvatar(avatar) : null } : {}),
         ...(password
           ? { passwordHash: await bcrypt.hash(password, 12) }

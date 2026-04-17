@@ -23,7 +23,13 @@ export interface EditUserModalUser {
   phone?: string;
   /** Data URL ou chemin vers l'avatar. Chargé au mount si absent. */
   avatar?: string | null;
+  capabilities?: string[];
 }
+
+const CAPABILITY_OPTIONS: Array<{ value: string; label: string; description: string }> = [
+  { value: "billing", label: "Facturation", description: "Accès au verrouillage de facturation" },
+  { value: "finances", label: "Finances", description: "Accès à la section Finances" },
+];
 
 interface EditUserModalProps {
   open: boolean;
@@ -78,6 +84,9 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
   const [role, setRole] = useState(safeUser.role || "TECHNICIAN");
   const [status, setStatus] = useState<"Actif" | "Inactif">(
     safeUser.status === "Inactif" ? "Inactif" : "Actif"
+  );
+  const [capabilities, setCapabilities] = useState<string[]>(
+    safeUser.capabilities ?? [],
   );
   // Avatar : optionnel sur le props (l'UI parente peut ne pas l'avoir
   // chargé). On part de l'initial et on fetch l'avatar existant en
@@ -188,6 +197,7 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
           phone: phone.trim() || null,
           role,
           isActive: status === "Actif",
+          capabilities,
           // On n'envoie avatar que s'il a été modifié — évite de renvoyer
           // inutilement un gros data-URL à chaque submit.
           ...(avatarDirty ? { avatar } : {}),
@@ -361,6 +371,48 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* Capabilities — tags de capacité spéciale */}
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+              Accès spéciaux
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {CAPABILITY_OPTIONS.map((cap) => {
+                const checked = capabilities.includes(cap.value);
+                return (
+                  <label
+                    key={cap.value}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
+                      checked
+                        ? "border-blue-500 bg-blue-50/50 text-blue-900"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        setCapabilities((prev) =>
+                          e.target.checked
+                            ? [...prev, cap.value]
+                            : prev.filter((c) => c !== cap.value),
+                        );
+                      }}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="text-[12.5px] font-semibold">{cap.label}</span>
+                      <p className="text-[10.5px] text-slate-500">{cap.description}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-[10.5px] text-slate-500">
+              Les super-admins ont accès à tout, peu importe les tags.
+            </p>
           </div>
 
           {/* Password reset */}

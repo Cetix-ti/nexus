@@ -39,6 +39,8 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   children?: { label: string; href: string }[];
   minRole?: string;
+  /** Capacité requise (en plus du rôle). SUPER_ADMIN bypass implicite. */
+  requiredCapability?: string;
 }
 
 interface NavSection {
@@ -102,7 +104,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Contacts", href: "/contacts", icon: Users },
       { label: "Actifs", href: "/assets", icon: Monitor },
       { label: "Planificateur", href: "/scheduling", icon: CalendarDays },
-      { label: "Finances", href: "/finances", icon: DollarSign, minRole: "SUPERVISOR" },
+      { label: "Finances", href: "/finances", icon: DollarSign, minRole: "SUPERVISOR", requiredCapability: "finances" },
     ],
   },
   // TECHNICIAN+ : exclut les CLIENT_* / READ_ONLY. La section Équipe contient
@@ -232,15 +234,23 @@ export function Sidebar({ forceExpanded = false }: { forceExpanded?: boolean } =
   const user = session?.user;
   // Don't filter until session is loaded — show all items while loading
   const userRole = sessionStatus === "authenticated" ? ((user as any)?.role ?? "TECHNICIAN") : "SUPER_ADMIN";
+  const userCapabilities: string[] = (user as any)?.capabilities ?? [];
   const avatar = useUserAvatarStore((s) => s.avatar);
   const initials = user
     ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`
     : "NX";
 
-  // Filter nav items by role
+  // Filter nav items by role + capabilities
   const filteredSections = NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => hasNavAccess(userRole, item.minRole)),
+    items: section.items.filter((item) => {
+      if (!hasNavAccess(userRole, item.minRole)) return false;
+      if (item.requiredCapability) {
+        if (userRole === "SUPER_ADMIN") return true;
+        if (!userCapabilities.includes(item.requiredCapability)) return false;
+      }
+      return true;
+    }),
   })).filter((section) => section.items.length > 0);
 
   return (

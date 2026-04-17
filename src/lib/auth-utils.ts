@@ -17,10 +17,11 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   role: UserRole;
+  capabilities: string[];
 }
 
 // Cache active status checks for 60 seconds to avoid hitting DB on every API call
-const activeCache = new Map<string, { active: boolean; checkedAt: number }>();
+const activeCache = new Map<string, { active: boolean; capabilities: string[]; checkedAt: number }>();
 const CACHE_TTL = 60_000; // 60 seconds
 
 /**
@@ -37,17 +38,20 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   const userId = session.user.id;
 
   // SECURITY: Verify user is still active in DB (cached for 60s)
+  let capabilities: string[] = [];
   const cached = activeCache.get(userId);
   if (cached && Date.now() - cached.checkedAt < CACHE_TTL) {
     if (!cached.active) return null;
+    capabilities = cached.capabilities;
   } else {
     try {
       const dbUser = await prisma.user.findUnique({
         where: { id: userId },
-        select: { isActive: true },
+        select: { isActive: true, capabilities: true },
       });
       const isActive = dbUser?.isActive ?? false;
-      activeCache.set(userId, { active: isActive, checkedAt: Date.now() });
+      capabilities = dbUser?.capabilities ?? [];
+      activeCache.set(userId, { active: isActive, capabilities, checkedAt: Date.now() });
       if (!isActive) return null;
     } catch {
       // If DB is unreachable, allow access based on session (graceful degradation)
@@ -60,7 +64,17 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     firstName: session.user.firstName,
     lastName: session.user.lastName,
     role: session.user.role as UserRole,
+    capabilities,
   };
+}
+
+/**
+ * Vérifie si un user a une capacité donnée. SUPER_ADMIN a toutes les
+ * capacités implicitement.
+ */
+export function hasCapability(user: AuthUser, cap: string): boolean {
+  if (user.role === "SUPER_ADMIN") return true;
+  return user.capabilities.includes(cap);
 }
 
 /**

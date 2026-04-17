@@ -192,6 +192,7 @@ const providers: any[] = [
               lastName: dbUser.lastName,
               role: dbUser.role,
               avatar: dbUser.avatar,
+              capabilities: dbUser.capabilities ?? [],
             } as any;
           }
         }
@@ -427,6 +428,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.firstName = (user as any).firstName;
         token.lastName = (user as any).lastName;
         token.role = (user as any).role;
+        token.capabilities = (user as any).capabilities ?? [];
         // Avatar is NOT stored in JWT (too large for cookies).
         // Components fetch it from /api/v1/users or use a shared store.
         token.organizationId = (user as any).organizationId;
@@ -455,6 +457,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.firstName = agentUser.firstName;
             token.lastName = agentUser.lastName;
             token.role = agentUser.role;
+            token.capabilities = agentUser.capabilities ?? [];
           } else {
             // Try portal contact resolution
             const portal = await resolvePortalContact(
@@ -491,6 +494,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       (session.user as any).organizationName = token.organizationName;
       (session.user as any).organizationSlug = token.organizationSlug;
       (session.user as any).portalRole = token.portalRole;
+      (session.user as any).capabilities = token.capabilities ?? [];
       return session;
     },
   },

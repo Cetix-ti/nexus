@@ -137,6 +137,12 @@ model User {
   phone          String?
   role           UserRole @default(TECHNICIAN)
   isActive       Boolean  @default(true) @map("is_active")
+  /// Tags de capacité spéciale attribués par l'admin. Chaque tag débloque
+  /// un accès spécifique, indépendamment du rôle :
+  ///   - "billing"  → accès au verrouillage de facturation
+  ///   - "finances" → accès à la section Finances
+  /// SUPER_ADMIN a implicitement toutes les capacités.
+  capabilities   String[] @default([])
   locale         String   @default("fr") // fr | en
   preferences    Json?    @db.JsonB
   signature      String?  @db.Text

@@ -8,17 +8,17 @@
 
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth-utils";
+import { getCurrentUser, hasCapability } from "@/lib/auth-utils";
 import { invalidateLockCache } from "@/lib/billing/period-lock";
 
-function isAdmin(role: string) {
-  return role === "SUPER_ADMIN" || role === "MSP_ADMIN";
+function canBilling(me: { role: string; capabilities: string[] }) {
+  return me.role === "SUPER_ADMIN" || hasCapability(me as any, "billing");
 }
 
 export async function GET() {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(me.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!canBilling(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const rows = await prisma.billingPeriodLock.findMany({
     include: {
@@ -32,7 +32,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(me.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!canBilling(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = (await req.json().catch(() => null)) as
     | { period?: string; notes?: string }
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!isAdmin(me.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!canBilling(me)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const url = new URL(req.url);
   const period = url.searchParams.get("period");
