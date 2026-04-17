@@ -95,12 +95,11 @@ export async function POST(req: Request) {
     });
     return NextResponse.json(created, { status: 201 });
   } catch (e) {
-    console.error("time-entry create failed", e);
+    const isBillingLock = e instanceof Error && e.name === "BillingLockError";
+    if (!isBillingLock) console.error("time-entry create failed", e);
     return NextResponse.json(
-      {
-        error: e instanceof Error ? e.message : "Erreur de création",
-      },
-      { status: 500 }
+      { error: e instanceof Error ? e.message : "Erreur de création" },
+      { status: isBillingLock ? 423 : 500 },
     );
   }
 }
@@ -130,7 +129,11 @@ export async function PATCH(req: Request) {
     const updated = await updateTimeEntry(id, body);
     return NextResponse.json(updated);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Erreur" }, { status: 500 });
+    const isBillingLock = err instanceof Error && err.name === "BillingLockError";
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Erreur" },
+      { status: isBillingLock ? 423 : 500 },
+    );
   }
 }
 
@@ -154,6 +157,14 @@ export async function DELETE(req: Request) {
   const isSupervisor = hasMinimumRole(me.role, "SUPERVISOR");
   if (!isOwner && !isSupervisor) return forbidden();
 
-  await deleteTimeEntry(id);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteTimeEntry(id);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const isBillingLock = err instanceof Error && err.name === "BillingLockError";
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Erreur" },
+      { status: isBillingLock ? 423 : 500 },
+    );
+  }
 }

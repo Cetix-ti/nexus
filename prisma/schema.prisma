@@ -181,6 +181,7 @@ model User {
   // uniquement pour les users qui ont au moins un entry dans supervisedAgents.
   supervisedAgents AgentSupervision[] @relation("Supervisor")
   supervisedBy     AgentSupervision[] @relation("SupervisedAgent")
+  billingLocks     BillingPeriodLock[] @relation("BillingPeriodLockUser")
 
   @@map("users")
 }
@@ -1272,6 +1273,30 @@ model TimeEntry {
   @@index([organizationId, startedAt])
   @@index([agentId, startedAt])
   @@map("time_entries")
+}
+
+// ============================================================================
+// VERROUILLAGE DE PÉRIODE DE FACTURATION
+//
+// Une fois qu'un mois a été facturé, le responsable verrouille la période
+// pour empêcher toute modification rétroactive des saisies de temps. Toute
+// opération CRUD sur TimeEntry dont startedAt tombe dans un mois verrouillé
+// est refusée avec un message invitant à saisir dans le mois courant.
+//
+// Le verrouillage ne peut être appliqué qu'aux mois passés (pas le mois
+// en cours). Seul SUPER_ADMIN / MSP_ADMIN peut verrouiller/déverrouiller.
+// ============================================================================
+
+model BillingPeriodLock {
+  id       String   @id @default(cuid())
+  period   String   @unique // format "YYYY-MM" (ex: "2026-04")
+  lockedAt DateTime @default(now()) @map("locked_at")
+  lockedBy String   @map("locked_by")
+  notes    String?
+
+  user User @relation("BillingPeriodLockUser", fields: [lockedBy], references: [id])
+
+  @@map("billing_period_locks")
 }
 
 /// Clé/valeur global du tenant (branding portail, préférences, etc.).

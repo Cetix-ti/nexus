@@ -29,6 +29,7 @@ import {
   FolderKanban,
   Ticket,
   Eye,
+  Lock,
 } from "lucide-react";
 import { PortalAccessSection } from "@/components/settings/portal-access-section";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,7 @@ import { EmailSection } from "@/components/settings/email-section";
 import { AgentProfilesSection } from "@/components/settings/agent-profiles-section";
 import { BillingProfilesSection } from "@/components/settings/billing-profiles-section";
 import { ContractsSection } from "@/components/settings/contracts-section";
+import { BillingLockSection } from "@/components/billing/billing-lock-section";
 import { KanbanColumnsSection } from "@/components/settings/kanban-columns-section";
 import { KanbanBoardsSection } from "@/components/settings/kanban-boards-section";
 import { IntegrationsSection } from "@/components/settings/integrations-section";
@@ -125,6 +127,7 @@ const sectionGroups: SettingsGroup[] = [
     sections: [
       { key: "billing_profiles", label: "Profils de facturation", icon: DollarSign },
       { key: "contracts", label: "Contrats", icon: FileText },
+      { key: "billing_locks", label: "Verrouillage facturation", icon: Lock, superAdminOnly: true },
     ],
   },
   {
@@ -1121,6 +1124,7 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   backup_kanban: <BackupKanbanSection />,
   billing_profiles: <BillingProfilesSection />,
   contracts: <ContractsSection />,
+  billing_locks: <BillingLockSection />,
   project_types: <ProjectTypesSection />,
   integrations: <IntegrationsSection />,
   email_monitoring: <MonitoringSection />,

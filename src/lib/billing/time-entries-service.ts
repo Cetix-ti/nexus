@@ -130,6 +130,10 @@ export async function createTimeEntry(input: {
   hourlyRate?: number | null;
   amount?: number | null;
 }) {
+  const { checkBillingLock, BillingLockError } = await import("./period-lock");
+  const lockMsg = await checkBillingLock(input.startedAt);
+  if (lockMsg) throw new BillingLockError(lockMsg);
+
   return prisma.timeEntry.create({
     data: {
       ticketId: input.ticketId,
@@ -153,6 +157,23 @@ export async function createTimeEntry(input: {
 }
 
 export async function updateTimeEntry(id: string, patch: any) {
+  // Vérifie le verrouillage sur la date ACTUELLE de l'entrée (pas la
+  // nouvelle si on change startedAt — empêche le contournement).
+  const { checkBillingLock, BillingLockError } = await import("./period-lock");
+  const existing = await prisma.timeEntry.findUnique({
+    where: { id },
+    select: { startedAt: true },
+  });
+  if (existing) {
+    const lockMsg = await checkBillingLock(existing.startedAt);
+    if (lockMsg) throw new BillingLockError(lockMsg);
+  }
+  // Vérifie aussi la nouvelle date si on la déplace
+  if (patch.startedAt) {
+    const lockMsg = await checkBillingLock(new Date(patch.startedAt));
+    if (lockMsg) throw new BillingLockError(lockMsg);
+  }
+
   const data: Record<string, unknown> = {};
   if (patch.timeType !== undefined) data.timeType = patch.timeType;
   if (patch.startedAt !== undefined) data.startedAt = new Date(patch.startedAt);
@@ -171,5 +192,14 @@ export async function updateTimeEntry(id: string, patch: any) {
 }
 
 export async function deleteTimeEntry(id: string) {
+  const { checkBillingLock, BillingLockError } = await import("./period-lock");
+  const existing = await prisma.timeEntry.findUnique({
+    where: { id },
+    select: { startedAt: true },
+  });
+  if (existing) {
+    const lockMsg = await checkBillingLock(existing.startedAt);
+    if (lockMsg) throw new BillingLockError(lockMsg);
+  }
   return prisma.timeEntry.delete({ where: { id } });
 }
