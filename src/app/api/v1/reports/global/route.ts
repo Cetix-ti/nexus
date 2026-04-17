@@ -70,6 +70,7 @@ export async function GET(req: Request) {
       prisma.timeEntry.findMany({
         where: { startedAt: { gte: since } },
         select: {
+          startedAt: true,
           durationMinutes: true, coverageStatus: true, hourlyRate: true, amount: true,
           organizationId: true, agentId: true, isOnsite: true, isAfterHours: true,
           isWeekend: true, isUrgent: true, ticketId: true,
@@ -277,11 +278,11 @@ export async function GET(req: Request) {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const contractUsage = activeContracts.map((c) => {
       const monthlyHours = c.monthlyHours ?? 0;
-      const monthEntries = timeEntries.filter((e) => {
-        const d = new Date(e.organizationId === c.organizationId ? 1 : 0); // filter by org
-        return e.organizationId === c.organizationId &&
-          ["included_in_contract", "hour_bank"].includes(e.coverageStatus);
-      });
+      const monthEntries = timeEntries.filter((e) =>
+        e.organizationId === c.organizationId &&
+        new Date(e.startedAt) >= monthStart &&
+        ["included_in_contract", "hour_bank"].includes(e.coverageStatus),
+      );
       const usedMinutes = monthEntries.reduce((s, e) => s + e.durationMinutes, 0);
       const usedHours = Math.round((usedMinutes / 60) * 100) / 100;
       return {

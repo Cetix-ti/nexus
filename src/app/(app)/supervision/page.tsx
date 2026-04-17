@@ -349,7 +349,7 @@ function AgentCard({
           </p>
           <p className="text-[12px] text-slate-500">{agent.email}</p>
         </div>
-        {/* Quick stats inline */}
+        {/* Quick stats — inline sur desktop, grille compacte mobile */}
         <div className="hidden sm:flex items-center gap-4 text-[12px]">
           <Stat icon={Clock} label="Heures" value={fmtDuration(stats.totalMinutes)} color="text-blue-600" />
           <Stat icon={Ticket} label="Résolus" value={String(stats.ticketsResolvedCount)} color="text-emerald-600" />
@@ -368,10 +368,27 @@ function AgentCard({
         </span>
       </button>
 
+      {/* Mobile quick stats (visible <sm only) */}
+      {!expanded && (
+        <div className="sm:hidden flex items-center gap-3 px-5 pb-3 -mt-1 text-[11.5px] flex-wrap">
+          <Stat icon={Clock} label="" value={fmtDuration(stats.totalMinutes)} color="text-blue-600" />
+          <Stat icon={Ticket} label="" value={`${stats.ticketsResolvedCount} rés.`} color="text-emerald-600" />
+          <Stat icon={MapPin} label="" value={`${stats.onsiteVisits.length} vis.`} color="text-amber-600" />
+          {slaRate !== null && (
+            <Stat
+              icon={slaRate >= 90 ? CheckCircle2 : AlertTriangle}
+              label="SLA"
+              value={`${slaRate}%`}
+              color={slaRate >= 90 ? "text-emerald-600" : "text-red-600"}
+            />
+          )}
+        </div>
+      )}
+
       {expanded && (
         <div className="border-t border-slate-200">
-          {/* Sub-tabs */}
-          <div className="flex items-center gap-1 px-5 border-b border-slate-100 bg-slate-50/30 overflow-x-auto">
+          {/* Sub-tabs — scrollable horizontalement sur mobile */}
+          <div className="flex items-center gap-1 px-5 border-b border-slate-100 bg-slate-50/30 overflow-x-auto scrollbar-hide">
             {[
               { k: "worked", label: "Tickets travaillés", count: stats.ticketsWorked.length },
               { k: "notime", label: "Sans saisie", count: stats.ticketsOpenNoTime.length },
@@ -506,8 +523,8 @@ function TicketList({
     return <p className="text-[12.5px] text-slate-400 italic py-4 text-center">Aucun ticket.</p>;
   }
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <table className="w-full text-[12.5px]">
+    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <table className="w-full text-[12.5px] min-w-[500px]">
         <thead className="bg-slate-50">
           <tr className="text-left text-slate-500">
             <th className="px-3 py-2 font-medium">#</th>

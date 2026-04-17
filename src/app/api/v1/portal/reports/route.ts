@@ -32,8 +32,8 @@ export async function GET(_request: NextRequest) {
     (perms.canSeeTimeReports || perms.canSeeBillingReports)
       ? prisma.timeEntry.findMany({
           where: { organizationId: orgId },
-          select: { durationMinutes: true, coverageStatus: true, amount: true, approvalStatus: true },
-          take: 1000,
+          select: { durationMinutes: true, coverageStatus: true, amount: true, approvalStatus: true, startedAt: true },
+          take: 5000,
         }).catch(() => [])
       : [],
     perms.canSeeHourBankBalance
@@ -76,10 +76,17 @@ export async function GET(_request: NextRequest) {
   }
 
   if (perms.canSeeHourBankBalance && contracts.length > 0) {
-    // Calculate consumed hours for each hour bank contract
+    // Heures consommées ce mois-ci uniquement (avant : cumulait tout
+    // l'historique → chiffres gonflés pour le client).
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const contractUsage = contracts.map((c) => {
       const usedMinutes = timeEntries
-        .filter((e) => ["included_in_contract", "hour_bank"].includes(e.coverageStatus))
+        .filter((e) => {
+          if (!["included_in_contract", "hour_bank"].includes(e.coverageStatus)) return false;
+          const started = (e as unknown as { startedAt: Date | string }).startedAt;
+          return started ? new Date(started) >= monthStart : false;
+        })
         .reduce((s, e) => s + e.durationMinutes, 0);
       const totalHours = c.monthlyHours ?? 0;
       const consumedHours = Math.round((usedMinutes / 60) * 10) / 10;

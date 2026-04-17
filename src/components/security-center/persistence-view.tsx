@@ -275,15 +275,15 @@ function Group({
           {items.length === 0 ? (
             <p className="text-[12.5px] text-slate-400 italic">{emptyMsg}</p>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <table className="w-full text-[12.5px]">
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <table className="w-full text-[12.5px] min-w-[640px]">
                 <thead className="bg-slate-50">
                   <tr className="text-left text-slate-500">
                     <th className="px-3 py-2 font-medium">Client</th>
                     <th className="px-3 py-2 font-medium">Poste</th>
                     <th className="px-3 py-2 font-medium">Logiciel</th>
                     <th className="px-3 py-2 font-medium">Sévérité</th>
-                    <th className="px-3 py-2 font-medium">Dernière</th>
+                    <th className="px-3 py-2 font-medium hidden sm:table-cell">Dernière</th>
                     <th className="px-3 py-2 font-medium">Actions</th>
                   </tr>
                 </thead>
@@ -357,7 +357,7 @@ function IncidentRow({
           {SEVERITY_LABEL[sev] ?? sev}
         </span>
       </td>
-      <td className="px-3 py-2 text-slate-600">
+      <td className="px-3 py-2 text-slate-600 hidden sm:table-cell">
         <span className="inline-flex items-center gap-1">
           <Clock className="h-3 w-3 text-slate-400" />
           {fmtDate(incident.lastSeenAt)}
