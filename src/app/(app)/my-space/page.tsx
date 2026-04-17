@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { TimeEntryCalendar } from "@/components/billing/time-entry-calendar";
 
 // ===========================================================================
 // Types
@@ -394,7 +395,10 @@ export default function MySpacePage() {
             <KpiCard label="Revenus" value={fmtMoney(k.totalRevenue)} icon={<TrendingUp className="h-4 w-4 text-emerald-600" />} bg="bg-emerald-50" />
           </div>
 
-          <div className="flex items-center justify-between">
+          {/* Sub-vue : Calendrier (défaut) ou Liste */}
+          <TimeEntryCalendar />
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-200">
             <h3 className="text-[15px] font-semibold text-slate-900">Saisies récentes</h3>
             <Link href="/billing" className="text-[12px] text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
               Voir tout dans Préfacturation <ArrowRight className="h-3 w-3" />
