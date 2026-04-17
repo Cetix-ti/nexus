@@ -10,7 +10,7 @@
 // Vues : jour / semaine / mois (grid compact pour le mois).
 // ============================================================================
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Calendar as CalIcon,
@@ -151,6 +151,39 @@ export function TimeEntryCalendar() {
   // Total hours in period
   const totalMin = entries.reduce((s, e) => s + e.durationMinutes, 0);
 
+  async function handleMoveEntry(entryId: string, newStartedAt: Date) {
+    const entry = entries.find((e) => e.id === entryId);
+    if (!entry) return;
+    const endedAt = new Date(newStartedAt.getTime() + entry.durationMinutes * 60_000);
+    try {
+      const res = await fetch("/api/v1/time-entries", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: entryId,
+          startedAt: newStartedAt.toISOString(),
+          endedAt: endedAt.toISOString(),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || `Erreur ${res.status}`);
+        load();
+        return;
+      }
+      setEntries((prev) =>
+        prev.map((e) =>
+          e.id === entryId
+            ? { ...e, startedAt: newStartedAt.toISOString(), endedAt: endedAt.toISOString() }
+            : e,
+        ),
+      );
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erreur réseau");
+      load();
+    }
+  }
+
   return (
     <div className="space-y-3">
       {/* Header */}
@@ -195,7 +228,7 @@ export function TimeEntryCalendar() {
       ) : view === "month" ? (
         <MonthView entries={entries} cursor={cursor} onDayClick={(d) => { setCursor(d); setView("day"); }} />
       ) : (
-        <DayWeekGrid days={days} entries={entries} />
+        <DayWeekGrid days={days} entries={entries} onMoveEntry={handleMoveEntry} />
       )}
     </div>
   );
@@ -259,7 +292,15 @@ function detectOverlaps(dayEntries: TimeCalEntry[]): Map<string, Overlap[]> {
   return result;
 }
 
-function DayWeekGrid({ days, entries }: { days: Date[]; entries: TimeCalEntry[] }) {
+function DayWeekGrid({
+  days,
+  entries,
+  onMoveEntry,
+}: {
+  days: Date[];
+  entries: TimeCalEntry[];
+  onMoveEntry: (entryId: string, newStartedAt: Date) => void;
+}) {
   const totalHours = DAY_END - DAY_START;
   const gridHeight = totalHours * HOUR_PX;
   const minColWidth = days.length > 1 ? 110 : 0;
@@ -296,6 +337,71 @@ function DayWeekGrid({ days, entries }: { days: Date[]; entries: TimeCalEntry[] 
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, days]);
+
+  // --- Drag & drop state ---
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState(0); // px offset from top of entry
+  const [dragTop, setDragTop] = useState(0); // current visual top in px
+  const [dragDayIdx, setDragDayIdx] = useState(0); // column index during drag
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const colRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Snap minutes to 15-min grid
+  function snapMin(m: number) { return Math.round(m / 15) * 15; }
+
+  function handleDragStart(e: React.MouseEvent, entryId: string, entryTop: number, dayIdx: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setDragId(entryId);
+    setDragOffset(e.clientY - rect.top);
+    setDragTop(entryTop);
+    setDragDayIdx(dayIdx);
+  }
+
+  useEffect(() => {
+    if (!dragId) return;
+    function onMove(e: MouseEvent) {
+      if (!gridRef.current) return;
+      const gridRect = gridRef.current.getBoundingClientRect();
+      // Vertical position → snapped
+      const rawTop = e.clientY - gridRect.top - dragOffset;
+      const rawMin = DAY_START * 60 + (rawTop / HOUR_PX) * 60;
+      const snappedMin = snapMin(rawMin);
+      const snappedTop = ((snappedMin - DAY_START * 60) / 60) * HOUR_PX;
+      setDragTop(Math.max(0, Math.min(gridHeight - 28, snappedTop)));
+      // Horizontal → which day column
+      for (let i = 0; i < colRefs.current.length; i++) {
+        const col = colRefs.current[i];
+        if (!col) continue;
+        const cr = col.getBoundingClientRect();
+        if (e.clientX >= cr.left && e.clientX < cr.right) {
+          setDragDayIdx(i);
+          break;
+        }
+      }
+    }
+    function onUp() {
+      if (!dragId) return;
+      // Compute new startedAt from dragTop + dragDayIdx
+      const newMinOfDay = DAY_START * 60 + (dragTop / HOUR_PX) * 60;
+      const snapped = snapMin(newMinOfDay);
+      const h = Math.floor(snapped / 60);
+      const m = snapped % 60;
+      const day = days[dragDayIdx] ?? days[0];
+      const newStarted = new Date(day);
+      newStarted.setHours(h, m, 0, 0);
+      onMoveEntry(dragId, newStarted);
+      setDragId(null);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragId, dragTop, dragDayIdx, dragOffset]);
 
   // Résumé des chevauchements pour le banner
   const overlapSummary = useMemo(() => {
@@ -367,10 +473,13 @@ function DayWeekGrid({ days, entries }: { days: Date[]; entries: TimeCalEntry[] 
           {/* Hour grid */}
           <div className="overflow-y-auto" style={{ maxHeight: "calc(100vh - 340px)" }}>
             <div
+              ref={gridRef}
               className="grid relative"
               style={{
                 gridTemplateColumns: `56px repeat(${days.length}, minmax(${minColWidth}px, 1fr))`,
                 height: gridHeight,
+                cursor: dragId ? "grabbing" : undefined,
+                userSelect: dragId ? "none" : undefined,
               }}
             >
               {/* Hour labels */}
@@ -387,10 +496,14 @@ function DayWeekGrid({ days, entries }: { days: Date[]; entries: TimeCalEntry[] 
               </div>
 
               {/* Day columns */}
-              {days.map((d) => {
+              {days.map((d, dayIdx) => {
                 const dayEntries = entriesForDay(d);
                 return (
-                  <div key={d.toISOString()} className="relative border-l border-slate-200">
+                  <div
+                    key={d.toISOString()}
+                    ref={(el) => { colRefs.current[dayIdx] = el; }}
+                    className="relative border-l border-slate-200"
+                  >
                     {/* Hour lines */}
                     {Array.from({ length: totalHours + 1 }, (_, i) => (
                       <div
@@ -399,31 +512,44 @@ function DayWeekGrid({ days, entries }: { days: Date[]; entries: TimeCalEntry[] 
                         style={{ top: i * HOUR_PX }}
                       />
                     ))}
-                    {/* Entries */}
+                    {/* Entries — draggable */}
                     {dayEntries.map((e) => {
-                      const { top, height } = positionFor(e);
+                      const { top: baseTop, height } = positionFor(e);
+                      const isDragging = dragId === e.id;
+                      // Si cet entry est en cours de drag ET dans cette colonne, utiliser dragTop
+                      const isInThisCol = isDragging && dragDayIdx === dayIdx;
+                      const visualTop = isInThisCol ? dragTop : baseTop;
+                      // Si drag actif mais dans une AUTRE colonne, masquer ici
+                      if (isDragging && !isInThisCol) return null;
+
                       const overlaps = allOverlaps.get(e.id);
                       const hasOverlap = !!overlaps && overlaps.length > 0;
                       const overlapTooltip = hasOverlap
                         ? `⚠ Chevauchement ${overlaps[0].orgName} : ${overlaps[0].overlapStart}–${overlaps[0].overlapEnd} avec TK-${1000 + overlaps[0].withTicketNumber}`
                         : "";
                       return (
-                        <Link
+                        <div
                           key={e.id}
-                          href={`/tickets/${e.ticketId}`}
+                          onMouseDown={(ev) => handleDragStart(ev, e.id, baseTop, dayIdx)}
+                          onClick={(ev) => {
+                            if (dragId) return;
+                            ev.stopPropagation();
+                            window.location.href = `/tickets/${e.ticketId}`;
+                          }}
                           className={cn(
-                            "absolute left-1 right-1 rounded-lg overflow-hidden hover:brightness-95 hover:z-10 transition-all group",
+                            "absolute left-1 right-1 rounded-lg overflow-hidden hover:brightness-95 transition-all group select-none",
                             hasOverlap && "ring-2 ring-amber-500",
+                            isDragging ? "z-50 shadow-lg opacity-90 cursor-grabbing" : "cursor-grab hover:z-10",
                           )}
                           style={{
-                            top,
+                            top: visualTop,
                             height,
                             backgroundColor: hasOverlap ? "#fef3c7" : e.isInternal ? "#ede9fe" : "#e0f2fe",
                             borderLeft: `3px solid ${hasOverlap ? "#d97706" : e.isInternal ? "#7c3aed" : "#0284c7"}`,
                           }}
                           title={hasOverlap
                             ? `${overlapTooltip}\n${e.ticketSubject} — ${fmtDuration(e.durationMinutes)}`
-                            : `${e.ticketSubject} — ${fmtDuration(e.durationMinutes)}`
+                            : `${e.ticketSubject} — ${fmtDuration(e.durationMinutes)} — Glisser pour déplacer`
                           }
                         >
                           <div className="flex items-start gap-1.5 px-2 py-1.5 h-full min-w-0">
@@ -452,9 +578,38 @@ function DayWeekGrid({ days, entries }: { days: Date[]; entries: TimeCalEntry[] 
                               {fmtDuration(e.durationMinutes)}
                             </span>
                           </div>
-                        </Link>
+                        </div>
                       );
                     })}
+                    {/* Ghost d'un entry dragué vers cette colonne depuis une autre */}
+                    {dragId && dragDayIdx === dayIdx && !dayEntries.some((e) => e.id === dragId) && (() => {
+                      const dragEntry = entries.find((e) => e.id === dragId);
+                      if (!dragEntry) return null;
+                      const height = Math.max(28, (dragEntry.durationMinutes / 60) * HOUR_PX);
+                      return (
+                        <div
+                          className="absolute left-1 right-1 rounded-lg overflow-hidden z-50 shadow-lg opacity-90 cursor-grabbing select-none"
+                          style={{
+                            top: dragTop,
+                            height,
+                            backgroundColor: dragEntry.isInternal ? "#ede9fe" : "#e0f2fe",
+                            borderLeft: `3px solid ${dragEntry.isInternal ? "#7c3aed" : "#0284c7"}`,
+                          }}
+                        >
+                          <div className="flex items-start gap-1.5 px-2 py-1.5 h-full min-w-0">
+                            {dragEntry.organization && (
+                              <span className="shrink-0 mt-0.5">
+                                <OrgLogo name={dragEntry.organization.name} logo={dragEntry.organization.logo} size={18} rounded="sm" />
+                              </span>
+                            )}
+                            <div className="flex-1 min-w-0 overflow-hidden">
+                              <p className="text-[11px] font-semibold text-slate-900 truncate leading-tight">{dragEntry.ticketSubject}</p>
+                            </div>
+                            <span className="shrink-0 text-[10px] font-bold text-slate-700 tabular-nums">{fmtDuration(dragEntry.durationMinutes)}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
