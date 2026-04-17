@@ -187,12 +187,16 @@ export function TicketQuickViewModal({
     "remote_work"
   );
   const [timeMinutes, setTimeMinutes] = useState<number>(30);
-  // Date de la saisie — par défaut aujourd'hui. L'utilisateur peut la
-  // changer pour saisir du temps rétroactivement (ex: travail fait le 5
-  // mais saisi le 10 → comptabilisé au 5).
+  // Date de la saisie — par défaut aujourd'hui.
   const [timeDate, setTimeDate] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  // Heure de début — arrondie au 15 min inférieur le plus proche.
+  const [timeStart, setTimeStart] = useState(() => {
+    const d = new Date();
+    const m = Math.floor(d.getMinutes() / 15) * 15;
+    return `${String(d.getHours()).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   });
   const [timeDescription, setTimeDescription] = useState("");
   const [timeSaving, setTimeSaving] = useState(false);
@@ -316,9 +320,7 @@ export function TicketQuickViewModal({
     setTimeSaving(true);
     setTimeError(null);
     try {
-      // startedAt = date choisie par l'utilisateur (09:00 par convention).
-      // Le temps est comptabilisé à cette date, pas à la date de saisie.
-      const startedAt = new Date(`${timeDate}T09:00:00`);
+      const startedAt = new Date(`${timeDate}T${timeStart}:00`);
       const endedAt = new Date(startedAt.getTime() + timeMinutes * 60_000);
       const res = await fetch("/api/v1/time-entries", {
         method: "POST",
@@ -885,15 +887,27 @@ export function TicketQuickViewModal({
                       </SelectContent>
                     </Select>
 
-                    <div>
-                      <label className="block text-[10px] font-medium text-slate-500 mb-1">Date du travail</label>
-                      <input
-                        type="date"
-                        value={timeDate}
-                        onChange={(e) => setTimeDate(e.target.value)}
-                        max={new Date().toISOString().slice(0, 10)}
-                        className="w-full h-8 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                      />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-500 mb-1">Date</label>
+                        <input
+                          type="date"
+                          value={timeDate}
+                          onChange={(e) => setTimeDate(e.target.value)}
+                          max={new Date().toISOString().slice(0, 10)}
+                          className="w-full h-8 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-500 mb-1">Heure de début</label>
+                        <input
+                          type="time"
+                          value={timeStart}
+                          onChange={(e) => setTimeStart(e.target.value)}
+                          step={900}
+                          className="w-full h-8 rounded-md border border-slate-200 bg-white px-2 text-[12px] tabular-nums text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
                     </div>
 
                     <div>

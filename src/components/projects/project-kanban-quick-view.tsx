@@ -111,6 +111,11 @@ export function ProjectKanbanQuickView({
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
+  const [timeStart, setTimeStart] = useState(() => {
+    const d = new Date();
+    const m = Math.floor(d.getMinutes() / 15) * 15;
+    return `${String(d.getHours()).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  });
   const [description, setDescription] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
@@ -187,7 +192,7 @@ export function ProjectKanbanQuickView({
     }
     setSaving(true);
     try {
-      const startedAt = new Date(`${timeDate}T09:00:00`);
+      const startedAt = new Date(`${timeDate}T${timeStart}:00`);
       const endedAt = new Date(startedAt.getTime() + mins * 60_000);
       const res = await fetch("/api/v1/time-entries", {
         method: "POST",
@@ -352,6 +357,13 @@ export function ProjectKanbanQuickView({
                     onChange={(e) => setTimeDate(e.target.value)}
                     max={new Date().toISOString().slice(0, 10)}
                     className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                  />
+                  <input
+                    type="time"
+                    value={timeStart}
+                    onChange={(e) => setTimeStart(e.target.value)}
+                    step={900}
+                    className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                   />
                   <div className="relative">
                     <input
