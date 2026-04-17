@@ -63,6 +63,7 @@ function serializeUser(u: {
   avatar: string | null;
   phone: string | null;
   isActive: boolean;
+  capabilities: string[];
   lastLoginAt: Date | null;
   signature?: string | null;
   signatureHtml?: string | null;
@@ -77,6 +78,7 @@ function serializeUser(u: {
     avatar: u.avatar,
     phone: u.phone,
     isActive: u.isActive,
+    capabilities: u.capabilities ?? [],
     lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
     signature: u.signature ?? null,
     signatureHtml: u.signatureHtml ?? null,
