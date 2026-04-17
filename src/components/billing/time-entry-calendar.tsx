@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Clock,
   List,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -204,6 +205,60 @@ export function TimeEntryCalendar() {
 // Day / Week time grid
 // ---------------------------------------------------------------------------
 
+interface Overlap {
+  entryId: string;
+  withEntryId: string;
+  withTicketSubject: string;
+  withTicketNumber: number;
+  overlapStart: string;
+  overlapEnd: string;
+  orgName: string;
+}
+
+function detectOverlaps(dayEntries: TimeCalEntry[]): Map<string, Overlap[]> {
+  const result = new Map<string, Overlap[]>();
+  for (let i = 0; i < dayEntries.length; i++) {
+    const a = dayEntries[i];
+    const aStart = new Date(a.startedAt).getTime();
+    const aEnd = aStart + a.durationMinutes * 60_000;
+    const aOrgId = a.organization?.id ?? "__internal__";
+    for (let j = i + 1; j < dayEntries.length; j++) {
+      const b = dayEntries[j];
+      const bOrgId = b.organization?.id ?? "__internal__";
+      if (aOrgId !== bOrgId) continue;
+      const bStart = new Date(b.startedAt).getTime();
+      const bEnd = bStart + b.durationMinutes * 60_000;
+      if (aStart < bEnd && bStart < aEnd) {
+        const oStart = new Date(Math.max(aStart, bStart));
+        const oEnd = new Date(Math.min(aEnd, bEnd));
+        const fmt = (d: Date) => d.toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" });
+        const orgName = a.organization?.name ?? "Interne";
+        if (!result.has(a.id)) result.set(a.id, []);
+        result.get(a.id)!.push({
+          entryId: a.id,
+          withEntryId: b.id,
+          withTicketSubject: b.ticketSubject,
+          withTicketNumber: b.ticketNumber,
+          overlapStart: fmt(oStart),
+          overlapEnd: fmt(oEnd),
+          orgName,
+        });
+        if (!result.has(b.id)) result.set(b.id, []);
+        result.get(b.id)!.push({
+          entryId: b.id,
+          withEntryId: a.id,
+          withTicketSubject: a.ticketSubject,
+          withTicketNumber: a.ticketNumber,
+          overlapStart: fmt(oStart),
+          overlapEnd: fmt(oEnd),
+          orgName,
+        });
+      }
+    }
+  }
+  return result;
+}
+
 function DayWeekGrid({ days, entries }: { days: Date[]; entries: TimeCalEntry[] }) {
   const totalHours = DAY_END - DAY_START;
   const gridHeight = totalHours * HOUR_PX;
@@ -227,8 +282,57 @@ function DayWeekGrid({ days, entries }: { days: Date[]; entries: TimeCalEntry[] 
     return { top, height };
   }
 
+  // Détecte tous les chevauchements pour la période visible
+  const allOverlaps = useMemo(() => {
+    const map = new Map<string, Overlap[]>();
+    for (const d of days) {
+      const dayEntries = entriesForDay(d);
+      const dayOverlaps = detectOverlaps(dayEntries);
+      for (const [id, overlaps] of dayOverlaps) {
+        if (!map.has(id)) map.set(id, []);
+        map.get(id)!.push(...overlaps);
+      }
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, days]);
+
+  // Résumé des chevauchements pour le banner
+  const overlapSummary = useMemo(() => {
+    const seen = new Set<string>();
+    const items: Overlap[] = [];
+    for (const [, overlaps] of allOverlaps) {
+      for (const o of overlaps) {
+        const key = [o.entryId, o.withEntryId].sort().join("|");
+        if (!seen.has(key)) {
+          seen.add(key);
+          items.push(o);
+        }
+      }
+    }
+    return items;
+  }, [allOverlaps]);
+
   return (
     <Card className="overflow-hidden">
+      {overlapSummary.length > 0 && (
+        <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-[12px] text-amber-900">
+            <p className="font-semibold">{overlapSummary.length} chevauchement{overlapSummary.length > 1 ? "s" : ""} détecté{overlapSummary.length > 1 ? "s" : ""}</p>
+            <ul className="mt-1 space-y-0.5">
+              {overlapSummary.slice(0, 5).map((o, i) => (
+                <li key={i} className="text-[11px]">
+                  <strong>{o.orgName}</strong> : {o.overlapStart}–{o.overlapEnd} — TK-{1000 + o.withTicketNumber} ({o.withTicketSubject.slice(0, 40)})
+                </li>
+              ))}
+              {overlapSummary.length > 5 && (
+                <li className="text-[11px] text-amber-700">+ {overlapSummary.length - 5} autre{overlapSummary.length - 5 > 1 ? "s" : ""}</li>
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <div style={{ minWidth: minColWidth ? `${56 + days.length * minColWidth}px` : undefined }}>
           {/* Day headers */}
@@ -298,21 +402,35 @@ function DayWeekGrid({ days, entries }: { days: Date[]; entries: TimeCalEntry[] 
                     {/* Entries */}
                     {dayEntries.map((e) => {
                       const { top, height } = positionFor(e);
+                      const overlaps = allOverlaps.get(e.id);
+                      const hasOverlap = !!overlaps && overlaps.length > 0;
+                      const overlapTooltip = hasOverlap
+                        ? `⚠ Chevauchement ${overlaps[0].orgName} : ${overlaps[0].overlapStart}–${overlaps[0].overlapEnd} avec TK-${1000 + overlaps[0].withTicketNumber}`
+                        : "";
                       return (
                         <Link
                           key={e.id}
                           href={`/tickets/${e.ticketId}`}
-                          className="absolute left-1 right-1 rounded-lg overflow-hidden hover:brightness-95 hover:z-10 transition-all group"
+                          className={cn(
+                            "absolute left-1 right-1 rounded-lg overflow-hidden hover:brightness-95 hover:z-10 transition-all group",
+                            hasOverlap && "ring-2 ring-amber-500",
+                          )}
                           style={{
                             top,
                             height,
-                            backgroundColor: e.isInternal ? "#ede9fe" : "#e0f2fe",
-                            borderLeft: `3px solid ${e.isInternal ? "#7c3aed" : "#0284c7"}`,
+                            backgroundColor: hasOverlap ? "#fef3c7" : e.isInternal ? "#ede9fe" : "#e0f2fe",
+                            borderLeft: `3px solid ${hasOverlap ? "#d97706" : e.isInternal ? "#7c3aed" : "#0284c7"}`,
                           }}
-                          title={`${e.ticketSubject} — ${fmtDuration(e.durationMinutes)}`}
+                          title={hasOverlap
+                            ? `${overlapTooltip}\n${e.ticketSubject} — ${fmtDuration(e.durationMinutes)}`
+                            : `${e.ticketSubject} — ${fmtDuration(e.durationMinutes)}`
+                          }
                         >
                           <div className="flex items-start gap-1.5 px-2 py-1.5 h-full min-w-0">
-                            {e.organization && (
+                            {hasOverlap && (
+                              <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0 mt-0.5" />
+                            )}
+                            {!hasOverlap && e.organization && (
                               <span className="shrink-0 mt-0.5">
                                 <OrgLogo name={e.organization.name} logo={e.organization.logo} size={18} rounded="sm" />
                               </span>
@@ -322,8 +440,11 @@ function DayWeekGrid({ days, entries }: { days: Date[]; entries: TimeCalEntry[] 
                                 {e.ticketSubject}
                               </p>
                               {height >= 44 && (
-                                <p className="text-[10px] text-slate-500 truncate mt-0.5">
-                                  {e.organization?.name ?? "Interne"}
+                                <p className={cn("text-[10px] truncate mt-0.5", hasOverlap ? "text-amber-700 font-medium" : "text-slate-500")}>
+                                  {hasOverlap
+                                    ? `⚠ Chevauche TK-${1000 + overlaps![0].withTicketNumber}`
+                                    : e.organization?.name ?? "Interne"
+                                  }
                                 </p>
                               )}
                             </div>
