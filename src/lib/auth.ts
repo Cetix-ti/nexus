@@ -429,6 +429,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.lastName = (user as any).lastName;
         token.role = (user as any).role;
         token.capabilities = (user as any).capabilities ?? [];
+        console.log("[auth] JWT sign-in — capabilities:", JSON.stringify(token.capabilities));
         // Avatar is NOT stored in JWT (too large for cookies).
         // Components fetch it from /api/v1/users or use a shared store.
         token.organizationId = (user as any).organizationId;

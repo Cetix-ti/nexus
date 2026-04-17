@@ -1156,7 +1156,13 @@ export default function SettingsPage() {
   const { data: session } = useSession();
   const role = (session?.user as any)?.role;
   const isSuperAdmin = role === "SUPER_ADMIN" || role === "MSP_ADMIN";
-  const userCapabilities: string[] = (session?.user as any)?.capabilities ?? [];
+  const [userCapabilities, setUserCapabilities] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/v1/me")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.capabilities) setUserCapabilities(d.capabilities); })
+      .catch(() => {});
+  }, []);
 
   // Sync with URL param changes
   useEffect(() => {

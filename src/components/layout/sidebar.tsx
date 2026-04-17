@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Ticket,
@@ -234,7 +234,19 @@ export function Sidebar({ forceExpanded = false }: { forceExpanded?: boolean } =
   const user = session?.user;
   // Don't filter until session is loaded — show all items while loading
   const userRole = sessionStatus === "authenticated" ? ((user as any)?.role ?? "TECHNICIAN") : "SUPER_ADMIN";
-  const userCapabilities: string[] = (user as any)?.capabilities ?? [];
+  // Capabilities chargées depuis /api/v1/me (pas depuis le JWT — les
+  // capabilities changent sans re-login et le JWT ne se rafraîchit pas
+  // automatiquement quand un admin modifie les tags d'un user).
+  const [userCapabilities, setUserCapabilities] = useState<string[]>([]);
+  useEffect(() => {
+    if (sessionStatus !== "authenticated") return;
+    fetch("/api/v1/me")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
+        if (d?.capabilities) setUserCapabilities(d.capabilities);
+      })
+      .catch(() => {});
+  }, [sessionStatus]);
   const avatar = useUserAvatarStore((s) => s.avatar);
   const initials = user
     ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`

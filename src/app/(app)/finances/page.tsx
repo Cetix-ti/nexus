@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState, useMemo } from "react";
-import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { WidgetSidebar } from "@/components/widgets/widget-sidebar";
 import {
@@ -173,8 +172,13 @@ function fmtDate(iso: string) { return new Date(iso).toLocaleDateString("fr-CA")
 // Main Page
 // ===========================================================================
 export default function FinancesPage() {
-  const { data: session } = useSession();
-  const userCapabilities: string[] = (session?.user as any)?.capabilities ?? [];
+  const [userCapabilities, setUserCapabilities] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/v1/me")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.capabilities) setUserCapabilities(d.capabilities); })
+      .catch(() => {});
+  }, []);
   const hasPurchasing = userCapabilities.includes("purchasing");
   const [tab, setTab] = useState<TabKey>("overview");
   const [days, setDays] = useState("30");
