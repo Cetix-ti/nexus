@@ -900,13 +900,19 @@ export function TicketQuickViewModal({
                       </div>
                       <div>
                         <label className="block text-[10px] font-medium text-slate-500 mb-1">Heure de début</label>
-                        <input
-                          type="time"
+                        <select
                           value={timeStart}
                           onChange={(e) => setTimeStart(e.target.value)}
-                          step={900}
                           className="w-full h-8 rounded-md border border-slate-200 bg-white px-2 text-[12px] tabular-nums text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                        />
+                        >
+                          {Array.from({ length: 65 }, (_, i) => {
+                            const h = Math.floor((i * 15 + 6 * 60) / 60);
+                            const m = (i * 15 + 6 * 60) % 60;
+                            if (h > 22) return null;
+                            const val = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+                            return <option key={val} value={val}>{val}</option>;
+                          })}
+                        </select>
                       </div>
                     </div>
 

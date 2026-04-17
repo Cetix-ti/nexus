@@ -358,13 +358,19 @@ export function ProjectKanbanQuickView({
                     max={new Date().toISOString().slice(0, 10)}
                     className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                   />
-                  <input
-                    type="time"
+                  <select
                     value={timeStart}
                     onChange={(e) => setTimeStart(e.target.value)}
-                    step={900}
                     className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                  />
+                  >
+                    {Array.from({ length: 65 }, (_, i) => {
+                      const h = Math.floor((i * 15 + 6 * 60) / 60);
+                      const m = (i * 15 + 6 * 60) % 60;
+                      if (h > 22) return null;
+                      const val = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+                      return <option key={val} value={val}>{val}</option>;
+                    })}
+                  </select>
                   <div className="relative">
                     <input
                       type="number"
