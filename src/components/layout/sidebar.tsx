@@ -246,7 +246,6 @@ export function Sidebar({ forceExpanded = false }: { forceExpanded?: boolean } =
     items: section.items.filter((item) => {
       if (!hasNavAccess(userRole, item.minRole)) return false;
       if (item.requiredCapability) {
-        if (userRole === "SUPER_ADMIN") return true;
         if (!userCapabilities.includes(item.requiredCapability)) return false;
       }
       return true;

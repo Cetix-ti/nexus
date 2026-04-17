@@ -11,8 +11,8 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser, hasCapability } from "@/lib/auth-utils";
 import { invalidateLockCache } from "@/lib/billing/period-lock";
 
-function canBilling(me: { role: string; capabilities: string[] }) {
-  return me.role === "SUPER_ADMIN" || hasCapability(me as any, "billing");
+function canBilling(me: { capabilities: string[] }) {
+  return hasCapability(me as any, "billing");
 }
 
 export async function GET() {

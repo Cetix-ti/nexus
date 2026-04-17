@@ -29,6 +29,7 @@ export interface EditUserModalUser {
 const CAPABILITY_OPTIONS: Array<{ value: string; label: string; description: string }> = [
   { value: "billing", label: "Facturation", description: "Accès au verrouillage de facturation" },
   { value: "finances", label: "Finances", description: "Accès à la section Finances" },
+  { value: "purchasing", label: "Achats", description: "Notifié des demandes d'achat + badge sur Bons de commande" },
 ];
 
 interface EditUserModalProps {

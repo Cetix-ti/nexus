@@ -1167,7 +1167,6 @@ export default function SettingsPage() {
   const visibleSections = sections.filter((s) => {
     if ("superAdminOnly" in s && s.superAdminOnly) return isSuperAdmin;
     if ("requiredCapability" in s && s.requiredCapability) {
-      if (role === "SUPER_ADMIN") return true;
       return userCapabilities.includes(s.requiredCapability!);
     }
     return true;

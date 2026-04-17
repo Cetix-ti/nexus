@@ -105,5 +105,41 @@ export async function POST(req: Request) {
     include: { items: true },
   });
 
+  // Notifie tous les users avec le tag "purchasing" qu'un bon de commande
+  // a été soumis. Fire-and-forget (non bloquant).
+  prisma.user.findMany({
+    where: { capabilities: { has: "purchasing" }, isActive: true },
+    select: { id: true },
+  })
+    .then(async (recipients) => {
+      if (recipients.length === 0) return;
+      const { notifyUsers } = await import("@/lib/notifications/notify");
+      const poTitle = order.title ?? poNumber;
+      const poBody = `${body.vendorName} · ${order.totalAmount?.toFixed(2)} ${order.currency} · Soumis par ${me.firstName} ${me.lastName}`;
+      await notifyUsers(
+        recipients.map((r) => r.id),
+        "purchase_order_submitted",
+        {
+          title: `Nouvelle demande d'achat : ${poTitle}`,
+          body: poBody,
+          link: "/finances?tab=purchase_orders",
+          emailSubject: `[${poNumber}] Demande d'achat : ${poTitle}`,
+          email: {
+            title: `Demande d'achat : ${poTitle}`,
+            intro: `Une nouvelle demande d'achat a été soumise.`,
+            metadata: [
+              { label: "Bon de commande", value: poNumber },
+              { label: "Titre", value: poTitle },
+              { label: "Fournisseur", value: body.vendorName },
+              { label: "Montant", value: `${order.totalAmount?.toFixed(2)} ${order.currency}` },
+              { label: "Soumis par", value: `${me.firstName} ${me.lastName}` },
+            ],
+            ctaLabel: "Voir le bon de commande",
+          },
+        },
+      );
+    })
+    .catch(() => {});
+
   return NextResponse.json(order, { status: 201 });
 }

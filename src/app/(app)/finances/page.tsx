@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { WidgetSidebar } from "@/components/widgets/widget-sidebar";
 import {
@@ -172,6 +173,9 @@ function fmtDate(iso: string) { return new Date(iso).toLocaleDateString("fr-CA")
 // Main Page
 // ===========================================================================
 export default function FinancesPage() {
+  const { data: session } = useSession();
+  const userCapabilities: string[] = (session?.user as any)?.capabilities ?? [];
+  const hasPurchasing = userCapabilities.includes("purchasing");
   const [tab, setTab] = useState<TabKey>("overview");
   const [days, setDays] = useState("30");
   const [showWidgetSidebar, setShowWidgetSidebar] = useState(false);
@@ -484,7 +488,7 @@ export default function FinancesPage() {
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
-          const pendingCount = t.key === "purchase_orders" ? poPendingApproval.length : 0;
+          const pendingCount = t.key === "purchase_orders" && hasPurchasing ? poPendingApproval.length : 0;
           return (
             <button
               key={t.key}
@@ -499,7 +503,7 @@ export default function FinancesPage() {
               <Icon className="h-4 w-4" />
               {t.label}
               {pendingCount > 0 && (
-                <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
                   {pendingCount}
                 </span>
               )}

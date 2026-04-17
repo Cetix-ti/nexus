@@ -69,11 +69,12 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 }
 
 /**
- * Vérifie si un user a une capacité donnée. SUPER_ADMIN a toutes les
- * capacités implicitement.
+ * Vérifie si un user a une capacité donnée. Pas de bypass implicite —
+ * même un SUPER_ADMIN doit avoir le tag pour accéder à la section.
+ * Les tags sont des accès métier (facturation, finances, achats),
+ * pas des permissions techniques.
  */
 export function hasCapability(user: AuthUser, cap: string): boolean {
-  if (user.role === "SUPER_ADMIN") return true;
   return user.capabilities.includes(cap);
 }
 

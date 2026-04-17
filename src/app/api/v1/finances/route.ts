@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { getCurrentUser, hasCapability } from "@/lib/auth-utils";
 
 export async function GET(req: Request) {
   try {
@@ -8,7 +8,7 @@ export async function GET(req: Request) {
     if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     // Données financières sensibles (revenus par org, tarifs, contrats) —
     // réservé SUPERVISOR+. Les CLIENT_* et TECHNICIAN n'ont rien à y faire.
-    if (!hasMinimumRole(me.role, "SUPERVISOR") || me.role.startsWith("CLIENT_")) {
+    if (!hasCapability(me, "finances")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const { searchParams } = new URL(req.url);
