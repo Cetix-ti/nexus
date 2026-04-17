@@ -343,6 +343,7 @@ function DayWeekGrid({
   const [dragOffset, setDragOffset] = useState(0); // px offset from top of entry
   const [dragTop, setDragTop] = useState(0); // current visual top in px
   const [dragDayIdx, setDragDayIdx] = useState(0); // column index during drag
+  const didDragRef = useRef(false); // true si le mouse a bougé pendant le drag
   const gridRef = useRef<HTMLDivElement | null>(null);
   const colRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -357,6 +358,7 @@ function DayWeekGrid({
     setDragOffset(e.clientY - rect.top);
     setDragTop(entryTop);
     setDragDayIdx(dayIdx);
+    didDragRef.current = false;
   }
 
   useEffect(() => {
@@ -370,6 +372,7 @@ function DayWeekGrid({
       const snappedMin = snapMin(rawMin);
       const snappedTop = ((snappedMin - DAY_START * 60) / 60) * HOUR_PX;
       setDragTop(Math.max(0, Math.min(gridHeight - 28, snappedTop)));
+      didDragRef.current = true;
       // Horizontal → which day column
       for (let i = 0; i < colRefs.current.length; i++) {
         const col = colRefs.current[i];
@@ -532,8 +535,9 @@ function DayWeekGrid({
                           key={e.id}
                           onMouseDown={(ev) => handleDragStart(ev, e.id, baseTop, dayIdx)}
                           onClick={(ev) => {
-                            if (dragId) return;
                             ev.stopPropagation();
+                            // Ne navigue QUE si c'était un vrai clic (pas un drag)
+                            if (didDragRef.current) return;
                             window.location.href = `/tickets/${e.ticketId}`;
                           }}
                           className={cn(
