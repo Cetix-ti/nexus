@@ -31,16 +31,30 @@ type Job = {
 
 const jobs = new Map<string, Job>();
 let started = false;
+let shuttingDown = false;
+
+// Handles des timers pour graceful shutdown. On les clear sur SIGTERM pour
+// que systemd n'ait pas à attendre 90s de timeout — le process quitte
+// immédiatement après que les ticks en cours finissent.
+const startupTimers = new Set<NodeJS.Timeout>();
+const intervalHandles = new Set<NodeJS.Timeout>();
 
 // Dernier motif d'erreur du sync email. Sert à dédupliquer les logs
 // quand la même erreur se répète à chaque tick (30s) — sinon 4h de
 // "AZURE_* requis" pollueraient les journaux.
 let _emailSyncLastErrorKey: string | null = null;
 
+// Délai avant le PREMIER tick d'un job. Volontairement élevé (30s) pour
+// laisser le serveur web répondre aux premières requêtes HTTPS sans être
+// concurrencé par les jobs lourds (wazuh-api, email-to-ticket, embeddings)
+// qui peuvent saturer CPU+DB à froid. Configurable via env.
+const STARTUP_DELAY_MS = Number(process.env.JOBS_STARTUP_DELAY_MS) || 30_000;
+
 function scheduleJob(job: Job) {
   jobs.set(job.name, job);
 
   const tick = async () => {
+    if (shuttingDown) return; // ne démarre plus de ticks après SIGTERM
     if (job.isRunning) {
       // Job précédent pas fini : on saute ce tick.
       return;
@@ -70,16 +84,45 @@ function scheduleJob(job: Job) {
     }
   };
 
-  // Premier run après un court délai (laisse le serveur se stabiliser).
-  setTimeout(() => {
+  // Premier run APRÈS STARTUP_DELAY_MS + jitter aléatoire par job pour
+  // étaler la charge. Ex: 30s + [0..15]s → les jobs tombent entre 30-45s
+  // après le boot, au lieu de tous frapper à t+10s en même temps.
+  const jitter = Math.floor(Math.random() * 15_000);
+  const startupTimer = setTimeout(() => {
+    startupTimers.delete(startupTimer);
+    if (shuttingDown) return;
     void tick();
     // Puis à chaque intervalle.
-    setInterval(() => void tick(), job.intervalMs);
-  }, 10_000);
+    const intervalHandle = setInterval(() => void tick(), job.intervalMs);
+    intervalHandles.add(intervalHandle);
+  }, STARTUP_DELAY_MS + jitter);
+  startupTimers.add(startupTimer);
 
   console.log(
     `[background-jobs] scheduled "${job.name}" every ${job.intervalMs / 1000}s`,
   );
+}
+
+/**
+ * Graceful shutdown — appelé sur SIGTERM/SIGINT. Clear tous les timers
+ * (empêche les nouveaux ticks), attend brièvement les ticks en cours.
+ * Permet au process de quitter sans attendre TimeoutStopSec systemd (90s).
+ */
+export function stopBackgroundJobs(): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  let cleared = 0;
+  for (const t of startupTimers) {
+    clearTimeout(t);
+    cleared++;
+  }
+  startupTimers.clear();
+  for (const h of intervalHandles) {
+    clearInterval(h);
+    cleared++;
+  }
+  intervalHandles.clear();
+  console.log(`[background-jobs] shutdown — ${cleared} timers clearés`);
 }
 
 export function startBackgroundJobs() {
