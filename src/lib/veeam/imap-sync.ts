@@ -129,6 +129,29 @@ async function buildDomainMap(): Promise<Map<string, { id: string; name: string 
   return map;
 }
 
+/**
+ * Email individuel → org, via Contact. Utilisé pour les alertes Veeam
+ * provenant d'adresses sur domaines publics (Gmail/Outlook) qu'un admin a
+ * explicitement rattachées à un client via `/api/v1/veeam/map-email`.
+ */
+async function buildEmailMap(): Promise<Map<string, { id: string; name: string }>> {
+  const contacts = await prisma.contact.findMany({
+    where: { isActive: true },
+    select: {
+      email: true,
+      organization: { select: { id: true, name: true } },
+    },
+  });
+  const map = new Map<string, { id: string; name: string }>();
+  for (const c of contacts) {
+    if (!c.email || !c.organization) continue;
+    const k = c.email.toLowerCase().trim();
+    if (!k) continue;
+    if (!map.has(k)) map.set(k, c.organization);
+  }
+  return map;
+}
+
 // ---------------------------------------------------------------------------
 // IMAP Sync
 // ---------------------------------------------------------------------------
@@ -223,6 +246,7 @@ export async function syncVeeamAlerts(config?: VeeamImapConfig | null): Promise<
       );
 
       const domainMap = await buildDomainMap();
+      const emailMap = await buildEmailMap();
 
       for await (const msg of messages) {
         fetched++;
@@ -239,8 +263,12 @@ export async function syncVeeamAlerts(config?: VeeamImapConfig | null): Promise<
           });
           if (exists) continue;
 
-          // Match org by sender domain
-          const org = domainMap.get(alert.senderDomain);
+          // Match org : domaine d'abord, email individuel ensuite (pour les
+          // adresses sur domaines publics Gmail/Outlook qu'un admin a
+          // explicitement mappées via /api/v1/veeam/map-email).
+          const org =
+            domainMap.get(alert.senderDomain) ??
+            emailMap.get(alert.senderEmail);
 
           await prisma.veeamBackupAlert.create({
             data: {

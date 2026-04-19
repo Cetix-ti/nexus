@@ -626,35 +626,16 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
             }
           }
 
-          // Si on ne trouve PAS d'org pour le vrai expéditeur d'un courriel
-          // transféré, on ne doit PAS attribuer le ticket au forwarder (ex:
-          // Cetix). Sinon un courriel externe (jdoe@vdsa.ca) transféré par
-          // Bruno à billets@cetix.ca serait classé comme ticket interne
-          // Cetix — faux. On crée donc une org "auto" basée sur le domaine
-          // du vrai sender pour capturer le client même sans config préalable.
-          if (!org && forward.isForward && actualEmail !== senderEmail) {
-            // Auto-création d'une org basique pour ne pas perdre le ticket.
-            // L'admin pourra ensuite la fusionner / renommer depuis
-            // /organisations. Le slug est dérivé du domaine.
-            const slug = domain.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || `auto-${Date.now()}`;
-            const niceName = domain
-              .split(".")
-              .slice(0, -1)
-              .join(".")
-              .replace(/[-_]/g, " ")
-              .replace(/\b\w/g, (c) => c.toUpperCase()) || domain;
-            const created = await prisma.organization.create({
-              data: {
-                name: niceName,
-                slug,
-                domain,
-                domains: [domain],
-                isActive: true,
-              },
-            });
-            org = { id: created.id, name: created.name };
-            domainMap.set(domain, org);
-          }
+          // AUTO-CREATE DÉSACTIVÉ (décision produit) : on ne crée plus
+          // automatiquement d'organisation quand le domaine du sender d'un
+          // forward n'est pas associé à une org existante. Motif : les
+          // orgs "Activis" créées en auto polluaient la liste clients.
+          // Désormais, un forward depuis un domaine inconnu tombe dans
+          // le fallback ci-dessous (1ère org active) → l'admin doit
+          // l'assigner manuellement.
+          //
+          // Si on veut ré-activer l'auto-création avec whitelist, faire
+          // un check domain ∈ allowedAutoCreateDomains via tenantSetting.
 
           // Dernier fallback (non-forward ou forward sans sender extrait) :
           // domaine du sender réel du courriel reçu — typiquement une org
@@ -671,15 +652,19 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
           // disparaître. Mieux vaut créer un ticket mal classé (que l'admin
           // peut réassigner) que de le perdre entièrement.
           if (!org) {
+            // Fallback : on préfère l'org INTERNE (Cetix) aux autres.
+            // Un email au domaine inconnu atterrit donc dans la queue
+            // interne où l'admin peut le réassigner manuellement, au lieu
+            // d'être randomisé chez un vrai client (comportement précédent).
             const fallback = await prisma.organization.findFirst({
               where: { isActive: true },
-              orderBy: { isInternal: "asc" }, // prend un client d'abord, interne en dernier
+              orderBy: { isInternal: "desc" }, // interne d'abord
               select: { id: true, name: true },
             });
             if (fallback) {
               org = { id: fallback.id, name: fallback.name };
               console.warn(
-                `[email-to-ticket] aucune org pour <${senderEmail}> — fallback sur "${fallback.name}" (à réassigner)`,
+                `[email-to-ticket] aucune org pour <${senderEmail}> (domaine=${domain}) — fallback sur "${fallback.name}" (à réassigner manuellement)`,
               );
             }
           }

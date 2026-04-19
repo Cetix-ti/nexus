@@ -339,6 +339,39 @@ async function buildDomainMap(): Promise<
   return map;
 }
 
+/**
+ * Construit un map senderEmail → org à partir des Contacts. Permet
+ * d'associer les alertes Veeam provenant d'une adresse Gmail / Outlook
+ * individuelle (domaine public, ne peut pas être mappé en entier) à la
+ * bonne organisation quand un admin a créé un Contact dédié via le endpoint
+ * `/api/v1/veeam/map-email`. Sans cette passe, chaque nouvelle alerte de
+ * l'adresse déjà mappée retombe en `organizationId=null`.
+ */
+async function buildEmailMap(): Promise<
+  Map<string, { id: string; name: string }>
+> {
+  const contacts = await prisma.contact.findMany({
+    where: { isActive: true },
+    select: {
+      email: true,
+      organizationId: true,
+      organization: { select: { id: true, name: true } },
+    },
+  });
+  const map = new Map<string, { id: string; name: string }>();
+  for (const c of contacts) {
+    if (!c.email || !c.organization) continue;
+    const k = c.email.toLowerCase().trim();
+    if (!k) continue;
+    // Premier gagne : plusieurs Contacts peuvent partager une adresse mais
+    // la sémantique de map-email upsert le Contact existant vers la nouvelle
+    // org, donc en pratique il n'y a pas de collision sur les adresses
+    // publiques qu'un admin a explicitement mappées.
+    if (!map.has(k)) map.set(k, c.organization);
+  }
+  return map;
+}
+
 // ---------------------------------------------------------------------------
 // Secret expiry check
 // ---------------------------------------------------------------------------
@@ -467,6 +500,7 @@ export async function syncVeeamAlerts(
     // sinceDays === 0 → no filter → full history
 
     const domainMap = await buildDomainMap();
+    const emailMap = await buildEmailMap();
     const filterParam = dateFilter ? `&$filter=${dateFilter}` : "";
 
     // Scan each folder (root + subfolders)
@@ -501,8 +535,12 @@ export async function syncVeeamAlerts(
           });
           if (exists) continue;
 
-          // Match org by sender domain
-          const org = domainMap.get(alert.senderDomain);
+          // Match org : domaine d'abord, email individuel ensuite (pour les
+          // adresses sur domaines publics Gmail/Outlook qu'un admin a
+          // explicitement mappées via /api/v1/veeam/map-email).
+          const org =
+            domainMap.get(alert.senderDomain) ??
+            emailMap.get(alert.senderEmail);
 
           await prisma.veeamBackupAlert.create({
             data: {

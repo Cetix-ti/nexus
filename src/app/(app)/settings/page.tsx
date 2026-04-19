@@ -165,7 +165,7 @@ const sectionGroups: SettingsGroup[] = [
     iconBg: "bg-rose-50 ring-rose-200/60",
     sections: [
       { key: "integrations", label: "Intégrations", icon: Plug },
-      { key: "ai_intelligence", label: "Intelligence IA", icon: Sparkles },
+      { key: "ai_intelligence", label: "Intelligence IA", icon: Sparkles, superAdminOnly: true },
       { key: "email_monitoring", label: "Synchronisation des alertes", icon: Bell },
       { key: "persistence_security", label: "Logiciels de persistance", icon: Shield },
       { key: "api", label: "API et webhooks", icon: Key },

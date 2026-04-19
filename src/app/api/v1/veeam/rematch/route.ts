@@ -26,15 +26,36 @@ export async function POST() {
       }
     }
 
+    // Build email → org map (Contacts) pour les alertes sur domaines publics
+    // (Gmail/Outlook) qu'un admin a explicitement mappées via /map-email.
+    // Sans cette passe, un rematch ne réassigne QUE les alertes de domaines
+    // privés ; celles venant d'un Gmail resteraient null même après mapping.
+    const contacts = await prisma.contact.findMany({
+      where: { isActive: true },
+      select: {
+        email: true,
+        organization: { select: { id: true, name: true } },
+      },
+    });
+    const emailMap = new Map<string, { id: string; name: string }>();
+    for (const c of contacts) {
+      if (!c.email || !c.organization) continue;
+      const k = c.email.toLowerCase().trim();
+      if (!k) continue;
+      if (!emailMap.has(k)) emailMap.set(k, c.organization);
+    }
+
     // Find all unmatched alerts
     const unmatched = await prisma.veeamBackupAlert.findMany({
       where: { organizationId: null },
-      select: { id: true, senderDomain: true },
+      select: { id: true, senderDomain: true, senderEmail: true },
     });
 
     let fixed = 0;
     for (const alert of unmatched) {
-      const org = domainMap.get(alert.senderDomain);
+      const org =
+        domainMap.get(alert.senderDomain) ??
+        emailMap.get(alert.senderEmail.toLowerCase());
       if (org) {
         await prisma.veeamBackupAlert.update({
           where: { id: alert.id },
