@@ -3,10 +3,14 @@
 // ============================================================================
 // Widget "Tickets similaires" — sidebar ticket.
 //
-// Affiche par défaut 3 sections :
+// Affiche 2 sections (le cross-client est DÉSACTIVÉ) :
 //   1. Chez ce client — ouverts/en cours (dédup, doublons)
 //   2. Chez ce client — résolus dans les 12 derniers mois (savoir local)
-//   3. Chez d'autres clients — résolus (savoir transversal)
+//
+// Le bucket "résolus chez d'autres clients" était trop bruité (trop de
+// faux positifs sur tokens génériques, pas assez de contexte client-
+// spécifique) et a été retiré sur décision produit. Les données backend
+// continuent d'être calculées mais ne sont plus affichées.
 //
 // Sert à donner au tech un accès immédiat aux tickets voisins sans qu'il
 // ait à interroger le copilote. Le copilote garde sa valeur pour les
@@ -133,11 +137,12 @@ export function SimilarTicketsWidget({
 
   if (excluded) return null;
 
+  // Total pour le compteur du header — n'inclut PAS otherClientsResolved
+  // puisque ce bucket n'est plus affiché (cf. commentaire en tête de fichier).
   const total =
     (data?.sameRequester?.length ?? 0) +
     (data?.sameClientOpen.length ?? 0) +
-    (data?.sameClientResolved.length ?? 0) +
-    (data?.otherClientsResolved.length ?? 0);
+    (data?.sameClientResolved.length ?? 0);
 
   if (loading) {
     return (
@@ -241,16 +246,10 @@ export function SimilarTicketsWidget({
         />
       )}
 
-      {data.otherClientsResolved.length > 0 && (
-        <Section
-          title="Résolus chez d'autres clients — forte pertinence"
-          tone="slate"
-          tickets={data.otherClientsResolved}
-          showOrg={true}
-          bucket="otherClientsResolved"
-          sourceTicketId={ticketId}
-        />
-      )}
+      {/* Bucket "résolus chez d'autres clients" désactivé : trop de faux
+          positifs pour être fiable. Les données restent calculées côté
+          backend mais ne sont plus affichées — à réactiver si on implémente
+          un filtre sémantique vraiment solide dans le futur. */}
     </div>
   );
 }
