@@ -27,6 +27,7 @@ import {
   resolveOrgByText,
   resolveOrgByHostOrIp,
 } from "../org-resolver";
+import { stripClientCodePrefix } from "../endpoint-utils";
 import type { DecodedAlert } from "../types";
 
 /**
@@ -90,20 +91,29 @@ export async function ingestPersistenceEmail(opts: {
     softwareNormalized,
   });
 
+  // Normalisation du hostname : l'agent Wazuh porte souvent le préfixe
+  // client (ex: `MRVL_MV-LAP-24`). On stocke le nom réel du poste
+  // (`MV-LAP-24`) pour que titre, sommaire et affichages UI soient
+  // cohérents avec ce que connaît l'utilisateur final. On garde le nom
+  // brut dans rawPayload pour la traçabilité.
+  const rawHostname = parsed.hostname;
+  const normalizedHostname =
+    stripClientCodePrefix(rawHostname, parsed.clientCode) ?? rawHostname;
+
   // Corrélation : un incident par (org, endpoint, soft) — toutes les
   // détections successives du même soft sur le même poste s'agrègent.
   const orgKey = organizationId ?? "unknown";
-  const endpointKey = parsed.hostname.toLowerCase() || "unknown";
+  const endpointKey = normalizedHostname.toLowerCase() || "unknown";
   const softKey = softwareNormalized.toLowerCase();
   const correlationKey = `persistence:${orgKey}:${endpointKey}:${softKey}`;
 
   const versionSuffix = parsed.softwareVersion ? ` ${parsed.softwareVersion}` : "";
-  const title = `${softwareNormalized}${versionSuffix} installé sur ${parsed.hostname}`;
+  const title = `${softwareNormalized}${versionSuffix} installé sur ${normalizedHostname}`;
 
   const summaryParts = [
     `Logiciel : ${parsed.softwareName}${versionSuffix}`,
     `Normalisé : ${softwareNormalized}`,
-    `Poste : ${parsed.hostname}${parsed.ipAddress ? ` (${parsed.ipAddress})` : ""}`,
+    `Poste : ${normalizedHostname}${parsed.ipAddress ? ` (${parsed.ipAddress})` : ""}`,
     `Règle Wazuh : ${parsed.ruleId} (niveau ${parsed.ruleLevel})`,
     `Whitelist : ${
       isWhitelisted
@@ -120,7 +130,7 @@ export async function ingestPersistenceEmail(opts: {
     severity,
     externalId: opts.messageId,
     organizationId,
-    endpoint: parsed.hostname,
+    endpoint: normalizedHostname,
     software: softwareNormalized,
     title,
     summary: summaryParts.join("\n"),
@@ -128,7 +138,10 @@ export async function ingestPersistenceEmail(opts: {
     rawPayload: {
       subject: parsed.rawSubject,
       body: parsed.rawBodyPreview.slice(0, 4000),
-      hostname: parsed.hostname,
+      // Hostname brut (avec préfixe client) conservé pour traçabilité
+      // et débogage — le `endpoint` de l'alerte est déjà normalisé.
+      hostname: rawHostname,
+      hostnameNormalized: normalizedHostname,
       clientCode: parsed.clientCode,
       ipAddress: parsed.ipAddress,
       softwareName: parsed.softwareName,
@@ -159,7 +172,7 @@ export async function ingestPersistenceEmail(opts: {
   if (opts.sendEmail !== false && ingestResult.isNew && !isWhitelisted) {
     try {
       const emailCtx: PersistenceEmailContext = {
-        hostname: parsed.hostname,
+        hostname: normalizedHostname,
         clientCode: parsed.clientCode,
         clientName: organizationName ?? parsed.clientCode,
         ipAddress: parsed.ipAddress,

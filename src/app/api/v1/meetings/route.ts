@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { ensureNexusCalendar } from "@/lib/calendar/location-sync";
+import { notifyMeetingInvite } from "@/lib/calendar/meeting-reminders";
 
 /**
  * GET /api/v1/meetings
@@ -111,4 +113,154 @@ export async function GET(req: Request) {
       })),
     })),
   );
+}
+
+/**
+ * POST /api/v1/meetings
+ *
+ * Crée une rencontre depuis la page liste (menu latéral → Rencontres). Crée
+ * aussi son CalendarEvent dans le calendrier « Localisation » — c'est la
+ * source unique des activités de l'équipe, donc chaque rencontre y apparaît
+ * automatiquement pour que l'agenda global reste à jour.
+ *
+ * Body : {
+ *   title, description?, location?,
+ *   startsAt, endsAt (ISO),
+ *   participantIds?: string[],      // agents à ajouter (rôle "attendee")
+ *   agenda?: Array<{ title, description?, durationMinutes? }>,
+ * }
+ *
+ * Effets de bord :
+ *   - Le créateur est auto-ajouté comme "organizer"
+ *   - Les participants reçoivent une notification in-app + email
+ *     (via notifyMeetingInvite).
+ *   - Un CalendarEvent kind=MEETING est créé dans « Localisation »,
+ *     lié au meeting par meetingId.
+ */
+export async function POST(req: Request) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (me.role.startsWith("CLIENT_")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (!title) {
+    return NextResponse.json({ error: "title requis" }, { status: 400 });
+  }
+  if (!body.startsAt || !body.endsAt) {
+    return NextResponse.json(
+      { error: "startsAt et endsAt requis" },
+      { status: 400 },
+    );
+  }
+  const startsAt = new Date(body.startsAt);
+  const endsAt = new Date(body.endsAt);
+  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+    return NextResponse.json({ error: "Dates invalides" }, { status: 400 });
+  }
+  if (endsAt <= startsAt) {
+    return NextResponse.json(
+      { error: "La fin doit être après le début" },
+      { status: 400 },
+    );
+  }
+
+  const participantIds: string[] = Array.isArray(body.participantIds)
+    ? body.participantIds.filter(
+        (u: unknown) => typeof u === "string" && u && u !== me.id,
+      )
+    : [];
+
+  const description =
+    typeof body.description === "string" ? body.description : null;
+  const location = typeof body.location === "string" ? body.location : null;
+
+  type AgendaInput = {
+    title: string;
+    description?: string | null;
+    durationMinutes?: number | null;
+  };
+  const rawAgenda: unknown[] = Array.isArray(body.agenda) ? body.agenda : [];
+  const agendaInput: AgendaInput[] = rawAgenda
+    .filter(
+      (a): a is { title: string; description?: unknown; durationMinutes?: unknown } =>
+        !!a &&
+        typeof a === "object" &&
+        typeof (a as { title?: unknown }).title === "string" &&
+        (a as { title: string }).title.trim().length > 0,
+    )
+    .map((a) => ({
+      title: a.title.trim(),
+      description: typeof a.description === "string" ? a.description : null,
+      durationMinutes:
+        typeof a.durationMinutes === "number" ? a.durationMinutes : null,
+    }));
+
+  const meeting = await prisma.meeting.create({
+    data: {
+      title,
+      description,
+      location,
+      startsAt,
+      endsAt,
+      createdById: me.id,
+      participants: {
+        create: [
+          { userId: me.id, role: "organizer" },
+          ...participantIds.map((uid) => ({
+            userId: uid,
+            role: "attendee" as const,
+          })),
+        ],
+      },
+      agenda:
+        agendaInput.length > 0
+          ? {
+              create: agendaInput.map((a, idx) => ({
+                title: a.title,
+                description: a.description ?? null,
+                durationMinutes: a.durationMinutes ?? null,
+                order: idx,
+                addedById: me.id,
+              })),
+            }
+          : undefined,
+    },
+    select: { id: true },
+  });
+
+  // Calendrier « Localisation » — source unique des activités de l'équipe
+  // (crée le calendrier si absent). Best-effort : si ça échoue, on garde la
+  // rencontre mais elle n'apparaît pas dans le calendrier global — on log.
+  try {
+    const calendarId = await ensureNexusCalendar();
+    await prisma.calendarEvent.create({
+      data: {
+        calendarId,
+        title,
+        description,
+        kind: "MEETING",
+        startsAt,
+        endsAt,
+        location,
+        meetingId: meeting.id,
+        createdById: me.id,
+      },
+    });
+  } catch (err) {
+    console.warn("[meetings POST] création calendarEvent échouée:", err);
+  }
+
+  // Notifications aux agents invités (best-effort, pas bloquant)
+  if (participantIds.length > 0) {
+    try {
+      await notifyMeetingInvite(meeting.id, participantIds, me.id);
+    } catch (err) {
+      console.warn("[meetings POST] notifications échouées:", err);
+    }
+  }
+
+  return NextResponse.json({ id: meeting.id }, { status: 201 });
 }

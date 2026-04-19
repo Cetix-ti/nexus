@@ -100,7 +100,7 @@ export async function ingestSecurityAlert(
           occurrenceCount: 1,
           firstSeenAt: alert.receivedAt,
           lastSeenAt: alert.receivedAt,
-          metadata: null as never,
+          metadata: (decoded.metadata ?? null) as never,
           isLowPriority: !!decoded.isLowPriority,
         },
       });
@@ -112,12 +112,23 @@ export async function ingestSecurityAlert(
         (prev.severity as SecuritySeverity | null) ?? null,
         decoded.severity ?? null,
       );
+      // On fusionne les metadata : si le décodeur en fournit de nouvelles,
+      // elles écrasent celles du même niveau mais on préserve le reste
+      // (ex: liste de comptes inactifs qui grandit au fil des alertes).
+      const mergedMetadata =
+        decoded.metadata
+          ? {
+              ...((prev.metadata as Record<string, unknown> | null) ?? {}),
+              ...decoded.metadata,
+            }
+          : (prev.metadata as Record<string, unknown> | null);
       incident = await prisma.securityIncident.update({
         where: { id: prev.id },
         data: {
           occurrenceCount: { increment: 1 },
           lastSeenAt: alert.receivedAt,
           severity: nextSeverity,
+          metadata: mergedMetadata as never,
           // Si l'incident était fermé mais qu'une nouvelle alerte arrive,
           // on le rouvre automatiquement — un lockout qui recommence doit
           // attirer l'attention.

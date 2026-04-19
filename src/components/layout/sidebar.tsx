@@ -27,6 +27,7 @@ import {
   LogOut,
   UserCircle,
   ShieldAlert,
+  Brain,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/stores/sidebar";
@@ -75,24 +76,29 @@ const NAV_SECTIONS: NavSection[] = [
           { label: "Ma journée", href: "/tickets/my-day" },
         ],
       },
-      // Supervision — visible uniquement pour les agents qui supervisent
-      // d'autres agents. La visibilité est contrôlée côté client par
-      // l'existence de la clé supervisedAgents dans le profil user, pas
-      // par un rôle statique.
-      { label: "Supervision", href: "/supervision", icon: BarChart3, minRole: "SUPERVISOR" },
       { label: "Projets clients", href: "/projects", icon: FolderKanban },
-      // Centre de sécurité placé AVANT "Alertes monitoring" : les
-      // événements de sécurité (AD lockouts, Wazuh, Bitdefender) sont
-      // plus critiques et doivent être au premier plan.
+      { label: "Mon espace", href: "/my-space", icon: UserCircle },
+    ],
+  },
+  // Regroupement des vues de surveillance (SOC, monitoring, sauvegardes) —
+  // toutes sont des flux d'alertes critiques que l'équipe technique surveille
+  // en continu, donc on les aligne visuellement.
+  {
+    label: "Alertes de surveillance",
+    items: [
+      // Cybersécurité (ex-« Centre de sécurité ») — SOC : AD lockouts,
+      // Wazuh, Bitdefender, etc. Placé en tête car c'est le flux le plus
+      // critique.
       {
-        label: "Centre de sécurité",
+        label: "Cybersécurité",
         href: "/security-center",
         icon: ShieldAlert,
         minRole: "TECHNICIAN",
       },
-      { label: "Alertes monitoring", href: "/monitoring", icon: Bell },
+      // Infrastructure (ex-« Alertes monitoring ») — supervision matériel,
+      // serveurs, réseaux, services.
+      { label: "Infrastructure", href: "/monitoring", icon: Bell },
       { label: "Sauvegardes", href: "/backups", icon: HardDrive },
-      { label: "Mon espace", href: "/my-space", icon: UserCircle },
     ],
   },
   // Données annexes du côté client — gardées groupées car consultées moins
@@ -103,25 +109,29 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Organisations", href: "/organisations", icon: Building2 },
       { label: "Contacts", href: "/contacts", icon: Users },
       { label: "Actifs", href: "/assets", icon: Monitor },
-      { label: "Planificateur", href: "/scheduling", icon: CalendarDays },
-      { label: "Finances", href: "/finances", icon: DollarSign, minRole: "SUPERVISOR", requiredCapability: "finances" },
     ],
   },
   // TECHNICIAN+ : exclut les CLIENT_* / READ_ONLY. La section Équipe contient
   // les données opérationnelles Cetix (rencontres, tickets admin, projets
-  // admin) — aucun client ne doit y accéder.
+  // admin) — aucun client ne doit y accéder. Supervision est ici car c'est
+  // un outil de gestion d'équipe.
   {
     label: "Équipe",
     items: [
-      { label: "Rencontres", href: "/calendar/meetings", icon: CalendarDays, minRole: "TECHNICIAN" },
       { label: "Tickets internes", href: "/internal-tickets", icon: Ticket, minRole: "TECHNICIAN" },
       { label: "Projets internes", href: "/internal-projects", icon: FolderKanban, minRole: "TECHNICIAN" },
+      { label: "Rencontres", href: "/calendar/meetings", icon: CalendarDays, minRole: "TECHNICIAN" },
+      // Supervision — visible uniquement pour les agents qui supervisent
+      // d'autres agents. La visibilité effective est aussi contrôlée côté
+      // client par l'existence de la clé supervisedAgents dans le profil,
+      // en plus du rôle minimum.
+      { label: "Supervision", href: "/supervision", icon: BarChart3, minRole: "SUPERVISOR" },
     ],
   },
   {
     label: "Ressources",
     items: [
-      { label: "Base de connaissances", href: "/knowledge", icon: BookOpen },
+      { label: "Finances", href: "/finances", icon: DollarSign, minRole: "SUPERVISOR", requiredCapability: "finances" },
       {
         label: "Analytique",
         href: "/analytics/dashboards",
@@ -133,12 +143,44 @@ const NAV_SECTIONS: NavSection[] = [
           { label: "Sources & Variables", href: "/analytics/data" },
         ],
       },
+      { label: "Base de connaissances", href: "/knowledge", icon: BookOpen },
     ],
   },
   {
     label: "Système",
     items: [
+      {
+        label: "Intelligence IA",
+        href: "/intelligence",
+        icon: Brain,
+        minRole: "MSP_ADMIN",
+        children: [
+          { label: "Vue d'ensemble", href: "/intelligence" },
+          { label: "Journal apprentissage", href: "/intelligence/activity" },
+          { label: "Feedback collectif", href: "/intelligence/feedback" },
+          { label: "Anomalies requester", href: "/intelligence/anomalies" },
+          { label: "Maintenance proposée", href: "/intelligence/maintenance" },
+          { label: "Articles KB à écrire", href: "/intelligence/kb-gaps" },
+          { label: "Chaînes sécurité", href: "/intelligence/security-chains" },
+          { label: "Patterns récurrents", href: "/intelligence/recurring" },
+          { label: "Playbooks", href: "/intelligence/playbooks" },
+          { label: "Coaching techs", href: "/intelligence/techs" },
+          { label: "Taxonomie dédoublée", href: "/intelligence/taxonomy" },
+          {
+            label: "Tickets similaires",
+            href: "/intelligence/similar-learning",
+          },
+          {
+            label: "Suggestions catégorie",
+            href: "/intelligence/category-learning",
+          },
+        ],
+      },
       { label: "Paramètres", href: "/settings", icon: Settings, minRole: "MSP_ADMIN" },
+      // Automatisation (ex-« Planificateur ») — tickets récurrents, tâches
+      // planifiées, jobs cron internes. En bas du menu car c'est un outil
+      // de configuration qu'on visite rarement une fois les règles posées.
+      { label: "Automatisation", href: "/scheduling", icon: Zap },
     ],
   },
 ];

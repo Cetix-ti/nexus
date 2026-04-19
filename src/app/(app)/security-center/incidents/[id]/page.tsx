@@ -14,9 +14,14 @@
 //   - bouton "Créer un ticket" si pas déjà converti
 // ============================================================================
 
-import { useCallback, useEffect, useState, use } from "react";
+import { useState, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useIncidentQuery,
+  securityKeys,
+} from "@/hooks/use-security-incidents";
 import {
   ArrowLeft,
   ShieldAlert,
@@ -33,6 +38,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { OrgLogo } from "@/components/organizations/org-logo";
+import { AiIncidentPanel } from "@/components/security-center/ai-incident-panel";
 
 interface AlertRow {
   id: string;
@@ -59,6 +65,7 @@ interface Incident {
   firstSeenAt: string;
   lastSeenAt: string;
   ticketId: string | null;
+  metadata: Record<string, unknown> | null;
   organization: { id: string; name: string; clientCode: string | null } | null;
   assignee: { id: string; firstName: string; lastName: string; avatar: string | null } | null;
   ticket: { id: string; number: number; subject: string; status: string } | null;
@@ -98,36 +105,26 @@ function fmtDate(iso: string): string {
 export default function IncidentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const [incident, setIncident] = useState<Incident | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
+  const qc = useQueryClient();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // On passe par la liste filtrée + grab l'id — pas besoin d'un
-      // endpoint par-id dédié ; la liste retourne déjà toutes les alertes.
-      const res = await fetch(`/api/v1/security-center/incidents`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const list = (await res.json()) as Incident[];
-      const found = list.find((x) => x.id === id);
-      if (!found) {
-        setError("Incident introuvable");
-      } else {
-        setIncident(found);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
+  // useIncidentQuery sert la donnée depuis le cache des listes s'il s'y
+  // trouve (initialData) → navigation instantanée depuis le rollup. Le
+  // refetch arrière-plan ramène l'historique complet des alertes via le
+  // nouvel endpoint /incidents/[id].
+  const query = useIncidentQuery(id);
+  const incident = query.data as Incident | undefined;
+  const loading = query.isPending;
+  const error =
+    query.error instanceof Error
+      ? query.error.message
+      : !loading && !incident
+        ? "Incident introuvable"
+        : null;
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const load = () => {
+    qc.invalidateQueries({ queryKey: securityKeys.all });
+  };
 
   async function updateStatus(next: string) {
     if (!incident) return;
@@ -287,6 +284,39 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
             )}
           </div>
 
+          {/* Liste des comptes inactifs — rapport AD peut en contenir N.
+              Affiché en premier parce que c'est l'information la plus utile
+              pour décider quoi faire de l'alerte. */}
+          {Array.isArray(
+            (incident.metadata as { inactiveAccounts?: unknown } | null)?.inactiveAccounts,
+          ) &&
+            ((incident.metadata as { inactiveAccounts: string[] }).inactiveAccounts
+              .length ?? 0) > 0 && (
+              <div>
+                <h2 className="text-[13px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                  Comptes inactifs listés (
+                  {
+                    (incident.metadata as { inactiveAccounts: string[] })
+                      .inactiveAccounts.length
+                  }
+                  )
+                </h2>
+                <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
+                  {(
+                    incident.metadata as { inactiveAccounts: string[] }
+                  ).inactiveAccounts.map((account) => (
+                    <div
+                      key={account}
+                      className="flex items-center gap-3 px-4 py-2 font-mono text-[12.5px] text-slate-800"
+                    >
+                      <User className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      {account}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
           {/* Résumé */}
           {incident.summary && (
             <div>
@@ -298,6 +328,25 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
               </div>
             </div>
           )}
+
+          {/* Analyse IA — triage MITRE + synthèse narrative */}
+          <AiIncidentPanel
+            incidentId={incident.id}
+            initialTriage={
+              (incident.metadata as {
+                aiTriage?: React.ComponentProps<
+                  typeof AiIncidentPanel
+                >["initialTriage"];
+              } | null)?.aiTriage ?? null
+            }
+            initialSynthesis={
+              (incident.metadata as {
+                aiSynthesis?: React.ComponentProps<
+                  typeof AiIncidentPanel
+                >["initialSynthesis"];
+              } | null)?.aiSynthesis ?? null
+            }
+          />
 
           {/* Historique complet */}
           <div>

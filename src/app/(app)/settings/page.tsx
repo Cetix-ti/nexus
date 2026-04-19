@@ -30,6 +30,8 @@ import {
   Ticket,
   Eye,
   Lock,
+  Sparkles,
+  Activity,
 } from "lucide-react";
 import { PortalAccessSection } from "@/components/settings/portal-access-section";
 import { Button } from "@/components/ui/button";
@@ -57,6 +59,8 @@ import { BillingLockSection } from "@/components/billing/billing-lock-section";
 import { KanbanColumnsSection } from "@/components/settings/kanban-columns-section";
 import { KanbanBoardsSection } from "@/components/settings/kanban-boards-section";
 import { IntegrationsSection } from "@/components/settings/integrations-section";
+import { AiIntelligenceSection } from "@/components/settings/ai-intelligence-section";
+import { BackgroundJobsSection } from "@/components/settings/background-jobs-section";
 import { PortalDomainSection } from "@/components/settings/portal-domain-section";
 import { MonitoringSection } from "@/components/settings/monitoring-section";
 import { PersistenceSecuritySection } from "@/components/settings/persistence-security-section";
@@ -161,9 +165,11 @@ const sectionGroups: SettingsGroup[] = [
     iconBg: "bg-rose-50 ring-rose-200/60",
     sections: [
       { key: "integrations", label: "Intégrations", icon: Plug },
+      { key: "ai_intelligence", label: "Intelligence IA", icon: Sparkles },
       { key: "email_monitoring", label: "Synchronisation des alertes", icon: Bell },
       { key: "persistence_security", label: "Logiciels de persistance", icon: Shield },
       { key: "api", label: "API et webhooks", icon: Key },
+      { key: "background_jobs", label: "Jobs d'arrière-plan", icon: Activity },
       { key: "system", label: "Système", icon: HardDrive, superAdminOnly: true },
     ],
   },
@@ -1132,6 +1138,7 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   billing_locks: <BillingLockSection />,
   project_types: <ProjectTypesSection />,
   integrations: <IntegrationsSection />,
+  ai_intelligence: <AiIntelligenceSection />,
   email_monitoring: <MonitoringSection />,
   persistence_security: <PersistenceSecuritySection />,
   supervision: <SupervisionSection />,
@@ -1143,6 +1150,7 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
     />
   ),
   system: <SystemInfoSection />,
+  background_jobs: <BackgroundJobsSection />,
 };
 
 // ---------------------------------------------------------------------------

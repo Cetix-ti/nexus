@@ -167,7 +167,10 @@ export function TicketBillingSection({
         </div>
       </div>
 
-      <div className="flex items-center gap-1 border-b border-slate-200/80 px-5 pt-3">
+      {/* Scroll horizontal sur mobile — les 3 onglets avec compteurs
+          débordaient sur écran < 375 px. Le scroll permet de glisser
+          sans que la page elle-même ne scrolle horizontalement. */}
+      <div className="flex items-center gap-1 border-b border-slate-200/80 px-3 sm:px-5 pt-3 overflow-x-auto">
         {[
           { id: "time" as Tab, label: "Temps", icon: Clock, count: timeEntries.length },
           { id: "travel" as Tab, label: "Déplacements", icon: Car, count: travelEntries.length },
@@ -180,13 +183,13 @@ export function TicketBillingSection({
               key={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 text-[13px] font-medium border-b-2 -mb-px transition-colors",
+                "flex items-center gap-1.5 px-2.5 sm:px-3 py-2 text-[12.5px] sm:text-[13px] font-medium border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0",
                 active
                   ? "border-blue-600 text-blue-700"
                   : "border-transparent text-slate-500 hover:text-slate-700"
               )}
             >
-              <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
+              <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
               {t.label}
               <span
                 className={cn(

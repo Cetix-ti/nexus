@@ -10,6 +10,9 @@ interface MultiSelectProps {
   onChange: (selected: string[]) => void;
   placeholder?: string;
   className?: string;
+  /** Largeur fixe en px. Si omis, le composant remplit son conteneur
+   *  (w-full) — utile dans les grilles / colonnes de modales où fixer
+   *  une largeur absolue débordait des cellules parentes. */
   width?: number;
 }
 
@@ -19,7 +22,7 @@ export function MultiSelect({
   onChange,
   placeholder = "Sélectionner...",
   className,
-  width = 200,
+  width,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -52,7 +55,11 @@ export function MultiSelect({
     .map((o) => o.label);
 
   return (
-    <div className={cn("relative", className)} ref={ref} style={{ width }}>
+    <div
+      className={cn("relative", width === undefined && "w-full", className)}
+      ref={ref}
+      style={width !== undefined ? { width } : undefined}
+    >
       <button
         type="button"
         onClick={() => setOpen((s) => !s)}
@@ -101,8 +108,15 @@ export function MultiSelect({
 
       {open && (
         <div
-          className="absolute left-0 top-[calc(100%+4px)] z-50 max-h-[280px] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-[0_10px_30px_-10px_rgba(15,23,42,0.2)] py-1"
-          style={{ width: Math.max(width, 240) }}
+          className={cn(
+            "absolute left-0 top-[calc(100%+4px)] z-50 max-h-[280px] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-[0_10px_30px_-10px_rgba(15,23,42,0.2)] py-1",
+            // Sans largeur explicite : on s'aligne sur le conteneur parent.
+            // Avec largeur explicite : on applique inline-style pour forcer.
+            width === undefined && "w-full",
+          )}
+          style={
+            width !== undefined ? { width: Math.max(width, 240) } : undefined
+          }
         >
           {options.map((opt) => {
             const isSelected = selected.includes(opt.value);

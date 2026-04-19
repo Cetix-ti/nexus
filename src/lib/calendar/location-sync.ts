@@ -62,7 +62,11 @@ const CONFIG_KEY = "calendar.location-sync";
 const DEFAULT_CONFIG: LocationSyncConfig = {
   enabled: true,
   mailbox: "billets@cetix.ca",
-  calendarName: "Localisation",
+  // Renommé de "Localisation" à "Agenda général" (avril 2026) — le
+  // calendrier partagé côté Exchange a été renommé aussi, donc ce nom
+  // correspond à la source Graph. Le lookup se fait par displayName
+  // dans resolveCalendarId() — il doit matcher exactement (case-insensitive).
+  calendarName: "Agenda général",
 };
 
 export async function getLocationSyncConfig(): Promise<LocationSyncConfig> {
@@ -85,11 +89,15 @@ export async function setLocationSyncConfig(
 }
 
 // ---------------------------------------------------------------------------
-// Calendrier Nexus cible — on réutilise ou crée un calendrier "Localisation"
-// (kind=GENERAL) qui contient les WORK_LOCATION synchronisés.
+// Calendrier Nexus cible — on réutilise ou crée un calendrier « Agenda général »
+// (kind=GENERAL, anciennement « Localisation ») qui contient les
+// WORK_LOCATION synchronisés + tous les événements d'équipe.
 // ---------------------------------------------------------------------------
 
-async function ensureNexusCalendar(): Promise<string> {
+// Exporté : d'autres features (création de rencontres depuis l'UI)
+// placent leurs événements dans ce même calendrier pour qu'il soit la
+// source unique des activités de l'équipe.
+export async function ensureNexusCalendar(): Promise<string> {
   const cfg = await getLocationSyncConfig();
   if (cfg.nexusCalendarId) {
     const exists = await prisma.calendar.findUnique({
@@ -98,9 +106,18 @@ async function ensureNexusCalendar(): Promise<string> {
     });
     if (exists) return exists.id;
   }
-  // Cherche un calendrier existant par nom.
+  // Cherche un calendrier existant par nom. On accepte l'ancien nom
+  // « Localisation » comme fallback pour que les instances pas encore
+  // migrées continuent de fonctionner — une fois trouvé, on peut le
+  // renommer vers « Agenda général » séparément (script migrate-calendar-name).
   const byName = await prisma.calendar.findFirst({
-    where: { name: { equals: "Localisation", mode: "insensitive" } },
+    where: {
+      OR: [
+        { name: { equals: cfg.calendarName, mode: "insensitive" } },
+        { name: { equals: "Localisation", mode: "insensitive" } },
+        { name: { equals: "Agenda général", mode: "insensitive" } },
+      ],
+    },
     select: { id: true },
   });
   if (byName) {
@@ -110,8 +127,8 @@ async function ensureNexusCalendar(): Promise<string> {
   // Sinon on crée — attaché à personne en particulier (visibility=team).
   const created = await prisma.calendar.create({
     data: {
-      name: "Localisation",
-      description: "Localisation des agents (synchronisé avec Outlook)",
+      name: "Agenda général",
+      description: "Agenda général de l'équipe (synchronisé avec Outlook)",
       kind: "GENERAL",
       color: "#0EA5E9",
       visibility: "team",

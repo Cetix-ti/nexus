@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { BackupKanban } from "@/components/backups/backup-kanban";
 import { UnmatchedDomainsSection } from "@/components/backups/unmatched-domains";
+import { OrgLogo } from "@/components/organizations/org-logo";
 import { LayoutGrid } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -88,6 +89,29 @@ interface OrgSummaryItem {
   FAILED: number;
   total: number;
   lastAlert: string;
+}
+
+// --- Types du résumé des échecs 24h ---------------------------------------
+// Correspond à la réponse de GET /api/v1/veeam/summary (structured JSON,
+// plus de HTML côté serveur — on rend en React avec OrgLogo + rowSpan).
+interface FailedJobRow {
+  job: string;
+  server: string;
+  subject: string;
+}
+interface FailedOrg {
+  orgId: string | null;
+  orgName: string;
+  logo: string | null;
+  jobs: FailedJobRow[];
+}
+interface FailuresSummary {
+  orgs: FailedOrg[];
+  generatedAt: string;
+  alertCount: number;
+  failed: number;
+  warning: number;
+  success: number;
 }
 
 // Current view: overview, drilled into org/status, or the failures Kanban.
@@ -154,8 +178,15 @@ const STATUS_CONFIG = {
 // Page
 // ---------------------------------------------------------------------------
 
+// Intervalle d'auto-refresh pour toutes les sections de la page (alertes,
+// résumé 24h, orphelins, templates). Raisonnable pour une page de
+// monitoring : visible en < 1 minute après réception d'une nouvelle alerte,
+// sans marteler l'API avec trop de requêtes.
+const AUTO_REFRESH_INTERVAL_MS = 30_000;
+
 export default function BackupsPage() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [summary, setSummary] = useState<FailuresSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -167,6 +198,10 @@ export default function BackupsPage() {
   const [view, setView] = useState<ViewState>({ type: "overview" });
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(0);
+  // Bump pour invalider les sous-composants (BackupKanban, UnmatchedDomains)
+  // qui gèrent leurs propres fetchs — incrémenté à chaque refresh global
+  // ou auto-tick.
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     fetch("/api/v1/settings/veeam")
@@ -177,23 +212,65 @@ export default function BackupsPage() {
       .catch(() => {});
   }, []);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    fetch(`/api/v1/veeam/alerts?days=${days}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setData(d))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [days]);
+  // `load` charge les données de la page en parallèle sans bloquer — utilisé
+  // au mount, par le bouton "Synchroniser" (après sync) et par l'auto-refresh.
+  // `opts.silent = true` ne touche pas au spinner (utilisé par l'auto-refresh
+  // pour ne pas faire clignoter l'UI toutes les 30 secondes).
+  const load = useCallback(
+    (opts?: { silent?: boolean }) => {
+      if (!opts?.silent) setLoading(true);
+      const alertsP = fetch(`/api/v1/veeam/alerts?days=${days}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: DashboardData | null) => {
+          if (d) setData(d);
+        })
+        .catch(() => {});
+      const summaryP = fetch("/api/v1/veeam/summary")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: FailuresSummary | null) => {
+          if (d) setSummary(d);
+        })
+        .catch(() => {});
+      Promise.all([alertsP, summaryP]).finally(() => {
+        if (!opts?.silent) setLoading(false);
+        // Incrémente le tick pour que les sous-composants re-fetchent.
+        setRefreshTick((t) => t + 1);
+      });
+    },
+    [days],
+  );
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // Auto-refresh : toutes les 30s, on re-pull silencieusement les données.
+  // Pause quand l'onglet est caché (document.hidden) pour économiser les
+  // ressources — redémarre au focus. Évite de marteler l'API quand
+  // personne ne regarde.
+  useEffect(() => {
+    const tick = () => {
+      if (document.hidden) return;
+      load({ silent: true });
+    };
+    const id = window.setInterval(tick, AUTO_REFRESH_INTERVAL_MS);
+    const onVisibility = () => {
+      if (!document.hidden) tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load]);
 
   async function handleSync() {
     setSyncing(true);
     setSyncError(null);
     try {
+      // 1. Pull Veeam (Graph → DB) puis 2. refresh summary (refresh=1 bypass
+      // cache de 15 min), 3. reload la page complète. Enchaînement serial :
+      // on veut que le summary reflète les nouvelles alertes ingérées.
       const res = await fetch("/api/v1/veeam/sync", { method: "POST" });
       if (!res.ok) {
         const err = await res
@@ -205,6 +282,8 @@ export default function BackupsPage() {
       if (result.errors?.length) {
         setSyncError(result.errors.join("; "));
       }
+      // Force le recalcul du summary (bypass cache 15 min) puis reload.
+      await fetch("/api/v1/veeam/summary?refresh=1").catch(() => {});
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -505,14 +584,16 @@ export default function BackupsPage() {
       {/* ================================================================ */}
       {/* Résumé des échecs 24h (tableau déterministe par client)          */}
       {/* ================================================================ */}
-      {view.type === "overview" && <AiDailySummary />}
+      {view.type === "overview" && <FailuresSection summary={summary} />}
 
       {/* ================================================================ */}
       {/* Mappage manuel des alertes orphelines                            */}
       {/* Ne s'affiche que si au moins un domaine n'a pas pu être matché   */}
       {/* automatiquement. Silencieux sinon.                                */}
       {/* ================================================================ */}
-      {view.type === "overview" && <UnmatchedDomainsSection onChange={load} />}
+      {view.type === "overview" && (
+        <UnmatchedDomainsSection onChange={load} refreshTick={refreshTick} />
+      )}
 
       {/* ================================================================ */}
       {/* Org detail header (when drilled into a client)                   */}
@@ -765,25 +846,27 @@ export default function BackupsPage() {
                         </div>
                       </td>
                       {view.type !== "org" && (
-                        <td className="px-4 py-3 text-[12.5px]">
+                        <td className="px-4 py-3 text-[12.5px] text-left">
                           {a.organizationName ? (
                             <button
+                              type="button"
                               onClick={() =>
                                 drillOrg(
                                   a.organizationId,
                                   a.organizationName!,
                                 )
                               }
-                              className="text-slate-700 font-medium hover:text-blue-600 transition-colors"
+                              className="text-left text-slate-700 font-medium hover:text-blue-600 transition-colors"
                             >
                               {a.organizationName}
                             </button>
                           ) : (
                             <button
+                              type="button"
                               onClick={() =>
                                 drillOrg(null, "Non associé")
                               }
-                              className="text-slate-400 italic hover:text-slate-600 transition-colors"
+                              className="text-left text-slate-400 italic hover:text-slate-600 transition-colors"
                             >
                               Non associé
                             </button>
@@ -932,52 +1015,39 @@ function OrgAvatar({
   );
 }
 
-// Le panneau s'appelait « Rapport matinal IA » quand il appelait OpenAI.
-// Il est maintenant 100% déterministe : résumé texte + tableau des échecs
-// regroupés par client, rien d'autre (pas de warnings, pas de conseils).
-// On garde le nom de composant pour éviter de casser les imports.
-function AiDailySummary() {
-  const [data, setData] = useState<{
-    html: string;
-    generatedAt: string;
-    alertCount: number;
-    failed: number;
-    warning: number;
-    success: number;
-  } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+// ---------------------------------------------------------------------------
+// FailuresSection — section « Échecs des dernières 24 heures »
+//
+// Données fournies par le parent (auto-refresh + bouton unique en haut) →
+// plus de bouton « Actualiser » local, plus d'énoncé « X tâches en échec »
+// dupliqué. Tableau rendu en React (plus de HTML serveur), avec :
+//   - logo de l'organisation au-dessus du nom gras dans la 1re colonne
+//   - rowSpan sur la colonne Client (groupe les lignes d'une même org)
+//   - rowSpan sur la colonne Serveur (groupe les tâches d'un même serveur
+//     au sein d'une org)
+//   - pas d'encadré externe autour du tableau pour alléger la présentation
+// ---------------------------------------------------------------------------
+function FailuresSection({ summary }: { summary: FailuresSummary | null }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [loaded, setLoaded] = useState(false);
 
-  // Auto-load cached summary on mount
-  useEffect(() => {
-    if (loaded) return;
-    setLoaded(true);
-    fetch("/api/v1/veeam/summary")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.html) setData(d);
-      })
-      .catch(() => {});
-  }, [loaded]);
-
-  function loadSummary() {
-    setLoading(true);
-    setError(null);
-    fetch("/api/v1/veeam/summary?refresh=1")
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((d) => {
-        setData(d);
-        setCollapsed(false);
-      })
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : String(e)),
-      )
-      .finally(() => setLoading(false));
+  if (!summary) {
+    return (
+      <Card>
+        <CardContent className="p-5">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600 ring-1 ring-inset ring-red-200/60">
+              <XCircle className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-[14px] font-semibold text-slate-900">
+                Échecs des dernières 24 heures
+              </h3>
+              <p className="text-[11px] text-slate-400">Chargement…</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -992,240 +1062,116 @@ function AiDailySummary() {
               <h3 className="text-[14px] font-semibold text-slate-900">
                 Échecs des dernières 24 heures
               </h3>
-              {data?.generatedAt && (
-                <p className="text-[11px] text-slate-400">
-                  Mis à jour {fmtDate(data.generatedAt)} — {data.failed} échec
-                  {data.failed > 1 ? "s" : ""}
-                </p>
-              )}
+              <p className="text-[11px] text-slate-400">
+                Mis à jour {fmtDate(summary.generatedAt)}
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {data && (
-              <button
-                onClick={() => setCollapsed((c) => !c)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-                title={collapsed ? "Afficher" : "Masquer"}
-              >
-                {collapsed ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronUp className="h-4 w-4" />
-                )}
-              </button>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={loadSummary}
-              disabled={loading}
+          {summary.orgs.length > 0 && (
+            <button
+              onClick={() => setCollapsed((c) => !c)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+              title={collapsed ? "Afficher" : "Masquer"}
             >
-              {loading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {collapsed ? (
+                <ChevronDown className="h-4 w-4" />
               ) : (
-                <RefreshCw className="h-3.5 w-3.5" />
+                <ChevronUp className="h-4 w-4" />
               )}
-              {loading ? "Mise à jour..." : "Actualiser"}
-            </Button>
-          </div>
+            </button>
+          )}
         </div>
 
-        {error && (
-          <p className="mt-3 text-[12px] text-red-600">{error}</p>
-        )}
-
-        {data && !collapsed && (
-          <div className="mt-4">
-            {/* Stat pill — uniquement le compteur d'échecs. Les warnings
-                et succès sont visibles ailleurs sur la page (stat cards
-                cliquables). On ne veut pas leur donner d'importance ici. */}
-            {data.failed > 0 && (
-              <div className="flex items-center gap-3 mb-3">
-                <span className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1 text-[12px] font-semibold text-red-700 ring-1 ring-inset ring-red-200/60">
-                  <XCircle className="h-3 w-3" />
-                  {data.failed} tâche{data.failed > 1 ? "s" : ""} en échec
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  sur {data.alertCount} alertes reçues
-                </span>
-              </div>
-            )}
-
-            {/* Tableau déterministe : client / serveur / tâche / statut */}
-            <div
-              className="ai-summary-content rounded-xl border border-slate-200/80 bg-white p-4 overflow-x-auto max-w-full [&_table]:text-[11px] [&_table]:w-full"
-              dangerouslySetInnerHTML={{ __html: data.html }}
-            />
-          </div>
-        )}
-
-        {!data && !loading && (
-          <p className="mt-3 text-[12px] text-slate-400">
-            Cliquez sur « Actualiser » pour afficher le tableau des tâches en échec
-            des dernières 24 heures.
+        {summary.orgs.length === 0 && summary.alertCount === 0 && (
+          <p className="mt-4 text-[12.5px] text-slate-500">
+            Aucune alerte de sauvegarde reçue dans les dernières 24 heures.
           </p>
         )}
+        {summary.orgs.length === 0 && summary.alertCount > 0 && (
+          <p className="mt-4 text-[12.5px] text-slate-500">
+            Aucun échec de sauvegarde dans les dernières 24 heures
+            ({summary.alertCount} alerte{summary.alertCount > 1 ? "s" : ""} reçues).
+          </p>
+        )}
+
+        {summary.orgs.length > 0 && !collapsed && (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-[12.5px] border-collapse">
+              <thead>
+                <tr className="text-left text-[10.5px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                  <th className="py-2.5 px-3 font-semibold">Client</th>
+                  <th className="py-2.5 px-3 font-semibold">Serveur</th>
+                  <th className="py-2.5 px-3 font-semibold">Tâche</th>
+                  <th className="py-2.5 px-3 font-semibold">Statut</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.orgs.flatMap((org) => {
+                  // Groupement par serveur au sein de l'org — permet le
+                  // rowSpan sur la 2e colonne. Ordre d'apparition préservé
+                  // (trié côté serveur).
+                  const serverGroups = new Map<string, FailedJobRow[]>();
+                  for (const j of org.jobs) {
+                    if (!serverGroups.has(j.server)) {
+                      serverGroups.set(j.server, []);
+                    }
+                    serverGroups.get(j.server)!.push(j);
+                  }
+                  const rows: React.ReactElement[] = [];
+                  let orgRowsEmitted = 0;
+                  for (const [server, jobs] of serverGroups) {
+                    jobs.forEach((j, idx) => {
+                      const isFirstOfOrg = orgRowsEmitted === 0;
+                      const isFirstOfServer = idx === 0;
+                      rows.push(
+                        <tr
+                          key={`${org.orgId ?? org.orgName}-${server}-${j.job}`}
+                          className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50"
+                        >
+                          {isFirstOfOrg && (
+                            <td
+                              rowSpan={org.jobs.length}
+                              className="align-top py-3 px-3 bg-slate-50/60 border-r border-slate-200"
+                            >
+                              <div className="flex flex-col items-start gap-1.5">
+                                <OrgLogo
+                                  name={org.orgName}
+                                  logo={org.logo}
+                                  size={28}
+                                  rounded="md"
+                                />
+                                <span className="font-semibold text-slate-900 text-[12.5px]">
+                                  {org.orgName}
+                                </span>
+                              </div>
+                            </td>
+                          )}
+                          {isFirstOfServer && (
+                            <td
+                              rowSpan={jobs.length}
+                              className="align-top py-3 px-3 font-mono text-[11.5px] text-indigo-600 font-medium bg-slate-50/40 border-r border-slate-200"
+                            >
+                              {server}
+                            </td>
+                          )}
+                          <td className="py-2.5 px-3 text-slate-700">{j.job}</td>
+                          <td className="py-2.5 px-3">
+                            <span className="inline-flex items-center rounded-md bg-red-50 px-2 py-0.5 text-[10.5px] font-bold text-red-700 ring-1 ring-inset ring-red-200/60">
+                              Échec
+                            </span>
+                          </td>
+                        </tr>,
+                      );
+                      orgRowsEmitted++;
+                    });
+                  }
+                  return rows;
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </CardContent>
-
-      {/* Scoped styles for AI-generated HTML */}
-      <style jsx global>{`
-        .ai-summary-content p.summary,
-        .ai-summary-content > p:first-child {
-          font-size: 13px;
-          line-height: 1.7;
-          color: #334155;
-          margin-bottom: 14px;
-        }
-        .ai-summary-content p.recommendation {
-          font-size: 12.5px;
-          line-height: 1.6;
-          color: #1e40af;
-          background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
-          border: 1px solid #bfdbfe;
-          border-left: 3px solid #3b82f6;
-          border-radius: 8px;
-          padding: 12px 16px;
-          margin-top: 14px;
-        }
-        .ai-summary-content table {
-          width: 100%;
-          font-size: 12.5px;
-          border-collapse: separate;
-          border-spacing: 0;
-          margin: 10px 0;
-          border: 1px solid #e2e8f0;
-          border-radius: 10px;
-          overflow: hidden;
-        }
-        .ai-summary-content thead th {
-          text-align: left;
-          padding: 10px 14px;
-          font-weight: 600;
-          font-size: 10.5px;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          color: #64748b;
-          background: #f8fafc;
-          border-bottom: 2px solid #e2e8f0;
-        }
-        .ai-summary-content tbody td {
-          padding: 10px 14px;
-          color: #334155;
-          border-bottom: 1px solid #f1f5f9;
-          vertical-align: middle;
-        }
-        .ai-summary-content tbody td[rowspan],
-        .ai-summary-content tbody td.client-cell {
-          font-weight: 600;
-          color: #0f172a;
-          background: #f8fafc;
-          border-right: 1px solid #e2e8f0;
-        }
-        .ai-summary-content tbody td.server-cell {
-          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-          font-size: 11.5px;
-          color: #6366f1;
-          font-weight: 500;
-        }
-        .ai-summary-content tbody tr:last-child td {
-          border-bottom: none;
-        }
-        .ai-summary-content tbody tr:hover td {
-          background: #f8fafc;
-        }
-        .ai-summary-content tbody tr:hover td[rowspan] {
-          background: #f1f5f9;
-        }
-        .ai-summary-content td.status-failed,
-        .ai-summary-content .status-failed {
-          color: #dc2626;
-          font-weight: 700;
-          background: #fef2f2;
-          border-radius: 0;
-        }
-        .ai-summary-content td.status-warning,
-        .ai-summary-content .status-warning {
-          color: #d97706;
-          font-weight: 700;
-          background: #fffbeb;
-        }
-        .ai-summary-content td.failed,
-        .ai-summary-content .failed {
-          color: #dc2626;
-          font-weight: 700;
-          background: #fef2f2;
-        }
-        .ai-summary-content td.warning,
-        .ai-summary-content .warning {
-          color: #d97706;
-          font-weight: 700;
-          background: #fffbeb;
-        }
-        .ai-summary-content td.success,
-        .ai-summary-content .success {
-          color: #059669;
-          font-weight: 600;
-        }
-
-        /* Section "Avertissements à surveiller" — discrète, moins prominente
-           que le tableau d'échecs. Ton sur ton ambre pâle, typo plus petite. */
-        .ai-summary-content .warnings-section {
-          margin-top: 14px;
-          padding: 10px 14px;
-          background: #fffbeb;
-          border-left: 3px solid #f59e0b;
-          border-radius: 0 6px 6px 0;
-        }
-        .ai-summary-content .warnings-title {
-          margin: 0 0 6px 0;
-          font-size: 11.5px;
-          font-weight: 600;
-          color: #92400e;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-        }
-        .ai-summary-content .warnings-list {
-          margin: 0;
-          padding-left: 18px;
-          font-size: 12px;
-          color: #78350f;
-          list-style: disc;
-        }
-        .ai-summary-content .warnings-list li {
-          margin-bottom: 3px;
-          line-height: 1.5;
-        }
-        .ai-summary-content .warn-client {
-          font-weight: 600;
-          color: #78350f;
-        }
-        .ai-summary-content .warn-job {
-          color: #92400e;
-          font-size: 11.5px;
-        }
-        .ai-summary-content ul,
-        .ai-summary-content ol {
-          font-size: 12.5px;
-          color: #334155;
-          padding-left: 20px;
-          margin: 8px 0;
-        }
-        .ai-summary-content li {
-          margin-bottom: 5px;
-          line-height: 1.5;
-        }
-        .ai-summary-content strong {
-          font-weight: 600;
-          color: #0f172a;
-        }
-        .ai-summary-content h3,
-        .ai-summary-content h4 {
-          font-size: 13px;
-          font-weight: 600;
-          color: #0f172a;
-          margin: 14px 0 6px;
-        }
-      `}</style>
     </Card>
   );
 }

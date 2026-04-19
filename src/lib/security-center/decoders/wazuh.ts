@@ -18,6 +18,7 @@
 // ============================================================================
 
 import type { DecodedAlert } from "../types";
+import { stripAnyClientCodePrefix } from "../endpoint-utils";
 import {
   resolveOrgByDomain,
   resolveOrgByEndpoint,
@@ -80,7 +81,13 @@ function extractWazuhReceivedFrom(body: string): { name: string; ip: string | nu
   // Tolère l'absence d'IP et les espaces variables.
   const m = normalized.match(/Received\s+From:\s*\(([^)]+)\)(?:\s+([0-9.]+))?/i);
   if (!m) return null;
-  return { name: m[1].trim(), ip: m[2]?.trim() || null };
+  const rawName = m[1].trim();
+  // Garde-fou : certains templates Wazuh écrivent littéralement "(null)" ou
+  // "(none)" quand l'event vient du manager lui-même (pas d'agent source).
+  // On traite ces valeurs comme absentes pour éviter de stocker le mot
+  // "null" en guise de hostname — ce qui polluait la liste Cybersécurité.
+  if (/^(null|none|undefined|n\/a|-)$/i.test(rawName)) return null;
+  return { name: rawName, ip: m[2]?.trim() || null };
 }
 
 /**
@@ -153,6 +160,21 @@ export async function decodeWazuhEmail(opts: {
       extractField(body, ["Agent name", "Agent", "Hostname", "Computer", "Endpoint"]) ??
       null;
   }
+  // Nettoyage final — les templates Wazuh insèrent parfois "null"/"none"
+  // quand le champ est vide côté manager. On les traite comme absents pour
+  // éviter de polluer la liste avec ces mots comme hostname.
+  if (endpoint && /^(null|none|undefined|n\/a|-)$/i.test(endpoint.trim())) {
+    endpoint = null;
+  }
+
+  // Normalisation : retire le préfixe client (MRVL_, LV_, …) pour que
+  // l'endpoint affiché dans le titre et le sommaire corresponde au nom
+  // réel du poste tel que connu des utilisateurs finaux. On garde le nom
+  // brut dans rawPayload.
+  const rawEndpoint = endpoint;
+  if (endpoint) {
+    endpoint = stripAnyClientCodePrefix(endpoint);
+  }
   if (!ipAddress) {
     ipAddress =
       extractField(body, ["Source IP", "srcip", "IP Address", "IP", "Address"]) ?? null;
@@ -205,7 +227,7 @@ export async function decodeWazuhEmail(opts: {
       title: `${software} détecté sur ${endpoint ?? "endpoint inconnu"}`,
       summary: body.slice(0, 500),
       correlationKey: `persistence:${orgKey}:${endpointKey}:${software}`,
-      rawPayload: { subject, body: body.slice(0, 4000) },
+      rawPayload: { subject, body: body.slice(0, 4000), rawEndpoint },
       occurredAt: opts.receivedAt,
       isLowPriority,
     };
@@ -228,7 +250,7 @@ export async function decodeWazuhEmail(opts: {
       title: `${cveId} — ${endpoint ?? "endpoint inconnu"}`,
       summary: body.slice(0, 500),
       correlationKey: `cve:${orgKey}:${endpointKey}:${cveId}`,
-      rawPayload: { subject, body: body.slice(0, 4000) },
+      rawPayload: { subject, body: body.slice(0, 4000), rawEndpoint },
       occurredAt: opts.receivedAt,
       isLowPriority,
     };
@@ -252,7 +274,7 @@ export async function decodeWazuhEmail(opts: {
     correlationKey: ruleId
       ? `wazuh:${orgKey}:${endpointKey}:${ruleId}`
       : `wazuh-msg:${opts.messageId}`,
-    rawPayload: { subject, body: body.slice(0, 4000), ruleId },
+    rawPayload: { subject, body: body.slice(0, 4000), ruleId, rawEndpoint },
     occurredAt: opts.receivedAt,
   };
 }

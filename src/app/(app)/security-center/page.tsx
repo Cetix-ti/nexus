@@ -17,6 +17,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useIncidentsQuery,
+  usePrefetchOtherTabs,
+  securityKeys,
+  type IncidentsQueryParams,
+} from "@/hooks/use-security-incidents";
 import {
   ShieldAlert,
   User,
@@ -34,6 +41,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { OrgLogo } from "@/components/organizations/org-logo";
 import { PersistenceView } from "@/components/security-center/persistence-view";
 
@@ -55,13 +63,19 @@ interface Incident {
   lastSeenAt: string;
   ticketId: string | null;
   isLowPriority: boolean;
+  /** Metadata JSON libre — contient selon le type d'alerte :
+   *   - inactiveAccounts: string[] + accountCount (comptes inactifs AD)
+   *   - callerHostname + userSource (lockouts AD)
+   *   - loginCount + isUnusual (enrichissement Wazuh)
+   */
+  metadata: Record<string, unknown> | null;
   organization: { id: string; name: string; clientCode: string | null } | null;
   assignee: { id: string; firstName: string; lastName: string; avatar: string | null } | null;
   ticket: { id: string; number: number; subject: string; status: string } | null;
   alerts: { id: string; receivedAt: string; severity: string | null; title: string; summary: string | null }[];
 }
 
-type TabKey = "ad" | "wazuh" | "persistence" | "bitdefender" | "all";
+type TabKey = "ad" | "wazuh" | "persistence" | "bitdefender";
 
 const TABS: { key: TabKey; label: string; sources: string[]; icon: typeof Shield }[] = [
   // Wazuh en premier (tab par défaut) — source principale d'alertes CVE,
@@ -73,7 +87,6 @@ const TABS: { key: TabKey; label: string; sources: string[]; icon: typeof Shield
   // conversion billable.
   { key: "persistence", label: "Persistance", sources: ["wazuh_email"], icon: Package },
   { key: "bitdefender", label: "Bitdefender", sources: ["bitdefender_api"], icon: Bug },
-  { key: "all", label: "Tous", sources: [], icon: ShieldAlert },
 ];
 
 const SEVERITY_CLASS: Record<string, string> = {
@@ -106,44 +119,47 @@ function fmtDate(iso: string): string {
 
 export default function SecurityCenterPage() {
   const [tab, setTab] = useState<TabKey>("wazuh");
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [orgFilter, setOrgFilter] = useState<string>("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const router = useRouter();
+  const qc = useQueryClient();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const active = TABS.find((t) => t.key === tab);
-      // On charge les DEUX buckets en parallèle (main + low) pour ne pas
-      // re-requêter quand l'utilisateur déplie la section basse priorité.
-      const mkParams = (priority: "main" | "low") => {
-        const p = new URLSearchParams();
-        if (active && active.sources.length > 0) p.set("source", active.sources.join(","));
-        p.set("priority", priority);
-        return p;
-      };
-      const [resMain, resLow] = await Promise.all([
-        fetch(`/api/v1/security-center/incidents?${mkParams("main").toString()}`),
-        fetch(`/api/v1/security-center/incidents?${mkParams("low").toString()}`),
-      ]);
-      if (!resMain.ok) throw new Error(`HTTP ${resMain.status}`);
-      const main = (await resMain.json()) as Incident[];
-      const low = resLow.ok ? ((await resLow.json()) as Incident[]) : [];
-      setIncidents([...main, ...low]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [tab]);
+  const active = TABS.find((t) => t.key === tab);
+  // L'onglet "persistence" gère son propre fetch (via PersistenceView) et
+  // ne passe pas par les buckets main/low. Pour tous les autres onglets on
+  // charge les DEUX buckets en parallèle depuis le cache React Query.
+  const mainParams: IncidentsQueryParams = {
+    sources: active?.sources ?? [],
+    priority: "main",
+  };
+  const lowParams: IncidentsQueryParams = {
+    sources: active?.sources ?? [],
+    priority: "low",
+  };
+  const mainQuery = useIncidentsQuery(mainParams);
+  const lowQuery = useIncidentsQuery(lowParams);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // Précharge les autres onglets en arrière-plan (requestIdleCallback).
+  usePrefetchOtherTabs(mainParams);
+
+  const incidents = useMemo<Incident[]>(
+    () => [...(mainQuery.data ?? []), ...(lowQuery.data ?? [])],
+    [mainQuery.data, lowQuery.data],
+  );
+  // "loading" n'affiche le spinner qu'au premier chargement (pas de data
+  // du tout). Les refetchs en arrière-plan préservent l'UI existante.
+  const loading = mainQuery.isPending;
+  // On n'affiche l'erreur que si le bucket principal a échoué — un échec
+  // du bucket "low" (non critique) est silencieux, comme dans l'ancien code.
+  const error =
+    mainQuery.error instanceof Error ? mainQuery.error.message : null;
+
+  const load = useCallback(() => {
+    // Invalide tous les caches du centre de sécurité pour forcer le
+    // rafraîchissement — utilisé par le bouton "Actualiser" et après les
+    // mutations (status, conversion ticket, …).
+    qc.invalidateQueries({ queryKey: securityKeys.all });
+  }, [qc]);
 
   const orgs = useMemo(() => {
     const map = new Map<string, string>();
@@ -213,8 +229,9 @@ export default function SecurityCenterPage() {
         </Button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-neutral-200">
+      {/* Tabs — scrollable horizontalement sur mobile pour rester
+          atteignable sans compression visuelle. */}
+      <div className="flex items-center gap-1 border-b border-neutral-200 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto">
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
@@ -222,7 +239,7 @@ export default function SecurityCenterPage() {
               key={t.key}
               onClick={() => setTab(t.key)}
               className={cn(
-                "px-4 py-2.5 text-[13px] font-medium border-b-2 transition-colors flex items-center gap-2",
+                "px-3 sm:px-4 py-2.5 text-[12.5px] sm:text-[13px] font-medium border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0",
                 tab === t.key
                   ? "border-blue-600 text-blue-700"
                   : "border-transparent text-slate-500 hover:text-slate-800",
@@ -276,6 +293,8 @@ export default function SecurityCenterPage() {
                 onConvert={convertToTicket}
                 primaryCol="userPrincipal"
                 primaryLabel="Utilisateur"
+                secondaryCol="endpoint"
+                secondaryLabel="Poste appelant"
                 showOccurrences
               />
             )}
@@ -352,14 +371,88 @@ function WazuhEndpointView({
   onStatus: (id: string, status: string) => void;
   onConvert: (id: string) => void;
 }) {
-  const main = incidents.filter((i) => !i.isLowPriority);
-  const low = incidents.filter((i) => i.isLowPriority);
+  // Filtre par types d'alertes — persisté en localStorage pour que la
+  // préférence suive l'agent entre les navigations (comme PersistenceView).
+  // `selectedKinds` vide = afficher TOUT (sélection vide = pas de filtre).
+  const [selectedKinds, setSelectedKinds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem("wazuh-view:kinds");
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr.filter((v) => typeof v === "string") : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        "wazuh-view:kinds",
+        JSON.stringify(selectedKinds),
+      );
+    }
+  }, [selectedKinds]);
+
+  // Options calculées à partir des kinds RÉELLEMENT présents dans les
+  // alertes — on ne propose pas un filtre pour un type sans incident.
+  const kindOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const i of incidents) set.add(i.kind);
+    return Array.from(set).map((k) => ({
+      value: k,
+      label: KIND_LABEL[k] ?? k,
+    }));
+  }, [incidents]);
+
+  const filteredByKind = useMemo(() => {
+    if (selectedKinds.length === 0) return incidents;
+    const set = new Set(selectedKinds);
+    return incidents.filter((i) => set.has(i.kind));
+  }, [incidents, selectedKinds]);
+
+  const main = filteredByKind.filter((i) => !i.isLowPriority);
+  const low = filteredByKind.filter((i) => i.isLowPriority);
   const [lowOpen, setLowOpen] = useState(false);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Barre de filtres — affichée seulement si au moins 2 types d'alertes
+          existent (sinon un filtre serait inutile). */}
+      {kindOptions.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11.5px] text-slate-500">Types :</span>
+          <MultiSelect
+            options={kindOptions}
+            selected={selectedKinds}
+            onChange={setSelectedKinds}
+            placeholder="Tous les types"
+            width={280}
+          />
+          {selectedKinds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSelectedKinds([])}
+              className="text-[11.5px] text-slate-500 hover:text-slate-800 underline underline-offset-2"
+            >
+              Réinitialiser
+            </button>
+          )}
+          <span className="ml-auto text-[11px] text-slate-400">
+            {main.length + low.length} / {incidents.length} incident
+            {incidents.length > 1 ? "s" : ""}
+          </span>
+        </div>
+      )}
+
       {main.length === 0 ? (
-        <Empty msg="Aucune alerte Wazuh significative." />
+        <Empty
+          msg={
+            selectedKinds.length > 0
+              ? "Aucune alerte Wazuh ne correspond à ce filtre."
+              : "Aucune alerte Wazuh significative."
+          }
+        />
       ) : (
         <EndpointRollup
           incidents={main}
@@ -560,13 +653,15 @@ function EndpointRollup({
       <table className="w-full text-left">
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            <th className="px-4 py-2.5 w-10"></th>
-            <th className="px-4 py-2.5">Client</th>
-            <th className="px-4 py-2.5">Endpoint</th>
-            <th className="px-4 py-2.5">Alertes</th>
-            <th className="px-4 py-2.5">Sévérité max</th>
-            <th className="px-4 py-2.5">Dernière</th>
-            <th className="px-4 py-2.5 w-40">Actions</th>
+            <th className="px-2 py-2.5 w-8 sm:px-4 sm:w-10"></th>
+            <th className="px-2 py-2.5 sm:px-4">Client</th>
+            <th className="px-2 py-2.5 sm:px-4">Endpoint</th>
+            {/* "Alertes" contient des badges détaillés → trop dense sur mobile */}
+            <th className="hidden md:table-cell px-4 py-2.5">Alertes</th>
+            {/* Sévérité/Dernière → informatif, caché sur <lg */}
+            <th className="hidden lg:table-cell px-4 py-2.5">Sévérité max</th>
+            <th className="hidden lg:table-cell px-4 py-2.5">Dernière</th>
+            <th className="px-2 py-2.5 sm:px-4 sm:w-40 text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -602,7 +697,7 @@ function EndpointRollup({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="hidden md:table-cell px-4 py-3">
                     <div className="flex flex-wrap gap-1.5">
                       {Object.entries(g.kindCounts).map(([kind, count]) => (
                         <span
@@ -615,7 +710,7 @@ function EndpointRollup({
                       ))}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="hidden lg:table-cell px-4 py-3">
                     {g.maxSeverity && (
                       <span
                         className={cn(
@@ -627,12 +722,12 @@ function EndpointRollup({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">
+                  <td className="hidden lg:table-cell px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">
                     <Clock className="inline h-3 w-3 mr-1 text-slate-400" />
                     {fmtDate(g.lastSeen)}
                   </td>
                   <td
-                    className="px-4 py-3 text-right"
+                    className="px-2 py-3 sm:px-4 text-right"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {(() => {
@@ -645,9 +740,10 @@ function EndpointRollup({
                           <Link
                             href={`/tickets/${ticketed[0].ticketId}`}
                             className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-200 hover:bg-blue-100"
+                            title="Ouvrir ticket"
                           >
                             <Ticket className="h-3 w-3" />
-                            Ouvrir ticket
+                            <span className="hidden sm:inline">Ouvrir ticket</span>
                           </Link>
                         );
                       }
@@ -657,9 +753,12 @@ function EndpointRollup({
                           variant="outline"
                           disabled={busyEndpoint === g.key || !g.organization}
                           onClick={() => createEndpointTicket(g)}
+                          title={busyEndpoint === g.key ? "Création…" : "Ticket endpoint"}
                         >
                           <Ticket className="h-3 w-3" />
-                          {busyEndpoint === g.key ? "Création…" : "Ticket endpoint"}
+                          <span className="hidden sm:inline">
+                            {busyEndpoint === g.key ? "Création…" : "Ticket endpoint"}
+                          </span>
                         </Button>
                       );
                     })()}
@@ -790,6 +889,70 @@ function Empty({ msg }: { msg: string }) {
   );
 }
 
+/**
+ * Badge qui indique si le user verrouillé se connecte habituellement sur le
+ * poste appelant, d'après les données Atera synchronisées dans la table
+ * Asset. Affiché à côté du hostname dans le tableau des lockouts.
+ *
+ * États :
+ *   - "usual"   → vert (erreur humaine probable)
+ *   - "unusual" → rouge (suspect — potentielle attaque)
+ *   - "unknown" → gris (pas assez d'info, RMM non synchronisé)
+ *   - absent    → rien (ancienne alerte sans enrichissement)
+ */
+function FamiliarityBadge({
+  metadata,
+}: {
+  metadata: Record<string, unknown> | null;
+}) {
+  const fam = (metadata as { lockoutFamiliarity?: unknown } | null)
+    ?.lockoutFamiliarity;
+  if (fam !== "usual" && fam !== "unusual" && fam !== "unknown") return null;
+
+  const knownUser =
+    typeof (metadata as { lockoutKnownUser?: unknown } | null)
+      ?.lockoutKnownUser === "string"
+      ? (metadata as { lockoutKnownUser: string }).lockoutKnownUser
+      : null;
+
+  const config: Record<
+    "usual" | "unusual" | "unknown",
+    { label: string; tone: string; title: string }
+  > = {
+    usual: {
+      label: "habituel",
+      tone: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+      title: knownUser
+        ? `Dernier user connu sur ce poste : ${knownUser} — match utilisateur verrouillé`
+        : "User habituel sur ce poste",
+    },
+    unusual: {
+      label: "louche",
+      tone: "bg-red-50 text-red-700 ring-red-200",
+      title: knownUser
+        ? `Dernier user connu sur ce poste : ${knownUser} — ne correspond PAS au compte verrouillé`
+        : "User inhabituel sur ce poste",
+    },
+    unknown: {
+      label: "?",
+      tone: "bg-slate-100 text-slate-500 ring-slate-200",
+      title: "Poste inconnu en RMM — pas d'info de mapping",
+    },
+  };
+  const c = config[fam];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded px-1.5 py-0.5 text-[9.5px] font-semibold uppercase ring-1 ring-inset",
+        c.tone,
+      )}
+      title={c.title}
+    >
+      {c.label}
+    </span>
+  );
+}
+
 function IncidentTable({
   incidents,
   expanded,
@@ -799,6 +962,8 @@ function IncidentTable({
   primaryCol,
   primaryLabel,
   showOccurrences,
+  secondaryCol,
+  secondaryLabel,
 }: {
   incidents: Incident[];
   expanded: Set<string>;
@@ -808,20 +973,28 @@ function IncidentTable({
   primaryCol: keyof Incident;
   primaryLabel: string;
   showOccurrences?: boolean;
+  /** Colonne secondaire optionnelle (ex: endpoint pour les lockouts AD). */
+  secondaryCol?: keyof Incident;
+  secondaryLabel?: string;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
       <table className="w-full text-left">
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            <th className="px-4 py-2.5">Sévérité</th>
-            <th className="px-4 py-2.5">Client</th>
-            <th className="px-4 py-2.5">{primaryLabel}</th>
-            <th className="px-4 py-2.5">Titre</th>
-            {showOccurrences && <th className="px-3 py-2.5 text-center">#</th>}
-            <th className="px-4 py-2.5">Dernière</th>
-            <th className="px-4 py-2.5">Statut</th>
-            <th className="px-4 py-2.5 text-right">Actions</th>
+            <th className="hidden md:table-cell px-4 py-2.5">Sévérité</th>
+            <th className="px-2 py-2.5 sm:px-4">Client</th>
+            <th className="px-2 py-2.5 sm:px-4">{primaryLabel}</th>
+            {secondaryCol && (
+              <th className="hidden lg:table-cell px-4 py-2.5">{secondaryLabel}</th>
+            )}
+            <th className="hidden md:table-cell px-4 py-2.5">Titre</th>
+            {showOccurrences && (
+              <th className="hidden lg:table-cell px-3 py-2.5 text-center">#</th>
+            )}
+            <th className="hidden lg:table-cell px-4 py-2.5">Dernière</th>
+            <th className="hidden sm:table-cell px-4 py-2.5">Statut</th>
+            <th className="px-2 py-2.5 sm:px-4 text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -835,7 +1008,7 @@ function IncidentTable({
                   className="hover:bg-slate-50/60 cursor-pointer"
                   onClick={() => onExpand(i.id)}
                 >
-                  <td className="px-4 py-3">
+                  <td className="hidden md:table-cell px-4 py-3">
                     {i.severity && (
                       <span
                         className={cn(
@@ -847,7 +1020,7 @@ function IncidentTable({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-[13px] text-slate-700">
+                  <td className="px-2 py-3 sm:px-4 text-[13px] text-slate-700">
                     {i.organization ? (
                       <div className="flex items-center gap-2 min-w-0">
                         <OrgLogo name={i.organization.name} size={22} rounded="sm" />
@@ -857,20 +1030,48 @@ function IncidentTable({
                       <span className="italic text-slate-400">Non mappé</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-[13px] font-mono text-slate-800">{primary}</td>
-                  <td className="px-4 py-3 text-[13px] text-slate-800 truncate max-w-md">{i.title}</td>
+                  <td className="px-2 py-3 sm:px-4 text-[13px] font-mono text-slate-800">
+                    <div className="truncate max-w-[140px] sm:max-w-none">
+                      {primary}
+                    </div>
+                    {/* Sur mobile, on colle le poste/secondary sous le primary
+                        (au lieu de créer une colonne supplémentaire illisible) */}
+                    {secondaryCol && (
+                      <div className="lg:hidden text-[11px] font-mono text-slate-500 mt-0.5 flex items-center gap-1.5">
+                        <span className="truncate">
+                          {((i[secondaryCol] as string | null) ?? "") || "—"}
+                        </span>
+                        <FamiliarityBadge metadata={i.metadata} />
+                      </div>
+                    )}
+                  </td>
+                  {secondaryCol && (
+                    <td className="hidden lg:table-cell px-4 py-3 text-[12.5px] font-mono text-slate-700">
+                      <div className="flex items-center gap-2">
+                        <span>
+                          {((i[secondaryCol] as string | null) ?? "") || (
+                            <span className="italic text-slate-400">—</span>
+                          )}
+                        </span>
+                        <FamiliarityBadge metadata={i.metadata} />
+                      </div>
+                    </td>
+                  )}
+                  <td className="hidden md:table-cell px-4 py-3 text-[13px] text-slate-800 truncate max-w-md">
+                    {i.title}
+                  </td>
                   {showOccurrences && (
-                    <td className="px-3 py-3 text-center">
+                    <td className="hidden lg:table-cell px-3 py-3 text-center">
                       <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-slate-100 text-[11.5px] font-semibold text-slate-700 px-1.5">
                         {i.occurrenceCount}
                       </span>
                     </td>
                   )}
-                  <td className="px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">
+                  <td className="hidden lg:table-cell px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">
                     <Clock className="inline h-3 w-3 mr-1 text-slate-400" />
                     {fmtDate(i.lastSeenAt)}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="hidden sm:table-cell px-4 py-3">
                     <span
                       className={cn(
                         "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
@@ -880,10 +1081,8 @@ function IncidentTable({
                       {STATUS_LABEL[i.status] ?? i.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-2 py-3 sm:px-4 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1.5">
-                      {/* Lien vers la page détaillée — UX plus confortable
-                          pour examiner un incident que l'expand inline. */}
                       <Link
                         href={`/security-center/incidents/${i.id}`}
                         className="inline-flex items-center gap-1 h-7 px-2 rounded text-[11.5px] text-slate-500 hover:text-slate-800 hover:bg-slate-100"
@@ -895,14 +1094,20 @@ function IncidentTable({
                         <Link
                           href={`/tickets/${i.ticketId}`}
                           className="inline-flex items-center gap-1 text-[12px] text-blue-600 hover:text-blue-700"
+                          title="Voir le ticket"
                         >
                           <Ticket className="h-3 w-3" />
-                          Voir le ticket
+                          <span className="hidden sm:inline">Voir le ticket</span>
                         </Link>
                       ) : (
-                        <Button size="sm" variant="primary" onClick={() => onConvert(i.id)}>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onClick={() => onConvert(i.id)}
+                          title="Créer un ticket"
+                        >
                           <Ticket className="h-3 w-3" />
-                          Créer un ticket
+                          <span className="hidden sm:inline">Créer un ticket</span>
                         </Button>
                       )}
                     </div>
@@ -910,7 +1115,12 @@ function IncidentTable({
                 </tr>
                 {isOpen && (
                   <tr className="bg-slate-50/40">
-                    <td colSpan={showOccurrences ? 8 : 7} className="px-4 py-3">
+                    <td
+                      colSpan={
+                        6 + (showOccurrences ? 1 : 0) + (secondaryCol ? 1 : 0)
+                      }
+                      className="px-4 py-3"
+                    >
                       <div className="space-y-2">
                         {i.summary && (
                           <p className="text-[12.5px] text-slate-700 whitespace-pre-wrap">
@@ -1009,62 +1219,94 @@ function InactiveKanban({
             <span className="text-[11px] text-slate-400">{col.items.length}</span>
           </div>
           <div className="space-y-2">
-            {col.items.map((i) => (
-              <div
-                key={i.id}
-                className="rounded-md bg-white border border-slate-200 px-3 py-2 shadow-sm space-y-1"
-              >
-                <div className="flex items-center gap-1.5">
-                  <User className="h-3 w-3 text-slate-400 shrink-0" />
-                  <p className="text-[12.5px] font-medium text-slate-900 truncate flex-1">
-                    {i.userPrincipal ?? "Compte inconnu"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {i.organization ? (
-                    <OrgLogo name={i.organization.name} size={14} rounded="sm" />
-                  ) : (
-                    <Laptop className="h-3 w-3 text-slate-400 shrink-0" />
-                  )}
-                  <p className="text-[11px] text-slate-500 truncate">
-                    {i.organization?.name ?? "Non mappé"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 text-[10.5px] text-slate-400">
-                  <Clock className="h-2.5 w-2.5" />
-                  {fmtDate(i.lastSeenAt)}
-                </div>
-                <div className="flex items-center gap-1 pt-1">
-                  <select
-                    value={i.status}
-                    onChange={(e) => onStatus(i.id, e.target.value)}
-                    className="h-5 flex-1 rounded border border-slate-200 bg-white text-[10.5px] px-1"
+            {col.items.map((i) => {
+              // Nombre de comptes listés dans le rapport (depuis metadata). Les
+              // alertes antérieures au fix multi-comptes n'ont pas ce champ —
+              // fallback à 1 (le userPrincipal affiché).
+              const accountCount =
+                typeof (i.metadata as { accountCount?: unknown } | null)?.accountCount ===
+                "number"
+                  ? (i.metadata as { accountCount: number }).accountCount
+                  : null;
+              return (
+                // Toute la tuile est un lien vers la fiche détail (ordre du
+                // jour des comptes listés, historique, actions). Les
+                // contrôles (select statut, bouton ticket) stoppent la
+                // propagation pour rester opérables sans quitter le kanban.
+                <Link
+                  key={i.id}
+                  href={`/security-center/incidents/${i.id}`}
+                  className="block rounded-md bg-white border border-slate-200 px-3 py-2 shadow-sm space-y-1 hover:border-blue-300 hover:shadow-md transition-all"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <User className="h-3 w-3 text-slate-400 shrink-0" />
+                    <p className="text-[12.5px] font-medium text-slate-900 truncate flex-1">
+                      {accountCount && accountCount > 1
+                        ? `${accountCount} comptes inactifs`
+                        : (i.userPrincipal ?? "Compte inconnu")}
+                    </p>
+                    {accountCount && accountCount > 1 && (
+                      <span
+                        className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-100 text-amber-800 text-[9.5px] font-bold px-1"
+                        title={`${accountCount} comptes listés dans ce rapport`}
+                      >
+                        {accountCount}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {i.organization ? (
+                      <OrgLogo name={i.organization.name} size={14} rounded="sm" />
+                    ) : (
+                      <Laptop className="h-3 w-3 text-slate-400 shrink-0" />
+                    )}
+                    <p className="text-[11px] text-slate-500 truncate">
+                      {i.organization?.name ?? "Non mappé"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10.5px] text-slate-400">
+                    <Clock className="h-2.5 w-2.5" />
+                    {fmtDate(i.lastSeenAt)}
+                  </div>
+                  <div
+                    className="flex items-center gap-1 pt-1"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
                   >
-                    {Object.entries(STATUS_LABEL).map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                  {i.ticketId ? (
-                    <Link
-                      href={`/tickets/${i.ticketId}`}
-                      className="inline-flex h-5 items-center px-1.5 rounded bg-blue-50 text-blue-700 text-[10px]"
+                    <select
+                      value={i.status}
+                      onChange={(e) => onStatus(i.id, e.target.value)}
+                      className="h-5 flex-1 rounded border border-slate-200 bg-white text-[10.5px] px-1"
                     >
-                      <Ticket className="h-2.5 w-2.5" />
-                    </Link>
-                  ) : (
-                    <button
-                      onClick={() => onConvert(i.id)}
-                      className="inline-flex h-5 items-center gap-1 px-1.5 rounded bg-emerald-50 text-emerald-700 text-[10px] hover:bg-emerald-100"
-                    >
-                      <Ticket className="h-2.5 w-2.5" />
-                      Ticket
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+                      {Object.entries(STATUS_LABEL).map(([k, v]) => (
+                        <option key={k} value={k}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                    {i.ticketId ? (
+                      <Link
+                        href={`/tickets/${i.ticketId}`}
+                        className="inline-flex h-5 items-center px-1.5 rounded bg-blue-50 text-blue-700 text-[10px]"
+                      >
+                        <Ticket className="h-2.5 w-2.5" />
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onConvert(i.id)}
+                        className="inline-flex h-5 items-center gap-1 px-1.5 rounded bg-emerald-50 text-emerald-700 text-[10px] hover:bg-emerald-100"
+                      >
+                        <Ticket className="h-2.5 w-2.5" />
+                        Ticket
+                      </button>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
             {col.items.length === 0 && (
               <p className="text-[11px] text-slate-400 italic px-2 py-2">Vide</p>
             )}

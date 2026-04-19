@@ -309,6 +309,13 @@ model Ticket {
   ///   - "MANUAL"          : fixée explicitement par un humain
   ///   - "AI"              : ajustée par l'IA après création
   prioritySource String?        @map("priority_source")
+  /// Origine de la catégorie courante : null/DEFAULT = jamais fixée,
+  /// MANUAL = choix explicite humain (ne jamais écraser),
+  /// AI = appliquée par le triage automatique avec sa confidence loguée.
+  categorySource   String?        @map("category_source")
+  /// Confidence (0-1) de l'IA au moment de l'application auto — affichée
+  /// dans l'UI à côté de la catégorie.
+  categoryConfidence Float?       @map("category_confidence")
   urgency        TicketUrgency  @default(MEDIUM)
   impact         TicketImpact   @default(MEDIUM)
   type           TicketType     @default(INCIDENT)
@@ -380,6 +387,17 @@ model Ticket {
   // persistence / comportements suspects d'un même poste en une seule
   // intervention facturable).
   securityIncidents    SecurityIncident[]   @relation("SecurityIncidentTicket")
+
+  /// Vecteur d'embedding du ticket (sujet + description) calculé par
+  /// nomic-embed-text via Ollama. 768 dimensions, sauvegardé comme Json
+  /// pour rester portable (pas besoin de pgvector pour la V1). Permet :
+  ///   - similarité sémantique (cosine) vs matching par tokens
+  ///   - classement automatique via centroids de catégorie
+  ///   - détection de tickets récurrents cross-time
+  /// Peuplé en asynchrone via le job `ticket-embeddings` après création.
+  embedding       Json? @map("embedding")
+  embeddingAt     DateTime? @map("embedding_at")
+  embeddingModel  String? @map("embedding_model")
 
   @@index([organizationId, status])
   @@index([requiresOnSite, status])
@@ -1421,15 +1439,22 @@ enum MonitoringAlertSeverity {
 /// Central memory shared across all agents (org knowledge, procedures, patterns)
 model AiMemory {
   id        String   @id @default(cuid())
-  scope     String   @default("global") // "global" or a userId for per-agent
-  category  String // "client", "procedure", "pattern", "preference", etc.
+  scope     String   @default("global") // "global" | "user:userId" | "org:orgId"
+  category  String // "client" | "procedure" | "pattern" | "preference" | "convention" | "quirk" | "incident_pattern"
   content   String   @db.Text
-  source    String? // "agent:userId", "auto", "system"
+  source    String? // "agent:userId" | "auto" | "system" | "extracted:ticket:xxx" | "extracted:batch:date"
+  /** Validation humaine — null = en attente d'approbation admin. Date = validé. */
+  verifiedAt DateTime? @map("verified_at")
+  verifiedBy String?   @map("verified_by") // userId de l'admin qui a validé
+  /** Marqué comme rejeté par un admin — on le garde pour éviter la re-extraction mais on l'ignore en contexte. */
+  rejectedAt DateTime? @map("rejected_at")
+  rejectedBy String?   @map("rejected_by")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([scope])
   @@index([category])
+  @@index([scope, verifiedAt])
   @@map("ai_memories")
 }
 
@@ -1471,6 +1496,160 @@ model AiCategoryFeedback {
 
   @@index([createdAt])
   @@map("ai_category_feedback")
+}
+
+// ============================================================================
+// AiInvocation — journal complet des appels IA
+// Une ligne par appel passant par AiOrchestrator. Sert de :
+//   - audit de conformité Loi 25 (qui a accédé à quoi, via quel provider)
+//   - calcul de coûts par feature / par client / par période
+//   - signal d'apprentissage continu (humanAction = accept|edit|reject)
+//   - source de vérité pour le droit à l'effacement (cascade sur ticketId/userId)
+// Pas de FK sur ticketId/userId volontairement — on veut garder le log même
+// si l'entité est supprimée, mais on supporte la cascade manuelle par script.
+// ============================================================================
+model AiInvocation {
+  id                String   @id @default(cuid())
+  feature           String                              // "triage" | "response_draft" | "category_suggest" | …
+  taskKind          String   @map("task_kind")          // sous-type (classification, generation, embedding…)
+  userId            String?  @map("user_id")            // qui a déclenché, null = système
+  ticketId          String?  @map("ticket_id")
+  organizationId   String?  @map("organization_id")    // scope client
+  policyJson        Json     @map("policy")             // snapshot AiPolicy appliquée
+  provider          String                              // "openai" | "ollama" | "local"
+  modelName         String   @map("model_name")
+  sensitivityLevel  String   @map("sensitivity_level")  // "public" | "internal" | "client_data" | "regulated"
+  scrubApplied      Boolean  @default(false) @map("scrub_applied")
+  promptHash        String   @map("prompt_hash")        // SHA256 — dédup + recherche
+  promptTokens      Int?     @map("prompt_tokens")
+  responseTokens    Int?     @map("response_tokens")
+  costCents         Int?     @map("cost_cents")         // estimation
+  latencyMs         Int      @map("latency_ms")
+  status            String   @default("ok")             // "ok" | "blocked" | "error" | "timeout"
+  blockedReason     String?  @map("blocked_reason")
+  response          String?  @db.Text                   // sortie IA (null si blocked)
+  humanAction       String?  @map("human_action")       // "accepted" | "edited" | "rejected" | null
+  humanEdit         String?  @db.Text @map("human_edit")
+  actedAt           DateTime? @map("acted_at")
+  /// Version du prompt utilisé lors de l'invocation — copié depuis
+  /// policy.promptVersion. Permet de grouper les invocations par version
+  /// dans le dashboard (drift acceptance par version), et d'identifier une
+  /// régression quand un changement de prompt fait chuter la qualité.
+  promptVersion     String?  @map("prompt_version")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([feature, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([ticketId])
+  @@index([userId, createdAt])
+  @@index([humanAction])
+  @@index([feature, promptVersion])
+  @@map("ai_invocations")
+}
+
+// ============================================================================
+// SimilarTicketClick — feedback implicite sur le widget "Tickets similaires".
+//
+// Chaque fois qu'un tech clique sur un ticket proposé dans le widget, un
+// ping est envoyé avec :
+//   - sourceTicketId : le ticket qu'il regardait
+//   - clickedTicketId : le ticket qu'il a ouvert
+//   - bucket : "sameRequester" | "sameClientOpen" | "sameClientResolved" | "otherClientsResolved"
+//   - semanticSim / score / matchedTokens du moment du clic
+//
+// Signal : un clic = la suggestion était PERTINENTE aux yeux du tech. On
+// s'en sert pour :
+//   1. Calculer un CTR par bucket (quel bucket est le plus utile ?)
+//   2. Identifier les tokens/patterns à BOOST (ceux qui génèrent des clics)
+//   3. Calibrer le seuil cross-client (si 0 clic → trop laxiste)
+// ============================================================================
+model SimilarTicketClick {
+  id              String   @id @default(cuid())
+  userId          String?  @map("user_id")
+  sourceTicketId  String   @map("source_ticket_id")
+  clickedTicketId String   @map("clicked_ticket_id")
+  bucket          String   // sameRequester | sameClientOpen | sameClientResolved | otherClientsResolved
+  score           Float?
+  semanticSim     Float?   @map("semantic_sim")
+  matchedTokens   String[] @default([]) @map("matched_tokens")
+  dwellMs         Int?     @map("dwell_ms")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([sourceTicketId, createdAt])
+  @@index([bucket, createdAt])
+  @@map("similar_ticket_clicks")
+}
+
+// ============================================================================
+// AiAuditResult — résultat d'un audit automatique d'une invocation IA par
+// un modèle plus puissant (typiquement OpenAI gpt-4o). Permet un feedback
+// loop où le modèle local (gemma3:12b) est vérifié périodiquement par un
+// "juge" externe, avec logs consultables et agrégats pour détecter des
+// patterns d'erreurs systématiques.
+//
+// Flux :
+//   1. Job ai-audit (toutes les 6h) sélectionne N AiInvocations récentes
+//      non encore auditées (features : triage, category_suggest, etc.)
+//   2. Envoie input + output à gpt-4o avec prompt "cette décision est-elle
+//      correcte ?". Coût ~0.01-0.02 $ par audit.
+//   3. Stocke verdict + raisonnement + suggestion d'amélioration
+//   4. Admin consulte les résultats dans Paramètres > Intelligence IA.
+// ============================================================================
+model AiAuditResult {
+  id             String   @id @default(cuid())
+  invocationId   String   @unique @map("invocation_id")
+  /// Feature auditée (miroir du feature de l'invocation, pour requêtes).
+  feature        String
+  /// "agree" | "disagree" | "partial" — verdict global du juge IA.
+  verdict        String
+  /// Confiance du juge dans son verdict (0.0-1.0).
+  judgeConfidence Float   @map("judge_confidence")
+  /// Modèle utilisé pour auditer (ex: "gpt-4o", "gpt-4o-mini").
+  judgeModel     String   @map("judge_model")
+  /// Raisonnement en français — pourquoi le juge est d'accord ou non.
+  reasoning      String   @db.Text
+  /// Proposition concrète d'amélioration (stop-word à ajouter, seuil à
+  /// changer, catégorie alternative suggérée, etc.). Null si pas d'idée.
+  suggestion     String?  @db.Text
+  /// Pour les triages : catégorie que le juge aurait choisi (null si
+  /// d'accord avec le choix local).
+  correctCategoryId String? @map("correct_category_id")
+  /// Coût de l'audit lui-même (en cents) pour monitoring budgétaire.
+  auditCostCents Int?     @map("audit_cost_cents")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([feature, createdAt])
+  @@index([verdict, createdAt])
+  @@map("ai_audit_results")
+}
+
+// ============================================================================
+// AiPattern — agrégats calibration / signaux d'apprentissage continu.
+// Pas de fine-tuning : on met à jour des poids / seuils / conventions ici,
+// et l'orchestrateur les lit pour ajuster sa confiance et son retrieval.
+// ============================================================================
+model AiPattern {
+  id              String   @id @default(cuid())
+  scope           String                                // "global" | "org:xxx" | "feature:triage"
+  kind            String                                // "acceptance_rate" | "calibration" | "convention" | …
+  key             String                                // identifiant lisible ("category:printing" par ex.)
+  value           Json                                  // payload flexible
+  sampleCount     Int      @default(0) @map("sample_count")
+  confidence      Float    @default(0.5)
+  /// Expiration optionnelle du pattern. Utilisé par ai-audit.ts pour les
+  /// patterns auto-appliqués (≥3 occurrences → règle) : on leur pose un TTL
+  /// de 90j par défaut pour forcer une re-validation périodique. Un pattern
+  /// expiré ne doit PAS influencer les décisions IA — le learner devra le
+  /// ré-accumuler s'il reste pertinent. null = jamais expirer (manuel,
+  /// validé par un humain).
+  expiresAt       DateTime? @map("expires_at")
+  lastUpdatedAt   DateTime @default(now()) @updatedAt @map("last_updated_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([scope, kind, key])
+  @@index([scope, kind])
+  @@index([expiresAt])
+  @@map("ai_patterns")
 }
 
 // ============================================================================
@@ -2106,6 +2285,10 @@ model SecurityAlert {
   @@index([source, kind, receivedAt])
   @@index([correlationKey])
   @@index([organizationId, receivedAt])
+  /// Critique : sans cet index le nested-include Prisma "5 dernières alertes
+  /// par incident" force un Seq Scan sur des millions de rows. Créé manuellement
+  /// en prod via CREATE INDEX CONCURRENTLY, reflété ici pour cohérence schema.
+  @@index([incidentId, receivedAt(sort: Desc)])
   @@map("security_alerts")
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useSession } from "next-auth/react";
 import { useTicketsStore } from "@/stores/tickets-store";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { formatDistanceToNow, format } from "date-fns";
@@ -30,6 +31,21 @@ import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-edito
 import { AdvancedRichEditor } from "@/components/ui/advanced-rich-editor";
 import { LinkAssetModal } from "@/components/tickets/link-asset-modal";
 import { LinkProjectModal } from "@/components/tickets/link-project-modal";
+import { AiTriagePanel } from "@/components/tickets/ai-triage-panel";
+import { AiResponseAssist } from "@/components/tickets/ai-response-assist";
+import { AiResolutionNotes } from "@/components/tickets/ai-resolution-notes";
+import { AiKbDraftButton } from "@/components/tickets/ai-kb-draft";
+import { AiCloseAudit } from "@/components/tickets/ai-close-audit";
+import { AiEscalationBrief } from "@/components/tickets/ai-escalation-brief";
+import { AiToneSwitcher } from "@/components/tickets/ai-tone-switcher";
+import { AiInterventionChecklist } from "@/components/tickets/ai-intervention-checklist";
+import { AiClientContext } from "@/components/tickets/ai-client-context";
+import { AiCopilotChat } from "@/components/tickets/ai-copilot-chat";
+import { SimilarTicketsWidget } from "@/components/tickets/similar-tickets-widget";
+import { KbSuggestionsWidget } from "@/components/tickets/kb-suggestions-widget";
+import { ApprentiExemplarsWidget } from "@/components/tickets/apprenti-exemplars-widget";
+import { ThreadRecapWidget } from "@/components/tickets/thread-recap-widget";
+import { DedupClusterWidget } from "@/components/tickets/dedup-cluster-widget";
 import { OrgLogo } from "@/components/organizations/org-logo";
 import {
   STATUS_CONFIG,
@@ -181,6 +197,11 @@ export default function TicketDetailPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  // Rôle pour gating de features admin (Conventions client = SUPER_ADMIN
+  // uniquement — contient des préférences opérationnelles sensibles).
+  const isSuperAdmin =
+    (session?.user as { role?: string } | undefined)?.role === "SUPER_ADMIN";
   // Contexte interne vs client : la page détail est utilisée à la fois depuis
   // /tickets/[id] (clients) et /internal-tickets/[id] (Cetix). Le chemin
   // courant dicte le "Retour" par défaut et le breadcrumb pour rester
@@ -279,6 +300,7 @@ export default function TicketDetailPage() {
     reasoning: string;
   } | null>(null);
   const [aiCatLoading, setAiCatLoading] = useState(false);
+  const [aiCatError, setAiCatError] = useState<string | null>(null);
   const [catLevel1, setCatLevel1] = useState<string>("");
   const [catLevel2, setCatLevel2] = useState<string>("");
   const [catLevel3, setCatLevel3] = useState<string>("");
@@ -296,6 +318,7 @@ export default function TicketDetailPage() {
   const loadAll = useTicketsStore((s) => s.loadAll);
   const loaded = useTicketsStore((s) => s.loaded);
   const updateTicket = useTicketsStore((s) => s.updateTicket);
+  const refreshTickets = useTicketsStore((s) => s.refresh);
   // Ticket hors-store (ex: ticket interne — le store ne charge que les
   // tickets clients par défaut pour ne pas polluer la liste /tickets).
   // On le charge directement par id en fallback.
@@ -1073,10 +1096,10 @@ export default function TicketDetailPage() {
             </div>
 
             {/* Add comment */}
-            <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-              <div className="mb-3 flex items-center justify-between">
+            <div className="rounded-xl border border-slate-200/80 bg-white p-3 sm:p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+              <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
                 <h3 className="text-[13px] font-semibold text-slate-700">Répondre au ticket</h3>
-                <div className="flex items-center gap-1 rounded-lg bg-slate-100/80 p-1 ring-1 ring-inset ring-slate-200/60">
+                <div className="flex items-center gap-1 rounded-lg bg-slate-100/80 p-1 ring-1 ring-inset ring-slate-200/60 shrink-0">
                   <button
                     onClick={() => { setIsInternal(false); setTimelineTab("messages"); }}
                     className={cn(
@@ -1115,8 +1138,13 @@ export default function TicketDetailPage() {
                 onAttachmentsChange={setAttachments}
                 minHeight="140px"
               />
-              <div className="mt-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              {/* Actions row — sur mobile : stack vertical (boutons IA
+                  au-dessus, bouton Envoyer en pleine largeur en bas). Sur
+                  desktop : ligne horizontale avec Envoyer à droite comme
+                  avant. Sans flex-wrap, les 6+ boutons IA débordaient sur
+                  écran < 500 px. */}
+              <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   {(userSignature.signature || userSignature.signatureHtml) && (
                     <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
                       <input
@@ -1128,6 +1156,58 @@ export default function TicketDetailPage() {
                       Inclure ma signature
                     </label>
                   )}
+                  {/* Ajustement du ton — reformule le texte déjà saisi
+                      dans le composer selon 4 tonalités (bref, détaillé,
+                      vulgarisé, exécutif). Préserve tous les faits. */}
+                  <AiToneSwitcher
+                    currentText={commentText}
+                    onReplace={(t) => setCommentText(t)}
+                  />
+                  {/* Assistance IA — ouvre un drawer avec brouillon de
+                      réponse + pistes de diagnostic + commandes + tickets
+                      similaires résolus. Insère le brouillon dans le
+                      composer au clic. */}
+                  <AiResponseAssist
+                    ticketId={ticket.id}
+                    onInsertDraft={(text) => setCommentText(text)}
+                  />
+                  {/* Note de résolution IA — disponible n'importe quand,
+                      particulièrement pertinente avant fermeture. Génère
+                      une version interne (technique) et une version client
+                      (vulgarisée) à partir de l'historique complet. */}
+                  <AiResolutionNotes
+                    ticketId={ticket.id}
+                    onInsertDraft={(text) => setCommentText(text)}
+                  />
+                  {/* Close audit — disponible sur tickets en cours (pour
+                      préparer la fermeture) ET après résolution (pour
+                      audit rétroactif). Caché sur les tickets new/open
+                      sans note car pas encore pertinent. */}
+                  {ticket.status !== "new" && ticket.status !== "cancelled" && (
+                    <AiCloseAudit ticketId={ticket.id} />
+                  )}
+                  {/* Escalation brief — utile quand le ticket doit passer
+                      à un N2 / spécialiste. Produit un document propre à
+                      coller en note interne. Caché sur les tickets non
+                      démarrés ou déjà fermés. */}
+                  {ticket.status !== "new" &&
+                    ticket.status !== "cancelled" &&
+                    ticket.status !== "resolved" &&
+                    ticket.status !== "closed" && (
+                      <AiEscalationBrief
+                        ticketId={ticket.id}
+                        onInsertDraft={(text) => {
+                          setIsInternal(true);
+                          setCommentText(text);
+                        }}
+                      />
+                    )}
+                  {/* KB auto-draft — visible seulement sur les tickets
+                      résolus/fermés (les billets en cours n'ont pas encore
+                      d'information exploitable pour un article KB). */}
+                  {(ticket.status === "resolved" || ticket.status === "closed") && (
+                    <AiKbDraftButton ticketId={ticket.id} />
+                  )}
                 </div>
                 <Button
                   variant="primary"
@@ -1135,6 +1215,7 @@ export default function TicketDetailPage() {
                   disabled={!commentText.trim()}
                   loading={sending}
                   onClick={handleSendReply}
+                  className="w-full sm:w-auto justify-center"
                 >
                   <Send className="h-3.5 w-3.5" strokeWidth={2.25} />
                   {isInternal ? "Ajouter la note" : "Envoyer la réponse"}
@@ -1144,8 +1225,12 @@ export default function TicketDetailPage() {
           </div>
         </div>
 
-        {/* Right: Sidebar — on mobile, appears BEFORE main content via order; collapsible on small screens */}
-        <div className="w-full lg:w-80 flex-shrink-0 overflow-y-auto bg-gray-50/50 order-first lg:order-none">
+        {/* Right: Sidebar — sur desktop à droite du contenu, sur mobile
+            APRÈS le contenu principal (titre + description + commentaires)
+            pour ne pas repousser le sujet du ticket hors écran. Les
+            fonctionnalités IA, tickets similaires, détails sont de la
+            valeur secondaire : le tech doit voir le titre d'abord. */}
+        <div className="w-full lg:w-80 flex-shrink-0 overflow-y-auto bg-gray-50/50">
           <div className="p-5 space-y-5">
             {/* Tags opérationnels — rencontre source pour les tickets internes */}
             {(ticket as { meetingId?: string }).meetingId && (
@@ -1171,6 +1256,88 @@ export default function TicketDetailPage() {
                 </p>
               </div>
             )}
+
+            {/* Panneau Triage IA — affiché au-dessus des détails pour
+                servir de synthèse rapide : résumé d'une ligne + suggestions
+                de catégorie, priorité, type, doublon probable, incident
+                majeur. Généré automatiquement à la création du ticket ;
+                régénérable manuellement. */}
+            <AiTriagePanel
+              ticketId={ticket.id}
+              currentCategoryId={(ticket as { categoryId?: string | null }).categoryId ?? null}
+              currentPriority={ticket.priority}
+              currentPrioritySource={
+                (ticket as { prioritySource?: string }).prioritySource ?? null
+              }
+              onTicketChanged={refreshTickets}
+            />
+
+            {/* Checklist d'intervention — apparaît sous le triage dès
+                qu'une catégorie est présente. Cache par catégorie, partagée
+                entre tous les tickets de la même catégorie (cache AiPattern). */}
+            <AiInterventionChecklist
+              ticketId={ticket.id}
+              categoryId={(ticket as { categoryId?: string | null }).categoryId ?? null}
+            />
+
+            {/* Conventions client connues — faits validés de AiMemory.
+                Visible UNIQUEMENT aux super-admins : contient des préférences
+                opérationnelles sensibles (comptes privilégiés, contacts
+                internes, conventions d'intervention) qui ne doivent pas
+                être exposées aux techs standard ou aux clients. */}
+            {isSuperAdmin && (
+              <AiClientContext
+                organizationId={
+                  (ticket as { organizationId?: string | null }).organizationId ??
+                  null
+                }
+                organizationSlug={
+                  (ticket as { organization?: { slug?: string } | null })
+                    .organization?.slug ?? null
+                }
+              />
+            )}
+
+            {/* Tickets similaires — toujours visibles pour les tickets
+                humains. 3 buckets : ouverts du client / résolus du client /
+                résolus d'autres clients (savoir transversal). Le widget
+                s'efface automatiquement pour les tickets MONITORING et
+                AUTOMATION (alertes machine-specific, cross-learning n/a). */}
+            <SimilarTicketsWidget
+              ticketId={ticket.id}
+              ticketSource={
+                (ticket as { source?: string | null }).source ?? null
+              }
+            />
+
+            {/* KB auto-linking — articles de la base de connaissances dont
+                l'embedding sémantique est proche du ticket (top-3, cosine
+                ≥ 0.55). Alimenté par le job `kb-indexer` (30 min). */}
+            <KbSuggestionsWidget ticketId={ticket.id} />
+
+            {/* Tech apprenti — s'affiche seulement si l'assigné a peu
+                d'expérience dans la catégorie. Montre les tickets résolus
+                rapidement et proprement par les techs seniors. Alimenté
+                par le job `tech-apprenti` (24h). */}
+            <ApprentiExemplarsWidget ticketId={ticket.id} />
+
+            {/* Thread recap — s'affiche seulement si le fil a ≥ 8 messages
+                consolidés. Offre une vue 15-secondes (situation / décisions /
+                essais / questions ouvertes). Alimenté par
+                `thread-consolidator` (job en arrière-plan). */}
+            <ThreadRecapWidget ticketId={ticket.id} />
+
+            {/* Dedup cluster — s'affiche quand ce ticket partage un cluster
+                de duplicates probables détecté par `cross-source-dedup`.
+                Expose les tickets sibling avec leur source/status/assigné
+                pour éviter que 4 techs traitent le même incident en parallèle. */}
+            <DedupClusterWidget ticketId={ticket.id} />
+
+            {/* Copilote Q&A — question libre dans le contexte du ticket.
+                Le modèle voit ticket + historique + similaires résolus +
+                faits client validés. Réponse courte, avec liens vers
+                tickets cités. Single-shot (pas d'historique persistant). */}
+            <AiCopilotChat ticketId={ticket.id} />
 
             {/* Détails — Statut, Priorité, Urgence, Impact, Type.
                 Tous les <select> partagent la même classe utilitaire
@@ -1501,6 +1668,7 @@ export default function TicketDetailPage() {
                   onClick={async () => {
                     setAiCatLoading(true);
                     setAiCatSuggestion(null);
+                    setAiCatError(null);
                     try {
                       const res = await fetch("/api/v1/ai/categorize", {
                         method: "POST",
@@ -1510,12 +1678,27 @@ export default function TicketDetailPage() {
                           description: ticket.description,
                         }),
                       });
-                      if (res.ok) {
-                        const data = await res.json();
+                      const data = await res.json().catch(() => null);
+                      if (!res.ok) {
+                        const msg = data?.error || `HTTP ${res.status}`;
+                        throw new Error(msg);
+                      }
+                      // L'IA peut renvoyer une réponse vide si elle ne trouve
+                      // aucune catégorie raisonnable. On signale au tech
+                      // plutôt que d'afficher un panneau vide muet.
+                      if (!data || !data.categoryLevel1) {
+                        setAiCatError(
+                          data?.reasoning
+                            ? `Aucune catégorie claire. IA: ${data.reasoning.slice(0, 120)}`
+                            : "Aucune catégorie correspondante trouvée.",
+                        );
+                      } else {
                         setAiCatSuggestion(data);
                       }
-                    } catch {
-                      /* silent — l'utilisateur peut réessayer */
+                    } catch (err) {
+                      setAiCatError(
+                        err instanceof Error ? err.message : "Erreur inconnue",
+                      );
                     } finally {
                       setAiCatLoading(false);
                     }
@@ -1533,6 +1716,12 @@ export default function TicketDetailPage() {
                       ? "Re-analyser avec l'IA"
                       : "Suggérer une catégorie (IA)"}
                 </button>
+
+                {aiCatError && !aiCatSuggestion && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50/70 px-2.5 py-1.5 text-[11px] text-amber-800">
+                    {aiCatError}
+                  </div>
+                )}
 
                 {aiCatSuggestion && aiCatSuggestion.categoryLevel1 && (
                   <div className="rounded-lg border border-violet-200/70 bg-violet-50/70 px-2.5 py-2 text-[11.5px] space-y-1.5">
@@ -1671,10 +1860,17 @@ export default function TicketDetailPage() {
                       setCatLevel2("");
                       setCatLevel3("");
                       const finalId = id || null;
-                      await patchTicketField({ categoryId: finalId });
+                      // Changement manuel → marque la source en MANUAL
+                      // pour que la notice IA disparaisse et qu'un re-run
+                      // du triage ne l'écrase pas.
+                      await patchTicketField({
+                        categoryId: finalId,
+                        categorySource: "MANUAL",
+                      });
                       const cat = categories.find((c) => c.id === finalId);
                       (ticket as any).categoryName = cat?.name || "—";
                       (ticket as any).categoryId = finalId;
+                      (ticket as any).categorySource = "MANUAL";
                     }}
                     className="h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-700 focus:border-blue-500 focus:outline-none"
                   >
@@ -1683,6 +1879,20 @@ export default function TicketDetailPage() {
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
+                  {/* Notice IA — visible quand la catégorie courante a été
+                      appliquée automatiquement par le triage. Le tech peut
+                      l'accepter (ne rien faire) ou changer (passe en
+                      MANUAL automatiquement). */}
+                  {(ticket as { categorySource?: string }).categorySource === "AI" && (
+                    <div className="mt-1 flex items-center gap-1 text-[10.5px] text-violet-700 bg-violet-50 border border-violet-100 rounded px-1.5 py-0.5">
+                      <Sparkles className="h-2.5 w-2.5 shrink-0" />
+                      <span>
+                        Catégorisé par l'IA
+                        {typeof (ticket as { categoryConfidence?: number }).categoryConfidence === "number" &&
+                          ` à ${Math.round(((ticket as { categoryConfidence?: number }).categoryConfidence ?? 0) * 100)} %`}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 {catLevel1 && categories.some((c) => c.parentId === catLevel1) && (
                   <div>

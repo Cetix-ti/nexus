@@ -14,6 +14,11 @@ import { OrgChart } from "@/components/dashboard/org-chart";
 import { DashboardGrid, type DashboardItem } from "@/components/widgets/dashboard-grid";
 import { WidgetSidebar } from "@/components/widgets/widget-sidebar";
 import { CalendarBoard } from "@/app/(app)/calendar/page";
+import { AiActivityWidget } from "@/components/dashboard/ai-activity-widget";
+import {
+  TicketsQuickModal,
+  type QuickFilter,
+} from "@/components/dashboard/tickets-quick-modal";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -132,6 +137,8 @@ export default function DashboardPage() {
   const [editMode, setEditMode] = useState(false);
   const [items, setItems] = useState<DashboardItem[]>(() => loadLayout());
   const [showSidebar, setShowSidebar] = useState(false);
+  // Filtre du modal rapide (ouvert au clic sur une tuile KPI).
+  const [quickFilter, setQuickFilter] = useState<QuickFilter | null>(null);
 
   // On surface les erreurs au lieu de swallow silencieux : si l'endpoint
   // renvoie 500 (changement de schéma, régression, etc.) l'utilisateur
@@ -172,9 +179,32 @@ export default function DashboardPage() {
       case "w_dash_kpis":
         return (
           <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-6 p-1 sm:p-2">
-            <KpiCard label="Tickets ouverts" value={data.stats.openTickets} icon={Ticket} iconColor="text-blue-600" iconBg="bg-blue-50" />
-            <KpiCard label="Non assignés" value={data.stats.unassigned} icon={Users} iconColor="text-orange-600" iconBg="bg-orange-50" warning={data.stats.unassigned > 0} />
-            <KpiCard label="En retard" value={data.stats.overdue} icon={AlertTriangle} iconColor="text-red-600" iconBg="bg-red-50" warning={data.stats.overdue > 0} />
+            <KpiCard
+              label="Tickets ouverts"
+              value={data.stats.openTickets}
+              icon={Ticket}
+              iconColor="text-blue-600"
+              iconBg="bg-blue-50"
+              onClick={() => setQuickFilter("open")}
+            />
+            <KpiCard
+              label="Non assignés"
+              value={data.stats.unassigned}
+              icon={Users}
+              iconColor="text-orange-600"
+              iconBg="bg-orange-50"
+              warning={data.stats.unassigned > 0}
+              onClick={() => setQuickFilter("unassigned")}
+            />
+            <KpiCard
+              label="En retard"
+              value={data.stats.overdue}
+              icon={AlertTriangle}
+              iconColor="text-red-600"
+              iconBg="bg-red-50"
+              warning={data.stats.overdue > 0}
+              onClick={() => setQuickFilter("overdue")}
+            />
             <KpiCard label="Conformité SLA" value={`${data.stats.slaCompliance}%`} icon={ShieldCheck} iconColor="text-emerald-600" iconBg="bg-emerald-50" />
             <KpiCard label="Résolution moy." value={`${data.stats.avgResolutionTime}h`} icon={Clock} iconColor="text-neutral-600" iconBg="bg-neutral-100" />
             <KpiCard label="Tickets aujourd'hui" value={data.stats.ticketsToday} icon={CalendarDays} iconColor="text-blue-600" iconBg="bg-blue-50" />
@@ -198,6 +228,8 @@ export default function DashboardPage() {
         return <RecentTickets tickets={data.myTickets} title="Mes tickets" showAssignee={false} />;
       case "w_dash_orgs":
         return <OrgChart data={data.ticketsByOrg} />;
+      case "w_dash_ai":
+        return <AiActivityWidget />;
       default:
         return <div className="p-4 text-center text-slate-400 text-[13px]">Widget « {widgetId} »</div>;
     }
@@ -265,6 +297,13 @@ export default function DashboardPage() {
       />
 
       {loading && <p className="text-center text-xs text-slate-400">Chargement...</p>}
+
+      {/* Modal liste rapide — ouvert depuis les tuiles KPI cliquables. */}
+      <TicketsQuickModal
+        open={quickFilter !== null}
+        filter={quickFilter}
+        onClose={() => setQuickFilter(null)}
+      />
     </div>
   );
 }

@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Briefcase,
   CalendarDays,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -245,6 +246,13 @@ export default function SupervisionPage() {
             Vue 360° de vos agents · {data.length} agent{data.length > 1 ? "s" : ""}
           </p>
         </div>
+        <Link
+          href="/supervision/coaching"
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+        >
+          <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+          Coaching IA
+        </Link>
       </div>
 
       {/* Date range selector */}

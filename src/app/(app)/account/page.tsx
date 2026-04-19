@@ -674,6 +674,28 @@ function NotificationsTab() {
     });
   }
 
+  /**
+   * Éteint ou allume les DEUX canaux d'un événement d'un seul clic. Résout
+   * le piège UX : on croyait désactiver un événement en coupant l'email
+   * mais l'in-app continuait silencieusement. Un clic ici = silence total.
+   */
+  function toggleEventMaster(key: string) {
+    if (!prefs) return;
+    const current = prefs.events[key] ?? { inApp: false, email: false };
+    const isActive = current.inApp || current.email;
+    // Si l'un des deux est actif → tout couper. Sinon → réactiver les deux.
+    const next = isActive
+      ? { inApp: false, email: false }
+      : { inApp: true, email: true };
+    persist({
+      ...prefs,
+      events: {
+        ...prefs.events,
+        [key]: next,
+      },
+    });
+  }
+
   if (loading) {
     return (
       <Card title="Notifications">
@@ -745,6 +767,16 @@ function NotificationsTab() {
         </div>
       </Card>
 
+      {/* Hint : dissiper le piège UX du "j'ai désactivé mais ça passe quand même" */}
+      <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 text-[12.5px] text-blue-900">
+        <p>
+          <strong>Chaque événement a deux canaux</strong> : Email et In-app
+          (cloche). Pour couper complètement un événement, désactive les deux.
+          Clique sur la pastille <em>État</em> pour tout activer ou tout couper
+          d'un coup.
+        </p>
+      </div>
+
       {/* Per-event preferences groupées par catégorie */}
       {Object.entries(byCategory).map(([cat, events]) => (
         <Card key={cat} title={CATEGORY_LABELS[cat] ?? cat}>
@@ -753,6 +785,7 @@ function NotificationsTab() {
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
                   <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Événement</th>
+                  <th className="hidden sm:table-cell px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500 w-24">État</th>
                   <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500 w-20">Email</th>
                   <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500 w-20 pr-6">In-app</th>
                 </tr>
@@ -760,13 +793,62 @@ function NotificationsTab() {
               <tbody className="divide-y divide-slate-100">
                 {events.map((e) => {
                   const pref = prefs.events[e.key] ?? e.defaults;
+                  const anyActive = pref.email || pref.inApp;
+                  const bothActive = pref.email && pref.inApp;
                   return (
                     <tr key={e.key} className="hover:bg-slate-50/60">
                       <td className="px-6 py-3">
-                        <div className="text-[13px] font-medium text-slate-800">{e.label}</div>
+                        <div className="text-[13px] font-medium text-slate-800 flex items-center gap-2 flex-wrap">
+                          {e.label}
+                          {/* Sur mobile, badge d'état visible direct sous
+                              l'événement puisque la colonne dédiée est cachée */}
+                          <span
+                            className={cn(
+                              "sm:hidden inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                              anyActive
+                                ? bothActive
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-amber-100 text-amber-700"
+                                : "bg-slate-200 text-slate-600",
+                            )}
+                          >
+                            {anyActive
+                              ? bothActive
+                                ? "Actif"
+                                : "Partiel"
+                              : "Silencieux"}
+                          </span>
+                        </div>
                         {e.description && (
                           <div className="text-[11px] text-slate-400 mt-0.5">{e.description}</div>
                         )}
+                      </td>
+                      <td className="hidden sm:table-cell px-3 py-3">
+                        <div className="flex justify-center">
+                          <button
+                            type="button"
+                            onClick={() => toggleEventMaster(e.key)}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors",
+                              anyActive
+                                ? bothActive
+                                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                                  : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                : "bg-slate-200 text-slate-600 hover:bg-slate-300",
+                            )}
+                            title={
+                              anyActive
+                                ? "Tout désactiver (email + in-app)"
+                                : "Tout activer (email + in-app)"
+                            }
+                          >
+                            {anyActive
+                              ? bothActive
+                                ? "Actif"
+                                : "Partiel"
+                              : "Silencieux"}
+                          </button>
+                        </div>
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex justify-center">

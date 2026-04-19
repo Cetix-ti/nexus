@@ -48,6 +48,17 @@ export default function NewTicketPage() {
   const [queuesLoading, setQueuesLoading] = useState(true);
   const [technicians, setTechnicians] = useState<string[]>([]);
   const [techniciansLoading, setTechniciansLoading] = useState(true);
+  const [assigneeSuggestions, setAssigneeSuggestions] = useState<
+    Array<{
+      techId: string;
+      techName: string;
+      expertise: number;
+      currentLoad: number;
+      score: number;
+      reason: string;
+    }>
+  >([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
   // Fetch organizations on mount
   useEffect(() => {
@@ -122,6 +133,30 @@ export default function NewTicketPage() {
   });
 
   const selectedOrg = watch("organizationName");
+  const selectedCategory = watch("category");
+
+  // Suggest assignees when category changes (workload-optimizer).
+  useEffect(() => {
+    if (!selectedCategory) {
+      setAssigneeSuggestions([]);
+      return;
+    }
+    const cat = categories.find((c) => c.name === selectedCategory);
+    if (!cat) {
+      setAssigneeSuggestions([]);
+      return;
+    }
+    setSuggestionsLoading(true);
+    fetch(
+      `/api/v1/intelligence/suggest-assignee?categoryId=${encodeURIComponent(cat.id)}`,
+    )
+      .then((r) => (r.ok ? r.json() : { suggestions: [] }))
+      .then((data: { suggestions?: typeof assigneeSuggestions }) => {
+        setAssigneeSuggestions(data.suggestions ?? []);
+      })
+      .catch(() => setAssigneeSuggestions([]))
+      .finally(() => setSuggestionsLoading(false));
+  }, [selectedCategory, categories]);
 
   // Fetch contacts when org changes
   useEffect(() => {
@@ -440,6 +475,62 @@ export default function NewTicketPage() {
                 {...register("tags")}
               />
             </div>
+
+            {/* Suggestions IA basées sur workload-optimizer. */}
+            {(suggestionsLoading || assigneeSuggestions.length > 0) && (
+              <div className="mt-3 rounded-md border border-indigo-200 bg-indigo-50/40 p-3 dark:border-indigo-900 dark:bg-indigo-950/30">
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-indigo-800 dark:text-indigo-200">
+                  <Loader2
+                    className={cn(
+                      "h-3 w-3",
+                      suggestionsLoading ? "animate-spin" : "hidden",
+                    )}
+                  />
+                  Suggestions IA (expertise × disponibilité)
+                </div>
+                {!suggestionsLoading && assigneeSuggestions.length === 0 ? (
+                  <p className="text-xs italic text-indigo-600/70 dark:text-indigo-400/70">
+                    Pas de recommandation — historique insuffisant pour cette
+                    catégorie.
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {assigneeSuggestions.slice(0, 3).map((s) => (
+                      <li key={s.techId}>
+                        <button
+                          type="button"
+                          onClick={() => setValue("assigneeName", s.techName)}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs transition",
+                            watch("assigneeName") === s.techName
+                              ? "border-indigo-400 bg-indigo-100 dark:border-indigo-600 dark:bg-indigo-900"
+                              : "border-indigo-200 bg-white hover:bg-indigo-100 dark:border-indigo-800 dark:bg-slate-900 dark:hover:bg-indigo-900",
+                          )}
+                        >
+                          <span
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                            style={{
+                              backgroundColor: `hsl(${hashHue(s.techName)}, 60%, 55%)`,
+                            }}
+                          >
+                            {initials(s.techName)}
+                          </span>
+                          <span className="font-medium text-slate-800 dark:text-slate-100">
+                            {s.techName}
+                          </span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                            {s.reason}
+                          </span>
+                          <span className="ml-auto rounded bg-emerald-100 px-1.5 py-px text-[10px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                            score {Math.round(s.score * 100)}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Submit */}
@@ -460,4 +551,19 @@ export default function NewTicketPage() {
       </div>
     </div>
   );
+}
+
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function hashHue(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h) % 360;
 }

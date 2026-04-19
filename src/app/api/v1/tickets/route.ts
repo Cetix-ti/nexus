@@ -34,6 +34,10 @@ export async function GET(req: Request) {
     assigneeId,
     projectId: url.searchParams.get("projectId") || undefined,
     limit,
+    // Filtres du tableau de bord — tuiles cliquables.
+    unassignedOnly: url.searchParams.get("unassignedOnly") === "true",
+    overdueOnly: url.searchParams.get("overdueOnly") === "true",
+    openOnly: url.searchParams.get("openOnly") === "true",
     // includeMonitoring=true pour que le dashboard "Alertes monitoring"
     // puisse les récupérer. Par défaut exclus des vues tickets classiques.
     includeMonitoring: url.searchParams.get("includeMonitoring") === "true",

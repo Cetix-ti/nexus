@@ -52,9 +52,13 @@ interface OrgSuggestion {
 
 export function UnmatchedDomainsSection({
   onChange,
+  refreshTick,
 }: {
   /** Callback appelé quand un mapping est appliqué — le parent recharge ses données. */
   onChange?: () => void;
+  /** Valeur incrémentée par le parent pour forcer un refresh (auto-refresh
+   *  global + bouton "Synchroniser" de la page Sauvegardes). */
+  refreshTick?: number;
 }) {
   const [domains, setDomains] = useState<UnmatchedDomain[]>([]);
   const [emails, setEmails] = useState<UnmatchedEmail[]>([]);
@@ -76,7 +80,10 @@ export function UnmatchedDomainsSection({
 
   useEffect(() => {
     load();
-  }, [load]);
+    // `refreshTick` est dans les deps : quand il change, on re-fetch. Ne
+    // déclenche PAS de loading visible (ce serait trop de clignotements
+    // pour une section souvent vide).
+  }, [load, refreshTick]);
 
   async function handleMapDomain(senderDomain: string, org: OrgSuggestion) {
     try {

@@ -1,15 +1,18 @@
 // ============================================================================
 // AI ASSISTANT SERVICE
-// Calls OpenAI (or any compatible API) with Nexus context.
-// Designed to be swappable to Claude, Ollama, or any local model.
+// Façade historique — maintient la signature publique `chatCompletion(...)`
+// utilisée par les features existantes. La logique réelle est maintenant
+// dans AiOrchestrator (src/lib/ai/orchestrator/) qui gère policy, scrub,
+// routing provider (OpenAI / Ollama), et audit Loi 25.
+//
+// TOUT nouvel appel IA doit importer `runAiTask` depuis l'orchestrator
+// et fournir une policy explicite (voir policies.ts). Ce wrapper reste
+// uniquement pour ne pas casser les call-sites existants de la migration.
 // ============================================================================
 
 import prisma from "@/lib/prisma";
-
-const OPENAI_API_KEY = () => process.env.OPENAI_API_KEY;
-const MODEL = () => process.env.AI_MODEL || "gpt-4o-mini";
-const API_URL = () =>
-  process.env.AI_API_URL || "https://api.openai.com/v1/chat/completions";
+import { runAiTask } from "@/lib/ai/orchestrator";
+import { POLICY_LEGACY_CHAT } from "@/lib/ai/orchestrator/policies";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -17,37 +20,26 @@ interface ChatMessage {
 }
 
 // ---------------------------------------------------------------------------
-// Core chat completion — provider-agnostic
+// Core chat completion — passe par l'orchestrateur
 // ---------------------------------------------------------------------------
 
 export async function chatCompletion(
   messages: ChatMessage[],
   options?: { temperature?: number; maxTokens?: number },
 ): Promise<string> {
-  const apiKey = OPENAI_API_KEY();
-  if (!apiKey) throw new Error("OPENAI_API_KEY non configurée");
-
-  const res = await fetch(API_URL(), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const result = await runAiTask({
+    policy: {
+      ...POLICY_LEGACY_CHAT,
+      temperature: options?.temperature ?? POLICY_LEGACY_CHAT.temperature,
+      maxTokens: options?.maxTokens ?? POLICY_LEGACY_CHAT.maxTokens,
     },
-    body: JSON.stringify({
-      model: MODEL(),
-      messages,
-      temperature: options?.temperature ?? 0.3,
-      max_tokens: options?.maxTokens ?? 4096,
-    }),
+    messages,
+    taskKind: "chat",
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`AI API ${res.status}: ${text}`);
+  if (!result.ok) {
+    throw new Error(result.error?.reason ?? "AI call failed");
   }
-
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  return result.content ?? "";
 }
 
 // ---------------------------------------------------------------------------
@@ -1033,7 +1025,32 @@ Retourne UNIQUEMENT du JSON valide (sans markdown, sans backticks) :
     },
   ];
 
-  const response = await chatCompletion(messages, { temperature: 0.1 });
+  // Utilise la policy dédiée (POLICY_CATEGORY_SUGGEST) avec JSON strict forcé —
+  // plus fiable que chatCompletion (POLICY_LEGACY_CHAT) qui laissait parfois
+  // gemma3:12b wrapper le JSON dans du markdown ```json```.
+  const { runAiTask } = await import("@/lib/ai/orchestrator");
+  const { POLICY_CATEGORY_SUGGEST } = await import(
+    "@/lib/ai/orchestrator/policies"
+  );
+  const result = await runAiTask({
+    policy: POLICY_CATEGORY_SUGGEST,
+    messages,
+    taskKind: "classification",
+  });
+  if (!result.ok || !result.content) {
+    return {
+      categoryLevel1: "",
+      category: "",
+      confidence: "low",
+      reasoning: result.error?.reason ?? "Erreur IA",
+    };
+  }
+  // Strip markdown fences au cas où le modèle local en ajoute quand même.
+  const response = result.content
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
   try {
     const parsed = JSON.parse(response) as Partial<CategorySuggestion> & {
       // Back-compat : l'ancien prompt renvoyait `category` seul. Si un
@@ -1220,9 +1237,35 @@ ${feedbackText}`,
     },
   ];
 
-  const response = await chatCompletion(messages, { temperature: 0.3 });
+  // Utilise la policy dédiée (POLICY_CATEGORY_AUDIT) plutôt que legacy_chat —
+  // elle a le bon timeout (180s), response_format json et les providers corrects.
+  // Avec gemma3:12b à ~30 tok/s, 4000 tokens demandent ~2 min : le timeout
+  // historique de 30s échouait systématiquement en routage Ollama.
+  const { runAiTask } = await import("@/lib/ai/orchestrator");
+  const { POLICY_CATEGORY_AUDIT } = await import(
+    "@/lib/ai/orchestrator/policies"
+  );
+  const result = await runAiTask({
+    policy: POLICY_CATEGORY_AUDIT,
+    messages,
+    taskKind: "generation",
+  });
+  if (!result.ok || !result.content) {
+    return {
+      summary:
+        `Audit IA indisponible (${result.error?.reason ?? "erreur inconnue"}).`,
+      suggestions: [],
+      generatedAt: new Date().toISOString(),
+    };
+  }
+  const response = result.content;
   try {
-    const parsed = JSON.parse(response) as Omit<CategoryAuditReport, "generatedAt">;
+    const cleaned = response
+      .trim()
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+    const parsed = JSON.parse(cleaned) as Omit<CategoryAuditReport, "generatedAt">;
     return {
       summary: parsed.summary || "",
       suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],

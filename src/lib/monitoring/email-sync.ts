@@ -254,6 +254,16 @@ function detectSource(subject: string, senderEmail: string, body: string): Detec
     alertGroupKey = `${sourceType}:${extractedHost || "unknown"}:${desc}`.toLowerCase();
   }
 
+  // Zabbix avec numéro de ticket entre parens : "TK-28599 (VDSA_FTG_50B_ARCHIVES)"
+  // Le vrai hostname est entre parenthèses ; le "TK-NNNN" est juste un
+  // identifiant interne. On extrait uniquement si pas déjà trouvé, et on
+  // privilégie les valeurs qui ressemblent à un hostname (uppercase, au
+  // moins un underscore/dash ou une combinaison lettres+chiffres).
+  if (!extractedHost && sourceType === "zabbix") {
+    const parensMatch = subject.match(/\(([A-Z0-9][A-Z0-9_\-\.]{3,})\)/);
+    if (parensMatch) extractedHost = parensMatch[1];
+  }
+
   // Other Atera patterns if not matched above
   if (!extractedHost && sourceType === "atera") {
     const ateraPatterns = [
@@ -299,16 +309,35 @@ function extractAllClientCodePrefixes(subject: string, body: string): string[] {
   const zabbixHost = body.match(/^\s*Host:\s*([A-Z][A-Z0-9_\-\.]+)\s*$/im);
   if (zabbixHost) {
     const name = zabbixHost[1];
-    const prefixMatch = name.match(/^([A-Z]{2,8})[-_]/);
+    // Préfixe = 2–8 lettres suivies d'un digit OU d'un séparateur. Aligne
+    // avec resolveOrgByEndpoint de security-center pour les hostnames du
+    // type "DLSN54-2204D" (code collé aux chiffres sans underscore).
+    const prefixMatch = name.match(/^([A-Z]{2,8})(?=\d|[-_])/);
     if (prefixMatch && !seen.has(prefixMatch[1])) {
       seen.add(prefixMatch[1]);
       codes.push(prefixMatch[1]);
     }
   }
 
-  // 2) Tous les autres tokens "CODE-XXX" dans sujet + body.
+  // 2) Hostname entre parenthèses dans le sujet (format Zabbix avec
+  //    numéro de ticket : "TK-28599 (VDSA_FTG_50B_ARCHIVES)"). On extrait
+  //    ce hostname AVANT le scan générique pour que son préfixe soit en
+  //    tête de liste et gagne sur un "TK-28599" qui pourrait matcher si
+  //    un clientCode "TK" existait un jour.
+  const parensHost = subject.match(/\(([A-Z0-9][A-Z0-9_\-\.]{3,})\)/);
+  if (parensHost) {
+    const prefixMatch = parensHost[1].match(/^([A-Z]{2,8})(?=\d|[-_])/);
+    if (prefixMatch && !seen.has(prefixMatch[1])) {
+      seen.add(prefixMatch[1]);
+      codes.push(prefixMatch[1]);
+    }
+  }
+
+  // 3) Tous les autres tokens "CODE(sep|digit)CHAR" dans sujet + body.
+  //    Même règle que resolveOrgByEndpoint : un digit IMMÉDIAT après le
+  //    code (DLSN54…) est accepté, pas seulement un séparateur.
   const text = `${subject}\n${body.slice(0, 2000)}`;
-  const re = /\b([A-Z]{2,8})[-_][A-Z0-9]{1,}/g;
+  const re = /\b([A-Z]{2,8})(?:\d|[-_])[A-Z0-9]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (!seen.has(m[1])) {

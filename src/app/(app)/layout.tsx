@@ -7,7 +7,10 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { AiChatWidget } from "@/components/ai/ai-chat-widget";
 import { NotificationToasts } from "@/components/layout/notification-toasts";
 import { Topbar } from "@/components/layout/topbar";
+import { UserMenu } from "@/components/layout/user-menu";
+import { NotificationsDropdown } from "@/components/layout/notifications-dropdown";
 import { UserPrefsSyncBoot } from "@/components/user-prefs-sync-boot";
+import { IdleSecurityPrefetcher } from "@/components/security-center/idle-prefetcher";
 import { useSidebarStore } from "@/stores/sidebar";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -42,6 +45,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="h-screen w-screen overflow-hidden bg-slate-50">
       {/* Sync des préférences user (localStorage ↔ DB) — invisible */}
       <UserPrefsSyncBoot />
+      {/* Warme le cache du Centre de sécurité en période d'inactivité
+          (TECHNICIAN+ uniquement — les clients n'y ont pas accès) */}
+      <IdleSecurityPrefetcher />
       {/* Desktop layout — sidebar + content */}
       <div
         className="hidden md:grid h-screen"
@@ -66,16 +72,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Mobile layout — no sidebar, hamburger menu */}
       <div className="flex flex-col h-screen md:hidden">
-        {/* Mobile topbar */}
-        <header className="sticky top-0 z-30 h-14 shrink-0 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between px-4">
-          <button
-            onClick={() => setMobileMenuOpen(true)}
-            className="h-9 w-9 flex items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-          <span className="text-[15px] font-semibold text-slate-900">Nexus</span>
-          <div className="w-9" />
+        {/* Mobile topbar — inclut l'avatar (UserMenu) et la cloche
+            (NotificationsDropdown) à droite. Sans ça les users mobiles
+            n'avaient AUCUN accès à "Mon profil" ni aux notifications. */}
+        <header className="sticky top-0 z-30 h-14 shrink-0 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between px-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="h-9 w-9 flex items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
+              aria-label="Ouvrir le menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <span className="text-[15px] font-semibold text-slate-900">
+              Nexus
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <NotificationsDropdown />
+            <UserMenu />
+          </div>
         </header>
 
         {/* Mobile content */}

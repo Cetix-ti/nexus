@@ -58,6 +58,7 @@ import { OrgAssetsTab } from "@/components/assets/org-assets-tab";
 import { OrgSlaSection } from "@/components/sla/org-sla-section";
 import { OrgPortalSection } from "@/components/portal/org-portal-section";
 import { OrgReportsTab } from "@/components/organizations/org-reports-tab";
+import { OrgAiIntelligenceTab } from "@/components/organizations/org-ai-intelligence-tab";
 import { Plus, X } from "lucide-react";
 
 function portalRoleVariant(role: ClientPortalPermissions["portalRole"] | null): "danger" | "warning" | "primary" | "default" {
@@ -501,6 +502,7 @@ const TABS = [
   { key: "contracts", label: "Contrats" },
   { key: "assets", label: "Actifs" },
   { key: "reports", label: "Rapports" },
+  { key: "ai", label: "Intelligence IA" },
   { key: "portal_access", label: "Portail client" },
   { key: "sla", label: "SLA" },
 ] as const;
@@ -1625,6 +1627,15 @@ export default function OrganizationDetailPage() {
       {/* Reports Tab */}
       {activeTab === "reports" && (
         <OrgReportsTab organizationId={orgId} />
+      )}
+
+      {/* Intelligence IA Tab — Phase 3 : analyse risques, rapports
+          exécutifs mensuels, opportunités commerciales. */}
+      {activeTab === "ai" && (
+        <OrgAiIntelligenceTab
+          organizationId={orgId}
+          organizationSlug={slugOrId}
+        />
       )}
 
       {/* Portal Access Tab */}

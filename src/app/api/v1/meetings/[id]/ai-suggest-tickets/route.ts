@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { runAiTask } from "@/lib/ai/orchestrator";
+import { POLICY_MEETING_SUGGEST } from "@/lib/ai/orchestrator/policies";
 
 /**
  * POST /api/v1/meetings/[id]/ai-suggest-tickets
@@ -53,23 +55,17 @@ export async function POST(
     );
   }
 
-  // AI path
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey) {
-    try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-          temperature: 0.2,
-          messages: [
-            {
-              role: "system",
-              content: `Tu es un assistant MSP qui analyse les notes de rencontre interne d'une équipe TI et extrait les actions concrètes à faire. Tu réponds EXCLUSIVEMENT en JSON valide, format:
+  // AI path via orchestrator — policy POLICY_MEETING_SUGGEST. Si aucun
+  // provider n'est dispo (pas de clé OpenAI ET Ollama hors ligne), on
+  // retombe sur l'extracteur heuristique plus bas.
+  const result = await runAiTask({
+    policy: POLICY_MEETING_SUGGEST,
+    context: { userId: me.id },
+    taskKind: "extraction",
+    messages: [
+      {
+        role: "system",
+        content: `Tu es un assistant MSP qui analyse les notes de rencontre interne d'une équipe TI et extrait les actions concrètes à faire. Tu réponds EXCLUSIVEMENT en JSON valide, format:
 {
   "suggestions": [
     { "subject": "...", "description": "...", "priority": "low|medium|high|critical", "rationale": "pourquoi ça devrait devenir un ticket" }
@@ -81,45 +77,41 @@ Règles :
 - "subject" : court, action-oriented (verbe à l'infinitif en français).
 - "priority" : inférée selon l'urgence / l'impact. "high" si mentionne "urgent", "critique", "bloquant". "medium" par défaut.
 - Retourne 0-10 suggestions max. Pas de spam — si aucune action n'est claire, retourne {"suggestions": []}.`,
-            },
-            {
-              role: "user",
-              content: `Titre de la rencontre : ${meeting.title}\n\nAgenda :\n${agendaText || "(vide)"}\n\nNotes de rencontre :\n${notesText || "(vides)"}`,
-            },
-          ],
-        }),
+      },
+      {
+        role: "user",
+        content: `Titre de la rencontre : ${meeting.title}\n\nAgenda :\n${agendaText || "(vide)"}\n\nNotes de rencontre :\n${notesText || "(vides)"}`,
+      },
+    ],
+  });
+  if (result.ok && result.content) {
+    const parsed = safeParseJson(result.content);
+    if (parsed && Array.isArray(parsed.suggestions)) {
+      const cleaned = (parsed.suggestions as unknown[])
+        .map((s) => {
+          const obj = s as Record<string, unknown>;
+          const subject =
+            typeof obj.subject === "string" ? obj.subject.trim() : "";
+          if (!subject) return null;
+          const rawPriority = String(obj.priority ?? "medium").toLowerCase();
+          const priority = ["low", "medium", "high", "critical"].includes(rawPriority)
+            ? rawPriority
+            : "medium";
+          return {
+            subject: subject.slice(0, 200),
+            description:
+              typeof obj.description === "string" ? obj.description : "",
+            priority,
+            rationale:
+              typeof obj.rationale === "string" ? obj.rationale : "",
+          };
+        })
+        .filter(Boolean);
+      return NextResponse.json({
+        suggestions: cleaned,
+        source: result.provider,
+        invocationId: result.invocationId,
       });
-      if (res.ok) {
-        const data = await res.json();
-        const content = data.choices?.[0]?.message?.content ?? "";
-        const parsed = safeParseJson(content);
-        if (parsed && Array.isArray(parsed.suggestions)) {
-          // Normalise et filtre les entrées invalides retournées par l'IA.
-          const cleaned = (parsed.suggestions as unknown[])
-            .map((s) => {
-              const obj = s as Record<string, unknown>;
-              const subject =
-                typeof obj.subject === "string" ? obj.subject.trim() : "";
-              if (!subject) return null;
-              const rawPriority = String(obj.priority ?? "medium").toLowerCase();
-              const priority = ["low", "medium", "high", "critical"].includes(rawPriority)
-                ? rawPriority
-                : "medium";
-              return {
-                subject: subject.slice(0, 200),
-                description:
-                  typeof obj.description === "string" ? obj.description : "",
-                priority,
-                rationale:
-                  typeof obj.rationale === "string" ? obj.rationale : "",
-              };
-            })
-            .filter(Boolean);
-          return NextResponse.json({ suggestions: cleaned, source: "openai" });
-        }
-      }
-    } catch {
-      // Erreur réseau OpenAI — tombe sur l'heuristique
     }
   }
 

@@ -18,6 +18,7 @@ import {
   Trash2,
   FolderTree,
   Home,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { NewArticleModal } from "@/components/knowledge/new-article-modal";
 import { ManageCategoriesModal } from "@/components/knowledge/manage-categories-modal";
+import { KbAuditDrawer } from "@/components/knowledge/kb-audit-drawer";
 import { useKbStore, type KbCategory, type KbArticle } from "@/stores/kb-store";
 
 const STATUS_CONFIG = {
@@ -132,6 +134,7 @@ export default function KnowledgePage() {
   const [search, setSearch] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [newArticleOpen, setNewArticleOpen] = useState(false);
+  const [kbAuditOpen, setKbAuditOpen] = useState(false);
   const [editingArticle, setEditingArticle] = useState<KbArticle | null>(null);
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
 
@@ -222,6 +225,10 @@ export default function KnowledgePage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="md" onClick={() => setKbAuditOpen(true)}>
+            <Sparkles className="h-4 w-4 text-violet-500" strokeWidth={2.25} />
+            Audit IA
+          </Button>
           <Button variant="outline" size="md" onClick={() => setManageCategoriesOpen(true)}>
             <FolderTree className="h-4 w-4" strokeWidth={2.25} />
             Gérer les catégories
@@ -364,25 +371,25 @@ export default function KnowledgePage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-neutral-200 bg-slate-50/40">
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">
+                    <th className="px-4 py-2 text-left text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Titre
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">
+                    <th className="px-4 py-2 text-left text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Catégorie
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">
+                    <th className="px-4 py-2 text-left text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Statut
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-neutral-500">
+                    <th className="px-4 py-2 text-center text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Vues
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-neutral-500">
+                    <th className="px-4 py-2 text-center text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Utile
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500">
+                    <th className="px-4 py-2 text-left text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Mis à jour
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-neutral-500">
+                    <th className="px-4 py-2 text-right text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Actions
                     </th>
                   </tr>
@@ -392,43 +399,43 @@ export default function KnowledgePage() {
                     const statusConf = STATUS_CONFIG[article.status];
                     return (
                       <tr key={article.id} className="hover:bg-neutral-50 group">
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2">
                           <Link
                             href={`/knowledge/${article.slug}`}
-                            className="font-medium text-neutral-900 hover:text-blue-600"
+                            className="text-[12.5px] font-medium text-neutral-900 hover:text-blue-600"
                           >
                             {article.title}
                           </Link>
-                          <p className="text-xs text-neutral-400">par {article.author}</p>
+                          <p className="text-[10.5px] text-neutral-400">par {article.author}</p>
                         </td>
-                        <td className="px-4 py-3">
-                          <span className="text-sm text-neutral-700">
+                        <td className="px-4 py-2">
+                          <span className="text-[12.5px] text-neutral-700">
                             {categoryName(article.categoryId)}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2">
                           <Badge variant={statusConf.variant}>{statusConf.label}</Badge>
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-1 text-sm text-neutral-600">
-                            <Eye className="h-3.5 w-3.5 text-neutral-400" />
+                        <td className="px-4 py-2 text-center">
+                          <div className="flex items-center justify-center gap-1 text-[12.5px] text-neutral-600">
+                            <Eye className="h-3 w-3 text-neutral-400" />
                             {article.views.toLocaleString("fr-CA")}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-1 text-sm text-neutral-600">
-                            <ThumbsUp className="h-3.5 w-3.5 text-neutral-400" />
+                        <td className="px-4 py-2 text-center">
+                          <div className="flex items-center justify-center gap-1 text-[12.5px] text-neutral-600">
+                            <ThumbsUp className="h-3 w-3 text-neutral-400" />
                             {article.helpful}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-neutral-500">
+                        <td className="px-4 py-2 text-[12.5px] text-neutral-500">
                           {new Date(article.updatedAt).toLocaleDateString("fr-CA", {
                             year: "numeric",
                             month: "short",
                             day: "numeric",
                           })}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-2 text-right">
                           <div className="inline-flex items-center gap-1 opacity-0 group-hover:opacity-100">
                             <button
                               type="button"
@@ -476,6 +483,10 @@ export default function KnowledgePage() {
       <ManageCategoriesModal
         open={manageCategoriesOpen}
         onClose={() => setManageCategoriesOpen(false)}
+      />
+      <KbAuditDrawer
+        open={kbAuditOpen}
+        onClose={() => setKbAuditOpen(false)}
       />
     </div>
   );

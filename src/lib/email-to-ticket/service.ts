@@ -555,8 +555,52 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
             { email: senderEmail, name: senderName },
             { forceBodyScan: senderIsInternalDomain },
           );
-          const actualEmail = forward.originalSenderEmail ?? senderEmail;
-          const actualName = forward.originalSenderName ?? senderName;
+          let actualEmail = forward.originalSenderEmail ?? senderEmail;
+          let actualName = forward.originalSenderName ?? senderName;
+
+          // Fallback IA — si le parseur heuristique a détecté un forward
+          // probable (par ex. sender=cetix.ca → forceBodyScan true) mais
+          // n'a pas réussi à extraire le sender original, on essaie l'IA.
+          // Couvre les cas messy : Outlook mobile sans séparateur,
+          // forwards recopiés manuellement, formats inhabituels.
+          // Bloqué derrière une condition stricte pour éviter des appels
+          // IA sur tous les emails — seulement quand on a de bonnes raisons
+          // de penser que c'est un forward mais qu'on n'a pas extrait.
+          const heuristicFoundNothing =
+            forward.isForward && !forward.originalSenderEmail;
+          const looksLikeForward =
+            senderIsInternalDomain &&
+            !!plainBody &&
+            plainBody.length > 80 &&
+            /(?:^|\n)\s*(?:de|from|expéditeur|sent|envoyé)\b/im.test(plainBody);
+          if (heuristicFoundNothing || looksLikeForward) {
+            try {
+              const { detectForwardedSender } = await import(
+                "@/lib/ai/features/forwarded-email"
+              );
+              const ai = await detectForwardedSender({
+                subject: rawSubject,
+                bodyPlain: plainBody,
+                senderEmail,
+                senderName,
+              });
+              if (
+                ai &&
+                ai.isForward &&
+                ai.originalEmail &&
+                ai.confidence >= 0.6
+              ) {
+                actualEmail = ai.originalEmail;
+                actualName = ai.originalName ?? actualName;
+                console.log(
+                  `[email-to-ticket] AI forward detect: ${senderEmail} → ${ai.originalEmail} (confidence ${ai.confidence})`,
+                );
+              }
+            } catch (err) {
+              // IA indisponible = on garde le résultat heuristique.
+              console.warn("[email-to-ticket] AI forward detect failed:", err);
+            }
+          }
 
           // Match org par domaine : priorité au sender original.
           const domain = actualEmail.split("@")[1] || "";
@@ -736,12 +780,12 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
             .then((m) => m.dispatchTicketCreatedNotifications(newTicket.id))
             .catch(() => {});
 
-          // Auto-prioritisation IA (fire-and-forget) — analyse le ticket
-          // entrant et remonte la priorité si sa confiance est "high".
-          // Sans cet appel, les courriels entrants resteraient en LOW même
-          // si le client écrit "PRODUCTION DOWN — URGENT".
-          import("@/lib/ai/auto-prioritize")
-            .then((m) => m.autoPrioritizeTicketAsync(newTicket.id))
+          // Triage IA complet (fire-and-forget) — résumé + catégorie +
+          // priorité + type + doublons + hint incident majeur en un seul
+          // call. Pour les courriels entrants c'est encore plus critique :
+          // sans ça un "PRODUCTION DOWN — URGENT" resterait en LOW.
+          import("@/lib/ai/features/triage")
+            .then((m) => m.triageTicketAsync(newTicket.id))
             .catch(() => {});
 
           if (cfg.markAsRead && !msg.isRead) {

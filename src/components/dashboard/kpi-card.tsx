@@ -17,6 +17,12 @@ interface KpiCardProps {
   };
   warning?: boolean;
   className?: string;
+  /**
+   * Si fourni, la carte devient cliquable (utilisée pour les tuiles du
+   * tableau de bord qui ouvrent un modal de liste — ex: tickets non
+   * assignés, en retard). Le hover et le curseur changent en conséquence.
+   */
+  onClick?: () => void;
 }
 
 export function KpiCard({
@@ -28,11 +34,19 @@ export function KpiCard({
   trend,
   warning = false,
   className,
+  onClick,
 }: KpiCardProps) {
+  const clickable = typeof onClick === "function";
+  const Component = clickable ? "button" : "div";
   return (
-    <div
+    <Component
+      onClick={onClick}
+      type={clickable ? "button" : undefined}
       className={cn(
-        "group relative rounded-xl border border-slate-200/80 bg-white p-3.5 sm:p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-all duration-200 hover:border-slate-300 hover:shadow-[0_4px_12px_rgba(15,23,42,0.06)]",
+        "group relative rounded-xl border border-slate-200/80 bg-white p-3.5 sm:p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-all duration-200 text-left w-full",
+        clickable
+          ? "cursor-pointer hover:border-blue-300 hover:shadow-[0_4px_14px_rgba(37,99,235,0.10)] focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+          : "hover:border-slate-300 hover:shadow-[0_4px_12px_rgba(15,23,42,0.06)]",
         warning && "border-amber-200/80",
         className
       )}
@@ -83,6 +97,6 @@ export function KpiCard({
           )}
         </div>
       )}
-    </div>
+    </Component>
   );
 }

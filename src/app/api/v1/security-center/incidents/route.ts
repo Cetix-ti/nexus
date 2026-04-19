@@ -24,7 +24,10 @@ export async function GET(req: Request) {
   const status = url.searchParams.get("status") || undefined;
   const orgId = url.searchParams.get("organizationId") || undefined;
   const assigned = url.searchParams.get("assigned"); // "me" → moi ; sinon tous
-  const limit = Math.min(Number(url.searchParams.get("limit") ?? "200"), 500);
+  // Cap par défaut baissé de 200 à 100 — l'UI agrège par endpoint et un
+  // tenant qui a plus de 100 incidents OUVERTS simultanément est
+  // pathologique. Les anciens incidents sont visibles via les filtres.
+  const limit = Math.min(Number(url.searchParams.get("limit") ?? "100"), 500);
 
   const assigneeFilter =
     assigned === "me"
@@ -61,17 +64,19 @@ export async function GET(req: Request) {
       assignee: { select: { id: true, firstName: true, lastName: true, avatar: true } },
       ticket: { select: { id: true, number: true, subject: true, status: true } },
       // On n'envoie pas toutes les alertes (volume potentiellement
-      // énorme) — juste les 20 dernières pour l'historique affichable.
+      // énorme) — juste les 5 dernières pour l'aperçu "liste" (la fiche
+      // détail GET /incidents/[id] renvoie l'historique complet avec
+      // `summary`). `summary` est exclu ici : il pèse jusqu'à 500 chars
+      // par alerte et n'est jamais affiché dans la vue liste.
       alerts: {
         select: {
           id: true,
           receivedAt: true,
           severity: true,
           title: true,
-          summary: true,
         },
         orderBy: { receivedAt: "desc" },
-        take: 20,
+        take: 5,
       },
     },
     orderBy: { lastSeenAt: "desc" },

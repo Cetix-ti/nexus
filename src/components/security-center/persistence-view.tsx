@@ -10,6 +10,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useIncidentsQuery,
+  securityKeys,
+} from "@/hooks/use-security-incidents";
 import {
   Monitor,
   Package,
@@ -87,9 +92,6 @@ type WhitelistFilter = "all" | "main" | "whitelisted";
 const FILTER_STORAGE_KEY = "persistence-view:whitelist-filter";
 
 export function PersistenceView({ orgFilter }: { orgFilter: string }) {
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [whitelistFor, setWhitelistFor] = useState<Incident | null>(null);
   // Filtre whitelist — persisté dans localStorage pour que le choix de
   // l'utilisateur reste entre navigations.
@@ -99,6 +101,7 @@ export function PersistenceView({ orgFilter }: { orgFilter: string }) {
     return v === "all" || v === "main" || v === "whitelisted" ? v : "main";
   });
   const router = useRouter();
+  const qc = useQueryClient();
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -106,34 +109,24 @@ export function PersistenceView({ orgFilter }: { orgFilter: string }) {
     }
   }, [filter]);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({
-        kind: "persistence_tool",
-        priority: "all", // affiche les whitelistées aussi
-      });
-      const res = await fetch(`/api/v1/security-center/incidents?${params.toString()}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as Incident[];
-      setIncidents(data);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
+  // Partage le cache avec la page principale et le prefetcher idle via le
+  // hook central — mêmes queryKeys = pas de doublon de fetch.
+  const query = useIncidentsQuery({
+    kind: "persistence_tool",
+    priority: "all",
+  });
+  const loading = query.isPending;
+  const error = query.error instanceof Error ? query.error.message : null;
+
+  const load = () => {
+    qc.invalidateQueries({ queryKey: securityKeys.all });
   };
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const filtered = useMemo(() => {
+    const incidents = (query.data ?? []) as Incident[];
     if (!orgFilter) return incidents;
     return incidents.filter((i) => i.organizationId === orgFilter);
-  }, [incidents, orgFilter]);
+  }, [query.data, orgFilter]);
 
   const allMain = filtered.filter((i) => !i.isLowPriority);
   const allLow = filtered.filter((i) => i.isLowPriority);

@@ -230,6 +230,17 @@ export async function listTickets(options?: {
   projectId?: string;
   limit?: number;
   /**
+   * Filtres utilisés par les tuiles cliquables du tableau de bord :
+   *   - unassignedOnly : assigneeId IS NULL + statut actif
+   *   - overdueOnly    : isOverdue=true + statut actif
+   *   - openOnly       : statut actif (NEW/OPEN/IN_PROGRESS/…, exclut
+   *                      RESOLVED/CLOSED/CANCELLED/DELETED)
+   * Ces filtres s'appliquent EN PLUS des autres (organizationId, etc.).
+   */
+  unassignedOnly?: boolean;
+  overdueOnly?: boolean;
+  openOnly?: boolean;
+  /**
    * Par défaut, les tickets de monitoring (source=MONITORING ou type=ALERT)
    * sont EXCLUS des listes tickets classiques — ils vivent dans leur propre
    * dashboard "Alertes monitoring" pour ne pas polluer les vues utilisateur
@@ -257,6 +268,17 @@ export async function listTickets(options?: {
   if (options?.status) where.status = options.status as any;
   if (options?.assigneeId) where.assigneeId = options.assigneeId;
   if (options?.projectId) where.projectId = options.projectId;
+  if (options?.unassignedOnly) where.assigneeId = null;
+  if (options?.overdueOnly) where.isOverdue = true;
+  if (options?.openOnly || options?.unassignedOnly || options?.overdueOnly) {
+    // Statuts "actifs" = pas encore résolus/fermés/annulés/supprimés.
+    // On utilise status notIn pour couvrir tous les états "terminaux" en
+    // une règle, plutôt qu'énumérer les actifs (plus robuste si de
+    // nouveaux états actifs sont ajoutés au schema).
+    where.status = {
+      notIn: ["RESOLVED", "CLOSED", "CANCELLED", "DELETED"] as any,
+    } as any;
+  }
   if (options?.search) {
     where.OR = [
       { subject: { contains: options.search, mode: "insensitive" } },
@@ -398,25 +420,20 @@ export async function createTicket(input: {
   // Auto-calculate SLA due date for the new ticket
   enforceSlaForTicket(t.id).catch(() => {});
 
-  // Auto-catégorisation IA (fire-and-forget) — si aucun categoryId
-  // n'a été fourni ET qu'on a un subject. Seuls les tickets non
-  // classés sont concernés : si le créateur a pris la peine de choisir
-  // une catégorie, on respecte son choix. Idempotent : le helper
-  // revérifie categoryId avant d'écrire pour éviter les races.
-  if (!t.categoryId && t.subject?.trim()) {
-    import("@/lib/ai/auto-categorize")
-      .then((m) => m.autoCategorizeTicketAsync(t.id))
-      .catch(() => {});
-  }
-
-  // Auto-prioritisation IA (fire-and-forget). Contrairement à la catégorie,
-  // on lance TOUJOURS l'analyse — même si le créateur a fourni une priorité
-  // explicite. L'IA n'écrit que si sa confiance est "high" (voir
-  // src/lib/ai/auto-prioritize.ts). La notice "Priorité définie par l'IA"
-  // côté UI est déclenchée par prioritySource="AI".
+  // Triage IA unifié (fire-and-forget) — un seul appel LLM qui couvre
+  // résumé, catégorie, priorité, type, détection de doublons, hint
+  // d'incident majeur. Remplace les anciens auto-categorize +
+  // auto-prioritize (deux appels séparés, sans détection doublons).
+  //
+  // Application conservatrice : seules les suggestions à forte confiance
+  // sont auto-appliquées (catégorie si absente + confidence ≥ 0.7,
+  // priorité si haute confiance + source=DEFAULT). Le reste reste
+  // visible en UI comme proposition que l'agent valide.
+  //
+  // Résultat complet stocké dans AiInvocation (audit + source pour l'UI).
   if (t.subject?.trim()) {
-    import("@/lib/ai/auto-prioritize")
-      .then((m) => m.autoPrioritizeTicketAsync(t.id))
+    import("@/lib/ai/features/triage")
+      .then((m) => m.triageTicketAsync(t.id))
       .catch(() => {});
   }
 
@@ -517,6 +534,14 @@ export async function updateTicket(
     data.category = patch.categoryId
       ? { connect: { id: patch.categoryId } }
       : { disconnect: true };
+    // Toute modification de categoryId via updateTicket() (PATCH API, dropdown
+    // UI, clic "appliquer suggestion IA") marque la source comme MANUAL. Ça
+    // verrouille la catégorie contre les futurs triages automatiques — le
+    // copilote IA ne doit JAMAIS écraser un choix humain. Seul applyTriageIfConfident
+    // (qui écrit directement via prisma.ticket.update) peut poser categorySource="AI".
+    data.categorySource = "MANUAL";
+    // Reset de la confidence : plus pertinente quand la catégorie est manuelle.
+    data.categoryConfidence = null;
   }
   if (patch.queueId !== undefined) {
     data.queue = patch.queueId

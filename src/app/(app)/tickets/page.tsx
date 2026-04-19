@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { TicketListView } from "@/components/tickets/ticket-list-view";
 import { TicketKanbanView } from "@/components/tickets/ticket-kanban-view";
+import { MySlaRisksBanner } from "@/components/tickets/my-sla-risks-banner";
 import { type TicketStatus } from "@/lib/mock-data";
 
 type ViewMode = "list" | "kanban";
@@ -155,6 +156,9 @@ function TicketsPageInner() {
 
   return (
     <div className="flex flex-col gap-5">
+      {/* SLA risks banner — tickets de l'assigné à risque, 15 min refresh */}
+      <MySlaRisksBanner />
+
       {/* Page header */}
       <div className="flex items-end justify-between gap-4">
         <div>

@@ -69,4 +69,10 @@ export interface DecodedAlert {
    *  pour ne pas noyer les alertes significatives. Généralement défini
    *  par le décodeur quand un mot-clé configuré matche (ex: "fortigate"). */
   isLowPriority?: boolean;
+  /** Metadata structurée optionnelle stockée dans `SecurityIncident.metadata`.
+   *  Exemples d'usage :
+   *   - liste des comptes inactifs pour une alerte qui groupe plusieurs users
+   *   - résultat d'un enrichissement Wazuh (loginCount, isUnusual)
+   *   - drapeau "suspicious" pour les lockouts sur un poste inhabituel */
+  metadata?: Record<string, unknown> | null;
 }

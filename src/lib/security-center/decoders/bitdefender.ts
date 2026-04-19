@@ -195,6 +195,119 @@ const MODULE_DECODERS: Record<string, ModuleDecoder> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Helpers de formatage du fallback — extraient les champs lisibles d'un
+// event Bitdefender inconnu et les transforment en bloc clé:valeur. Remplace
+// l'ancien `JSON.stringify()` qui apparaissait tel quel dans l'UI.
+// ---------------------------------------------------------------------------
+
+/** Mapping camelCase/snake_case → libellé affiché dans le résumé. */
+const BITDEFENDER_FIELD_LABELS: Record<string, string> = {
+  detection_name: "Détection",
+  threat_name: "Menace",
+  malware_name: "Malware",
+  user_name: "Utilisateur",
+  file_path: "Fichier",
+  file_name: "Nom de fichier",
+  process_path: "Processus",
+  target_name: "Cible",
+  file_hash_sha256: "SHA-256",
+  source_ip: "IP source",
+  last_ip: "Dernière IP",
+  computer_ip: "IP du poste",
+  company_name: "Client Bitdefender",
+  action: "Action prise",
+  action_taken: "Action prise",
+  quarantine: "Quarantaine",
+  status: "Statut",
+  rule_name: "Règle",
+  module_id: "Module",
+  module: "Module",
+  event_type: "Type d'événement",
+};
+
+/**
+ * Formate un événement Bitdefender inconnu en texte lisible (clé : valeur,
+ * une ligne par champ). Tronque les valeurs longues, ignore les champs
+ * vides / techniques (_id, timestamps, déjà affichés dans le header).
+ */
+function formatBitdefenderFallbackSummary(e: BitdefenderEvent): string {
+  const skip = new Set([
+    "computer_name",
+    "endpoint_name",
+    "computer_fqdn",
+    "severity",
+    "severity_score",
+    "timestamp",
+    "created_on",
+    "created",
+    "last_updated",
+    "incident_id",
+    "incident_number",
+    "event_id",
+    "company_id",
+  ]);
+  const lines: string[] = [];
+  for (const [key, val] of Object.entries(e)) {
+    if (skip.has(key)) continue;
+    if (val == null || val === "") continue;
+    let formatted: string;
+    if (Array.isArray(val)) {
+      if (val.length === 0) continue;
+      const first = val.slice(0, 5).map((v) => String(v)).join(", ");
+      formatted = val.length > 5 ? `${first} (+${val.length - 5})` : first;
+    } else if (typeof val === "object") {
+      // Un sous-objet : on garde une seule ligne JSON courte pour
+      // l'indication sans noyer la vue.
+      const short = JSON.stringify(val);
+      if (short.length > 120) continue;
+      formatted = short;
+    } else {
+      formatted = String(val);
+      if (formatted.length > 200) formatted = formatted.slice(0, 200) + "…";
+    }
+    const label =
+      BITDEFENDER_FIELD_LABELS[key] ??
+      key
+        .replace(/[_-]/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    lines.push(`${label} : ${formatted}`);
+  }
+  return lines.length > 0
+    ? lines.join("\n")
+    : "Événement Bitdefender sans détails supplémentaires.";
+}
+
+/**
+ * Transforme un moduleKey technique (ex: "antimalware_detection_on_access")
+ * en libellé humain FR pour l'affichage dans le titre.
+ */
+function humanizeModuleKey(key: string): string {
+  const map: Record<string, string> = {
+    antimalware: "Anti-malware",
+    ransomware: "Rançongiciel",
+    network_attack: "Attaque réseau",
+    new_incident: "Incident EDR",
+    hyperdetect: "HyperDetect",
+    exploit: "Anti-exploit",
+    adware: "Adware",
+    device_control: "Contrôle périphérique",
+    content_control: "Contrôle de contenu",
+    firewall: "Pare-feu",
+    supa: "Advanced Anti-Exploit",
+  };
+  // Match token-prefix sur les clés connues.
+  for (const [needle, label] of Object.entries(map)) {
+    if (key.includes(needle)) return label;
+  }
+  // Fallback : snake_case → Title Case.
+  return key
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 /**
  * Point d'entrée : renvoie un DecodedAlert ou null si l'événement n'est
  * pas exploitable (ex: manque de champs critiques).
@@ -236,18 +349,30 @@ export async function decodeBitdefenderEvent(
     }
   }
 
-  // Fallback : événement générique, on en fait un incident critical_incident
-  // si la sévérité l'est, sinon suspicious_behavior. Correlation par
-  // org+endpoint+moduleKey pour agréger les événements similaires.
-  const kindFallback = severity === "critical" || severity === "high"
-    ? "critical_incident"
-    : "suspicious_behavior";
+  // Fallback : événement générique — on construit un titre et un résumé
+  // lisibles à partir des champs disponibles au lieu de dumper le JSON.
+  // Le sens "event" pèse plus que son type technique donc :
+  //   - titre = module humanisé + détection (si présent) + endpoint
+  //   - summary = bloc "Clé : valeur" des champs utiles
+  const kindFallback =
+    severity === "critical" || severity === "high"
+      ? "critical_incident"
+      : "suspicious_behavior";
+  const moduleLabel = moduleKey ? humanizeModuleKey(moduleKey) : "Événement";
+  const threat = pickThreatName(event);
+  const epLabel = ep ?? "endpoint inconnu";
+  // Titre lisible : "Bitdefender — <module> · <menace> sur <endpoint>"
+  // ou si pas de menace : "Bitdefender — <module> sur <endpoint>"
+  const title = threat
+    ? `Bitdefender — ${moduleLabel} · ${threat} sur ${epLabel}`
+    : `Bitdefender — ${moduleLabel} sur ${epLabel}`;
+
   return {
     ...base,
     source: "bitdefender_api",
     kind: kindFallback,
-    title: `Bitdefender [${(severity ?? "info").toUpperCase()}] ${ep ?? "endpoint inconnu"}${moduleKey ? ` · ${moduleKey}` : ""}`,
-    summary: JSON.stringify(event).slice(0, 500),
+    title,
+    summary: formatBitdefenderFallbackSummary(event),
     correlationKey: `bdf-${moduleKey || "generic"}:${orgId ?? "unknown"}:${(ep ?? "unknown").toLowerCase()}`,
   };
 }

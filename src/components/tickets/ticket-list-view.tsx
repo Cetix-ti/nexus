@@ -304,27 +304,27 @@ export function TicketListView({ tickets }: TicketListViewProps) {
                     Organisation <SortIcon field="organizationName" />
                   </button>
                 </th>
-                <th className="px-3 py-3">
+                <th className="hidden sm:table-cell px-3 py-3">
                   <button onClick={() => toggleSort("status")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
                     Statut <SortIcon field="status" />
                   </button>
                 </th>
-                <th className="px-3 py-3">
+                <th className="hidden md:table-cell px-3 py-3">
                   <button onClick={() => toggleSort("priority")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
                     Priorité <SortIcon field="priority" />
                   </button>
                 </th>
-                <th className="px-3 py-3">
+                <th className="hidden lg:table-cell px-3 py-3">
                   <button onClick={() => toggleSort("assigneeName")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
                     Assigné <SortIcon field="assigneeName" />
                   </button>
                 </th>
-                <th className="px-3 py-3">
+                <th className="hidden xl:table-cell px-3 py-3">
                   <button onClick={() => toggleSort("createdAt")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
                     Créé <SortIcon field="createdAt" />
                   </button>
                 </th>
-                <th className="px-3 py-3">
+                <th className="hidden xl:table-cell px-3 py-3">
                   <button onClick={() => toggleSort("dueAt")} className="flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.06em] hover:text-slate-700">
                     Échéance <SortIcon field="dueAt" />
                   </button>
@@ -363,24 +363,40 @@ export function TicketListView({ tickets }: TicketListViewProps) {
                           {ticket.subject}
                         </span>
                         <p className="mt-0.5 text-[11.5px] text-slate-400">{ticket.requesterName}</p>
+                        {/* Sur mobile, on affiche les badges essentiels (statut + priorité)
+                            en dessous du sujet puisque leurs colonnes dédiées sont cachées. */}
+                        <div className="sm:hidden mt-1 flex items-center gap-1.5 flex-wrap">
+                          <Badge variant={statusBadgeVariant[ticket.status]} className="text-[10px] py-0">
+                            <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
+                            {statusCfg.label}
+                          </Badge>
+                          <Badge variant={priorityBadgeVariant[ticket.priority]} className="text-[10px] py-0">
+                            {priorityCfg.label}
+                          </Badge>
+                          {ticket.assigneeName && (
+                            <span className="text-[10.5px] text-slate-500 truncate max-w-[100px]">
+                              · {ticket.assigneeName}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="hidden lg:table-cell px-3 py-3 text-slate-600 text-[12px]">
                       {ticket.organizationName}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="hidden sm:table-cell px-3 py-3">
                       <Badge variant={statusBadgeVariant[ticket.status]} className={cn("text-[11px]")}>
                         <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
                         {statusCfg.label}
                       </Badge>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="hidden md:table-cell px-3 py-3">
                       <Badge variant={priorityBadgeVariant[ticket.priority]} className="text-[11px]">
                         <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", priorityCfg.dotClass)} />
                         {priorityCfg.label}
                       </Badge>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="hidden lg:table-cell px-3 py-3">
                       {ticket.assigneeName ? (
                         <div className="flex items-center gap-2">
                           {avatars[ticket.assigneeName] ? (
@@ -401,10 +417,10 @@ export function TicketListView({ tickets }: TicketListViewProps) {
                         <span className="text-[12px] text-slate-400 italic">Non assigné</span>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-[12px] text-slate-500 whitespace-nowrap tabular-nums">
+                    <td className="hidden xl:table-cell px-3 py-3 text-[12px] text-slate-500 whitespace-nowrap tabular-nums">
                       {formatDistanceToNow(new Date(ticket.createdAt), { addSuffix: true })}
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
+                    <td className="hidden xl:table-cell px-3 py-3 whitespace-nowrap">
                       {ticket.dueAt ? (
                         <div className="flex items-center gap-1">
                           {ticket.isOverdue && <AlertTriangle className="h-3 w-3 text-red-500" />}

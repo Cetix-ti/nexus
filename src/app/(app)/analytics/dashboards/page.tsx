@@ -38,6 +38,9 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Trash2,
+  Undo2,
+  Redo2,
+  Save,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -317,18 +320,35 @@ function savePrimary(id: string) { try { localStorage.setItem(PRIMARY_KEY, id); 
 function loadCustomReports(): ReportDef[] { try { const r = localStorage.getItem(CUSTOM_REPORTS_KEY); if (r) return JSON.parse(r); } catch {} return []; }
 function saveCustomReports(reports: ReportDef[]) { try { localStorage.setItem(CUSTOM_REPORTS_KEY, JSON.stringify(reports)); } catch {} }
 
+// Valeur sentinelle pour la vue galerie (par défaut au landing). Évite un
+// conflit avec un ID de rapport réel — commencer par "__" c'est safe.
+const GALLERY_VIEW = "__gallery__";
+
 export default function ReportsPage() {
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState("30");
-  // Start on the primary dashboard directly
-  const [view, setView] = useState<string>(() => loadPrimary());
+  // Page par défaut = galerie de dashboards (liste visuelle).
+  // L'utilisateur peut ensuite pinner un dashboard en favori avec "défaut"
+  // mais le landing reste la galerie pour plus de clarté.
+  const [view, setView] = useState<string>(GALLERY_VIEW);
   const [showConfig, setShowConfig] = useState(false);
   const [showWidgetSidebar, setShowWidgetSidebar] = useState(false);
   const [visibleWidgets, setVisibleWidgets] = useState<WidgetId[]>(() => loadVisible());
   const [favorites, setFavorites] = useState<string[]>(() => loadFavorites());
   const [primaryId, setPrimaryId] = useState<string>(() => loadPrimary());
   const [editMode, setEditMode] = useState(false);
+  // Historique pour undo/redo (style Office) en mode édition.
+  // Structure : chaque entrée = snapshot immutable de dashItems.
+  //   - `editHistory` : états passés, le dernier = juste avant la modif courante
+  //   - `editFuture`  : états défaits, remis dans dashItems via redo
+  //   - `editBaseline` : snapshot pris à l'entrée en édition → utilisé par
+  //     "Annuler" pour tout revert d'un coup.
+  //   - Outside edit mode : le système se comporte comme avant (autosave
+  //     direct dans localStorage sur chaque changement).
+  const [editHistory, setEditHistory] = useState<DashboardItem[][]>([]);
+  const [editFuture, setEditFuture] = useState<DashboardItem[][]>([]);
+  const [editBaseline, setEditBaseline] = useState<DashboardItem[] | null>(null);
   const [customReports, setCustomReports] = useState<ReportDef[]>(() => loadCustomReports());
   const [showCreateReport, setShowCreateReport] = useState(false);
   const [newReportName, setNewReportName] = useState("");
@@ -336,7 +356,8 @@ export default function ReportsPage() {
   const [newReportWidgets, setNewReportWidgets] = useState<WidgetId[]>([]);
   const [newReportParentId, setNewReportParentId] = useState<string>("");
   const [showParentPanel, setShowParentPanel] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Sidebar repliée par défaut — libère l'espace pour la galerie/dashboard.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   // Merged catalog: built-in + custom
   const allReports = [...REPORT_CATALOG, ...customReports];
@@ -382,18 +403,105 @@ export default function ReportsPage() {
     })));
   }, [view, customReports]);
 
-  function saveDashLayout(items: DashboardItem[]) {
-    setDashItems(items);
+  function persistDashLayout(items: DashboardItem[]) {
     try { localStorage.setItem(layoutKey, JSON.stringify(items)); } catch {}
   }
 
-  function handleGridReorder(items: DashboardItem[]) { saveDashLayout(items); }
-  function handleGridRemove(id: string) { saveDashLayout(dashItems.filter((i) => i.id !== id)); }
-  function handleGridResize(id: string, w: number, h: number) { saveDashLayout(dashItems.map((i) => i.id === id ? { ...i, w, h } : i)); }
+  /**
+   * Applique un changement de layout :
+   *   - En mode édition : push l'état courant dans l'historique (pour undo),
+   *     vide le futur (les redos deviennent invalides après une nouvelle modif),
+   *     met à jour dashItems SANS toucher au localStorage. Le save explicite
+   *     commit tout à la fin.
+   *   - Hors édition : écrit directement (comportement d'avant).
+   */
+  function applyLayoutChange(next: DashboardItem[]) {
+    if (editMode) {
+      setEditHistory((h) => [...h, dashItems]);
+      setEditFuture([]);
+      setDashItems(next);
+    } else {
+      setDashItems(next);
+      persistDashLayout(next);
+    }
+  }
+
+  function handleGridReorder(items: DashboardItem[]) { applyLayoutChange(items); }
+  function handleGridRemove(id: string) { applyLayoutChange(dashItems.filter((i) => i.id !== id)); }
+  function handleGridResize(id: string, w: number, h: number) { applyLayoutChange(dashItems.map((i) => i.id === id ? { ...i, w, h } : i)); }
   function handleGridAdd(widgetId: string) {
     const newItem: DashboardItem = { id: `di_${widgetId}_${Date.now()}`, widgetId, w: 20, h: 3 };
-    saveDashLayout([...dashItems, newItem]);
+    applyLayoutChange([...dashItems, newItem]);
   }
+
+  // --- Undo / Redo / Save / Cancel (édition) -----------------------------
+
+  function undoEdit() {
+    if (editHistory.length === 0) return;
+    const prev = editHistory[editHistory.length - 1];
+    setEditHistory((h) => h.slice(0, -1));
+    setEditFuture((f) => [dashItems, ...f]);
+    setDashItems(prev);
+  }
+
+  function redoEdit() {
+    if (editFuture.length === 0) return;
+    const next = editFuture[0];
+    setEditFuture((f) => f.slice(1));
+    setEditHistory((h) => [...h, dashItems]);
+    setDashItems(next);
+  }
+
+  function enterEditMode() {
+    setEditBaseline(dashItems);
+    setEditHistory([]);
+    setEditFuture([]);
+    setEditMode(true);
+  }
+
+  function saveEdit() {
+    persistDashLayout(dashItems);
+    setEditHistory([]);
+    setEditFuture([]);
+    setEditBaseline(null);
+    setEditMode(false);
+  }
+
+  function cancelEdit() {
+    if (editBaseline) setDashItems(editBaseline);
+    setEditHistory([]);
+    setEditFuture([]);
+    setEditBaseline(null);
+    setEditMode(false);
+  }
+
+  // Raccourcis clavier style Office : Ctrl/⌘+Z = undo, Ctrl/⌘+Y (ou
+  // Ctrl+Shift+Z) = redo. Actifs UNIQUEMENT en mode édition.
+  useEffect(() => {
+    if (!editMode) return;
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return;
+      }
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undoEdit();
+      } else if ((key === "z" && e.shiftKey) || key === "y") {
+        e.preventDefault();
+        redoEdit();
+      } else if (key === "s") {
+        e.preventDefault();
+        saveEdit();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode, editHistory, editFuture, dashItems, editBaseline]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -518,13 +626,16 @@ export default function ReportsPage() {
   })).filter((g) => g.reports.length > 0);
 
   return (
-    <div className="flex gap-5 min-h-0">
+    <div className="flex gap-3 min-h-0">
       {/* ============================================================ */}
       {/* Left sidebar — dashboard list */}
       {/* ============================================================ */}
       <div className={cn(
         "hidden md:flex shrink-0 flex-col gap-3 print:hidden transition-all duration-200",
-        sidebarCollapsed ? "w-10" : "md:w-64 lg:w-72"
+        // Collapsed = 36 px (bouton + mini-icônes favoris). Expanded réduit
+        // progressivement : md 176 px / lg 192 px. Titres longs passent en
+        // truncate — on privilégie la largeur dashboard.
+        sidebarCollapsed ? "w-9" : "md:w-44 lg:w-48"
       )}>
         {sidebarCollapsed ? (
           /* Collapsed sidebar — just a thin bar with expand button */
@@ -582,6 +693,22 @@ export default function ReportsPage() {
               </div>
             </div>
             <div className="overflow-y-auto max-h-[calc(100vh-180px)] px-1.5 pb-2 space-y-3">
+              {/* Lien permanent vers la galerie — toujours en tête pour
+                  que l'utilisateur puisse revenir à la vue d'ensemble
+                  d'un clic quelle que soit la sous-page en cours. */}
+              <button
+                onClick={() => setView(GALLERY_VIEW)}
+                className={cn(
+                  "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-left transition-all",
+                  view === GALLERY_VIEW
+                    ? "bg-blue-50 text-blue-700 font-medium"
+                    : "text-slate-600 hover:bg-slate-50",
+                )}
+              >
+                <LayoutDashboard className="h-3 w-3 shrink-0" />
+                <span className="flex-1 truncate">Galerie</span>
+              </button>
+
               {/* Favorites section */}
               {favorites.length > 0 && (
                 <div>
@@ -663,10 +790,16 @@ export default function ReportsPage() {
           <div className="flex items-center gap-3">
             <div>
               <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
-                {activeReport ? activeReport.label : "Dashboards"}
+                {view === GALLERY_VIEW
+                  ? "Galerie de tableaux de bord"
+                  : activeReport
+                    ? activeReport.label
+                    : "Dashboards"}
               </h1>
               <p className="mt-0.5 text-[13px] text-slate-500">
-                {activeReport ? activeReport.description : "Tableaux de bord interactifs"}
+                {view === GALLERY_VIEW
+                  ? `${allReports.length} tableau${allReports.length > 1 ? "x" : ""} de bord disponibles — clique pour ouvrir`
+                  : activeReport ? activeReport.description : "Tableaux de bord interactifs"}
                 {activeReport?.parentId && (() => {
                   const parent = allReports.find((r) => r.id === activeReport.parentId);
                   return parent ? (
@@ -698,38 +831,99 @@ export default function ReportsPage() {
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <Button variant={showFilters ? "primary" : "outline"} size="sm" onClick={() => setShowFilters(!showFilters)}>
-              <Filter className="h-3.5 w-3.5" />
-              Filtres
-              {(filterOrg !== "all" || filterAgent !== "all" || days !== "30") && (
-                <span className="ml-1 h-4 min-w-[16px] rounded-full bg-blue-600 text-white text-[9px] flex items-center justify-center px-1">
-                  {(filterOrg !== "all" ? 1 : 0) + (filterAgent !== "all" ? 1 : 0) + (days !== "30" ? 1 : 0)}
-                </span>
-              )}
-            </Button>
-            <Button variant={editMode ? "primary" : "outline"} size="sm" onClick={() => setEditMode(!editMode)}>
-              <LayoutDashboard className="h-3.5 w-3.5" />
-              {editMode ? "Terminer" : "Éditer"}
-            </Button>
-            <Button
-              variant={showParentPanel ? "primary" : "outline"}
-              size="sm"
-              onClick={() => setShowParentPanel(!showParentPanel)}
-              title="Gérer les relations parent/enfant"
-            >
-              <GitBranch className="h-3.5 w-3.5" />
-              Parenté
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => window.print()} title="Imprimer">
-              <Printer className="h-3.5 w-3.5" />
-            </Button>
-            {/* Mobile-only: dashboard selector */}
+            {/* Les actions "sur dashboard" (filtres, edit, parenté, print)
+                n'ont pas de sens sur la galerie — on les masque quand
+                aucun dashboard n'est sélectionné. */}
+            {view !== GALLERY_VIEW && (
+              <>
+                <Button variant={showFilters ? "primary" : "outline"} size="sm" onClick={() => setShowFilters(!showFilters)}>
+                  <Filter className="h-3.5 w-3.5" />
+                  Filtres
+                  {(filterOrg !== "all" || filterAgent !== "all" || days !== "30") && (
+                    <span className="ml-1 h-4 min-w-[16px] rounded-full bg-blue-600 text-white text-[9px] flex items-center justify-center px-1">
+                      {(filterOrg !== "all" ? 1 : 0) + (filterAgent !== "all" ? 1 : 0) + (days !== "30" ? 1 : 0)}
+                    </span>
+                  )}
+                </Button>
+                {editMode ? (
+                  <>
+                    {/* Barre d'édition style Office : Undo, Redo, Annuler,
+                        Sauvegarder. Les toggles undo/redo sont désactivés
+                        si la pile concernée est vide. */}
+                    <div className="inline-flex items-center gap-0.5 rounded-lg bg-slate-100/80 p-0.5 ring-1 ring-inset ring-slate-200/60">
+                      <button
+                        type="button"
+                        onClick={undoEdit}
+                        disabled={editHistory.length === 0}
+                        title="Annuler la dernière modification (Ctrl/⌘+Z)"
+                        className="h-7 w-7 inline-flex items-center justify-center rounded-md text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <Undo2 className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={redoEdit}
+                        disabled={editFuture.length === 0}
+                        title="Rétablir la modification (Ctrl/⌘+Y)"
+                        className="h-7 w-7 inline-flex items-center justify-center rounded-md text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <Redo2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={cancelEdit}
+                      title="Annuler toutes les modifications et quitter l'édition"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Annuler
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={saveEdit}
+                      title="Sauvegarder les modifications (Ctrl/⌘+S)"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      Sauvegarder
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={enterEditMode}>
+                    <LayoutDashboard className="h-3.5 w-3.5" />
+                    Éditer
+                  </Button>
+                )}
+                <Button
+                  variant={showParentPanel ? "primary" : "outline"}
+                  size="sm"
+                  onClick={() => setShowParentPanel(!showParentPanel)}
+                  title="Gérer les relations parent/enfant"
+                >
+                  <GitBranch className="h-3.5 w-3.5" />
+                  Parenté
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => window.print()} title="Imprimer">
+                  <Printer className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
+            {/* Mobile-only: dashboard selector — inclut la Galerie comme
+                première option pour que le tech mobile puisse revenir à la
+                vue d'ensemble sans avoir à ouvrir le drawer. */}
             <div className="md:hidden">
               <Select value={view} onValueChange={(v) => { setView(v); }}>
                 <SelectTrigger className="w-52 h-9 text-[12px]">
                   <SelectValue placeholder="Choisir un dashboard..." />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={GALLERY_VIEW}>
+                    <span className="flex items-center gap-2">
+                      <LayoutDashboard className="h-3 w-3 text-slate-500" />
+                      Galerie
+                    </span>
+                  </SelectItem>
                   {allReports.map((r) => (
                     <SelectItem key={r.id} value={r.id}>
                       <span className="flex items-center gap-2">
@@ -1013,6 +1207,90 @@ export default function ReportsPage() {
       {/* (Widget config removed — use sidebar editor instead) */}
 
       {/* (Catalog removed — favorites bar + dropdown replaces it) */}
+
+      {/* ============================================================ */}
+      {/* Galerie — page par défaut : grille visuelle des dashboards */}
+      {/* ============================================================ */}
+      {view === GALLERY_VIEW && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Bouton "Nouveau dashboard" en première case */}
+          <button
+            type="button"
+            onClick={() => setShowCreateReport(true)}
+            className="group flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white/60 hover:bg-blue-50/60 hover:border-blue-400 transition-all p-6 min-h-[160px]"
+          >
+            <div className="h-11 w-11 rounded-xl bg-slate-100 group-hover:bg-blue-100 flex items-center justify-center transition-colors">
+              <Plus className="h-5 w-5 text-slate-500 group-hover:text-blue-700" />
+            </div>
+            <p className="text-[13px] font-semibold text-slate-700 group-hover:text-blue-700">
+              Créer un dashboard
+            </p>
+            <p className="text-[11.5px] text-slate-500 text-center">
+              Assemble tes widgets favoris
+            </p>
+          </button>
+
+          {allReports.map((r) => {
+            const isPrimary = r.id === primaryId;
+            const isFav = favorites.includes(r.id);
+            const widgetCount = resolveWidgets(r).length;
+            const childCount = getChildren(r.id).length;
+            return (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setView(r.id)}
+                className="group relative flex flex-col text-left rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-blue-300 hover:shadow-[0_8px_24px_-8px_rgba(37,99,235,0.18)] transition-all p-5 min-h-[160px]"
+              >
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="h-10 w-10 rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    {r.icon}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {isFav && (
+                      <span className="text-amber-500 text-[14px]" title="Favori">
+                        ★
+                      </span>
+                    )}
+                    {isPrimary && (
+                      <span className="text-[8.5px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
+                        Défaut
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <h3 className="text-[14px] font-semibold text-slate-900 leading-tight mb-1.5 group-hover:text-blue-700 transition-colors">
+                  {r.label}
+                </h3>
+                <p className="text-[11.5px] text-slate-500 leading-relaxed line-clamp-2 mb-3">
+                  {r.description}
+                </p>
+                <div className="mt-auto flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-medium text-slate-600">
+                    {widgetCount} widget{widgetCount > 1 ? "s" : ""}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[10.5px] font-medium text-slate-500 capitalize">
+                    {r.category}
+                  </span>
+                  {childCount > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10.5px] font-medium text-violet-700">
+                      {childCount} enfant{childCount > 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {r.parentId && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10.5px] font-medium text-violet-700"
+                      title="Hérite d'un parent"
+                    >
+                      ↳
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* ============================================================ */}
       {/* Dashboard / Report widgets — drag-and-drop grid */}

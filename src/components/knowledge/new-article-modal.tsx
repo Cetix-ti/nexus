@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, BookOpen } from "lucide-react";
+import { X, BookOpen, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { KbRewriteDialog } from "./kb-rewrite-dialog";
 import {
   Select,
   SelectContent,
@@ -40,6 +41,7 @@ export function NewArticleModal({
   const [status, setStatus] = useState<ArticleStatus>("draft");
   const [isPublic, setIsPublic] = useState(true);
   const [tagsInput, setTagsInput] = useState("");
+  const [rewriteOpen, setRewriteOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -223,9 +225,26 @@ export function NewArticleModal({
           </div>
 
           <div>
-            <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-              Contenu
-            </label>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="block text-[13px] font-medium text-slate-700">
+                Contenu
+              </label>
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => setRewriteOpen(true)}
+                disabled={!title.trim() || !body.trim()}
+                title={
+                  !title.trim() || !body.trim()
+                    ? "Ajoute un titre et du contenu d'abord"
+                    : "Reformuler l'article avec l'IA"
+                }
+              >
+                <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+                Reformuler avec l'IA
+              </Button>
+            </div>
             <AdvancedRichEditor
               value={body}
               onChange={setBody}
@@ -234,6 +253,19 @@ export function NewArticleModal({
             />
           </div>
         </div>
+
+        <KbRewriteDialog
+          open={rewriteOpen}
+          currentTitle={title}
+          currentSummary={summary}
+          currentBody={body}
+          onClose={() => setRewriteOpen(false)}
+          onApply={(next) => {
+            setTitle(next.title);
+            setSummary(next.summary);
+            setBody(next.body);
+          }}
+        />
 
         {/* Footer */}
         <div className="border-t border-slate-200 px-6 py-4 flex items-center justify-end gap-3 shrink-0">

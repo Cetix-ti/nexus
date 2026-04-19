@@ -2,11 +2,12 @@
 
 import { useCallback, useRef, useState, useEffect } from "react";
 import {
-  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  DndContext, closestCorners, PointerSensor, KeyboardSensor, useSensor, useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext, rectSortingStrategy, useSortable, arrayMove,
+  sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Trash2, Plus, Move } from "lucide-react";
@@ -111,8 +112,26 @@ function useLiveResize(
 // ---------------------------------------------------------------------------
 // Sortable widget wrapper
 // ---------------------------------------------------------------------------
+// Préréglages rapides W / H — clic = resize instantané sans drag. Les
+// valeurs couvrent les besoins dashboard (¼, ⅓, ½, ⅔, ¾, 1 sur 20 col ;
+// S/M/L/XL sur l'axe vertical). Style compact chip-style.
+const WIDTH_PRESETS: Array<{ label: string; w: number }> = [
+  { label: "¼", w: 5 },
+  { label: "⅓", w: 7 },
+  { label: "½", w: 10 },
+  { label: "⅔", w: 13 },
+  { label: "¾", w: 15 },
+  { label: "1", w: 20 },
+];
+const HEIGHT_PRESETS: Array<{ label: string; h: number }> = [
+  { label: "S", h: 2 },
+  { label: "M", h: 3 },
+  { label: "L", h: 5 },
+  { label: "XL", h: 8 },
+];
+
 function SortableWidget({
-  item, editMode, onRemove, onResize, isMobile, isLaptop, children,
+  item, editMode, onRemove, onResize, isMobile, isLaptop, selected, onSelect, children,
 }: {
   item: DashboardItem;
   editMode: boolean;
@@ -120,6 +139,8 @@ function SortableWidget({
   onResize: (w: number, h: number) => void;
   isMobile?: boolean;
   isLaptop?: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
   children: React.ReactNode;
 }) {
   const {
@@ -180,12 +201,21 @@ function SortableWidget({
     <div
       ref={setNodeRef}
       style={style}
+      data-widget-id={item.id}
+      onClick={(e) => {
+        // Ignore les clics sur les boutons internes (trash, chips…).
+        const t = e.target as HTMLElement;
+        if (t.closest("button") || t.closest("[data-no-select]")) return;
+        onSelect?.();
+      }}
       className={cn(
         "relative rounded-xl bg-white transition-shadow",
         isDragging
           ? "ring-2 ring-blue-500 shadow-2xl"
           : isResizing
           ? "ring-2 ring-blue-500 shadow-lg"
+          : selected
+          ? "ring-2 ring-blue-500 shadow-md"
           : "ring-1 ring-blue-300/60 hover:ring-blue-400 hover:shadow-md",
       )}
     >
@@ -193,23 +223,66 @@ function SortableWidget({
       <div
         {...attributes}
         {...listeners}
-        className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-blue-50 to-blue-50/60 rounded-t-xl border-b border-blue-200/60 cursor-grab active:cursor-grabbing touch-none select-none"
+        className="flex items-center justify-between gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-50 to-blue-50/60 rounded-t-xl border-b border-blue-200/60 cursor-grab active:cursor-grabbing touch-none select-none"
       >
-        <div className="flex items-center gap-1.5">
-          <Move className="h-3 w-3 text-blue-500" />
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Move className="h-3 w-3 text-blue-500 shrink-0" />
           <span
             className={cn(
-              "text-[10px] font-medium tabular-nums tracking-wide",
+              "text-[10px] font-medium tabular-nums tracking-wide shrink-0",
               isResizing ? "text-blue-700" : "text-blue-500",
             )}
           >
             {displayW} × {displayH}
           </span>
+          {/* Préréglages de taille — visibles UNIQUEMENT sur le widget
+              sélectionné pour ne pas surcharger le header de tous les
+              widgets en édition. Clic = resize instantané. */}
+          {selected && (
+            <div
+              data-no-select
+              className="flex items-center gap-0.5 ml-1 flex-wrap"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              {WIDTH_PRESETS.map((p) => (
+                <button
+                  key={`w-${p.w}`}
+                  onClick={(e) => { e.stopPropagation(); onResize(p.w, item.h); }}
+                  className={cn(
+                    "h-5 min-w-[22px] rounded px-1 text-[10px] font-semibold transition-colors",
+                    item.w === p.w
+                      ? "bg-blue-600 text-white"
+                      : "bg-white/80 text-blue-700 hover:bg-blue-200",
+                  )}
+                  title={`Largeur ${p.label} (${p.w}/${GRID_COLS})`}
+                >
+                  {p.label}
+                </button>
+              ))}
+              <span className="mx-1 h-3 w-px bg-blue-300" />
+              {HEIGHT_PRESETS.map((p) => (
+                <button
+                  key={`h-${p.h}`}
+                  onClick={(e) => { e.stopPropagation(); onResize(item.w, p.h); }}
+                  className={cn(
+                    "h-5 min-w-[22px] rounded px-1 text-[10px] font-semibold transition-colors",
+                    item.h === p.h
+                      ? "bg-blue-600 text-white"
+                      : "bg-white/80 text-blue-700 hover:bg-blue-200",
+                  )}
+                  title={`Hauteur ${p.label} (${p.h})`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+          className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+          title="Retirer ce widget"
         >
           <Trash2 className="h-3 w-3" />
         </button>
@@ -295,8 +368,29 @@ export function DashboardGrid({
   items, editMode, onReorder, onRemove, onResize, onAddClick, renderWidget,
 }: DashboardGridProps) {
   const { mobile: isMobile, laptop: isLaptop } = useViewport();
+  // Id du widget "sélectionné" (cliqué sur son header). Affiche un ring plus
+  // marqué + expose les chips de taille. Arrow keys nudgent son ordre.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Désélectionne à la sortie du mode édition.
+  useEffect(() => {
+    if (!editMode) setSelectedId(null);
+  }, [editMode]);
+  // Désélectionne au clic hors widget.
+  useEffect(() => {
+    if (!selectedId) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement;
+      if (!t.closest?.("[data-widget-id]")) setSelectedId(null);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [selectedId]);
+
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    // Activation distance réduite 5 → 2 px : pick-up plus réactif, drag
+    // démarre au moindre mouvement du pointeur.
+    useSensor(PointerSensor, { activationConstraint: { distance: 2 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   function handleDragEnd(event: DragEndEvent) {
@@ -307,6 +401,52 @@ export function DashboardGrid({
     if (oldIdx < 0 || newIdx < 0) return;
     onReorder(arrayMove(items, oldIdx, newIdx));
   }
+
+  // Nudging au clavier — flèches ← → pour bouger le widget sélectionné d'un
+  // cran dans l'ordre, ↑ ↓ pour -/+ 1 row de hauteur. Shift+← → resize en
+  // largeur. Actif uniquement en édition avec un widget sélectionné, et
+  // ignore si focus dans un input.
+  useEffect(() => {
+    if (!editMode || !selectedId) return;
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const idx = items.findIndex((i) => i.id === selectedId);
+      if (idx < 0) return;
+      const it = items[idx];
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSelectedId(null);
+        return;
+      }
+
+      if (e.shiftKey) {
+        // Shift+flèches = resize width/height
+        if (e.key === "ArrowRight") { e.preventDefault(); onResize(it.id, clamp(it.w + 1, 1, GRID_COLS), it.h); return; }
+        if (e.key === "ArrowLeft")  { e.preventDefault(); onResize(it.id, clamp(it.w - 1, 1, GRID_COLS), it.h); return; }
+        if (e.key === "ArrowDown")  { e.preventDefault(); onResize(it.id, it.w, clamp(it.h + 1, 1, MAX_ROWS)); return; }
+        if (e.key === "ArrowUp")    { e.preventDefault(); onResize(it.id, it.w, clamp(it.h - 1, 1, MAX_ROWS)); return; }
+      } else {
+        // Flèches seules = déplacer dans l'ordre (left/up = reculer,
+        // right/down = avancer).
+        if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+          if (idx === 0) return;
+          e.preventDefault();
+          onReorder(arrayMove(items, idx, idx - 1));
+          return;
+        }
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+          if (idx === items.length - 1) return;
+          e.preventDefault();
+          onReorder(arrayMove(items, idx, idx + 1));
+          return;
+        }
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editMode, selectedId, items, onReorder, onResize]);
 
   // Grid background — shows dotted cells in edit mode
   const gridBgStyle: React.CSSProperties | undefined = editMode && !isMobile
@@ -321,7 +461,7 @@ export function DashboardGrid({
     : undefined;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
       <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
         <div
           data-grid-container
@@ -332,21 +472,22 @@ export function DashboardGrid({
           style={{
             // `minmax(0, 1fr)` au lieu de `1fr` : empêche les colonnes de
             // gonfler quand un enfant a un min-content plus large que le
-            // viewport (Recharts, tableaux avec long texte, etc.). Sans ça,
-            // une grille mobile à 1 colonne déborde dès qu'un widget contient
-            // un graphique large.
+            // viewport (Recharts, tableaux avec long texte, etc.).
             gridTemplateColumns: isMobile
               ? "minmax(0, 1fr)"
               : `repeat(${GRID_COLS}, minmax(0, 1fr))`,
             // `minmax(60px, auto)` — rows ≥ 60 px mais grandissent si le
-            // contenu est plus haut. Sans ce "auto", un widget dont le
-            // contenu dépasse H × 60 px (ex: graphique recharts 280 px
-            // dans un widget H=4=240 px) débordait par-dessus le widget
-            // suivant. Avec `auto`, la row expand → les widgets du bas
-            // descendent d'autant, plus de chevauchement.
+            // contenu est plus haut.
             gridAutoRows: isMobile
               ? "auto"
               : `minmax(${ROW_PX}px, auto)`,
+            // `grid-auto-flow: dense` en mode édition : les widgets plus
+            // petits comblent automatiquement les trous laissés par des
+            // widgets plus larges placés avant. Élimine les "vides" que
+            // l'utilisateur voyait en cherchant à placer un widget dans
+            // un slot manifestement libre. Hors édition, flow standard
+            // (row) pour garder une lecture séquentielle prévisible.
+            gridAutoFlow: editMode && !isMobile ? "row dense" : undefined,
             ...gridBgStyle,
           }}
         >
@@ -357,6 +498,8 @@ export function DashboardGrid({
               editMode={editMode}
               isMobile={isMobile}
               isLaptop={isLaptop}
+              selected={editMode && selectedId === item.id}
+              onSelect={() => setSelectedId(item.id)}
               onRemove={() => onRemove(item.id)}
               onResize={(w, h) => onResize(item.id, w, h)}
             >

@@ -7,9 +7,10 @@
   "fromEmail": "nexus@cetix.ca",
   "fromName": "Cetix",
   "replyTo": "nexus@cetix.ca",
-  "subjectPrefix": "[Cetix]",
+  "subjectPrefix": "[Nexus]",
   "ticketCreationEnabled": true,
-  "isConfigured": false,
+  "allowInvalidCerts": false,
+  "isConfigured": true,
   "lastTestSuccess": false,
   "lastTestError": "self-signed certificate",
   "lastTestAt": "2026-04-07T19:39:25.501Z"

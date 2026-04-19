@@ -19,6 +19,8 @@ import {
   Play,
   Check,
   UserPlus,
+  Ticket as TicketIcon,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -359,6 +361,8 @@ export default function MeetingPage() {
                   });
                   load();
                 }}
+                meetingId={id}
+                onTicketCreated={load}
               />
             ))}
           </div>
@@ -613,6 +617,8 @@ function AgendaItemRow({
   onDelete,
   onSaveNotes,
   onRename,
+  meetingId,
+  onTicketCreated,
 }: {
   item: AgendaItem;
   index: number;
@@ -620,12 +626,47 @@ function AgendaItemRow({
   onDelete: () => void;
   onSaveNotes: (notes: string) => Promise<void>;
   onRename: (title: string) => Promise<void>;
+  meetingId: string;
+  onTicketCreated: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(item.title);
   const [notesDraft, setNotesDraft] = useState(item.notes ?? "");
+  const [creatingTicket, setCreatingTicket] = useState(false);
+  const [createdTicket, setCreatedTicket] =
+    useState<{ id: string; number: number } | null>(null);
   const hasNotesChanges = notesDraft !== (item.notes ?? "");
+
+  async function createTicket() {
+    setCreatingTicket(true);
+    try {
+      // Si l'utilisateur a des notes non sauvegardées, on les persiste
+      // d'abord pour que le ticket les inclue — sinon on générerait un
+      // ticket avec les notes précédentes, surprenant.
+      if (hasNotesChanges) {
+        await onSaveNotes(notesDraft);
+      }
+      const res = await fetch(
+        `/api/v1/meetings/${meetingId}/agenda/${item.id}/create-ticket`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || `Erreur HTTP ${res.status}`);
+        return;
+      }
+      const t = (await res.json()) as { id: string; number: number };
+      setCreatedTicket(t);
+      onTicketCreated();
+    } finally {
+      setCreatingTicket(false);
+    }
+  }
 
   return (
     <div className="group rounded-lg hover:bg-slate-50 px-2 py-1.5">
@@ -728,6 +769,36 @@ function AgendaItemRow({
                 </Button>
               </div>
             )}
+          </div>
+
+          {/* Action rapide : créer un ticket à partir de ce point. Le titre
+              de l'item devient le sujet, la description + les notes deviennent
+              la description. Lie automatiquement le ticket à la rencontre. */}
+          <div className="flex items-center justify-between gap-2 pt-1">
+            {createdTicket ? (
+              <Link
+                href={`/internal-tickets/${createdTicket.id}`}
+                className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-emerald-700 hover:text-emerald-800"
+              >
+                <CheckCircle2 className="h-3 w-3" />
+                Ticket #{createdTicket.number} créé
+                <ExternalLink className="h-3 w-3" />
+              </Link>
+            ) : (
+              <span className="text-[11px] text-slate-400">
+                Un ticket sera créé avec le titre du point + les notes
+                ci-dessus.
+              </span>
+            )}
+            <Button
+              size="sm"
+              variant={createdTicket ? "outline" : "primary"}
+              onClick={createTicket}
+              loading={creatingTicket}
+            >
+              <TicketIcon className="h-3 w-3" />
+              {createdTicket ? "Créer un autre ticket" : "Créer un ticket"}
+            </Button>
           </div>
         </div>
       )}

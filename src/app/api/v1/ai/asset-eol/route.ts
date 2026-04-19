@@ -1,17 +1,11 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-utils";
-
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+import { runAiTask } from "@/lib/ai/orchestrator";
+import { POLICY_ASSET_EOL } from "@/lib/ai/orchestrator/policies";
 
 export async function POST(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!OPENAI_API_KEY) {
-    return NextResponse.json(
-      { error: "OPENAI_API_KEY non configurée" },
-      { status: 500 },
-    );
-  }
 
   const body = await req.json();
   const { manufacturer, model, type } = body as {
@@ -30,19 +24,16 @@ export async function POST(req: Request) {
   const deviceDesc = [manufacturer, model].filter(Boolean).join(" ");
   const typeHint = type ? ` (type: ${type})` : "";
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      temperature: 0.1,
-      messages: [
-        {
-          role: "system",
-          content: `Tu es un expert en cycle de vie des équipements informatiques (hardware lifecycle).
+  // Appel via l'orchestrateur : policy "asset_eol" sensitivity="public"
+  // (aucune PII, juste des noms de modèles) → pas de scrub, cloud OK.
+  const result = await runAiTask({
+    policy: POLICY_ASSET_EOL,
+    context: { userId: me.id },
+    taskKind: "extraction",
+    messages: [
+      {
+        role: "system",
+        content: `Tu es un expert en cycle de vie des équipements informatiques (hardware lifecycle).
 L'utilisateur te donne un fabricant et/ou modèle d'appareil. Tu dois retourner:
 - endOfSaleDate: la date de fin de vente (EOS) au format YYYY-MM-DD, ou null si inconnue
 - endOfLifeDate: la date de fin de vie / fin de support (EOL/EOSL) au format YYYY-MM-DD, ou null si inconnue
@@ -52,32 +43,27 @@ L'utilisateur te donne un fabricant et/ou modèle d'appareil. Tu dois retourner:
 - notes: un court commentaire en français (1-2 phrases)
 
 Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks.`,
-        },
-        {
-          role: "user",
-          content: `Appareil: ${deviceDesc}${typeHint}`,
-        },
-      ],
-    }),
+      },
+      {
+        role: "user",
+        content: `Appareil: ${deviceDesc}${typeHint}`,
+      },
+    ],
   });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
+  if (!result.ok) {
     return NextResponse.json(
-      { error: `OpenAI API error ${res.status}: ${text}` },
+      { error: result.error?.reason ?? "Erreur IA" },
       { status: 502 },
     );
   }
 
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content ?? "";
-
   try {
-    const parsed = JSON.parse(content);
+    const parsed = JSON.parse(result.content ?? "");
     return NextResponse.json(parsed);
   } catch {
     return NextResponse.json(
-      { error: "Réponse IA invalide", raw: content },
+      { error: "Réponse IA invalide", raw: result.content },
       { status: 502 },
     );
   }

@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Search,
   Loader2,
@@ -13,11 +15,17 @@ import {
   Calendar as CalIcon,
   Ticket as TicketIcon,
   ListChecks,
+  Plus,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  CreateEventModal,
+  type CalendarRef,
+} from "@/components/calendar/create-event-modal";
 
 interface MeetingRow {
   id: string;
@@ -57,6 +65,24 @@ export default function MeetingsListPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<string>("upcoming");
   const [mineOnly, setMineOnly] = useState(false);
+  const [showNewModal, setShowNewModal] = useState(false);
+  // Calendriers — requis par la modale partagée. Chargés une seule fois à
+  // l'ouverture de la page (la liste ne change quasi jamais).
+  const [calendars, setCalendars] = useState<CalendarRef[]>([]);
+  const router = useRouter();
+  // useSession importé mais plus utilisé directement — on laisse quand même
+  // le hook actif pour que le SessionProvider hydrate le currentUser utilisé
+  // par la modale partagée (via son propre useSession).
+  useSession();
+
+  useEffect(() => {
+    fetch("/api/v1/calendars")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((arr: CalendarRef[]) => {
+        if (Array.isArray(arr)) setCalendars(arr);
+      })
+      .catch(() => {});
+  }, []);
 
   function load() {
     setLoading(true);
@@ -96,13 +122,19 @@ export default function MeetingsListPage() {
             Toutes les fiches de réunion — agenda, participants, tickets générés.
           </p>
         </div>
-        <Link
-          href="/calendar"
-          className="text-[12.5px] inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900"
-        >
-          <CalIcon className="h-3.5 w-3.5" />
-          Vue calendrier
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/calendar"
+            className="text-[12.5px] inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900"
+          >
+            <CalIcon className="h-3.5 w-3.5" />
+            Vue calendrier
+          </Link>
+          <Button variant="primary" onClick={() => setShowNewModal(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            Nouvelle rencontre
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -151,7 +183,8 @@ export default function MeetingsListPage() {
             <UsersIcon className="h-8 w-8 text-slate-300 mx-auto mb-3" />
             <h3 className="text-[15px] font-semibold text-slate-900">Aucune rencontre</h3>
             <p className="mt-1 text-[13px] text-slate-500">
-              Crée une rencontre depuis la vue calendrier (type Rencontre interne).
+              Clique sur « Nouvelle rencontre » pour en créer une, ou utilise la
+              vue calendrier.
             </p>
           </CardContent>
         </Card>
@@ -231,6 +264,24 @@ export default function MeetingsListPage() {
             );
           })}
         </div>
+      )}
+
+      {showNewModal && (
+        <CreateEventModal
+          calendars={calendars}
+          defaultDate={new Date()}
+          initialKind="MEETING"
+          onClose={() => setShowNewModal(false)}
+          onSaved={() => {
+            setShowNewModal(false);
+            // Recharge la liste — évite de quitter la page si l'utilisateur
+            // voulait juste en créer une et revenir à la liste. Si un jour
+            // on veut ouvrir la fiche, utiliser router.push avec meetingId
+            // renvoyé par l'event créé.
+            load();
+            router.refresh();
+          }}
+        />
       )}
     </div>
   );

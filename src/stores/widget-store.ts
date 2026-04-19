@@ -81,6 +81,7 @@ export const BUILTIN_WIDGETS: WidgetDefinition[] = [
   { id: "w_dash_unassigned", name: "Tickets récents non assignés", description: "Derniers tickets ouverts qui n'ont pas encore d'agent", category: "Tableau de bord", icon: "Clock", defaultSize: "md", availableIn: ["dashboard"], builtIn: true },
   { id: "w_dash_my", name: "Mes tickets assignés", description: "Tickets assignés à moi (pleine largeur)", category: "Tableau de bord", icon: "Ticket", defaultSize: "full", availableIn: ["dashboard"], builtIn: true },
   { id: "w_dash_orgs", name: "Tickets par organisation", description: "Top organisations par nombre de tickets", category: "Tableau de bord", icon: "Building2", defaultSize: "full", availableIn: ["dashboard"], builtIn: true },
+  { id: "w_dash_ai", name: "Activité IA", description: "Invocations récentes, taux d'acceptation, économies locales", category: "Tableau de bord", icon: "Sparkles", defaultSize: "md", availableIn: ["dashboard"], builtIn: true },
 ];
 
 // ===========================================================================
