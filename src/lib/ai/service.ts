@@ -901,6 +901,10 @@ export interface CategorySuggestion {
   category: string;
   confidence: "high" | "medium" | "low";
   reasoning: string;
+  /** ID d'invocation pour le feedback humain (thumbs up/down) via
+   *  /api/v1/ai/invocations/[id]/action. Exposé pour que l'UI puisse
+   *  câbler le composant FeedbackButtons partagé. */
+  invocationId?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -1043,6 +1047,7 @@ Retourne UNIQUEMENT du JSON valide (sans markdown, sans backticks) :
       category: "",
       confidence: "low",
       reasoning: result.error?.reason ?? "Erreur IA",
+      invocationId: result.invocationId,
     };
   }
   // Strip markdown fences au cas où le modèle local en ajoute quand même.
@@ -1072,6 +1077,7 @@ Retourne UNIQUEMENT du JSON valide (sans markdown, sans backticks) :
       category: effective,
       confidence: (parsed.confidence as CategorySuggestion["confidence"]) || "low",
       reasoning: parsed.reasoning || "",
+      invocationId: result.invocationId,
     };
   } catch {
     return {
@@ -1079,6 +1085,7 @@ Retourne UNIQUEMENT du JSON valide (sans markdown, sans backticks) :
       category: "",
       confidence: "low",
       reasoning: response,
+      invocationId: result.invocationId,
     };
   }
 }

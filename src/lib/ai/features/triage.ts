@@ -932,17 +932,26 @@ export async function triageTicket(ticketId: string): Promise<TriageResult | nul
              a un problème */
         }
 
-        // Rejet total : si ≥ 2 sanity checks ont échoué, la suggestion est
-        // très probablement une hallucination. On annule la catégorie
-        // plutôt que de laisser un categoryId avec confidence 0.1 dans la
-        // réponse (le tech voyait la suggestion quand même). Le triage
-        // renvoie null + reasoning tracé dans les logs.
-        if (failedChecks >= 2) {
+        // Politique "classer tout, corriger via feedback" : si 2/3 sanity
+        // checks échouent, on GARDE la catégorie mais on cap la confidence
+        // au floor (0.3). Elle s'applique donc juste à la limite — l'IA
+        // catégorise même dans le doute, le tech corrige via thumbs-down
+        // si c'était mauvais. Rejet TOTAL uniquement si 3/3 échouent
+        // (hallucination vraiment certaine).
+        if (failedChecks >= 3) {
           console.warn(
-            `[ai-triage] catégorie '${cat.path.join(" > ")}' REJETÉE (${failedChecks}/3 sanity checks échoués) — suggestion retirée`,
+            `[ai-triage] catégorie '${cat.path.join(" > ")}' REJETÉE (3/3 sanity checks échoués) — hallucination probable, suggestion retirée`,
           );
           parsed.categoryId = null;
           parsed.categoryConfidence = 0;
+        } else if (failedChecks >= 2) {
+          console.warn(
+            `[ai-triage] catégorie '${cat.path.join(" > ")}' SUSPECTE (${failedChecks}/3 sanity checks) — confidence plafonnée à 0.3, à revoir via feedback`,
+          );
+          parsed.categoryConfidence = Math.min(
+            parsed.categoryConfidence ?? 0,
+            0.3,
+          );
         }
       }
     }

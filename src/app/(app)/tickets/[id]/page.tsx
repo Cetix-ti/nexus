@@ -42,6 +42,7 @@ import { AiInterventionChecklist } from "@/components/tickets/ai-intervention-ch
 import { AiClientContext } from "@/components/tickets/ai-client-context";
 import { AiCopilotChat } from "@/components/tickets/ai-copilot-chat";
 import { SimilarTicketsWidget } from "@/components/tickets/similar-tickets-widget";
+import { FeedbackButtons } from "@/components/ai/feedback-buttons";
 import { KbSuggestionsWidget } from "@/components/tickets/kb-suggestions-widget";
 import { ApprentiExemplarsWidget } from "@/components/tickets/apprenti-exemplars-widget";
 import { ThreadRecapWidget } from "@/components/tickets/thread-recap-widget";
@@ -298,6 +299,7 @@ export default function TicketDetailPage() {
     category: string;
     confidence: string;
     reasoning: string;
+    invocationId?: string;
   } | null>(null);
   const [aiCatLoading, setAiCatLoading] = useState(false);
   const [aiCatError, setAiCatError] = useState<string | null>(null);
@@ -1257,87 +1259,11 @@ export default function TicketDetailPage() {
               </div>
             )}
 
-            {/* Panneau Triage IA — affiché au-dessus des détails pour
-                servir de synthèse rapide : résumé d'une ligne + suggestions
-                de catégorie, priorité, type, doublon probable, incident
-                majeur. Généré automatiquement à la création du ticket ;
-                régénérable manuellement. */}
-            <AiTriagePanel
-              ticketId={ticket.id}
-              currentCategoryId={(ticket as { categoryId?: string | null }).categoryId ?? null}
-              currentPriority={ticket.priority}
-              currentPrioritySource={
-                (ticket as { prioritySource?: string }).prioritySource ?? null
-              }
-              onTicketChanged={refreshTickets}
-            />
-
-            {/* Checklist d'intervention — apparaît sous le triage dès
-                qu'une catégorie est présente. Cache par catégorie, partagée
-                entre tous les tickets de la même catégorie (cache AiPattern). */}
-            <AiInterventionChecklist
-              ticketId={ticket.id}
-              categoryId={(ticket as { categoryId?: string | null }).categoryId ?? null}
-            />
-
-            {/* Conventions client connues — faits validés de AiMemory.
-                Visible UNIQUEMENT aux super-admins : contient des préférences
-                opérationnelles sensibles (comptes privilégiés, contacts
-                internes, conventions d'intervention) qui ne doivent pas
-                être exposées aux techs standard ou aux clients. */}
-            {isSuperAdmin && (
-              <AiClientContext
-                organizationId={
-                  (ticket as { organizationId?: string | null }).organizationId ??
-                  null
-                }
-                organizationSlug={
-                  (ticket as { organization?: { slug?: string } | null })
-                    .organization?.slug ?? null
-                }
-              />
-            )}
-
-            {/* Tickets similaires — toujours visibles pour les tickets
-                humains. 3 buckets : ouverts du client / résolus du client /
-                résolus d'autres clients (savoir transversal). Le widget
-                s'efface automatiquement pour les tickets MONITORING et
-                AUTOMATION (alertes machine-specific, cross-learning n/a). */}
-            <SimilarTicketsWidget
-              ticketId={ticket.id}
-              ticketSource={
-                (ticket as { source?: string | null }).source ?? null
-              }
-            />
-
-            {/* KB auto-linking — articles de la base de connaissances dont
-                l'embedding sémantique est proche du ticket (top-3, cosine
-                ≥ 0.55). Alimenté par le job `kb-indexer` (30 min). */}
-            <KbSuggestionsWidget ticketId={ticket.id} />
-
-            {/* Tech apprenti — s'affiche seulement si l'assigné a peu
-                d'expérience dans la catégorie. Montre les tickets résolus
-                rapidement et proprement par les techs seniors. Alimenté
-                par le job `tech-apprenti` (24h). */}
-            <ApprentiExemplarsWidget ticketId={ticket.id} />
-
-            {/* Thread recap — s'affiche seulement si le fil a ≥ 8 messages
-                consolidés. Offre une vue 15-secondes (situation / décisions /
-                essais / questions ouvertes). Alimenté par
-                `thread-consolidator` (job en arrière-plan). */}
-            <ThreadRecapWidget ticketId={ticket.id} />
-
-            {/* Dedup cluster — s'affiche quand ce ticket partage un cluster
-                de duplicates probables détecté par `cross-source-dedup`.
-                Expose les tickets sibling avec leur source/status/assigné
-                pour éviter que 4 techs traitent le même incident en parallèle. */}
-            <DedupClusterWidget ticketId={ticket.id} />
-
-            {/* Copilote Q&A — question libre dans le contexte du ticket.
-                Le modèle voit ticket + historique + similaires résolus +
-                faits client validés. Réponse courte, avec liens vers
-                tickets cités. Single-shot (pas d'historique persistant). */}
-            <AiCopilotChat ticketId={ticket.id} />
+            {/* Les panneaux IA ont été déplacés tout EN BAS de la sidebar
+                (après les infos structurées : organisation, classification,
+                détails, SLA, dates, actifs). Raison : le tech veut d'abord
+                les infos du demandeur et la catégorie/priorité, puis les
+                suggestions IA (qui viennent compléter, pas remplacer). */}
 
             {/* Détails — Statut, Priorité, Urgence, Impact, Type.
                 Tous les <select> partagent la même classe utilitaire
@@ -1847,6 +1773,20 @@ export default function TicketDetailPage() {
                       <Check className="h-3 w-3" />
                       Appliquer cette catégorie
                     </button>
+                    {/* Feedback IA — le tech peut signaler si la suggestion
+                        était utile, même s'il décide de ne pas l'appliquer.
+                        Câble le category-feedback-learner. */}
+                    {aiCatSuggestion.invocationId && (
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <span className="text-[10.5px] text-violet-700/80">
+                          Cette suggestion était-elle utile ?
+                        </span>
+                        <FeedbackButtons
+                          invocationId={aiCatSuggestion.invocationId}
+                          size="sm"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2054,6 +1994,80 @@ export default function TicketDetailPage() {
                 + Lier un actif
               </button>
             </SidebarSection>
+
+            {/* ==============================================================
+                SECTION IA — tout en bas de la sidebar.
+                On laisse aux techs un accès complet aux infos structurées
+                (organisation, classification, détails, SLA, dates, actifs)
+                AVANT de leur présenter les suggestions IA. Les panneaux IA
+                sont complémentaires, pas primordiaux.
+                ============================================================== */}
+            <div className="pt-2 mt-2 border-t border-slate-200">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                Assistance IA
+              </p>
+            </div>
+
+            {/* Panneau Triage IA — résumé d'une ligne + suggestions de
+                catégorie, priorité, type, doublon probable, incident majeur.
+                Généré automatiquement à la création du ticket ; régénérable. */}
+            <AiTriagePanel
+              ticketId={ticket.id}
+              currentCategoryId={(ticket as { categoryId?: string | null }).categoryId ?? null}
+              currentPriority={ticket.priority}
+              currentPrioritySource={
+                (ticket as { prioritySource?: string }).prioritySource ?? null
+              }
+              onTicketChanged={refreshTickets}
+            />
+
+            {/* Checklist d'intervention — s'affiche sous le triage dès
+                qu'une catégorie est présente. */}
+            <AiInterventionChecklist
+              ticketId={ticket.id}
+              categoryId={(ticket as { categoryId?: string | null }).categoryId ?? null}
+            />
+
+            {/* Tickets similaires — 3 buckets : ouverts/résolus du client
+                et résolus d'autres clients. Désactivé pour MONITORING/AUTOMATION. */}
+            <SimilarTicketsWidget
+              ticketId={ticket.id}
+              ticketSource={
+                (ticket as { source?: string | null }).source ?? null
+              }
+            />
+
+            {/* KB auto-linking — top-3 articles dont l'embedding est proche. */}
+            <KbSuggestionsWidget ticketId={ticket.id} />
+
+            {/* Tech apprenti — tickets exemplaires pour l'assigné junior. */}
+            <ApprentiExemplarsWidget ticketId={ticket.id} />
+
+            {/* Thread recap — vue 15s si fil ≥ 8 messages. */}
+            <ThreadRecapWidget ticketId={ticket.id} />
+
+            {/* Dedup cluster — duplicates probables détectés cross-source. */}
+            <DedupClusterWidget ticketId={ticket.id} />
+
+            {/* Copilote Q&A — question libre dans le contexte du ticket. */}
+            <AiCopilotChat ticketId={ticket.id} />
+
+            {/* Conventions client — TOUT EN BAS. Contient les faits validés
+                de AiMemory (préférences opérationnelles sensibles). Visible
+                uniquement aux super-admins. Après les suggestions IA car
+                c'est de la ressource de référence, pas un input d'action. */}
+            {isSuperAdmin && (
+              <AiClientContext
+                organizationId={
+                  (ticket as { organizationId?: string | null }).organizationId ??
+                  null
+                }
+                organizationSlug={
+                  (ticket as { organization?: { slug?: string } | null })
+                    .organization?.slug ?? null
+                }
+              />
+            )}
           </div>
         </div>
       </div>

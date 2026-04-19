@@ -331,7 +331,7 @@ export const POLICY_RESPONSE_ASSIST: AiPolicy = {
 export const POLICY_CATEGORY_SUGGEST: AiPolicy = {
   feature: "category_suggest",
   sensitivity: "internal",
-  allowedProviders: ["ollama", "openai"],
+  allowedProviders: ["anthropic", "ollama", "openai"],
   scrub: { pii: true, hostnames: false, clientNames: true },
   temperature: 0.1, // déterministe
   maxTokens: 300,
@@ -343,6 +343,10 @@ export const POLICY_CATEGORY_SUGGEST: AiPolicy = {
   // Pas de minInputChars — un simple mot-clé ("Outlook", "VPN", "AD")
   // suffit pour la suggestion de catégorie, les prompts incluent déjà
   // la hiérarchie complète pour contexte.
+  // Claude Haiku préféré : précision supérieure à gemma3 sur taxonomies
+  // profondes pour un coût dérisoire (~0.1¢/call).
+  preferAnthropic: true,
+  promptVersion: "category_suggest-v2",
 };
 
 export const POLICY_PRIORITY_SUGGEST: AiPolicy = {
