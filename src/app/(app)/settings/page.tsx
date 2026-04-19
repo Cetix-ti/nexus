@@ -165,12 +165,14 @@ const sectionGroups: SettingsGroup[] = [
     iconBg: "bg-rose-50 ring-rose-200/60",
     sections: [
       { key: "integrations", label: "Intégrations", icon: Plug },
-      { key: "ai_intelligence", label: "Intelligence IA", icon: Sparkles, superAdminOnly: true },
       { key: "email_monitoring", label: "Synchronisation des alertes", icon: Bell },
       { key: "persistence_security", label: "Logiciels de persistance", icon: Shield },
       { key: "api", label: "API et webhooks", icon: Key },
       { key: "background_jobs", label: "Jobs d'arrière-plan", icon: Activity },
       { key: "system", label: "Système", icon: HardDrive, superAdminOnly: true },
+      // Intelligence IA volontairement en dernier — expertise admin avancée
+      // qu'on consulte moins souvent que les intégrations / monitoring.
+      { key: "ai_intelligence", label: "Intelligence IA", icon: Sparkles, superAdminOnly: true },
     ],
   },
 ];
