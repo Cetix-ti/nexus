@@ -52,11 +52,17 @@ export async function syncWazuhApi(options?: { sinceDays?: number }): Promise<{
   try {
     // Pagination manuelle par cursor timestamp. Un simple `search_after`
     // OpenSearch serait plus élégant mais une boucle avec avancement du
-    // cursor suffit pour ingérer N pages d'au plus 500 alertes.
+    // cursor suffit pour ingérer N pages d'au plus 250 alertes.
+    //
+    // Plafond volontairement limité (10 pages × 250 = 2500/tick) pour ne pas
+    // saturer la DB quand il y a un backlog Wazuh important. À 2500/2min =
+    // 75k/heure = 1.8M/jour, suffisant pour rester à jour en régime normal.
+    // Si un gros backlog doit être rattrapé, utiliser `syncSecurityHistorical`
+    // (backfill manuel) ou skipper le cursor avec un script admin.
     let cursor = since;
     let maxTimestampSeen: string | null = null;
-    for (let page = 0; page < 20; page++) {
-      const { alerts } = await fetchWazuhAlerts(cfg, { since: cursor, size: 500 });
+    for (let page = 0; page < 10; page++) {
+      const { alerts } = await fetchWazuhAlerts(cfg, { since: cursor, size: 250 });
       if (alerts.length === 0) break;
       stats.fetched += alerts.length;
       for (const hit of alerts) {
