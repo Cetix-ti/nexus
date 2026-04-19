@@ -451,8 +451,10 @@ export default function IntelligencePage() {
         <SectionCard
           title="Articles KB à écrire"
           icon={<BookOpen className="h-4 w-4 text-indigo-500" />}
-          hint="Catégories où l'IA se plante souvent ET où aucun article KB n'est aligné."
+          hint="Catégories où l'IA se plante souvent ET où aucun article KB n'est aligné. Voir aussi /intelligence/kb-proposed pour valider les brouillons IA."
           href="/intelligence/kb-gaps"
+          extraHref="/intelligence/kb-proposed"
+          extraLabel="Articles proposés →"
         >
           {data.kbGaps.length === 0 ? (
             <Empty>Pas de lacune KB détectée.</Empty>
@@ -527,12 +529,17 @@ function SectionCard({
   icon,
   hint,
   href,
+  extraHref,
+  extraLabel,
   children,
 }: {
   title: string;
   icon: React.ReactNode;
   hint?: string;
   href?: string;
+  /** Lien secondaire optionnel à droite du header (ex: "Articles proposés"). */
+  extraHref?: string;
+  extraLabel?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -550,6 +557,14 @@ function SectionCard({
           <h2 className="text-sm font-medium text-slate-800 dark:text-slate-100">
             {title}
           </h2>
+        )}
+        {extraHref && extraLabel && (
+          <Link
+            href={extraHref}
+            className="ml-2 text-[11px] font-medium text-violet-600 hover:text-violet-800 dark:text-violet-400 dark:hover:text-violet-300"
+          >
+            {extraLabel}
+          </Link>
         )}
         {hint && (
           <span

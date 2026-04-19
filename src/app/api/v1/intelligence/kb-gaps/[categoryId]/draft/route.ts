@@ -158,6 +158,8 @@ Rédige l'article.`;
       status: "DRAFT",
       isPublic: false,
       authorId: me.id,
+      // Tag AI pour la file de review /intelligence/kb-proposed.
+      externalSource: "ai:kb_gen:kb-gaps",
     },
     select: { id: true },
   });

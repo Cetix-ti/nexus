@@ -392,6 +392,7 @@ ${
     status: "DRAFT", // toujours en brouillon pour relecture humaine
     isPublic: false,
     tags: ["playbook", "auto-généré"],
+    externalSource: "ai:playbook",
   });
 }
 

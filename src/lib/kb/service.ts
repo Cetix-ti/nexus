@@ -133,6 +133,10 @@ export async function createArticle(input: {
   isPublic?: boolean;
   tags?: string[];
   authorId?: string | null;
+  /** Marque l'origine de l'article — "ai:kb_gen", "ai:playbook", etc. Permet
+   *  de router vers la file de review /intelligence/kb-proposed quand c'est
+   *  généré par l'IA. Laisser undefined pour un article écrit par un humain. */
+  externalSource?: string | null;
 }) {
   return prisma.article.create({
     data: {
@@ -145,6 +149,7 @@ export async function createArticle(input: {
       tags: input.tags || [],
       categoryId: input.categoryId ?? null,
       authorId: input.authorId ?? null,
+      externalSource: input.externalSource ?? null,
       publishedAt: input.status === "PUBLISHED" ? new Date() : null,
     },
     include: { category: true },
