@@ -21,12 +21,24 @@ const PUBLIC_PATHS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Rate limiting — in-memory token bucket per IP
+// Rate limiting — in-memory token bucket par IP, bypass si session présente
+//
+// Philosophie :
+//   - Requêtes AUTHENTIFIÉES (cookie authjs.session-token présent) → bypass
+//     complet. Une fiche ticket Nexus lance 15-20 calls IA parallèles
+//     (copilot, triage, similaires, KB, conventions client, etc.) et un
+//     utilisateur loggé n'est pas un attaquant. Si on veut quand même
+//     limiter, le faire par userId avec une fenêtre très généreuse, pas
+//     par IP (plusieurs techs derrière le même NAT).
+//   - Requêtes ANONYMES (pas de cookie) → plafond agressif 60/min par IP.
+//     C'est la surface d'attaque brute force / scraping public.
+//   - Auth endpoints (/api/auth, /login) → toujours limités à 30/min,
+//     peu importe le cookie (protection password-spray même authentifié).
 // ---------------------------------------------------------------------------
 const rateLimitMap = new Map<string, { tokens: number; lastRefill: number }>();
 const RATE_WINDOW = 60_000; // 1 minute
-const MAX_API_REQUESTS = 120; // per minute per IP
-const MAX_AUTH_REQUESTS = 30; // auth requests per minute per IP (OAuth uses multiple roundtrips)
+const MAX_ANONYMOUS_API = 60; // anonymes (pas de session) — strict
+const MAX_AUTH_REQUESTS = 30; // /api/auth + /login — brute force
 
 function checkRateLimit(key: string, max: number): boolean {
   const now = Date.now();
@@ -82,7 +94,14 @@ export function proxy(request: NextRequest) {
 
   cleanupIfNeeded();
 
-  // Rate limiting on auth endpoints (brute force protection)
+  // Détection session — on lit le cookie AVANT le rate limit pour décider
+  // si la requête est authentifiée. O(1), pas de round-trip DB.
+  const authenticatedSession =
+    request.cookies.get("authjs.session-token") ||
+    request.cookies.get("__Secure-authjs.session-token");
+
+  // Rate limiting on auth endpoints (brute force protection) — JAMAIS bypass,
+  // même pour un utilisateur déjà loggé (protection password-spray).
   if (
     pathname.startsWith("/api/auth") ||
     pathname === "/login" ||
@@ -96,9 +115,13 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  // Rate limiting on API routes
-  if (pathname.startsWith("/api/v1/")) {
-    if (!checkRateLimit(`api:${ip}`, MAX_API_REQUESTS)) {
+  // Rate limiting on /api/v1/* — bypass complet si la requête porte une
+  // session valide. Une fiche ticket peut générer 20+ calls IA parallèles,
+  // on ne veut surtout pas bloquer les techs authentifiés. Les appels
+  // anonymes (aucun cookie) sont plafonnés à 60/min par IP pour prévenir
+  // le scraping / abuse sur une URL publique.
+  if (pathname.startsWith("/api/v1/") && !authenticatedSession) {
+    if (!checkRateLimit(`api:${ip}`, MAX_ANONYMOUS_API)) {
       return NextResponse.json(
         { error: "Rate limit exceeded" },
         { status: 429 },
