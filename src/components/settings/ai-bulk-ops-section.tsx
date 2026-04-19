@@ -250,7 +250,7 @@ export function AiBulkOpsSection() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
           <div>
             <label className="text-[10.5px] font-medium text-slate-600">
               Mode
@@ -318,7 +318,7 @@ export function AiBulkOpsSection() {
 
         {dryRun && (
           <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3 space-y-2">
-            <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
               <div>
                 <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
                   À traiter
@@ -424,7 +424,7 @@ export function AiBulkOpsSection() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
           <div>
             <label className="text-[10.5px] font-medium text-slate-600">
               Max orgs

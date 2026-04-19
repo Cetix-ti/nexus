@@ -333,7 +333,7 @@ export function AiIntelligenceSection() {
       {stats && (
         <>
           {/* Totals */}
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <StatCard
               icon={<Sparkles className="h-4 w-4 text-violet-600" />}
               label="Invocations"
@@ -534,7 +534,7 @@ export function AiIntelligenceSection() {
                             <span className="font-medium text-slate-800">
                               {FEATURE_LABEL[f.feature] ?? f.feature}
                             </span>
-                            <span className="ml-2 text-[10.5px] text-slate-400 font-mono">
+                            <span className="hidden sm:inline ml-2 text-[10.5px] text-slate-400 font-mono">
                               {f.feature}
                             </span>
                           </td>
@@ -661,10 +661,10 @@ export function AiIntelligenceSection() {
                     <thead>
                       <tr className="text-left text-[10.5px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
                         <th className="py-1.5 px-2 font-semibold">Feature</th>
-                        <th className="py-1.5 px-2 font-semibold">Version</th>
+                        <th className="hidden sm:table-cell py-1.5 px-2 font-semibold">Version</th>
                         <th className="py-1.5 px-2 font-semibold text-right">Calls</th>
-                        <th className="py-1.5 px-2 font-semibold text-right">Acceptation</th>
-                        <th className="py-1.5 px-2 font-semibold text-right">Échec</th>
+                        <th className="py-1.5 px-2 font-semibold text-right">Accept.</th>
+                        <th className="hidden md:table-cell py-1.5 px-2 font-semibold text-right">Échec</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -674,9 +674,14 @@ export function AiIntelligenceSection() {
                           className="hover:bg-slate-50/50"
                         >
                           <td className="py-1.5 px-2 text-slate-700">
-                            {FEATURE_LABEL[v.feature] ?? v.feature}
+                            <div className="flex flex-col sm:block">
+                              <span>{FEATURE_LABEL[v.feature] ?? v.feature}</span>
+                              <span className="sm:hidden font-mono text-[10px] text-slate-500 truncate max-w-[200px]">
+                                {v.version}
+                              </span>
+                            </div>
                           </td>
-                          <td className="py-1.5 px-2 font-mono text-[11px] text-slate-600">
+                          <td className="hidden sm:table-cell py-1.5 px-2 font-mono text-[11px] text-slate-600">
                             {v.version}
                           </td>
                           <td className="py-1.5 px-2 text-right tabular-nums">
@@ -700,7 +705,7 @@ export function AiIntelligenceSection() {
                               <span className="text-slate-400">—</span>
                             )}
                           </td>
-                          <td className="py-1.5 px-2 text-right">
+                          <td className="hidden md:table-cell py-1.5 px-2 text-right">
                             <span
                               className={cn(
                                 "tabular-nums",
