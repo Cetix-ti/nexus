@@ -55,6 +55,55 @@ export async function runAiTask(task: AiTask): Promise<AiResult> {
     );
   }
 
+  // -- 1b. Enforcement du consent Loi 25 (par organisation) ----------------
+  // Si le task est scopé à une org (context.organizationId), on vérifie le
+  // consent avant tout appel. Trois cas :
+  //   - aiEnabled=false         → block absolu (aucun appel IA sur cette org)
+  //   - clientContentEnabled=false + feature client-facing → block
+  //   - learningEnabled=false + feature d'apprentissage → block
+  //   - cloudProvidersAllowed=false → on restreint task.policy.allowedProviders
+  //     à exclure anthropic/openai — le router prendra Ollama uniquement.
+  if (task.context?.organizationId) {
+    const { getAiConsent, isClientFacingFeature, isLearningFeature } =
+      await import("@/lib/ai/consent");
+    const consent = await getAiConsent(task.context.organizationId);
+    if (!consent.aiEnabled) {
+      return failSync(
+        `IA désactivée pour cette organisation (consent révoqué)`,
+        t0,
+      );
+    }
+    if (
+      !consent.clientContentEnabled &&
+      isClientFacingFeature(task.policy.feature)
+    ) {
+      return failSync(
+        `Feature '${task.policy.feature}' désactivée pour cette organisation (contenu client-facing)`,
+        t0,
+      );
+    }
+    if (
+      !consent.learningEnabled &&
+      isLearningFeature(task.policy.feature)
+    ) {
+      return failSync(
+        `Feature '${task.policy.feature}' désactivée pour cette organisation (apprentissage)`,
+        t0,
+      );
+    }
+    if (!consent.cloudProvidersAllowed) {
+      // Restreint aux providers locaux. Si la policy n'autorisait QUE cloud,
+      // l'appel sera bloqué par le router (aucun provider dispo).
+      const restricted = task.policy.allowedProviders.filter(
+        (p) => p === "ollama" || p === "local",
+      );
+      task = {
+        ...task,
+        policy: { ...task.policy, allowedProviders: restricted },
+      };
+    }
+  }
+
   // Installe un validateur JSON par défaut quand la policy demande json_object
   // et que le caller n'en a pas fourni. Protège toutes les features structurées
   // contre les réponses invalides sans changer leur code — le retry

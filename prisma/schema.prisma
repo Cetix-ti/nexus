@@ -93,6 +93,7 @@ model Organization {
   securityAlerts        SecurityAlert[]
   securityIncidents     SecurityIncident[]
   persistenceWhitelists SecurityPersistenceWhitelist[]
+  aiConsent             AiConsent?
 
   @@map("organizations")
 }
@@ -1628,6 +1629,45 @@ model AiAuditResult {
 // Pas de fine-tuning : on met à jour des poids / seuils / conventions ici,
 // et l'orchestrateur les lit pour ajuster sa confiance et son retrieval.
 // ============================================================================
+// ============================================================================
+// AI CONSENT — Loi 25 (Québec). Chaque organisation doit pouvoir contrôler
+// comment l'IA traite ses données. Une absence de consent explicite permet
+// quand même l'IA pour rétro-compat (existing orgs) — MAIS les nouvelles orgs
+// doivent être provisionnées avec un consent explicite via l'onboarding.
+//
+// Granularité :
+//   - aiEnabled             : master switch (bloque toutes les features IA)
+//   - cloudProvidersAllowed : autorise le fallback cloud (OpenAI, Anthropic).
+//                             Si false → Ollama local uniquement.
+//   - learningEnabled       : autorise l'extraction de faits + pattern learning
+//                             depuis les données du client.
+//   - clientContentEnabled  : autorise la génération de contenu client-facing
+//                             (rapport mensuel, réponse assistée, notes de
+//                             résolution envoyées au client).
+//
+// Révocation : un admin peut passer aiEnabled=false à tout moment. Le job
+// retention-purge respecte cette décision et nettoie les anciennes données
+// selon le TTL standard.
+// ============================================================================
+model AiConsent {
+  id                    String   @id @default(cuid())
+  organizationId        String   @unique @map("organization_id")
+  aiEnabled             Boolean  @default(true) @map("ai_enabled")
+  cloudProvidersAllowed Boolean  @default(true) @map("cloud_providers_allowed")
+  learningEnabled       Boolean  @default(true) @map("learning_enabled")
+  clientContentEnabled  Boolean  @default(true) @map("client_content_enabled")
+  /// Dernière action manuelle (admin qui a modifié les consents).
+  updatedBy             String?  @map("updated_by")
+  /// Notes internes (raison d'un opt-out, référence contrat, etc.).
+  notes                 String?
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("ai_consents")
+}
+
 model AiPattern {
   id              String   @id @default(cuid())
   scope           String                                // "global" | "org:xxx" | "feature:triage"

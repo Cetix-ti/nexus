@@ -328,6 +328,49 @@ export function startBackgroundJobs() {
   });
 
   // -----------------------------------------------------------------------
+  // RETENTION ANONYMIZATION — conformité Loi 25.
+  // Job journalier qui ANONYMISE (ne supprime PAS) les données IA périmées :
+  // AiInvocation > 90j, AiMemory pending > 180j, AiMemory rejected > 30j,
+  // SimilarTicketClick > 180j. Les AiPattern expirés sont supprimés (rules,
+  // pas de la donnée client). Chaque passage est logué dans AuditLog.
+  //
+  // **DÉSACTIVÉ PAR DÉFAUT** — requiert ENABLE_AI_RETENTION_ANONYMIZE=1.
+  // Avant activation : lancer `runAnonymizationDryRun()` en admin pour
+  // valider les volumes qui seraient traités.
+  // -----------------------------------------------------------------------
+  if (process.env.ENABLE_AI_RETENTION_ANONYMIZE === "1") {
+    scheduleJob({
+      name: "ai-retention-anonymize",
+      intervalMs: Number(process.env.AI_PURGE_INTERVAL_MS) || 24 * 60 * 60_000,
+      isRunning: false,
+      lastRun: null,
+      lastError: null,
+      consecutiveErrors: 0,
+      run: async () => {
+        const { anonymizeExpiredAiData } = await import(
+          "@/lib/ai/jobs/retention-purge"
+        );
+        const res = await anonymizeExpiredAiData();
+        const total =
+          res.invocationsAnonymized +
+          res.memoriesRejectedAnonymized +
+          res.memoriesPendingAnonymized +
+          res.similarClicksAnonymized +
+          res.expiredPatternsDeleted;
+        if (total === 0) {
+          console.log(
+            "[ai-retention-anonymize] tick : rien à anonymiser",
+          );
+        }
+      },
+    });
+  } else {
+    console.log(
+      "[ai-retention-anonymize] désactivé (ENABLE_AI_RETENTION_ANONYMIZE != 1)",
+    );
+  }
+
+  // -----------------------------------------------------------------------
   // TICKET EMBEDDINGS — backfill continu des vecteurs sémantiques.
   // Lit 50 tickets sans embedding toutes les 5 min. Un nouveau ticket
   // obtient son embedding dans la fenêtre 0-5 min après sa création.

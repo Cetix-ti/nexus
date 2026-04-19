@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { OrgAiMemoryPanel } from "./org-ai-memory-panel";
+import { OrgAiConsentPanel } from "./org-ai-consent-panel";
 import {
   Shield,
   FileText,
@@ -227,6 +228,16 @@ export function OrgAiIntelligenceTab({
 
   return (
     <div className="space-y-6">
+      {/* Consent Loi 25 — première section. Un consent révoqué (aiEnabled=false)
+          bloque toutes les autres features IA, donc c'est le point de contrôle
+          principal. */}
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <OrgAiConsentPanel
+          organizationId={organizationId}
+          organizationSlug={organizationSlug ?? ""}
+        />
+      </section>
+
       {/* Faits connus / mémoire IA — affichée en premier pour que l'admin
           voie ce que le système sait de ce client avant d'analyser. */}
       <OrgAiMemoryPanel organizationId={organizationId} />
