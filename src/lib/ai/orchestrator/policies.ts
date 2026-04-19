@@ -33,6 +33,7 @@ export const POLICY_LEGACY_CHAT: AiPolicy = {
   humanApprovalRequired: false, // lecture seule
   // gemma3:12b @ 30 tok/s → 4096 tokens ≈ 137s. On met 180s pour marge.
   timeoutMs: 180_000,
+  promptVersion: "legacy_chat-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,7 @@ export const POLICY_CLOSE_AUDIT: AiPolicy = {
   responseFormat: "json_object",
   humanApprovalRequired: true,
   timeoutMs: 75_000,
+  promptVersion: "close_audit-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -123,6 +125,7 @@ export const POLICY_CHECKLIST_GEN: AiPolicy = {
   responseFormat: "json_object",
   humanApprovalRequired: true,
   timeoutMs: 90_000,
+  promptVersion: "checklist_gen-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -145,6 +148,7 @@ export const POLICY_RISK_ANALYSIS: AiPolicy = {
   // Claude Sonnet supérieur sur ce type de synthèse.
   preferAnthropic: true,
   enablePromptCaching: true,
+  promptVersion: "risk_analysis-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -182,6 +186,7 @@ export const POLICY_SALES_SUGGEST: AiPolicy = {
   responseFormat: "json_object",
   humanApprovalRequired: true,
   timeoutMs: 150_000,
+  promptVersion: "sales_suggest-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -200,6 +205,7 @@ export const POLICY_TONE_REWRITE: AiPolicy = {
   maxTokens: 1200,
   humanApprovalRequired: true,
   timeoutMs: 90_000,
+  promptVersion: "tone_rewrite-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -220,6 +226,7 @@ export const POLICY_ESCALATION_BRIEF: AiPolicy = {
   timeoutMs: 120_000,
   // Brief de handoff = synthèse narrative structurée, fort d'œuvre Claude.
   preferAnthropic: true,
+  promptVersion: "escalation_brief-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -247,6 +254,7 @@ export const POLICY_FORWARDED_EMAIL: AiPolicy = {
   // Cache 30 min : la détection fwd est 100% déterministe sur le texte
   // reçu. Même email reparsé (retry sync) = cache hit garanti.
   cacheTtlSeconds: 1800,
+  promptVersion: "forwarded_email_detect-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -264,6 +272,7 @@ export const POLICY_TECH_COACHING: AiPolicy = {
   responseFormat: "json_object",
   humanApprovalRequired: true,
   timeoutMs: 150_000,
+  promptVersion: "tech_coaching-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -281,6 +290,7 @@ export const POLICY_FACTS_EXTRACT: AiPolicy = {
   responseFormat: "json_object",
   humanApprovalRequired: true, // admin valide chaque fait avant activation
   timeoutMs: 120_000,
+  promptVersion: "facts_extract-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -361,6 +371,7 @@ export const POLICY_PRIORITY_SUGGEST: AiPolicy = {
   minConfidenceToShow: 0.55,
   timeoutMs: 45_000,
   cacheTtlSeconds: 600,
+  promptVersion: "priority_suggest-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -376,6 +387,7 @@ export const POLICY_MEETING_SUGGEST: AiPolicy = {
   responseFormat: "json_object",
   humanApprovalRequired: true,
   timeoutMs: 120_000,
+  promptVersion: "meeting_suggest_tickets-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -393,6 +405,7 @@ export const POLICY_ASSET_EOL: AiPolicy = {
   responseFormat: "json_object",
   humanApprovalRequired: false,
   timeoutMs: 30_000,
+  promptVersion: "asset_eol-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -414,6 +427,7 @@ export const POLICY_CATEGORY_AUDIT: AiPolicy = {
   // absorber la latence de load du modèle (+10-15s au premier appel) et la
   // lecture du prompt.
   timeoutMs: 180_000,
+  promptVersion: "category_audit-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -436,6 +450,7 @@ export const POLICY_AI_AUDIT: AiPolicy = {
   humanApprovalRequired: false,
   timeoutMs: 60_000,
   preferAnthropic: true,
+  promptVersion: "ai_audit-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -460,6 +475,7 @@ export const POLICY_KB_AUDIT: AiPolicy = {
   // génération longue (4500 tokens). gemma3:12b ~30 tok/s → 150s output.
   // Marge large pour les KB volumineuses.
   timeoutMs: 360_000,
+  promptVersion: "kb_audit-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -477,6 +493,7 @@ export const POLICY_KB_REWRITE: AiPolicy = {
   responseFormat: "json_object",
   humanApprovalRequired: true,
   timeoutMs: 180_000,
+  promptVersion: "kb_rewrite-v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -550,4 +567,5 @@ export const POLICY_COPILOT_CHAT: AiPolicy = {
   maxTokens: 2000,
   humanApprovalRequired: false,
   timeoutMs: 120_000,
+  promptVersion: "copilot_chat-v2-rag",
 };

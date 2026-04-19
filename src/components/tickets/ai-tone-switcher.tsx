@@ -24,6 +24,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FeedbackButtons } from "@/components/ai/feedback-buttons";
 
 type Tone = "brief" | "detailed" | "vulgarized" | "executive";
 
@@ -62,6 +63,7 @@ export function AiToneSwitcher({ currentText, onReplace }: Props) {
     toneLabel: string;
     rewritten: string;
     original: string;
+    invocationId?: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -96,6 +98,7 @@ export function AiToneSwitcher({ currentText, onReplace }: Props) {
         toneLabel: data.result.toneLabel,
         rewritten: data.result.rewritten,
         original: currentText,
+        invocationId: data.result.invocationId,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur");
@@ -239,6 +242,17 @@ export function AiToneSwitcher({ currentText, onReplace }: Props) {
                   Remplacer
                 </button>
               </div>
+              {preview.invocationId && (
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[10.5px] text-slate-500">
+                    La reformulation est-elle utile ?
+                  </span>
+                  <FeedbackButtons
+                    invocationId={preview.invocationId}
+                    size="sm"
+                  />
+                </div>
+              )}
             </footer>
           </div>
         </div>

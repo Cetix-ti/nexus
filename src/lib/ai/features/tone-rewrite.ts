@@ -39,6 +39,8 @@ export interface RewriteResult {
   tone: Tone;
   toneLabel: string;
   rewritten: string;
+  /** ID d'invocation pour que l'UI câble le FeedbackButtons. */
+  invocationId?: string;
 }
 
 export async function rewriteWithTone(args: {
@@ -96,6 +98,7 @@ Tonalité cible : ${TONE_LABEL[args.tone]}`;
       tone: args.tone,
       toneLabel: TONE_LABEL[args.tone],
       rewritten,
+      invocationId: result.invocationId,
     };
   } catch (err) {
     console.warn(
