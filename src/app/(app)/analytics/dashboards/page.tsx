@@ -41,6 +41,11 @@ import {
   Undo2,
   Redo2,
   Save,
+  Folder,
+  FolderPlus,
+  Pencil,
+  ChevronDown,
+  MoreHorizontal,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -313,12 +318,33 @@ function saveVisible(ids: WidgetId[]) { try { localStorage.setItem(STORAGE_KEY, 
 const FAV_KEY = "nexus:reports:favorites";
 const PRIMARY_KEY = "nexus:reports:primary";
 const CUSTOM_REPORTS_KEY = "nexus:reports:custom";
+const FOLDERS_KEY = "nexus:reports:folders";
+const RECENT_KEY = "nexus:reports:recent";
+const COLLAPSED_SECTIONS_KEY = "nexus:reports:sidebar-collapsed-sections";
+const MAX_RECENT = 5;
+
+// Une "Folder" regroupe des dashboards par l'utilisateur. Les folders sont
+// purement une organisation visuelle côté client — ils ne changent pas le
+// catalogue. Le même dashboard peut être dans 0, 1 ou plusieurs folders.
+interface DashboardFolder {
+  id: string;
+  name: string;
+  dashboardIds: string[];
+  createdAt: string;
+}
+
 function loadFavorites(): string[] { try { const r = localStorage.getItem(FAV_KEY); if (r) return JSON.parse(r); } catch {} return ["full_report", "monthly_billing", "ticket_overview"]; }
 function saveFavorites(ids: string[]) { try { localStorage.setItem(FAV_KEY, JSON.stringify(ids)); } catch {} }
 function loadPrimary(): string { try { return localStorage.getItem(PRIMARY_KEY) || "full_report"; } catch { return "full_report"; } }
 function savePrimary(id: string) { try { localStorage.setItem(PRIMARY_KEY, id); } catch {} }
 function loadCustomReports(): ReportDef[] { try { const r = localStorage.getItem(CUSTOM_REPORTS_KEY); if (r) return JSON.parse(r); } catch {} return []; }
 function saveCustomReports(reports: ReportDef[]) { try { localStorage.setItem(CUSTOM_REPORTS_KEY, JSON.stringify(reports)); } catch {} }
+function loadFolders(): DashboardFolder[] { try { const r = localStorage.getItem(FOLDERS_KEY); if (r) return JSON.parse(r); } catch {} return []; }
+function saveFolders(folders: DashboardFolder[]) { try { localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders)); } catch {} }
+function loadRecent(): string[] { try { const r = localStorage.getItem(RECENT_KEY); if (r) return JSON.parse(r); } catch {} return []; }
+function saveRecent(ids: string[]) { try { localStorage.setItem(RECENT_KEY, JSON.stringify(ids)); } catch {} }
+function loadCollapsedSections(): Record<string, boolean> { try { const r = localStorage.getItem(COLLAPSED_SECTIONS_KEY); if (r) return JSON.parse(r); } catch {} return {}; }
+function saveCollapsedSections(s: Record<string, boolean>) { try { localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify(s)); } catch {} }
 
 // Valeur sentinelle pour la vue galerie (par défaut au landing). Évite un
 // conflit avec un ID de rapport réel — commencer par "__" c'est safe.
@@ -358,6 +384,15 @@ export default function ReportsPage() {
   const [showParentPanel, setShowParentPanel] = useState(false);
   // Sidebar repliée par défaut — libère l'espace pour la galerie/dashboard.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [folders, setFolders] = useState<DashboardFolder[]>(() => loadFolders());
+  const [recent, setRecent] = useState<string[]>(() => loadRecent());
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(
+    () => loadCollapsedSections(),
+  );
+  // Menu "•••" pour déplacer un dashboard vers un dossier. Null = fermé.
+  const [moveMenuForId, setMoveMenuForId] = useState<string | null>(null);
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renameFolderDraft, setRenameFolderDraft] = useState("");
 
   // Merged catalog: built-in + custom
   const allReports = [...REPORT_CATALOG, ...customReports];
@@ -527,6 +562,100 @@ export default function ReportsPage() {
     savePrimary(reportId);
   }
 
+  // Track les 5 derniers dashboards consultés. Mise à jour à chaque
+  // changement de `view` (hors galerie). Le plus récent est en tête.
+  useEffect(() => {
+    if (!view || view === GALLERY_VIEW) return;
+    setRecent((prev) => {
+      const filtered = prev.filter((id) => id !== view);
+      const next = [view, ...filtered].slice(0, MAX_RECENT);
+      saveRecent(next);
+      return next;
+    });
+  }, [view]);
+
+  // ----- Folders management -----
+  function addFolder() {
+    const name = (prompt("Nom du nouveau dossier ?", "Nouveau dossier") || "").trim();
+    if (!name) return;
+    const folder: DashboardFolder = {
+      id: `folder_${Date.now()}`,
+      name,
+      dashboardIds: [],
+      createdAt: new Date().toISOString(),
+    };
+    setFolders((prev) => {
+      const next = [...prev, folder];
+      saveFolders(next);
+      return next;
+    });
+    // Ouvre le nouveau dossier par défaut.
+    setCollapsedSections((prev) => {
+      const next = { ...prev, [folder.id]: false };
+      saveCollapsedSections(next);
+      return next;
+    });
+  }
+
+  function renameFolder(folderId: string, newName: string) {
+    const clean = newName.trim();
+    if (!clean) return;
+    setFolders((prev) => {
+      const next = prev.map((f) => (f.id === folderId ? { ...f, name: clean } : f));
+      saveFolders(next);
+      return next;
+    });
+  }
+
+  function deleteFolder(folderId: string) {
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    if (
+      !confirm(
+        `Supprimer le dossier "${folder.name}" ? Les dashboards à l'intérieur ne sont pas supprimés, seulement retirés du dossier.`,
+      )
+    ) {
+      return;
+    }
+    setFolders((prev) => {
+      const next = prev.filter((f) => f.id !== folderId);
+      saveFolders(next);
+      return next;
+    });
+  }
+
+  function addDashboardToFolder(folderId: string, dashboardId: string) {
+    setFolders((prev) => {
+      const next = prev.map((f) =>
+        f.id === folderId && !f.dashboardIds.includes(dashboardId)
+          ? { ...f, dashboardIds: [...f.dashboardIds, dashboardId] }
+          : f,
+      );
+      saveFolders(next);
+      return next;
+    });
+  }
+
+  function removeDashboardFromFolder(folderId: string, dashboardId: string) {
+    setFolders((prev) => {
+      const next = prev.map((f) =>
+        f.id === folderId
+          ? { ...f, dashboardIds: f.dashboardIds.filter((id) => id !== dashboardId) }
+          : f,
+      );
+      saveFolders(next);
+      return next;
+    });
+  }
+
+  function toggleSection(key: string) {
+    setCollapsedSections((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      saveCollapsedSections(next);
+      return next;
+    });
+  }
+
   function createReport() {
     if (!newReportName.trim()) return;
     const id = `custom_${Date.now()}`;
@@ -618,12 +747,10 @@ export default function ReportsPage() {
   const fk = data?.financeKpis;
   const fd = filteredData; // Use filtered data for widgets
 
-  // Group reports by category for sidebar
-  const reportsByCategory = Object.entries(CAT_LABELS).map(([key, label]) => ({
-    key,
-    label,
-    reports: allReports.filter((r) => r.category === key),
-  })).filter((g) => g.reports.length > 0);
+  // Remarque : la sidebar n'utilise plus `reportsByCategory` — la nouvelle
+  // structure par dossiers (Favoris + Récents + dossiers user + Tous)
+  // remplace le groupement par catégorie. La galerie principale continue
+  // d'afficher tous les dashboards sans groupement.
 
   return (
     <div className="flex gap-3 min-h-0">
@@ -632,10 +759,10 @@ export default function ReportsPage() {
       {/* ============================================================ */}
       <div className={cn(
         "hidden md:flex shrink-0 flex-col gap-3 print:hidden transition-all duration-200",
-        // Collapsed = 36 px (bouton + mini-icônes favoris). Expanded réduit
-        // progressivement : md 176 px / lg 192 px. Titres longs passent en
-        // truncate — on privilégie la largeur dashboard.
-        sidebarCollapsed ? "w-9" : "md:w-44 lg:w-48"
+        // Collapsed = 36 px (bouton + mini-icônes favoris). Expanded : largeur
+        // plus généreuse (240/288 px) pour que les noms de dossiers et de
+        // dashboards soient bien lisibles sans truncate agressif.
+        sidebarCollapsed ? "w-9" : "md:w-60 lg:w-72"
       )}>
         {sidebarCollapsed ? (
           /* Collapsed sidebar — just a thin bar with expand button */
@@ -677,6 +804,13 @@ export default function ReportsPage() {
               <h2 className="text-[13px] font-semibold text-slate-900">Dashboards</h2>
               <div className="flex items-center gap-1">
                 <button
+                  onClick={addFolder}
+                  className="h-6 w-6 rounded-md flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors"
+                  title="Nouveau dossier"
+                >
+                  <FolderPlus className="h-3.5 w-3.5" />
+                </button>
+                <button
                   onClick={() => setShowCreateReport(true)}
                   className="h-6 w-6 rounded-md flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors"
                   title="Nouveau dashboard"
@@ -692,90 +826,214 @@ export default function ReportsPage() {
                 </button>
               </div>
             </div>
-            <div className="overflow-y-auto max-h-[calc(100vh-180px)] px-1.5 pb-2 space-y-3">
-              {/* Lien permanent vers la galerie — toujours en tête pour
-                  que l'utilisateur puisse revenir à la vue d'ensemble
-                  d'un clic quelle que soit la sous-page en cours. */}
+            <div className="overflow-y-auto max-h-[calc(100vh-180px)] px-1.5 pb-2 space-y-2">
+              {/* Lien permanent vers la galerie. */}
               <button
                 onClick={() => setView(GALLERY_VIEW)}
                 className={cn(
-                  "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-left transition-all",
+                  "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12.5px] text-left transition-all",
                   view === GALLERY_VIEW
                     ? "bg-blue-50 text-blue-700 font-medium"
                     : "text-slate-600 hover:bg-slate-50",
                 )}
               >
-                <LayoutDashboard className="h-3 w-3 shrink-0" />
+                <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />
                 <span className="flex-1 truncate">Galerie</span>
               </button>
 
-              {/* Favorites section */}
-              {favorites.length > 0 && (
-                <div>
-                  <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-500">Favoris</p>
-                  {favorites.map((fId) => {
+              {/* Mes Favoris — toujours en tête, fixe */}
+              <SidebarSection
+                title="Mes Favoris"
+                icon={<span className="text-[11px] text-amber-500">★</span>}
+                count={favorites.length}
+                collapsed={!!collapsedSections["__fav__"]}
+                onToggle={() => toggleSection("__fav__")}
+                accentClass="text-amber-500"
+              >
+                {favorites.length === 0 ? (
+                  <p className="px-2 py-1 text-[11px] text-slate-400 italic">
+                    Clique ☆ sur un dashboard pour l&apos;ajouter ici.
+                  </p>
+                ) : (
+                  favorites.map((fId) => {
                     const r = allReports.find((rep) => rep.id === fId);
                     if (!r) return null;
-                    const isActive = view === fId;
-                    const isPrimary = primaryId === fId;
                     return (
-                      <button
-                        key={fId}
-                        onClick={() => setView(fId)}
-                        className={cn(
-                          "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-left transition-all group",
-                          isActive
-                            ? "bg-blue-50 text-blue-700 font-medium"
-                            : "text-slate-600 hover:bg-slate-50"
-                        )}
-                      >
-                        <span className="text-[10px] text-amber-400 shrink-0">★</span>
-                        <span className="flex-1 truncate">{r.label}</span>
-                        {isPrimary && <span className="text-[8px] bg-blue-100 text-blue-600 rounded px-1 font-semibold uppercase shrink-0">Défaut</span>}
-                        {r.parentId && <span className="text-[9px] text-violet-500 shrink-0">↳</span>}
-                      </button>
+                      <DashboardRow
+                        key={`fav-${fId}`}
+                        report={r}
+                        isActive={view === fId}
+                        isPrimary={primaryId === fId}
+                        isFav={true}
+                        folders={folders}
+                        onOpen={() => setView(fId)}
+                        onToggleFav={() => toggleFavorite(fId)}
+                        onAddToFolder={(folderId) => addDashboardToFolder(folderId, fId)}
+                        moveMenuOpen={moveMenuForId === `fav-${fId}`}
+                        setMoveMenuOpen={(open) =>
+                          setMoveMenuForId(open ? `fav-${fId}` : null)
+                        }
+                      />
                     );
-                  })}
-                </div>
-              )}
+                  })
+                )}
+              </SidebarSection>
 
-              {/* All reports grouped by category */}
-              {reportsByCategory.map((group) => (
-                <div key={group.key}>
-                  <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{group.label}</p>
-                  {group.reports.map((r) => {
-                    const isActive = view === r.id;
-                    const isFav = favorites.includes(r.id);
+              {/* Récents — 5 derniers consultés */}
+              <SidebarSection
+                title="Récents"
+                icon={<Clock className="h-3 w-3 text-slate-400" />}
+                count={recent.length}
+                collapsed={!!collapsedSections["__recent__"]}
+                onToggle={() => toggleSection("__recent__")}
+                accentClass="text-slate-500"
+              >
+                {recent.length === 0 ? (
+                  <p className="px-2 py-1 text-[11px] text-slate-400 italic">
+                    Tes derniers dashboards consultés apparaîtront ici.
+                  </p>
+                ) : (
+                  recent.map((rId) => {
+                    const r = allReports.find((rep) => rep.id === rId);
+                    if (!r) return null;
                     return (
-                      <button
-                        key={r.id}
-                        onClick={() => setView(r.id)}
-                        className={cn(
-                          "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-left transition-all group",
-                          isActive
-                            ? "bg-blue-50 text-blue-700 font-medium"
-                            : "text-slate-600 hover:bg-slate-50"
-                        )}
-                      >
-                        <span className="flex-1 truncate">{r.label}</span>
-                        {r.parentId && <span className="text-[9px] text-violet-500 shrink-0">↳</span>}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); toggleFavorite(r.id); }}
-                          className={cn(
-                            "h-5 w-5 rounded flex items-center justify-center text-[12px] shrink-0 transition-all",
-                            isFav
-                              ? "text-amber-400 hover:text-amber-600"
-                              : "text-slate-300 opacity-0 group-hover:opacity-100 hover:text-amber-400"
-                          )}
-                          title={isFav ? "Retirer des favoris" : "Ajouter aux favoris"}
-                        >
-                          {isFav ? "★" : "☆"}
-                        </button>
-                      </button>
+                      <DashboardRow
+                        key={`rec-${rId}`}
+                        report={r}
+                        isActive={view === rId}
+                        isPrimary={primaryId === rId}
+                        isFav={favorites.includes(rId)}
+                        folders={folders}
+                        onOpen={() => setView(rId)}
+                        onToggleFav={() => toggleFavorite(rId)}
+                        onAddToFolder={(folderId) => addDashboardToFolder(folderId, rId)}
+                        moveMenuOpen={moveMenuForId === `rec-${rId}`}
+                        setMoveMenuOpen={(open) =>
+                          setMoveMenuForId(open ? `rec-${rId}` : null)
+                        }
+                      />
                     );
-                  })}
-                </div>
-              ))}
+                  })
+                )}
+              </SidebarSection>
+
+              {/* Dossiers créés par l'utilisateur */}
+              {folders.map((folder) => {
+                const key = `folder:${folder.id}`;
+                const isRenaming = renamingFolderId === folder.id;
+                return (
+                  <SidebarSection
+                    key={folder.id}
+                    title={folder.name}
+                    icon={<Folder className="h-3 w-3 text-blue-500" />}
+                    count={folder.dashboardIds.length}
+                    collapsed={!!collapsedSections[key]}
+                    onToggle={() => toggleSection(key)}
+                    accentClass="text-blue-500"
+                    renaming={isRenaming}
+                    renameValue={renameFolderDraft}
+                    onRenameChange={setRenameFolderDraft}
+                    onRenameCommit={() => {
+                      renameFolder(folder.id, renameFolderDraft);
+                      setRenamingFolderId(null);
+                    }}
+                    onRenameCancel={() => setRenamingFolderId(null)}
+                    actions={
+                      <>
+                        <button
+                          onClick={() => {
+                            setRenamingFolderId(folder.id);
+                            setRenameFolderDraft(folder.name);
+                          }}
+                          className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                          title="Renommer"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={() => deleteFolder(folder.id)}
+                          className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          title="Supprimer"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </>
+                    }
+                  >
+                    {folder.dashboardIds.length === 0 ? (
+                      <p className="px-2 py-1 text-[11px] text-slate-400 italic">
+                        Dossier vide. Utilise ⋯ sur un dashboard pour l&apos;ajouter.
+                      </p>
+                    ) : (
+                      folder.dashboardIds.map((dId) => {
+                        const r = allReports.find((rep) => rep.id === dId);
+                        if (!r) return null;
+                        return (
+                          <DashboardRow
+                            key={`${folder.id}-${dId}`}
+                            report={r}
+                            isActive={view === dId}
+                            isPrimary={primaryId === dId}
+                            isFav={favorites.includes(dId)}
+                            folders={folders}
+                            onOpen={() => setView(dId)}
+                            onToggleFav={() => toggleFavorite(dId)}
+                            onAddToFolder={(folderId) => addDashboardToFolder(folderId, dId)}
+                            onRemoveFromFolder={() => removeDashboardFromFolder(folder.id, dId)}
+                            moveMenuOpen={moveMenuForId === `${folder.id}-${dId}`}
+                            setMoveMenuOpen={(open) =>
+                              setMoveMenuForId(open ? `${folder.id}-${dId}` : null)
+                            }
+                          />
+                        );
+                      })
+                    )}
+                  </SidebarSection>
+                );
+              })}
+
+              {/* Tous les dashboards (non classés + tous, pour découvrir) */}
+              {(() => {
+                const foldered = new Set(folders.flatMap((f) => f.dashboardIds));
+                const unfiledCount = allReports.filter((r) => !foldered.has(r.id)).length;
+                return (
+                  <SidebarSection
+                    title="Tous les dashboards"
+                    icon={<LayoutDashboard className="h-3 w-3 text-slate-400" />}
+                    count={allReports.length}
+                    collapsed={collapsedSections["__all__"] ?? true}
+                    onToggle={() => toggleSection("__all__")}
+                    accentClass="text-slate-500"
+                    hint={
+                      unfiledCount > 0
+                        ? `${unfiledCount} non classé${unfiledCount > 1 ? "s" : ""}`
+                        : undefined
+                    }
+                  >
+                    {allReports.map((r) => {
+                      const inFolder = foldered.has(r.id);
+                      return (
+                        <DashboardRow
+                          key={`all-${r.id}`}
+                          report={r}
+                          isActive={view === r.id}
+                          isPrimary={primaryId === r.id}
+                          isFav={favorites.includes(r.id)}
+                          folders={folders}
+                          onOpen={() => setView(r.id)}
+                          onToggleFav={() => toggleFavorite(r.id)}
+                          onAddToFolder={(folderId) => addDashboardToFolder(folderId, r.id)}
+                          dimmed={inFolder}
+                          moveMenuOpen={moveMenuForId === `all-${r.id}`}
+                          setMoveMenuOpen={(open) =>
+                            setMoveMenuForId(open ? `all-${r.id}` : null)
+                          }
+                        />
+                      );
+                    })}
+                  </SidebarSection>
+                );
+              })()}
             </div>
           </Card>
         )}
@@ -2033,6 +2291,238 @@ function Legend({ color, label }: { color: string; label: string }) {
   return (
     <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
       <div className={cn("h-2 w-2 rounded-full", color)} /> {label}
+    </div>
+  );
+}
+
+// ===========================================================================
+// SidebarSection — wrapper réutilisable pour les sections de la sidebar
+// dashboards (Favoris, Récents, Dossiers, Tous). Header cliquable pour
+// collapse/expand, compteur à droite, actions optionnelles (rename/delete
+// pour les dossiers), mode rename inline.
+// ===========================================================================
+function SidebarSection({
+  title,
+  icon,
+  count,
+  collapsed,
+  onToggle,
+  accentClass,
+  hint,
+  actions,
+  renaming,
+  renameValue,
+  onRenameChange,
+  onRenameCommit,
+  onRenameCancel,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  count?: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  accentClass?: string;
+  hint?: string;
+  actions?: React.ReactNode;
+  renaming?: boolean;
+  renameValue?: string;
+  onRenameChange?: (v: string) => void;
+  onRenameCommit?: () => void;
+  onRenameCancel?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="group">
+      <div className="flex items-center gap-1 px-1 mb-0.5">
+        <button
+          onClick={onToggle}
+          className="flex-1 flex items-center gap-1.5 px-1 py-1 rounded hover:bg-slate-50 transition-colors text-left"
+          disabled={renaming}
+        >
+          <ChevronDown
+            className={cn(
+              "h-3 w-3 text-slate-400 transition-transform shrink-0",
+              collapsed && "-rotate-90",
+            )}
+          />
+          {icon}
+          {renaming ? (
+            <input
+              autoFocus
+              value={renameValue ?? ""}
+              onChange={(e) => onRenameChange?.(e.target.value)}
+              onBlur={() => onRenameCommit?.()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onRenameCommit?.();
+                if (e.key === "Escape") onRenameCancel?.();
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "flex-1 bg-white border border-blue-300 rounded px-1 text-[11.5px] font-semibold uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-blue-200",
+                accentClass,
+              )}
+            />
+          ) : (
+            <span
+              className={cn(
+                "flex-1 text-[11px] font-semibold uppercase tracking-wider truncate",
+                accentClass ?? "text-slate-500",
+              )}
+            >
+              {title}
+            </span>
+          )}
+          {typeof count === "number" && (
+            <span className="text-[10px] tabular-nums text-slate-400">
+              {count}
+            </span>
+          )}
+        </button>
+        {actions && !renaming && (
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {actions}
+          </div>
+        )}
+      </div>
+      {hint && !collapsed && (
+        <p className="px-2 mb-1 text-[10px] italic text-slate-400">{hint}</p>
+      )}
+      {!collapsed && <div className="space-y-0.5">{children}</div>}
+    </div>
+  );
+}
+
+// ===========================================================================
+// DashboardRow — ligne compacte d'un dashboard dans la sidebar avec :
+//   - Icône état (étoile favori)
+//   - Label + badge "Défaut" / hiérarchie
+//   - Menu "⋯" pour favoris + ajout à un dossier + retrait
+// ===========================================================================
+function DashboardRow({
+  report,
+  isActive,
+  isPrimary,
+  isFav,
+  folders,
+  onOpen,
+  onToggleFav,
+  onAddToFolder,
+  onRemoveFromFolder,
+  dimmed,
+  moveMenuOpen,
+  setMoveMenuOpen,
+}: {
+  report: ReportDef;
+  isActive: boolean;
+  isPrimary: boolean;
+  isFav: boolean;
+  folders: DashboardFolder[];
+  onOpen: () => void;
+  onToggleFav: () => void;
+  onAddToFolder: (folderId: string) => void;
+  onRemoveFromFolder?: () => void;
+  dimmed?: boolean;
+  moveMenuOpen: boolean;
+  setMoveMenuOpen: (open: boolean) => void;
+}) {
+  return (
+    <div className="relative group/row">
+      <button
+        onClick={onOpen}
+        className={cn(
+          "w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[12px] text-left transition-all",
+          isActive
+            ? "bg-blue-50 text-blue-700 font-medium"
+            : "text-slate-700 hover:bg-slate-50",
+          dimmed && !isActive && "text-slate-400",
+        )}
+      >
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleFav();
+          }}
+          className={cn(
+            "h-4 w-4 rounded flex items-center justify-center text-[12px] shrink-0 transition-all",
+            isFav
+              ? "text-amber-400 hover:text-amber-600"
+              : "text-slate-300 opacity-0 group-hover/row:opacity-100 hover:text-amber-400",
+          )}
+          title={isFav ? "Retirer des favoris" : "Ajouter aux favoris"}
+        >
+          {isFav ? "★" : "☆"}
+        </button>
+        <span className="flex-1 truncate">{report.label}</span>
+        {isPrimary && (
+          <span className="text-[8px] bg-blue-100 text-blue-600 rounded px-1 font-semibold uppercase shrink-0">
+            Défaut
+          </span>
+        )}
+        {report.parentId && (
+          <span className="text-[9px] text-violet-500 shrink-0" title="Hérite d'un parent">
+            ↳
+          </span>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setMoveMenuOpen(!moveMenuOpen);
+          }}
+          className="h-4 w-4 rounded flex items-center justify-center text-slate-400 hover:bg-slate-200 shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity"
+          title="Déplacer dans un dossier"
+        >
+          <MoreHorizontal className="h-3 w-3" />
+        </button>
+      </button>
+      {moveMenuOpen && (
+        <div
+          className="absolute right-1 top-8 z-20 w-48 rounded-lg border border-slate-200 bg-white shadow-lg py-1"
+          onMouseLeave={() => setMoveMenuOpen(false)}
+        >
+          <p className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+            Ajouter à un dossier
+          </p>
+          {folders.length === 0 ? (
+            <p className="px-3 py-1.5 text-[11px] text-slate-500 italic">
+              Aucun dossier — crée-en un avec le bouton 📁+ en haut.
+            </p>
+          ) : (
+            folders.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => {
+                  onAddToFolder(f.id);
+                  setMoveMenuOpen(false);
+                }}
+                disabled={f.dashboardIds.includes(report.id)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-slate-700 hover:bg-slate-50 text-left disabled:text-slate-400 disabled:italic"
+              >
+                <Folder className="h-3 w-3 text-blue-500 shrink-0" />
+                <span className="truncate">{f.name}</span>
+                {f.dashboardIds.includes(report.id) && (
+                  <span className="ml-auto text-[9px] text-slate-400">déjà dedans</span>
+                )}
+              </button>
+            ))
+          )}
+          {onRemoveFromFolder && (
+            <>
+              <div className="h-px bg-slate-100 my-1" />
+              <button
+                onClick={() => {
+                  onRemoveFromFolder();
+                  setMoveMenuOpen(false);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-red-600 hover:bg-red-50 text-left"
+              >
+                <X className="h-3 w-3 shrink-0" />
+                Retirer de ce dossier
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
