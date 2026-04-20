@@ -28,6 +28,8 @@ export async function PUT(req: Request) {
     folderPath: body.folderPath || "Inbox",
     defaultPriority: body.defaultPriority || "MEDIUM",
     markAsRead: body.markAsRead !== false,
+    // Par défaut activé (rétro-compat). Explicit false désactive le sync.
+    enabled: body.enabled !== false,
   });
   return NextResponse.json({ ok: true });
 }

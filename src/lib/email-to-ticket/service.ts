@@ -29,6 +29,12 @@ export interface EmailToTicketConfig {
   folderPath: string;    // e.g. "Inbox" or "Boîte de réception"
   defaultPriority: string; // MEDIUM, HIGH, etc.
   markAsRead: boolean;
+  // Kill-switch : désactive complètement la création automatique de tickets
+  // à partir des courriels. Utile quand Nexus est en coexistence avec
+  // Freshservice (ou autre PSA) et qu'on ne veut pas que Nexus consomme
+  // les emails de la boîte (marquage lu → Freshservice ne les voit plus).
+  // Undefined ou true = activé (comportement historique, rétro-compat).
+  enabled?: boolean;
 }
 
 interface GraphMessage {
@@ -316,6 +322,13 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
   const cfg = config ?? (await getConfig());
   if (!cfg) {
     return { fetched: 0, created: 0, skipped: 0, errors: ["Configuration non définie"] };
+  }
+  // Kill-switch : si `enabled` est explicitement false, on ne touche pas
+  // à la boîte courriel. Utilisé en période de coexistence avec Freshservice
+  // pour éviter que Nexus consomme (marque comme lus) les messages destinés
+  // au PSA de production.
+  if (cfg.enabled === false) {
+    return { fetched: 0, created: 0, skipped: 0, errors: [] };
   }
 
   const errors: string[] = [];

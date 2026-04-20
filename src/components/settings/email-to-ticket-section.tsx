@@ -10,7 +10,9 @@ import {
   Save,
   Mail,
   Ticket,
+  PauseCircle,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -28,6 +30,7 @@ interface Config {
   folderPath: string;
   defaultPriority: string;
   markAsRead: boolean;
+  enabled: boolean;
 }
 
 const EMPTY: Config = {
@@ -35,6 +38,7 @@ const EMPTY: Config = {
   folderPath: "Inbox",
   defaultPriority: "MEDIUM",
   markAsRead: true,
+  enabled: true,
 };
 
 export function EmailToTicketSection() {
@@ -62,7 +66,11 @@ export function EmailToTicketSection() {
     fetch("/api/v1/settings/email-to-ticket")
       .then((r) => r.json())
       .then((d) => {
-        if (d.config) setConfig(d.config);
+        if (d.config) {
+          // Rétro-compat : les configs existantes n'ont pas le champ
+          // `enabled` → on le force à true pour ne pas casser l'UX.
+          setConfig({ ...EMPTY, ...d.config, enabled: d.config.enabled !== false });
+        }
         setHasAzure(!!d.hasAzureCredentials);
       })
       .catch(() => {});
@@ -153,6 +161,45 @@ export function EmailToTicketSection() {
           registration doit avoir la permission Mail.Read et Mail.ReadWrite.
         </div>
       )}
+
+      {/* Master kill-switch — utile pendant la coexistence avec Freshservice
+          pour que Nexus ne consomme pas les emails destinés au PSA prod. */}
+      <Card className={config.enabled ? "border-emerald-200" : "border-amber-300 bg-amber-50/40"}>
+        <CardContent className="p-4">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex items-start gap-3">
+              <div className={`h-9 w-9 rounded-lg flex items-center justify-center ring-1 ring-inset shrink-0 ${
+                config.enabled
+                  ? "bg-emerald-50 text-emerald-600 ring-emerald-200/60"
+                  : "bg-amber-100 text-amber-700 ring-amber-300/60"
+              }`}>
+                {config.enabled ? <Mail className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
+              </div>
+              <div>
+                <h3 className="text-[14px] font-semibold text-slate-900">
+                  Création automatique de tickets
+                </h3>
+                <p className="mt-0.5 text-[12px] text-slate-600 max-w-xl">
+                  {config.enabled
+                    ? "Les courriels reçus dans la boîte configurée sont convertis en tickets."
+                    : "Désactivée — Nexus n'ouvre pas la boîte courriel et ne crée aucun ticket. Utile quand Freshservice (ou un autre PSA) est toujours en production sur la même adresse."}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className={`text-[11px] font-semibold uppercase tracking-wider ${
+                config.enabled ? "text-emerald-700" : "text-amber-700"
+              }`}>
+                {config.enabled ? "Activé" : "Désactivé"}
+              </span>
+              <Switch
+                checked={config.enabled}
+                onCheckedChange={(c) => upd("enabled", c)}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Mailbox */}
       <Card>
@@ -292,7 +339,8 @@ export function EmailToTicketSection() {
               variant="outline"
               size="sm"
               onClick={handleSync}
-              disabled={syncing || !config.mailbox || !hasAzure}
+              disabled={syncing || !config.mailbox || !hasAzure || !config.enabled}
+              title={!config.enabled ? "Active la création automatique pour synchroniser" : undefined}
             >
               {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ticket className="h-3.5 w-3.5" />}
               {syncing ? "Synchronisation..." : "Synchroniser maintenant"}
