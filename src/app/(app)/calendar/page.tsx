@@ -1448,6 +1448,79 @@ function EventTile({
 // ---------------------------------------------------------------------------
 // Month grid (6 weeks × 7 days)
 // ---------------------------------------------------------------------------
+/**
+ * Tuile d'event ultra-compacte pour la vue mois sur mobile (<640 px).
+ * Contraintes : ~48 px de large utilisable → 10 px avatar + ~32 px texte.
+ * On truncate agressivement plutôt que de tout masquer — au moins le tech
+ * voit qu'il y a un event, de qui, et peut tap pour ouvrir.
+ */
+function MobileEventTile({
+  event,
+  onClick,
+}: {
+  event: CalendarEvent;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  const agents = (event.agents ?? [])
+    .map((a) => a.user)
+    .filter((u): u is NonNullable<typeof u> => !!u);
+  const displayed = agents.length > 0 ? agents : event.owner ? [event.owner] : [];
+  const firstAgent = displayed[0] ?? null;
+
+  // Logo org pour les réunions d'équipe (WORK_LOCATION + org interne + pas d'agent).
+  const isCompanyMeeting =
+    event.kind === "WORK_LOCATION" &&
+    displayed.length === 0 &&
+    !!event.organization?.isInternal;
+  const orgLogo = isCompanyMeeting ? event.organization?.logo ?? null : null;
+
+  // Initials fallback si pas d'avatar.
+  const initials = firstAgent
+    ? `${firstAgent.firstName?.[0] ?? ""}${firstAgent.lastName?.[0] ?? ""}`.toUpperCase()
+    : "";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1 w-full rounded px-1 py-0.5 text-[9px] text-left min-w-0"
+      style={{
+        backgroundColor: event.calendar.color + "22",
+        color: event.calendar.color,
+      }}
+      title={event.title}
+    >
+      {/* Thumbnail 10 px — priorité : logo org > avatar > initiales > dot */}
+      {orgLogo ? (
+        <img
+          src={orgLogo}
+          alt=""
+          className="h-2.5 w-2.5 rounded-sm object-contain bg-white shrink-0"
+        />
+      ) : firstAgent?.avatar ? (
+        <img
+          src={firstAgent.avatar}
+          alt=""
+          className="h-2.5 w-2.5 rounded-full object-cover shrink-0"
+        />
+      ) : initials ? (
+        <span
+          className="h-2.5 w-2.5 rounded-full flex items-center justify-center text-[6px] font-bold text-white shrink-0"
+          style={{ backgroundColor: event.calendar.color }}
+        >
+          {initials}
+        </span>
+      ) : (
+        <span
+          className="h-1.5 w-1.5 rounded-full shrink-0"
+          style={{ backgroundColor: event.calendar.color }}
+        />
+      )}
+      <span className="truncate font-medium flex-1 min-w-0">{event.title}</span>
+    </button>
+  );
+}
+
 function MonthGrid({
   cells,
   cursor,
@@ -1528,22 +1601,25 @@ function MonthGrid({
                 )}
               </div>
 
-              {/* Mobile (<sm) : points colorés par calendrier. Les tuiles
-                  complètes sont illisibles sur 50 px de large → on donne
-                  juste un signal visuel "il y a N events ce jour". Tap
-                  sur la cellule → vue Jour. */}
-              <div className="sm:hidden flex-1 flex flex-wrap content-start gap-0.5 pt-0.5 min-h-0 overflow-hidden">
-                {dayEvents.slice(0, 6).map((e) => (
-                  <span
+              {/* Mobile (<sm) : mini-tuiles avec avatar de l'agent/logo org
+                  + titre tronqué. Plus informatif que des points colorés
+                  même si l'espace est limité (~50 px de large).
+                  stopPropagation sur la tuile : tap event → ouvre l'event
+                  (pas la vue Jour). Tap hors tuile → vue Jour. */}
+              <div className="sm:hidden flex-1 flex flex-col gap-0.5 pt-0.5 min-h-0 overflow-hidden">
+                {dayEvents.slice(0, 3).map((e) => (
+                  <MobileEventTile
                     key={e.id}
-                    className="h-1.5 w-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: e.calendar.color }}
-                    title={e.title}
+                    event={e}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      onEventClick(e);
+                    }}
                   />
                 ))}
-                {dayEvents.length > 6 && (
-                  <span className="text-[8px] text-slate-500 leading-none">
-                    +{dayEvents.length - 6}
+                {dayEvents.length > 3 && (
+                  <span className="text-[8px] text-slate-500 leading-none pl-0.5">
+                    +{dayEvents.length - 3}
                   </span>
                 )}
               </div>
