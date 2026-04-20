@@ -349,6 +349,16 @@ function saveCollapsedSections(s: Record<string, boolean>) { try { localStorage.
 // Valeur sentinelle pour la vue galerie (par défaut au landing). Évite un
 // conflit avec un ID de rapport réel — commencer par "__" c'est safe.
 const GALLERY_VIEW = "__gallery__";
+// Vues "galerie filtrée" : clic sur le titre d'une section de la sidebar.
+// La flèche continue d'expand/collapse inline ; le titre ouvre la galerie.
+const FAV_VIEW = "__fav__";
+const RECENT_VIEW = "__recent__";
+const ALL_VIEW = "__all__";
+const FOLDER_VIEW_PREFIX = "__folder__:";
+const isFolderView = (v: string) => v.startsWith(FOLDER_VIEW_PREFIX);
+const folderViewId = (v: string) => (isFolderView(v) ? v.slice(FOLDER_VIEW_PREFIX.length) : null);
+const isSectionGallery = (v: string) =>
+  v === GALLERY_VIEW || v === FAV_VIEW || v === RECENT_VIEW || v === ALL_VIEW || isFolderView(v);
 
 export default function ReportsPage() {
   const [data, setData] = useState<ReportData | null>(null);
@@ -565,7 +575,7 @@ export default function ReportsPage() {
   // Track les 5 derniers dashboards consultés. Mise à jour à chaque
   // changement de `view` (hors galerie). Le plus récent est en tête.
   useEffect(() => {
-    if (!view || view === GALLERY_VIEW) return;
+    if (!view || isSectionGallery(view)) return;
     setRecent((prev) => {
       const filtered = prev.filter((id) => id !== view);
       const next = [view, ...filtered].slice(0, MAX_RECENT);
@@ -848,6 +858,8 @@ export default function ReportsPage() {
                 count={favorites.length}
                 collapsed={!!collapsedSections["__fav__"]}
                 onToggle={() => toggleSection("__fav__")}
+                onTitleClick={() => setView(FAV_VIEW)}
+                isSelected={view === FAV_VIEW}
                 accentClass="text-amber-500"
               >
                 {favorites.length === 0 ? (
@@ -886,6 +898,8 @@ export default function ReportsPage() {
                 count={recent.length}
                 collapsed={!!collapsedSections["__recent__"]}
                 onToggle={() => toggleSection("__recent__")}
+                onTitleClick={() => setView(RECENT_VIEW)}
+                isSelected={view === RECENT_VIEW}
                 accentClass="text-slate-500"
               >
                 {recent.length === 0 ? (
@@ -929,6 +943,8 @@ export default function ReportsPage() {
                     count={folder.dashboardIds.length}
                     collapsed={!!collapsedSections[key]}
                     onToggle={() => toggleSection(key)}
+                    onTitleClick={() => setView(`${FOLDER_VIEW_PREFIX}${folder.id}`)}
+                    isSelected={view === `${FOLDER_VIEW_PREFIX}${folder.id}`}
                     accentClass="text-blue-500"
                     renaming={isRenaming}
                     renameValue={renameFolderDraft}
@@ -1003,6 +1019,8 @@ export default function ReportsPage() {
                     count={allReports.length}
                     collapsed={collapsedSections["__all__"] ?? true}
                     onToggle={() => toggleSection("__all__")}
+                    onTitleClick={() => setView(ALL_VIEW)}
+                    isSelected={view === ALL_VIEW}
                     accentClass="text-slate-500"
                     hint={
                       unfiledCount > 0
@@ -1050,14 +1068,34 @@ export default function ReportsPage() {
               <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
                 {view === GALLERY_VIEW
                   ? "Galerie de tableaux de bord"
-                  : activeReport
-                    ? activeReport.label
-                    : "Dashboards"}
+                  : view === FAV_VIEW
+                    ? "Mes Favoris"
+                    : view === RECENT_VIEW
+                      ? "Récents"
+                      : view === ALL_VIEW
+                        ? "Tous les dashboards"
+                        : isFolderView(view)
+                          ? (folders.find((f) => f.id === folderViewId(view))?.name ?? "Dossier")
+                          : activeReport
+                            ? activeReport.label
+                            : "Dashboards"}
               </h1>
               <p className="mt-0.5 text-[13px] text-slate-500">
                 {view === GALLERY_VIEW
                   ? `${allReports.length} tableau${allReports.length > 1 ? "x" : ""} de bord disponibles — clique pour ouvrir`
-                  : activeReport ? activeReport.description : "Tableaux de bord interactifs"}
+                  : view === FAV_VIEW
+                    ? `${favorites.length} favori${favorites.length > 1 ? "s" : ""}`
+                    : view === RECENT_VIEW
+                      ? `${recent.length} dashboard${recent.length > 1 ? "s" : ""} récemment consulté${recent.length > 1 ? "s" : ""}`
+                      : view === ALL_VIEW
+                        ? `${allReports.length} tableau${allReports.length > 1 ? "x" : ""} de bord`
+                        : isFolderView(view)
+                          ? (() => {
+                              const f = folders.find((fo) => fo.id === folderViewId(view));
+                              const n = f?.dashboardIds.length ?? 0;
+                              return `${n} tableau${n > 1 ? "x" : ""} de bord dans ce dossier`;
+                            })()
+                          : activeReport ? activeReport.description : "Tableaux de bord interactifs"}
                 {activeReport?.parentId && (() => {
                   const parent = allReports.find((r) => r.id === activeReport.parentId);
                   return parent ? (
@@ -1092,7 +1130,7 @@ export default function ReportsPage() {
             {/* Les actions "sur dashboard" (filtres, edit, parenté, print)
                 n'ont pas de sens sur la galerie — on les masque quand
                 aucun dashboard n'est sélectionné. */}
-            {view !== GALLERY_VIEW && (
+            {!isSectionGallery(view) && (
               <>
                 <Button variant={showFilters ? "primary" : "outline"} size="sm" onClick={() => setShowFilters(!showFilters)}>
                   <Filter className="h-3.5 w-3.5" />
@@ -1549,6 +1587,121 @@ export default function ReportsPage() {
           })}
         </div>
       )}
+
+      {/* ============================================================ */}
+      {/* Galerie filtrée par section : favoris / récents / tous / dossier. */}
+      {/* Clic sur le titre d'une section de la sidebar ouvre ici la grille */}
+      {/* des dashboards de cette section.                                  */}
+      {/* ============================================================ */}
+      {(view === FAV_VIEW || view === RECENT_VIEW || view === ALL_VIEW || isFolderView(view)) && (() => {
+        let sectionReports: ReportDef[] = [];
+        let emptyTitle = "";
+        let emptyHint = "";
+        if (view === FAV_VIEW) {
+          sectionReports = favorites
+            .map((id) => allReports.find((r) => r.id === id))
+            .filter((r): r is ReportDef => !!r);
+          emptyTitle = "Aucun favori";
+          emptyHint = "Clique sur ☆ à côté d'un dashboard pour l'ajouter à tes favoris.";
+        } else if (view === RECENT_VIEW) {
+          sectionReports = recent
+            .map((id) => allReports.find((r) => r.id === id))
+            .filter((r): r is ReportDef => !!r);
+          emptyTitle = "Aucun dashboard récent";
+          emptyHint = "Tes 5 derniers dashboards consultés apparaîtront ici.";
+        } else if (view === ALL_VIEW) {
+          sectionReports = allReports;
+          emptyTitle = "Aucun dashboard";
+          emptyHint = "Crée ton premier dashboard pour démarrer.";
+        } else if (isFolderView(view)) {
+          const folder = folders.find((f) => f.id === folderViewId(view));
+          if (!folder) {
+            return (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <Folder className="h-8 w-8 text-slate-300 mx-auto mb-3" />
+                  <h3 className="text-[15px] font-semibold text-slate-900">Dossier introuvable</h3>
+                  <p className="mt-1 text-[13px] text-slate-500">
+                    Ce dossier a peut-être été supprimé.
+                  </p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => setView(GALLERY_VIEW)}>
+                    Retour à la galerie
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          }
+          sectionReports = folder.dashboardIds
+            .map((id) => allReports.find((r) => r.id === id))
+            .filter((r): r is ReportDef => !!r);
+          emptyTitle = "Dossier vide";
+          emptyHint = "Ajoute des dashboards via le menu ⋯ sur n'importe quel dashboard.";
+        }
+
+        if (sectionReports.length === 0) {
+          return (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <LayoutDashboard className="h-8 w-8 text-slate-300 mx-auto mb-3" />
+                <h3 className="text-[15px] font-semibold text-slate-900">{emptyTitle}</h3>
+                <p className="mt-1 text-[13px] text-slate-500">{emptyHint}</p>
+              </CardContent>
+            </Card>
+          );
+        }
+
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {sectionReports.map((r) => {
+              const isPrimary = r.id === primaryId;
+              const isFav = favorites.includes(r.id);
+              const widgetCount = resolveWidgets(r).length;
+              const childCount = getChildren(r.id).length;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setView(r.id)}
+                  className="group relative flex flex-col text-left rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-blue-300 hover:shadow-[0_8px_24px_-8px_rgba(37,99,235,0.18)] transition-all p-5 min-h-[160px]"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="h-10 w-10 rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      {r.icon}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {isFav && <span className="text-amber-500 text-[14px]" title="Favori">★</span>}
+                      {isPrimary && (
+                        <span className="text-[8.5px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
+                          Défaut
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <h3 className="text-[14px] font-semibold text-slate-900 leading-tight mb-1.5 group-hover:text-blue-700 transition-colors">
+                    {r.label}
+                  </h3>
+                  <p className="text-[11.5px] text-slate-500 leading-relaxed line-clamp-2 mb-3">
+                    {r.description}
+                  </p>
+                  <div className="mt-auto flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-medium text-slate-600">
+                      {widgetCount} widget{widgetCount > 1 ? "s" : ""}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[10.5px] font-medium text-slate-500 capitalize">
+                      {r.category}
+                    </span>
+                    {childCount > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10.5px] font-medium text-violet-700">
+                        {childCount} enfant{childCount > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* ============================================================ */}
       {/* Dashboard / Report widgets — drag-and-drop grid */}
@@ -2307,6 +2460,8 @@ function SidebarSection({
   count,
   collapsed,
   onToggle,
+  onTitleClick,
+  isSelected,
   accentClass,
   hint,
   actions,
@@ -2322,6 +2477,8 @@ function SidebarSection({
   count?: number;
   collapsed: boolean;
   onToggle: () => void;
+  onTitleClick?: () => void;
+  isSelected?: boolean;
   accentClass?: string;
   hint?: string;
   actions?: React.ReactNode;
@@ -2332,20 +2489,39 @@ function SidebarSection({
   onRenameCancel?: () => void;
   children: React.ReactNode;
 }) {
+  // Si onTitleClick est fourni, la flèche gère expand/collapse et le reste
+  // du header ouvre la vue dédiée (ex: galerie d'un dossier). Sinon le header
+  // entier bascule collapsed (comportement historique).
+  const splitHeader = !!onTitleClick;
   return (
     <div className="group">
-      <div className="flex items-center gap-1 px-1 mb-0.5">
+      <div
+        className={cn(
+          "flex items-center gap-1 px-1 mb-0.5 rounded",
+          isSelected && "bg-blue-50",
+        )}
+      >
         <button
           onClick={onToggle}
-          className="flex-1 flex items-center gap-1.5 px-1 py-1 rounded hover:bg-slate-50 transition-colors text-left"
+          className="h-6 w-6 shrink-0 rounded flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
           disabled={renaming}
+          title={collapsed ? "Développer" : "Réduire"}
         >
           <ChevronDown
             className={cn(
-              "h-3 w-3 text-slate-400 transition-transform shrink-0",
+              "h-3 w-3 transition-transform",
               collapsed && "-rotate-90",
             )}
           />
+        </button>
+        <button
+          onClick={splitHeader ? onTitleClick : onToggle}
+          className={cn(
+            "flex-1 flex items-center gap-1.5 px-1 py-1 rounded transition-colors text-left",
+            isSelected ? "hover:bg-blue-100" : "hover:bg-slate-50",
+          )}
+          disabled={renaming}
+        >
           {icon}
           {renaming ? (
             <input
@@ -2367,7 +2543,7 @@ function SidebarSection({
             <span
               className={cn(
                 "flex-1 text-[11px] font-semibold uppercase tracking-wider truncate",
-                accentClass ?? "text-slate-500",
+                isSelected ? "text-blue-700" : accentClass ?? "text-slate-500",
               )}
             >
               {title}
