@@ -118,6 +118,7 @@ model Organization {
   assetWarranties       AssetWarranty[]
   assetSubscriptions    AssetSubscription[]
   assetSupportContracts AssetSupportContract[]
+  budgets               Budget[]
 
   /// Si true, les rapports mensuels générés pour ce client sont
   /// automatiquement publiés au portail dès leur création. Sinon, un
@@ -271,6 +272,12 @@ model User {
   assetWarrantiesCreated        AssetWarranty[]          @relation("AssetWarrantyCreator")
   assetSubscriptionsCreated     AssetSubscription[]      @relation("AssetSubscriptionCreator")
   assetSupportContractsCreated  AssetSupportContract[]   @relation("AssetSupportContractCreator")
+  budgetsCreated                Budget[]                 @relation("BudgetCreator")
+  budgetsUpdated                Budget[]                 @relation("BudgetUpdater")
+  budgetLinesCreated            BudgetLine[]             @relation("BudgetLineCreator")
+  budgetLinesUpdated            BudgetLine[]             @relation("BudgetLineUpdater")
+  budgetVersionsCreated         BudgetVersion[]          @relation("BudgetVersionAuthor")
+  budgetCommentsAuthored        BudgetComment[]          @relation("BudgetCommentAuthor")
 
   @@map("users")
 }
@@ -1374,6 +1381,7 @@ model PortalAccessUser {
   canSeeChanges              Boolean    @default(false) @map("can_see_changes")
   canSeeRenewals             Boolean    @default(false) @map("can_see_renewals")
   canSeeLicenseCounts        Boolean    @default(false) @map("can_see_license_counts")
+  canSeeBudget               Boolean    @default(false) @map("can_see_budget")
   lastLoginAt                DateTime?  @map("last_login_at")
   createdAt                  DateTime   @default(now()) @map("created_at")
   updatedAt                  DateTime   @updatedAt @map("updated_at")
@@ -3023,6 +3031,9 @@ model OrgCapabilities {
   /// Permet l'interface anglaise sur les postes/logiciels corporatifs pour
   /// cette org. Peut être surchargé par logiciel (SoftwareInstance.allowEnglishUI).
   allowEnglishUI    Boolean  @default(true) @map("allow_english_ui")
+  /// Mois de début d'année fiscale (1-12). Défaut 1 = janvier. Utilisé par le
+  /// module Budgets pour déterminer la période d'un budget annuel.
+  fiscalYearStartMonth Int  @default(1) @map("fiscal_year_start_month")
   extras            Json?
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
@@ -4075,4 +4086,196 @@ model ChangeAiSignal {
   @@index([status])
   @@index([sourceType, sourceId])
   @@map("change_ai_signals")
+}
+
+// ============================================================================
+// BUDGETS — Budget annuel IT par organisation. Cetix construit, client approuve,
+// suivi prévu vs réel tout au long de l'année.
+//
+// Workflow : DRAFT → PROPOSED → APPROVED → EXECUTING → CLOSED
+//            (REJECTED possible à tout moment → retour DRAFT)
+//
+// Sources automatiques (via src/lib/budgets/ingest.ts) :
+//  - AssetSubscription, SoftwareLicense, AssetWarranty, AssetSupportContract
+//  - Contract (services récurrents)
+//  - Asset en fin de vie (lifecycleEndDate dans l'année fiscale)
+//
+// Sources manuelles : pentest, consulting, projets ponctuels, contingence.
+// ============================================================================
+
+enum BudgetStatus {
+  DRAFT         // Cetix construit
+  PROPOSED      // envoyé au client pour approbation
+  APPROVED      // baseline locked, exécution en cours
+  EXECUTING     // actualAmount se remplit au fil de l'année (alias de APPROVED après signature)
+  CLOSED        // fin d'année, figé
+  REJECTED      // refusé par client, retourne à DRAFT après ajustements
+}
+
+enum BudgetCategory {
+  SUBSCRIPTIONS       // abonnements logiciels/SaaS
+  LICENSES            // licences perpétuelles ou annuelles
+  HARDWARE            // nouveau matériel à acheter
+  OBSOLESCENCE        // remplacements d'assets en fin de vie
+  WARRANTIES          // garanties matériel à renouveler
+  SUPPORT             // contrats de support (L1/L2/24x7)
+  EXTERNAL_SERVICES   // services ponctuels : pentest, audit SOC2, conseil
+  PROJECTS            // projets IT internes
+  TRAINING            // formations utilisateurs/admins
+  TELECOM             // Internet, téléphonie, forfaits mobiles
+  CONTINGENCY         // ligne de contingence (imprévus)
+  OTHER
+}
+
+enum BudgetLineSource {
+  AUTO_SUBSCRIPTION     // AssetSubscription
+  AUTO_LICENSE          // SoftwareLicense
+  AUTO_WARRANTY         // AssetWarranty
+  AUTO_SUPPORT          // AssetSupportContract
+  AUTO_CONTRACT         // Contract récurrent
+  AUTO_ASSET_EOL        // Asset lifecycleEndDate
+  MANUAL                // saisi à la main
+}
+
+enum BudgetLineStatus {
+  PLANNED     // prévu (ligne issue d'ingest ou saisie)
+  COMMITTED   // engagé ferme (PO émise, devis signé)
+  INVOICED    // facturé par le fournisseur
+  PAID        // payé
+  CANCELLED   // annulé (n'entre plus dans le réalisé)
+}
+
+model Budget {
+  id              String       @id @default(cuid())
+  organizationId  String       @map("organization_id")
+  /// Année fiscale : année civile du mois de début. Ex: fy=2026 avec
+  /// fiscalYearStartMonth=4 → avril 2026 → mars 2027.
+  fiscalYear      Int          @map("fiscal_year")
+  title           String       // ex: "Budget IT 2026"
+  summary         String?      @db.Text
+  status          BudgetStatus @default(DRAFT)
+  currency        String       @default("CAD")
+  /// Montant total cible (ceiling) fixé par Cetix/client. Les lignes doivent
+  /// roughly y cadrer. Si null, pas de cible explicite.
+  targetAmount    Decimal?     @db.Decimal(14, 2) @map("target_amount")
+  /// Ligne de contingence en % (ex: 10 pour 10%). Appliquée au sommant des
+  /// lignes PLANNED pour l'affichage du "budget total avec contingence".
+  contingencyPct  Float        @default(0) @map("contingency_pct")
+  /// Notes Cetix internes, jamais exposées portail même si visibility CLIENT_*.
+  internalNotes   String?      @db.Text @map("internal_notes")
+  /// Visibilité du budget en entier. Lignes peuvent avoir visibility plus
+  /// restrictive (INTERNAL), mais le budget lui-même doit être au moins
+  /// CLIENT_ADMIN pour que le client puisse l'approuver.
+  visibility      ContentVisibility @default(CLIENT_ADMIN)
+  proposedAt      DateTime?    @map("proposed_at")
+  approvedAt      DateTime?    @map("approved_at")
+  closedAt        DateTime?    @map("closed_at")
+  /// Référence à la demande d'approbation (ApprovalRequest) créée à PROPOSED.
+  approvalId      String?      @map("approval_id")
+  createdByUserId String?      @map("created_by_user_id")
+  updatedByUserId String?      @map("updated_by_user_id")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?            @relation("BudgetCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy    User?            @relation("BudgetUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  lines        BudgetLine[]
+  versions     BudgetVersion[]
+  comments     BudgetComment[]
+
+  @@unique([organizationId, fiscalYear])
+  @@index([organizationId])
+  @@index([status])
+  @@map("budgets")
+}
+
+model BudgetLine {
+  id              String           @id @default(cuid())
+  budgetId        String           @map("budget_id")
+  category        BudgetCategory
+  source          BudgetLineSource @default(MANUAL)
+  /// Type de la ressource source (polymorphe, string-typed). Valeurs :
+  /// "asset_subscription" | "software_license" | "asset_warranty" |
+  /// "asset_support_contract" | "contract" | "asset" | null pour MANUAL.
+  sourceRefType   String?          @map("source_ref_type")
+  sourceRefId     String?          @map("source_ref_id")
+  label           String
+  vendor          String?
+  /// Mois de l'année fiscale où la dépense tombe (1-12, relatif à l'année
+  /// fiscale du budget). Si null, "flexible / réparti".
+  plannedMonth    Int?             @map("planned_month")
+  plannedAmount   Decimal          @db.Decimal(14, 2) @map("planned_amount")
+  committedAmount Decimal?         @db.Decimal(14, 2) @map("committed_amount")
+  actualAmount    Decimal?         @db.Decimal(14, 2) @map("actual_amount")
+  currency        String           @default("CAD")
+  status          BudgetLineStatus @default(PLANNED)
+  /// Hérite la visibility du budget par défaut, mais peut être restreint
+  /// à INTERNAL pour cacher une ligne sensible au client même si le budget
+  /// est CLIENT_ADMIN.
+  visibility      ContentVisibility @default(CLIENT_ADMIN)
+  notes           String?          @db.Text
+  /// Date d'échéance cible (pour les lignes avec une date précise de
+  /// renouvellement/commande). Utile pour alertes 90j.
+  dueDate         DateTime?        @map("due_date")
+  createdByUserId String?          @map("created_by_user_id")
+  updatedByUserId String?          @map("updated_by_user_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  budget    Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  createdBy User?  @relation("BudgetLineCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy User?  @relation("BudgetLineUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([budgetId])
+  @@index([category])
+  @@index([sourceRefType, sourceRefId])
+  @@index([dueDate])
+  @@map("budget_lines")
+}
+
+/// Snapshot immuable à chaque transition de statut. Permet de restaurer
+/// une version antérieure ou tracer ce qui a été approuvé par le client.
+model BudgetVersion {
+  id              String       @id @default(cuid())
+  budgetId        String       @map("budget_id")
+  version         Int
+  statusAtSnapshot BudgetStatus @map("status_at_snapshot")
+  /// Payload complet budget + lignes au moment du snapshot.
+  snapshot        Json
+  note            String?
+  authorId        String?      @map("author_id")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  author User?  @relation("BudgetVersionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@unique([budgetId, version])
+  @@index([budgetId])
+  @@map("budget_versions")
+}
+
+/// Commentaires sur un budget (agent ou client via portail). Permet une
+/// discussion asynchrone pendant la phase PROPOSED.
+model BudgetComment {
+  id         String   @id @default(cuid())
+  budgetId   String   @map("budget_id")
+  /// Optionnel : commentaire attaché à une ligne spécifique plutôt qu'au
+  /// budget global.
+  lineId     String?  @map("line_id")
+  body       String   @db.Text
+  /// Source : "agent" (Cetix) ou "portal" (client via portail). Déterminé
+  /// au POST selon la session. Permet UI de colorer différemment.
+  source     String   @default("agent")
+  /// Si source=agent, authorId = User. Si portal, authorPortalUserId set.
+  authorId            String?  @map("author_id")
+  authorPortalUserId  String?  @map("author_portal_user_id")
+  authorName          String?  @map("author_name")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  author User?  @relation("BudgetCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([budgetId, createdAt(sort: Desc)])
+  @@map("budget_comments")
 }

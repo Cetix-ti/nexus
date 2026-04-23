@@ -26,6 +26,7 @@ import {
   Package,
   GitCommit,
   CalendarClock,
+  Wallet,
 } from "lucide-react";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { PortalImpersonationBanner } from "@/components/portal/impersonation-banner";
@@ -56,6 +57,7 @@ const navItems: NavItem[] = [
   { labelKey: "portal.nav.software",        label: "Logiciels",      href: "/portal/software",        icon: Package,     requiresPermission: "canSeeSoftware" },
   { labelKey: "portal.nav.changes",         label: "Changements",    href: "/portal/changes",         icon: GitCommit,   requiresPermission: "canSeeChanges" },
   { labelKey: "portal.nav.renewals",        label: "Échéances",      href: "/portal/renewals",        icon: CalendarClock, requiresPermission: "canSeeRenewals" },
+  { labelKey: "portal.nav.budget",          label: "Budget IT",      href: "/portal/budget",          icon: Wallet,      requiresPermission: "canSeeBudget" },
 ];
 
 function getInitials(name: string): string {

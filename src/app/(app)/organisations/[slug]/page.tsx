@@ -60,6 +60,7 @@ import { OrgPortalSection } from "@/components/portal/org-portal-section";
 import { OrgReportsTab } from "@/components/organizations/org-reports-tab";
 import { OrgNetworkSection } from "@/components/organizations/org-network-section";
 import { OrgAiIntelligenceTab } from "@/components/organizations/org-ai-intelligence-tab";
+import { OrgBudgetTab } from "@/components/budgets/org-budget-tab";
 import { OrgMonthlyReportsTab } from "@/components/reports/monthly/org-monthly-reports-tab";
 import { OrgParticularitiesTab } from "@/components/particularities/org-particularities-tab";
 import { OrgSoftwareTab } from "@/components/software/org-software-tab";
@@ -549,6 +550,7 @@ const TABS = [
   { key: "contracts", label: "Contrats" },
   { key: "sla", label: "SLA" },
   { key: "billing", label: "Facturation" },
+  { key: "budget", label: "Budget" },
   { key: "reports", label: "Rapports" },
   { key: "portal_access", label: "Portail client" },
   { key: "ai", label: "Intelligence IA" },
@@ -901,7 +903,8 @@ export default function OrganizationDetailPage() {
         if (
           t.key === "billing" ||
           t.key === "contracts" ||
-          t.key === "reports"
+          t.key === "reports" ||
+          t.key === "budget"
         ) {
           return canFinances;
         }
@@ -1762,6 +1765,11 @@ export default function OrganizationDetailPage() {
       )}
       {activeTab === "changes" && (
         <OrgChangesTab organizationId={orgId} organizationName={o.name} />
+      )}
+
+      {/* Budget IT — annuel, construit par Cetix, approuvé par le client. */}
+      {activeTab === "budget" && (
+        <OrgBudgetTab organizationId={orgId} organizationName={o.name} />
       )}
 
       {/* Intelligence IA Tab — Phase 3 : analyse risques, rapports

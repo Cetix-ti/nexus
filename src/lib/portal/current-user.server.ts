@@ -37,6 +37,7 @@ export interface PortalUserContext {
     canSeeChanges: boolean;
     canSeeRenewals: boolean;
     canSeeLicenseCounts: boolean;
+    canSeeBudget: boolean;
   };
   org: ResolvedOrg;
 }
@@ -132,6 +133,7 @@ export async function getCurrentPortalUser(): Promise<PortalUserContext | null> 
     canSeeChanges:         pa?.canSeeChanges         ?? (pa?.portalRole === "ADMIN"),
     canSeeRenewals:        pa?.canSeeRenewals        ?? (pa?.portalRole === "ADMIN"),
     canSeeLicenseCounts:   pa?.canSeeLicenseCounts   ?? (pa?.portalRole === "ADMIN"),
+    canSeeBudget:          pa?.canSeeBudget          ?? (pa?.portalRole === "ADMIN"),
   };
 
   const portalRole = pa?.portalRole ?? "STANDARD";
