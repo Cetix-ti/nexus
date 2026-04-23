@@ -71,6 +71,7 @@ model Organization {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   sites                 Site[]
+  internetLinks         OrgInternetLink[]
   contacts              Contact[]
   users                 UserOrganization[]
   tickets               Ticket[]
@@ -94,6 +95,35 @@ model Organization {
   securityIncidents     SecurityIncident[]
   persistenceWhitelists SecurityPersistenceWhitelist[]
   aiConsent             AiConsent?
+  mileageRate           OrgMileageRate?
+  addons                OrganizationAddon[]
+  publishedDashboards   PublishedDashboard[]
+  monthlyReports        MonthlyClientReport[]
+
+  // Socle nouveaux modules (Particularités, Politiques, Logiciels, Changements)
+  capabilities          OrgCapabilities?
+  particularities       Particularity[]
+  softwareInstances     SoftwareInstance[]
+  softwareInstallers    SoftwareInstaller[]
+  softwareLicenses      SoftwareLicense[]
+  softwareDownloadLinks SoftwareDownloadLink[]
+  gpoInstances          GpoInstance[]
+  scriptInstances       ScriptInstance[]
+  scriptPublications    ScriptPublication[]
+  policyDocuments       PolicyDocument[]
+  approvalRequests      ApprovalRequest[]
+  approvalDelegates     ApprovalDelegate[]
+  changes               Change[]
+  changeAiSignals       ChangeAiSignal[]
+  assetWarranties       AssetWarranty[]
+  assetSubscriptions    AssetSubscription[]
+  assetSupportContracts AssetSupportContract[]
+
+  /// Si true, les rapports mensuels générés pour ce client sont
+  /// automatiquement publiés au portail dès leur création. Sinon, un
+  /// agent doit les publier manuellement. Défaut false (publication
+  /// manuelle, sécurité par défaut).
+  monthlyReportAutoPublish Boolean @default(false) @map("monthly_report_auto_publish")
 
   @@map("organizations")
 }
@@ -118,6 +148,8 @@ model Site {
   assets         Asset[]
   tickets        Ticket[]
   calendarEvents CalendarEvent[]
+  internetLinks  OrgInternetLink[]
+  vlans          SiteVlan[]
 
   @@map("sites")
 }
@@ -137,15 +169,26 @@ model User {
   avatar         String?
   phone          String?
   role           UserRole @default(TECHNICIAN)
+  /// Rôle custom optionnel (clé de CustomRole). Quand présent, les
+  /// permissions accordées à ce rôle s'ajoutent à celles du rôle
+  /// système (union). La hiérarchie (hasMinimumRole) continue d'utiliser
+  /// `role` uniquement — un rôle custom ne peut pas élever le niveau.
+  customRoleKey  String?  @map("custom_role_key")
   isActive       Boolean  @default(true) @map("is_active")
-  /// Tags de capacité spéciale attribués par l'admin. Chaque tag débloque
-  /// un accès spécifique, indépendamment du rôle :
-  ///   - "billing"  → accès au verrouillage de facturation
-  ///   - "finances" → accès à la section Finances
-  /// SUPER_ADMIN a implicitement toutes les capacités.
+  /// Overrides personnels legacy — continuent de fonctionner mais ne
+  /// sont plus éditables via l'UI. Les nouveaux accès passent par
+  /// Rôles & Permissions (table RolePermission).
   capabilities   String[] @default([])
   locale         String   @default("fr") // fr | en
   preferences    Json?    @db.JsonB
+
+  /// Allocation kilométrique activée pour cet agent. `false` = pas de
+  /// remboursement km monétaire (cas : véhicule d'entreprise fourni, OU
+  /// agent payé en temps plutôt qu'en argent pour ses déplacements).
+  /// L'agent reste responsable de logger les saisies onsite pour que
+  /// le CLIENT soit correctement facturé — seul le remboursement
+  /// personnel est désactivé.
+  mileageAllocationEnabled Boolean @default(true) @map("mileage_allocation_enabled")
   signature      String?  @db.Text
   signatureHtml  String?  @map("signature_html") @db.Text
 
@@ -169,6 +212,8 @@ model User {
   expenseReports            ExpenseReport[]      @relation("ExpenseReportSubmitter")
   purchaseOrders            PurchaseOrder[]      @relation("PurchaseOrderRequester")
   managedProjects           Project[]            @relation("ProjectManager")
+  projectMemberships        ProjectMember[]
+  allowances                AgentAllowance[]
   sharedResources           SharedResource[]     @relation("SharedByUser")
   ticketReminders           TicketReminder[]
   notifications             Notification[]
@@ -186,9 +231,46 @@ model User {
   // Supervision d'agents — un superviseur peut gérer N agents, un agent
   // peut avoir au plus un superviseur (1:N). Menu "Supervision" visible
   // uniquement pour les users qui ont au moins un entry dans supervisedAgents.
-  supervisedAgents AgentSupervision[] @relation("Supervisor")
-  supervisedBy     AgentSupervision[] @relation("SupervisedAgent")
-  billingLocks     BillingPeriodLock[] @relation("BillingPeriodLockUser")
+  supervisedAgents        AgentSupervision[]    @relation("Supervisor")
+  supervisedBy            AgentSupervision[]    @relation("SupervisedAgent")
+  billingLocks            BillingPeriodLock[]   @relation("BillingPeriodLockUser")
+  generatedMonthlyReports MonthlyClientReport[] @relation("MonthlyReportGenerator")
+
+  // Socle nouveaux modules
+  orgCapabilitiesUpdated        OrgCapabilities[]        @relation("OrgCapabilitiesUpdater")
+  contentRelationsCreated       ContentRelation[]        @relation("ContentRelationCreator")
+  particularitiesAuthored       Particularity[]          @relation("ParticularityAuthor")
+  particularitiesUpdated        Particularity[]          @relation("ParticularityUpdater")
+  particularityTemplatesCreated ParticularityTemplate[]  @relation("ParticularityTemplateCreator")
+  particularityTemplatesUpdated ParticularityTemplate[]  @relation("ParticularityTemplateUpdater")
+  particularityVersionsAuthored ParticularityVersion[]   @relation("ParticularityVersionAuthor")
+  softwareTemplatesCreated      SoftwareTemplate[]       @relation("SoftwareTemplateCreator")
+  softwareTemplatesUpdated      SoftwareTemplate[]       @relation("SoftwareTemplateUpdater")
+  softwareInstancesUpdated      SoftwareInstance[]       @relation("SoftwareInstanceUpdater")
+  softwareInstancesCetixOwner   SoftwareInstance[]       @relation("SoftwareInstanceCetixOwner")
+  softwareInstallersUploaded    SoftwareInstaller[]      @relation("SoftwareInstallerUploader")
+  softwareDownloadLinksCreated  SoftwareDownloadLink[]   @relation("SoftwareDownloadLinkCreator")
+  softwareLicensesCreated       SoftwareLicense[]        @relation("SoftwareLicenseCreator")
+  gpoTemplatesCreated           GpoTemplate[]            @relation("GpoTemplateCreator")
+  gpoTemplatesUpdated           GpoTemplate[]            @relation("GpoTemplateUpdater")
+  gpoInstancesUpdated           GpoInstance[]            @relation("GpoInstanceUpdater")
+  gpoImportsUploaded            GpoImport[]              @relation("GpoImportUploader")
+  scriptTemplatesCreated        ScriptTemplate[]         @relation("ScriptTemplateCreator")
+  scriptTemplatesUpdated        ScriptTemplate[]         @relation("ScriptTemplateUpdater")
+  scriptInstancesUpdated        ScriptInstance[]         @relation("ScriptInstanceUpdater")
+  scriptPublicationsCreated     ScriptPublication[]      @relation("ScriptPublicationCreator")
+  policyDocumentsAuthored       PolicyDocument[]         @relation("PolicyDocumentAuthor")
+  policyDocumentsUpdated        PolicyDocument[]         @relation("PolicyDocumentUpdater")
+  policyDocumentTemplatesCreated PolicyDocumentTemplate[] @relation("PolicyDocumentTemplateCreator")
+  approvalRequestsRequested     ApprovalRequest[]        @relation("ApprovalRequester")
+  approvalRequestsDecided       ApprovalRequest[]        @relation("ApprovalDecider")
+  approvalDelegateAssignments   ApprovalDelegate[]       @relation("ApprovalDelegateUser")
+  changesAuthored               Change[]                 @relation("ChangeAuthor")
+  changesReviewed               Change[]                 @relation("ChangeReviewer")
+  changesApproved               Change[]                 @relation("ChangeApprover")
+  assetWarrantiesCreated        AssetWarranty[]          @relation("AssetWarrantyCreator")
+  assetSubscriptionsCreated     AssetSubscription[]      @relation("AssetSubscriptionCreator")
+  assetSupportContractsCreated  AssetSupportContract[]   @relation("AssetSupportContractCreator")
 
   @@map("users")
 }
@@ -214,6 +296,92 @@ model AgentSupervision {
   @@index([supervisorId])
   @@index([agentId])
   @@map("agent_supervisions")
+}
+
+// ============================================================================
+// RÔLES & PERMISSIONS
+//
+// Le système combine des rôles SYSTÈME (enum UserRole, 7 valeurs fixes,
+// utilisées par hasMinimumRole pour la hiérarchie) et des rôles CUSTOM
+// définis à l'exécution par l'admin via le panneau "Rôles & Permissions".
+//
+// Les PERMISSIONS sont des chaînes libres (ex. "tickets.view",
+// "finances", "billing") stockées dans RolePermission, reliées à une
+// clé de rôle (peut être une valeur UserRole en string ou une clé
+// CustomRole). hasCapability(user, cap) vérifie :
+//   1. user.capabilities (override personnel)
+//   2. RolePermission.roleKey = user.role (grant de rôle)
+//
+// L'enum UserRole reste inchangé pour préserver la logique de hiérarchie
+// (hasMinimumRole). Les custom roles n'y participent pas — ils sont
+// utilisés comme buckets de permissions assignables en complément.
+// ============================================================================
+
+model CustomRole {
+  key         String    @id // ex: "comptable_senior"
+  label       String // ex: "Comptable senior"
+  description String?
+  color       String? // hex (#RRGGBB) pour l'icône
+  // Rôle système hérité pour la hiérarchie. Si null, le rôle custom
+  // n'hérite de rien (permissions uniquement explicites).
+  parentRole  UserRole?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("custom_roles")
+}
+
+model RolePermission {
+  id            String   @id @default(cuid())
+  // Clé du rôle : valeur UserRole en string ("TECHNICIAN") ou key
+  // d'un CustomRole ("comptable_senior"). On ne met PAS de foreign key
+  // pour accommoder les deux cas.
+  roleKey       String   @map("role_key")
+  permissionKey String   @map("permission_key")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([roleKey, permissionKey])
+  @@index([roleKey])
+  @@map("role_permissions")
+}
+
+// ============================================================================
+// DASHBOARDS PUBLIÉS AU PORTAIL CLIENT
+//
+// Un agent peut publier un de ses dashboards custom (stocké en localStorage
+// côté agent) pour qu'un client le voie dans son portail (section Rapports).
+// Snapshot FIGÉ : au moment de la publication, on sérialise le layout +
+// les widgets concernés dans `config`. Les modifications ultérieures côté
+// agent n'affectent pas la version publiée — l'agent doit re-publier pour
+// mettre à jour.
+//
+// Scope : le dashboard est visible aux contacts de l'organisation cible
+// (ou "toutes les organisations" si organizationId est null).
+// ============================================================================
+
+model PublishedDashboard {
+  id             String   @id @default(cuid())
+  // Clé locale du dashboard côté agent (ex. "report_kpi_xyz"). Permet
+  // à l'UI agent de retrouver "est-ce que ce dashboard est publié ?".
+  dashboardKey   String   @map("dashboard_key")
+  label          String
+  description    String?
+  // Organisation autorisée à voir ce dashboard. Null = toutes les orgs
+  // du portail (rare ; surtout pour tests / dashboards "tous clients").
+  organizationId String?  @map("organization_id")
+  // Snapshot complet : { widgets: CustomWidget[], layout: DashboardItem[] }.
+  // Le portail lit d'ici et ignore ce qui est en localStorage agent.
+  config         Json
+  // Audit
+  publishedById  String   @map("published_by_id")
+  publishedAt    DateTime @default(now()) @map("published_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([dashboardKey])
+  @@map("published_dashboards")
 }
 
 enum UserRole {
@@ -273,6 +441,10 @@ model Contact {
   assignedAssets Asset[]           @relation("AssignedContact")
   portalAccess   PortalAccessUser?
   assetNotes     AssetNote[]       @relation("AssetNoteContact")
+  // Logiciels
+  softwareResponsibleAt SoftwareInstance[]     @relation("SoftwareInstanceClientOwner")
+  softwareLicenses      SoftwareLicense[]      @relation("SoftwareLicenseContact")
+  softwareAccesses      ContactSoftwareAccess[]
 
   @@map("contacts")
 }
@@ -299,28 +471,28 @@ model Ticket {
   description     String  @db.Text
   descriptionHtml String? @map("description_html") @db.Text
 
-  status         TicketStatus   @default(NEW)
+  status             TicketStatus   @default(NEW)
   /// Priorité par défaut = LOW. Le créateur peut surcharger explicitement
   /// (medium, high, critical). L'IA peut ensuite ré-évaluer et remonter
   /// la priorité SI sa confiance est "high" (voir src/lib/ai/auto-prioritize.ts).
   /// `prioritySource` garde une trace de l'origine pour l'UI.
-  priority       TicketPriority @default(LOW)
+  priority           TicketPriority @default(LOW)
   /// Origine de la valeur courante de `priority` :
   ///   - null ou "DEFAULT" : valeur par défaut (LOW), jamais touchée
   ///   - "MANUAL"          : fixée explicitement par un humain
   ///   - "AI"              : ajustée par l'IA après création
-  prioritySource String?        @map("priority_source")
+  prioritySource     String?        @map("priority_source")
   /// Origine de la catégorie courante : null/DEFAULT = jamais fixée,
   /// MANUAL = choix explicite humain (ne jamais écraser),
   /// AI = appliquée par le triage automatique avec sa confidence loguée.
-  categorySource   String?        @map("category_source")
+  categorySource     String?        @map("category_source")
   /// Confidence (0-1) de l'IA au moment de l'application auto — affichée
   /// dans l'UI à côté de la catégorie.
-  categoryConfidence Float?       @map("category_confidence")
-  urgency        TicketUrgency  @default(MEDIUM)
-  impact         TicketImpact   @default(MEDIUM)
-  type           TicketType     @default(INCIDENT)
-  source         TicketSource   @default(PORTAL)
+  categoryConfidence Float?         @map("category_confidence")
+  urgency            TicketUrgency  @default(MEDIUM)
+  impact             TicketImpact   @default(MEDIUM)
+  type               TicketType     @default(INCIDENT)
+  source             TicketSource   @default(PORTAL)
 
   dueAt           DateTime? @map("due_at")
   firstResponseAt DateTime? @map("first_response_at")
@@ -381,6 +553,11 @@ model Ticket {
   approvals            TicketApproval[]
   collaborators        TicketCollaborator[]
   reminders            TicketReminder[]
+  subtasks             TicketSubtask[]
+  // Dépendances sortantes : "ce ticket dépend de" X tickets amont.
+  dependencies         TicketDependency[]   @relation("DependentTicket")
+  // Dépendances entrantes : X tickets dépendent de celui-ci.
+  dependents           TicketDependency[]   @relation("UpstreamTicket")
   // Events calendrier qui pointent vers ce ticket interne (suivi visuel).
   linkedCalendarEvents CalendarEvent[]      @relation("CalendarEventInternalTicket")
   // Incidents de sécurité liés à ce ticket. Un ticket peut regrouper
@@ -396,9 +573,9 @@ model Ticket {
   ///   - classement automatique via centroids de catégorie
   ///   - détection de tickets récurrents cross-time
   /// Peuplé en asynchrone via le job `ticket-embeddings` après création.
-  embedding       Json? @map("embedding")
-  embeddingAt     DateTime? @map("embedding_at")
-  embeddingModel  String? @map("embedding_model")
+  embedding      Json?     @map("embedding")
+  embeddingAt    DateTime? @map("embedding_at")
+  embeddingModel String?   @map("embedding_model")
 
   @@index([organizationId, status])
   @@index([requiresOnSite, status])
@@ -678,11 +855,22 @@ model Contract {
   endDate        DateTime?      @map("end_date")
   monthlyHours   Float?         @map("monthly_hours")
   hourlyRate     Float?         @map("hourly_rate")
+  // Paramètres du moteur de facturation : enum "engine" (lowercase
+  // "hour_bank" / "msp_monthly" / "time_and_materials" / "ftig"),
+  // settings de banque d'heures (incluant hoursConsumed authoritative),
+  // settings de forfait MSP, settings FTIG, billingProfileId, etc. Le
+  // JSON est la source de vérité pour decideBilling(); les colonnes
+  // Contract.type/monthlyHours/hourlyRate restent pour les vues legacy.
+  settings       Json?
   notes          String?        @db.Text
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  softwareLicenses      SoftwareLicense[]      @relation("SoftwareLicenseContract")
+  assetWarranties       AssetWarranty[]        @relation("AssetWarrantyContract")
+  assetSubscriptions    AssetSubscription[]    @relation("AssetSubscriptionContract")
+  assetSupportContracts AssetSupportContract[] @relation("AssetSupportContractContract")
 
   @@map("contracts")
 }
@@ -737,6 +925,10 @@ model Asset {
   assignedContact Contact?      @relation("AssignedContact", fields: [assignedContactId], references: [id])
   tickets         TicketAsset[]
   assetNotes      AssetNote[]
+  softwareLicenses SoftwareLicense[] @relation("SoftwareLicenseAsset")
+  warranties      AssetWarranty[]
+  subscriptions   AssetSubscription[]
+  supportContracts AssetSupportContract[]
 
   @@index([organizationId, type])
   @@index([assignedContactId])
@@ -1174,6 +1366,14 @@ model PortalAccessUser {
   canSeeAllOrgAssets         Boolean    @default(false) @map("can_see_all_org_assets")
   canManageAssets            Boolean    @default(false) @map("can_manage_assets")
   canManageContacts          Boolean    @default(false) @map("can_manage_contacts")
+  // Modules documentaires (ADMIN = défaut true via logique service ; la colonne
+  // est false par défaut pour protéger les rôles existants rétrocompat).
+  canSeeParticularities      Boolean    @default(false) @map("can_see_particularities")
+  canSeePolicies             Boolean    @default(false) @map("can_see_policies")
+  canSeeSoftware             Boolean    @default(false) @map("can_see_software")
+  canSeeChanges              Boolean    @default(false) @map("can_see_changes")
+  canSeeRenewals             Boolean    @default(false) @map("can_see_renewals")
+  canSeeLicenseCounts        Boolean    @default(false) @map("can_see_license_counts")
   lastLoginAt                DateTime?  @map("last_login_at")
   createdAt                  DateTime   @default(now()) @map("created_at")
   updatedAt                  DateTime   @updatedAt @map("updated_at")
@@ -1439,19 +1639,23 @@ enum MonitoringAlertSeverity {
 
 /// Central memory shared across all agents (org knowledge, procedures, patterns)
 model AiMemory {
-  id        String   @id @default(cuid())
-  scope     String   @default("global") // "global" | "user:userId" | "org:orgId"
-  category  String // "client" | "procedure" | "pattern" | "preference" | "convention" | "quirk" | "incident_pattern"
-  content   String   @db.Text
-  source    String? // "agent:userId" | "auto" | "system" | "extracted:ticket:xxx" | "extracted:batch:date"
-  /** Validation humaine — null = en attente d'approbation admin. Date = validé. */
+  id         String    @id @default(cuid())
+  scope      String    @default("global") // "global" | "user:userId" | "org:orgId"
+  category   String // "client" | "procedure" | "pattern" | "preference" | "convention" | "quirk" | "incident_pattern"
+  content    String    @db.Text
+  source     String? // "agent:userId" | "auto" | "system" | "extracted:ticket:xxx" | "extracted:batch:date"
+  /**
+   * Validation humaine — null = en attente d'approbation admin. Date = validé.
+   */
   verifiedAt DateTime? @map("verified_at")
   verifiedBy String?   @map("verified_by") // userId de l'admin qui a validé
-  /** Marqué comme rejeté par un admin — on le garde pour éviter la re-extraction mais on l'ignore en contexte. */
+  /**
+   * Marqué comme rejeté par un admin — on le garde pour éviter la re-extraction mais on l'ignore en contexte.
+   */
   rejectedAt DateTime? @map("rejected_at")
   rejectedBy String?   @map("rejected_by")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
 
   @@index([scope])
   @@index([category])
@@ -1510,34 +1714,34 @@ model AiCategoryFeedback {
 // si l'entité est supprimée, mais on supporte la cascade manuelle par script.
 // ============================================================================
 model AiInvocation {
-  id                String   @id @default(cuid())
-  feature           String                              // "triage" | "response_draft" | "category_suggest" | …
-  taskKind          String   @map("task_kind")          // sous-type (classification, generation, embedding…)
-  userId            String?  @map("user_id")            // qui a déclenché, null = système
-  ticketId          String?  @map("ticket_id")
-  organizationId   String?  @map("organization_id")    // scope client
-  policyJson        Json     @map("policy")             // snapshot AiPolicy appliquée
-  provider          String                              // "openai" | "ollama" | "local"
-  modelName         String   @map("model_name")
-  sensitivityLevel  String   @map("sensitivity_level")  // "public" | "internal" | "client_data" | "regulated"
-  scrubApplied      Boolean  @default(false) @map("scrub_applied")
-  promptHash        String   @map("prompt_hash")        // SHA256 — dédup + recherche
-  promptTokens      Int?     @map("prompt_tokens")
-  responseTokens    Int?     @map("response_tokens")
-  costCents         Int?     @map("cost_cents")         // estimation
-  latencyMs         Int      @map("latency_ms")
-  status            String   @default("ok")             // "ok" | "blocked" | "error" | "timeout"
-  blockedReason     String?  @map("blocked_reason")
-  response          String?  @db.Text                   // sortie IA (null si blocked)
-  humanAction       String?  @map("human_action")       // "accepted" | "edited" | "rejected" | null
-  humanEdit         String?  @db.Text @map("human_edit")
-  actedAt           DateTime? @map("acted_at")
+  id               String    @id @default(cuid())
+  feature          String // "triage" | "response_draft" | "category_suggest" | …
+  taskKind         String    @map("task_kind") // sous-type (classification, generation, embedding…)
+  userId           String?   @map("user_id") // qui a déclenché, null = système
+  ticketId         String?   @map("ticket_id")
+  organizationId   String?   @map("organization_id") // scope client
+  policyJson       Json      @map("policy") // snapshot AiPolicy appliquée
+  provider         String // "openai" | "ollama" | "local"
+  modelName        String    @map("model_name")
+  sensitivityLevel String    @map("sensitivity_level") // "public" | "internal" | "client_data" | "regulated"
+  scrubApplied     Boolean   @default(false) @map("scrub_applied")
+  promptHash       String    @map("prompt_hash") // SHA256 — dédup + recherche
+  promptTokens     Int?      @map("prompt_tokens")
+  responseTokens   Int?      @map("response_tokens")
+  costCents        Int?      @map("cost_cents") // estimation
+  latencyMs        Int       @map("latency_ms")
+  status           String    @default("ok") // "ok" | "blocked" | "error" | "timeout"
+  blockedReason    String?   @map("blocked_reason")
+  response         String?   @db.Text // sortie IA (null si blocked)
+  humanAction      String?   @map("human_action") // "accepted" | "edited" | "rejected" | null
+  humanEdit        String?   @map("human_edit") @db.Text
+  actedAt          DateTime? @map("acted_at")
   /// Version du prompt utilisé lors de l'invocation — copié depuis
   /// policy.promptVersion. Permet de grouper les invocations par version
   /// dans le dashboard (drift acceptance par version), et d'identifier une
   /// régression quand un changement de prompt fait chuter la qualité.
-  promptVersion     String?  @map("prompt_version")
-  createdAt         DateTime @default(now()) @map("created_at")
+  promptVersion    String?   @map("prompt_version")
+  createdAt        DateTime  @default(now()) @map("created_at")
 
   @@index([feature, createdAt])
   @@index([organizationId, createdAt])
@@ -1569,7 +1773,7 @@ model SimilarTicketClick {
   userId          String?  @map("user_id")
   sourceTicketId  String   @map("source_ticket_id")
   clickedTicketId String   @map("clicked_ticket_id")
-  bucket          String   // sameRequester | sameClientOpen | sameClientResolved | otherClientsResolved
+  bucket          String // sameRequester | sameClientOpen | sameClientResolved | otherClientsResolved
   score           Float?
   semanticSim     Float?   @map("semantic_sim")
   matchedTokens   String[] @default([]) @map("matched_tokens")
@@ -1597,27 +1801,27 @@ model SimilarTicketClick {
 //   4. Admin consulte les résultats dans Paramètres > Intelligence IA.
 // ============================================================================
 model AiAuditResult {
-  id             String   @id @default(cuid())
-  invocationId   String   @unique @map("invocation_id")
+  id                String   @id @default(cuid())
+  invocationId      String   @unique @map("invocation_id")
   /// Feature auditée (miroir du feature de l'invocation, pour requêtes).
-  feature        String
+  feature           String
   /// "agree" | "disagree" | "partial" — verdict global du juge IA.
-  verdict        String
+  verdict           String
   /// Confiance du juge dans son verdict (0.0-1.0).
-  judgeConfidence Float   @map("judge_confidence")
+  judgeConfidence   Float    @map("judge_confidence")
   /// Modèle utilisé pour auditer (ex: "gpt-4o", "gpt-4o-mini").
-  judgeModel     String   @map("judge_model")
+  judgeModel        String   @map("judge_model")
   /// Raisonnement en français — pourquoi le juge est d'accord ou non.
-  reasoning      String   @db.Text
+  reasoning         String   @db.Text
   /// Proposition concrète d'amélioration (stop-word à ajouter, seuil à
   /// changer, catégorie alternative suggérée, etc.). Null si pas d'idée.
-  suggestion     String?  @db.Text
+  suggestion        String?  @db.Text
   /// Pour les triages : catégorie que le juge aurait choisi (null si
   /// d'accord avec le choix local).
-  correctCategoryId String? @map("correct_category_id")
+  correctCategoryId String?  @map("correct_category_id")
   /// Coût de l'audit lui-même (en cents) pour monitoring budgétaire.
-  auditCostCents Int?     @map("audit_cost_cents")
-  createdAt      DateTime @default(now()) @map("created_at")
+  auditCostCents    Int?     @map("audit_cost_cents")
+  createdAt         DateTime @default(now()) @map("created_at")
 
   @@index([feature, createdAt])
   @@index([verdict, createdAt])
@@ -1669,22 +1873,22 @@ model AiConsent {
 }
 
 model AiPattern {
-  id              String   @id @default(cuid())
-  scope           String                                // "global" | "org:xxx" | "feature:triage"
-  kind            String                                // "acceptance_rate" | "calibration" | "convention" | …
-  key             String                                // identifiant lisible ("category:printing" par ex.)
-  value           Json                                  // payload flexible
-  sampleCount     Int      @default(0) @map("sample_count")
-  confidence      Float    @default(0.5)
+  id            String    @id @default(cuid())
+  scope         String // "global" | "org:xxx" | "feature:triage"
+  kind          String // "acceptance_rate" | "calibration" | "convention" | …
+  key           String // identifiant lisible ("category:printing" par ex.)
+  value         Json // payload flexible
+  sampleCount   Int       @default(0) @map("sample_count")
+  confidence    Float     @default(0.5)
   /// Expiration optionnelle du pattern. Utilisé par ai-audit.ts pour les
   /// patterns auto-appliqués (≥3 occurrences → règle) : on leur pose un TTL
   /// de 90j par défaut pour forcer une re-validation périodique. Un pattern
   /// expiré ne doit PAS influencer les décisions IA — le learner devra le
   /// ré-accumuler s'il reste pertinent. null = jamais expirer (manuel,
   /// validé par un humain).
-  expiresAt       DateTime? @map("expires_at")
-  lastUpdatedAt   DateTime @default(now()) @updatedAt @map("last_updated_at")
-  createdAt       DateTime @default(now()) @map("created_at")
+  expiresAt     DateTime? @map("expires_at")
+  lastUpdatedAt DateTime  @default(now()) @updatedAt @map("last_updated_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
 
   @@unique([scope, kind, key])
   @@index([scope, kind])
@@ -1838,6 +2042,89 @@ model ExpenseEntry {
   @@map("expense_entries")
 }
 
+// Allocation récurrente versée par Cetix à un agent via ses dépenses
+// (forfait cellulaire, forfait internet à la maison, etc.). L'agent voit
+// le total dans "Mes dépenses" — le montant est additionné au mois courant
+// comme référence, pas une entrée de dépense automatique.
+model AgentAllowance {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label         String
+  amountMonthly Float    @map("amount_monthly")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("agent_allowances")
+}
+
+// Configuration de facturation du déplacement pour un client :
+//   - billToClient : si false, Cetix ne facture JAMAIS le déplacement à
+//     ce client (contrat all-inclusive, proximité, etc.).
+//   - kmRoundTrip  : distance A/R standard Cetix ↔ client, utilisée pour
+//     estimer le remboursement agent (pas pour la facturation client qui
+//     suit le prix fixé dans les work types).
+//   - agentRatePerKm : coefficient $/km appliqué à l'agent qui s'est
+//     déplacé. Cetix décide par client pour gérer les cas particuliers
+//     (client lointain, tarif négocié).
+// Catalogue des abonnements supplémentaires / services connexes que l'on
+// vend (antivirus managé, sauvegarde Veeam, Microsoft 365 licences, etc.).
+// `defaultMonthlyPrice` est le prix de référence affiché dans le catalogue ;
+// chaque assignation à une org peut avoir son propre prix négocié.
+model BillingAddon {
+  id                  String   @id @default(cuid())
+  name                String
+  description         String?  @db.Text
+  defaultMonthlyPrice Float    @map("default_monthly_price")
+  active              Boolean  @default(true)
+  sortOrder           Int      @default(0) @map("sort_order")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  organizationAddons OrganizationAddon[]
+
+  @@map("billing_addons")
+}
+
+// Assignation d'un addon à une organisation cliente. `monthlyPrice` peut
+// être null → on reprend le defaultMonthlyPrice du catalogue ; sinon on
+// utilise ce prix négocié pour cette org seulement. `quantity` permet
+// de vendre N unités du même addon (ex: 12 licences M365 Business).
+model OrganizationAddon {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  addonId        String       @map("addon_id")
+  addon          BillingAddon @relation(fields: [addonId], references: [id], onDelete: Cascade)
+  quantity       Int          @default(1)
+  monthlyPrice   Float?       @map("monthly_price")
+  startDate      DateTime?    @map("start_date")
+  endDate        DateTime?    @map("end_date")
+  notes          String?      @db.Text
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@unique([organizationId, addonId])
+  @@index([organizationId])
+  @@index([addonId])
+  @@map("organization_addons")
+}
+
+model OrgMileageRate {
+  id             String       @id @default(cuid())
+  organizationId String       @unique @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  kmRoundTrip    Float        @map("km_round_trip")
+  billToClient   Boolean      @default(true) @map("bill_to_client")
+  agentRatePerKm Float        @default(0.55) @map("agent_rate_per_km")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@map("org_mileage_rates")
+}
+
 // ===========================================================================
 // Purchase Orders
 // ===========================================================================
@@ -1887,46 +2174,139 @@ enum PurchaseOrderStatus {
 // Projects
 // ===========================================================================
 model Project {
-  id                String       @id @default(cuid())
-  code              String       @unique
-  name              String
-  description       String?      @db.Text
-  organizationId    String       @map("organization_id")
-  organization      Organization @relation(fields: [organizationId], references: [id])
-  type              String       @default("implementation")
-  status            String       @default("draft")
-  priority          String       @default("medium")
-  managerId         String       @map("manager_id")
-  manager           User         @relation("ProjectManager", fields: [managerId], references: [id])
-  startDate         DateTime?    @map("start_date")
-  targetEndDate     DateTime?    @map("target_end_date")
-  actualEndDate     DateTime?    @map("actual_end_date")
-  progressPercent   Int          @default(0) @map("progress_percent")
-  budgetHours       Float?       @map("budget_hours")
-  consumedHours     Float        @default(0) @map("consumed_hours")
-  budgetAmount      Float?       @map("budget_amount")
-  consumedAmount    Float        @default(0) @map("consumed_amount")
-  isVisibleToClient Boolean      @default(false) @map("is_visible_to_client")
-  tags              String[]     @default([])
-  isAtRisk          Boolean      @default(false) @map("is_at_risk")
-  riskNotes         String?      @map("risk_notes") @db.Text
-  isArchived        Boolean      @default(false) @map("is_archived")
+  id                 String       @id @default(cuid())
+  code               String       @unique
+  name               String
+  description        String?      @db.Text
+  organizationId     String       @map("organization_id")
+  organization       Organization @relation(fields: [organizationId], references: [id])
+  type               String       @default("implementation")
+  status             String       @default("draft")
+  priority           String       @default("medium")
+  managerId          String       @map("manager_id")
+  manager            User         @relation("ProjectManager", fields: [managerId], references: [id])
+  startDate          DateTime?    @map("start_date")
+  targetEndDate      DateTime?    @map("target_end_date")
+  actualEndDate      DateTime?    @map("actual_end_date")
+  progressPercent    Int          @default(0) @map("progress_percent")
+  budgetHours        Float?       @map("budget_hours")
+  consumedHours      Float        @default(0) @map("consumed_hours")
+  budgetAmount       Float?       @map("budget_amount")
+  consumedAmount     Float        @default(0) @map("consumed_amount")
+  isVisibleToClient  Boolean      @default(false) @map("is_visible_to_client")
+  // Toggles granulaires (par sous-ressource) de ce que le portail client
+  // expose : phases, jalons, tâches, heures, budget, membres, activité.
+  // Null = valeurs par défaut (tout caché). Forme : ProjectVisibilitySettings.
+  visibilitySettings Json?        @map("visibility_settings")
+  tags               String[]     @default([])
+  isAtRisk           Boolean      @default(false) @map("is_at_risk")
+  riskNotes          String?      @map("risk_notes") @db.Text
+  isArchived         Boolean      @default(false) @map("is_archived")
   // Interne (Cetix admin) vs client. Exclut des vues client /projects
   // pour apparaitre dans /internal-projects.
-  isInternal        Boolean      @default(false) @map("is_internal")
-  createdAt         DateTime     @default(now()) @map("created_at")
-  updatedAt         DateTime     @updatedAt @map("updated_at")
+  isInternal         Boolean      @default(false) @map("is_internal")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
 
   tasks                ProjectTask[]
+  phases               ProjectPhase[]
+  milestones           ProjectMilestone[]
+  members              ProjectMember[]
+  similarOut           ProjectSimilarLink[] @relation("SimilarOut")
+  similarIn            ProjectSimilarLink[] @relation("SimilarIn")
   tickets              Ticket[]
-  shares               SharedResource[] @relation("SharedProject")
+  shares               SharedResource[]     @relation("SharedProject")
   // Events calendrier qui pointent vers ce projet interne.
-  linkedCalendarEvents CalendarEvent[]  @relation("CalendarEventInternalProject")
+  linkedCalendarEvents CalendarEvent[]      @relation("CalendarEventInternalProject")
 
   @@index([organizationId])
   @@index([status])
   @@index([isInternal])
   @@map("projects")
+}
+
+model ProjectPhase {
+  id          String    @id @default(cuid())
+  projectId   String    @map("project_id")
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  description String?   @db.Text
+  sortOrder   Int       @default(0) @map("sort_order")
+  status      String    @default("not_started")
+  startDate   DateTime? @map("start_date")
+  endDate     DateTime? @map("end_date")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([projectId])
+  @@map("project_phases")
+}
+
+model ProjectMilestone {
+  id             String    @id @default(cuid())
+  projectId      String    @map("project_id")
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?   @db.Text
+  targetDate     DateTime  @map("target_date")
+  achievedDate   DateTime? @map("achieved_date")
+  status         String    @default("upcoming")
+  isCriticalPath Boolean   @default(false) @map("is_critical_path")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([projectId])
+  @@map("project_milestones")
+}
+
+model ProjectMember {
+  id                    String   @id @default(cuid())
+  projectId             String   @map("project_id")
+  project               Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId                String   @map("user_id")
+  user                  User     @relation(fields: [userId], references: [id])
+  role                  String   @default("contributor")
+  allocatedHoursPerWeek Float?   @map("allocated_hours_per_week")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@map("project_members")
+}
+
+// Lien entre deux projets considérés "similaires" (contexte, scope, livrables).
+// `source` indique si c'est un humain qui l'a posé ("manual") ou l'IA ("ai").
+// Directionnel : A → B peut exister sans B → A (on crée les 2 sens côté UI
+// uniquement quand l'utilisateur l'active explicitement).
+model ProjectSimilarLink {
+  id               String   @id @default(cuid())
+  projectId        String   @map("project_id")
+  project          Project  @relation("SimilarOut", fields: [projectId], references: [id], onDelete: Cascade)
+  relatedProjectId String   @map("related_project_id")
+  relatedProject   Project  @relation("SimilarIn", fields: [relatedProjectId], references: [id], onDelete: Cascade)
+  source           String   @default("manual")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([projectId, relatedProjectId])
+  @@index([projectId])
+  @@map("project_similar_links")
+}
+
+// Feedback d'un humain sur une suggestion IA de projet similaire :
+// "good" → la suggestion était pertinente (boost au prochain calcul).
+// "bad"  → pas pertinente (filtrée des prochaines suggestions).
+// Le couple (projectId, suggestedProjectId) est unique. Utilisé par l'endpoint
+// /api/v1/projects/[id]/similar pour ajuster les suggestions heuristiques.
+model ProjectSimilarFeedback {
+  id                 String   @id @default(cuid())
+  projectId          String   @map("project_id")
+  suggestedProjectId String   @map("suggested_project_id")
+  verdict            String // "good" | "bad"
+  userId             String?  @map("user_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@unique([projectId, suggestedProjectId])
+  @@index([projectId])
+  @@index([suggestedProjectId])
+  @@map("project_similar_feedback")
 }
 
 model ProjectTask {
@@ -2028,6 +2408,45 @@ model TicketReminder {
 }
 
 // ============================================================================
+// TICKET SUBTASKS + DEPENDENCIES
+// ============================================================================
+// Sous-tâches : décomposition d'un ticket en étapes cochables. Pas de
+// temps propre — la saisie de temps se fait au niveau du ticket parent.
+// Quand toutes les sous-tâches sont cochées, le ticket peut être fermé
+// sans friction.
+model TicketSubtask {
+  id        String    @id @default(cuid())
+  ticketId  String    @map("ticket_id")
+  ticket    Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  title     String
+  done      Boolean   @default(false)
+  doneAt    DateTime? @map("done_at")
+  doneById  String?   @map("done_by_id")
+  sortOrder Int       @default(0) @map("sort_order")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([ticketId, sortOrder])
+  @@map("ticket_subtasks")
+}
+
+// Dépendance chronologique : le ticket `ticket` ne peut pas démarrer tant
+// que `upstream` n'est pas terminé (status RESOLVED ou CLOSED). Contrainte
+// appliquée côté UI/API (bloque le passage à IN_PROGRESS) — pas un trigger
+// DB. Plusieurs upstream possibles : toutes doivent être résolues.
+model TicketDependency {
+  id         String   @id @default(cuid())
+  ticketId   String   @map("ticket_id")
+  ticket     Ticket   @relation("DependentTicket", fields: [ticketId], references: [id], onDelete: Cascade)
+  upstreamId String   @map("upstream_id")
+  upstream   Ticket   @relation("UpstreamTicket", fields: [upstreamId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([ticketId, upstreamId])
+  @@index([upstreamId])
+  @@map("ticket_dependencies")
+}
+
+// ============================================================================
 // IN-APP NOTIFICATIONS
 // ============================================================================
 
@@ -2105,8 +2524,13 @@ model CalendarEvent {
   ownerId        String? @map("owner_id")
   /// Emplacement texte libre : "client:HVAC", "office", "remote", "onsite:address"
   location       String?
-  /// Pour RENEWAL et WORK_LOCATION chez un client.
-  organizationId String? @map("organization_id")
+  /// Pour RENEWAL et WORK_LOCATION chez un client. Pour un event à un
+  /// seul client, `organizationId` est renseigné. Pour les events
+  /// multi-clients (ex : "SF/MV SADB/BDU" visitant 2 clients le même
+  /// jour), on écrit TOUS les ids dans `organizationIds` et le premier
+  /// dans `organizationId` pour rétro-compat.
+  organizationId  String?  @map("organization_id")
+  organizationIds String[] @default([]) @map("organization_ids")
   /// Site précis chez l'organisation (facultatif).
   siteId         String? @map("site_id")
 
@@ -2155,6 +2579,11 @@ model CalendarEvent {
   createdById String?  @map("created_by_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+
+  /// Soft-delete : rempli quand l'event est supprimé dans Outlook mais
+  /// qu'on conserve la trace côté Nexus (tickets liés, time-entries, etc.).
+  /// L'UI filtre ces rows par défaut mais peut les afficher grisés.
+  deletedAt DateTime? @map("deleted_at")
 
   calendar        Calendar      @relation(fields: [calendarId], references: [id], onDelete: Cascade)
   owner           User?         @relation("CalendarEventOwner", fields: [ownerId], references: [id])
@@ -2425,4 +2854,1225 @@ model SecurityNotificationTemplate {
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@map("security_notification_templates")
+}
+
+// ============================================================================
+// MONTHLY CLIENT REPORT — rapport mensuel PDF par client
+//
+// Livrable contractuel (pas un rapport analytique interactif). Un rapport par
+// (organization, period) maximum. `payloadJson` contient le snapshot figé des
+// données calculées au moment de la génération — source de vérité ; le PDF
+// peut être regénéré à partir de ce payload sans recalcul DB (utile si on
+// change le template). `filePath` relatif pour permettre migration S3 future.
+// ============================================================================
+
+model MonthlyClientReport {
+  id                String   @id @default(cuid())
+  organizationId    String   @map("organization_id")
+  /// Premier jour du mois couvert (ex: 2026-04-01 pour avril 2026).
+  period            DateTime @db.Date
+  generatedAt       DateTime @default(now()) @map("generated_at")
+  generatedByUserId String?  @map("generated_by_user_id")
+
+  /// Chemin relatif à la racine de stockage (ex: "acme/2026-04/ck2....pdf").
+  /// Null tant que le PDF n'a pas encore été rendu (payload existe avant).
+  filePath      String? @map("file_path")
+  fileSizeBytes Int?    @map("file_size_bytes")
+  /// sha256 du fichier PDF — détection corruption + intégrité archivage.
+  sha256        String?
+
+  /// Snapshot complet des données du rapport au moment de la génération.
+  /// Contient : organisation, période, sections heures, tickets, demandeurs,
+  /// déplacements, totaux. Regénérable en PDF sans recalcul.
+  payloadJson Json @map("payload_json")
+
+  publishedToPortal Boolean   @default(false) @map("published_to_portal")
+  publishedAt       DateTime? @map("published_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  generatedByUser User?        @relation("MonthlyReportGenerator", fields: [generatedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, period])
+  @@index([organizationId, period(sort: Desc)])
+  @@map("monthly_client_reports")
+}
+
+// ============================================================================
+// INFRASTRUCTURE RÉSEAU (liens Internet, IPs publiques, VLANs)
+// ============================================================================
+// Un "lien Internet" = une connexion souscrite auprès d'un ISP pour un
+// client (optionnellement rattachée à un site/bâtiment). Un lien peut
+// avoir 0..N blocs d'IP publiques (IP unique, plage, subnet), ou aucun
+// si l'ISP fournit uniquement une IP dynamique/CGNAT/NAT.
+
+model OrgInternetLink {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // null = lien non rattaché à un site précis (ex: lien partagé multi-sites)
+  siteId         String?  @map("site_id")
+  site           Site?    @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  isp            String   // nom du fournisseur (Bell, Vidéotron, TELUS, Cogeco, …)
+  label          String?  // étiquette libre (« Lien principal », « Backup fibre »…)
+  downloadMbps   Int?     @map("download_mbps")
+  uploadMbps     Int?     @map("upload_mbps")
+  gateway        String?
+  dnsPrimary     String?  @map("dns_primary")
+  dnsSecondary   String?  @map("dns_secondary")
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  ipBlocks       OrgIpBlock[]
+
+  @@index([organizationId])
+  @@index([siteId])
+  @@map("org_internet_links")
+}
+
+model OrgIpBlock {
+  id        String      @id @default(cuid())
+  linkId    String      @map("link_id")
+  link      OrgInternetLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  kind      IpBlockKind
+  // Représentation textuelle canonique :
+  //   SINGLE → "203.0.113.45"
+  //   RANGE  → "203.0.113.40-203.0.113.45"
+  //   SUBNET → "203.0.113.0/29"
+  value     String
+  label     String?     // usage libre (« NAT firewall », « VPN site-à-site »…)
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@index([linkId])
+  @@map("org_ip_blocks")
+}
+
+enum IpBlockKind {
+  SINGLE
+  RANGE
+  SUBNET
+}
+
+model SiteVlan {
+  id           String   @id @default(cuid())
+  siteId       String   @map("site_id")
+  site         Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  vlanId       Int      @map("vlan_id")
+  name         String
+  dhcpServer   String?  @map("dhcp_server")
+  dnsPrimary   String?  @map("dns_primary")
+  dnsSecondary String?  @map("dns_secondary")
+  description  String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([siteId])
+  @@map("site_vlans")
+}
+
+// ============================================================================
+// SOCLE CONTENT — visibilité, sync template↔instance, relations cross-modules
+// Partagé par Particularités, Politiques, Logiciels, Changements, Documents.
+// ============================================================================
+
+/// Niveau d'exposition d'un contenu. Toujours explicite, jamais implicite.
+enum ContentVisibility {
+  INTERNAL     // agents uniquement (défaut sécuritaire)
+  CLIENT_ADMIN // + portail client, rôle admin de l'org
+  CLIENT_ALL   // + portail client, tout rôle (rare, opt-in explicite)
+}
+
+/// État de synchronisation entre une instance client et son template global.
+enum ContentSyncState {
+  IN_SYNC  // aligné avec la version courante du template
+  DRIFTED  // le template a évolué depuis l'instanciation → révision nécessaire
+  DETACHED // lien rompu volontairement, édition libre côté client
+}
+
+/// Statut de cycle de vie d'un contenu.
+enum ContentStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+/// Capacités techniques déclarées d'une organisation. Source de vérité pour
+/// l'affichage conditionnel des sections (GPO masqué si !hasAD, etc.).
+/// 1:1 avec Organization. `extras` permet d'ajouter des flags ponctuels sans
+/// migration.
+model OrgCapabilities {
+  id                String   @id @default(cuid())
+  organizationId    String   @unique @map("organization_id")
+  hasAD             Boolean  @default(false) @map("has_ad")
+  hasAzureAD        Boolean  @default(false) @map("has_azure_ad")
+  hasEntra          Boolean  @default(false) @map("has_entra")
+  hasM365           Boolean  @default(false) @map("has_m365")
+  hasExchangeOnPrem Boolean  @default(false) @map("has_exchange_onprem")
+  hasVPN            Boolean  @default(false) @map("has_vpn")
+  hasRDS            Boolean  @default(false) @map("has_rds")
+  hasHyperV         Boolean  @default(false) @map("has_hyperv")
+  hasVMware         Boolean  @default(false) @map("has_vmware")
+  hasOnPremServers  Boolean  @default(false) @map("has_onprem_servers")
+  hasBackupsVeeam   Boolean  @default(false) @map("has_backups_veeam")
+  hasSOC            Boolean  @default(false) @map("has_soc")
+  hasMDM            Boolean  @default(false) @map("has_mdm")
+  hasKeePass        Boolean  @default(false) @map("has_keepass")
+  /// Permet l'interface anglaise sur les postes/logiciels corporatifs pour
+  /// cette org. Peut être surchargé par logiciel (SoftwareInstance.allowEnglishUI).
+  allowEnglishUI    Boolean  @default(true) @map("allow_english_ui")
+  extras            Json?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  updatedByUserId   String?  @map("updated_by_user_id")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  updatedBy    User?        @relation("OrgCapabilitiesUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@map("org_capabilities")
+}
+
+/// Relation polymorphique (string-typed, pas de FK) entre objets Nexus. Permet
+/// de lier particularités ↔ actifs ↔ politiques ↔ logiciels ↔ changements sans
+/// exploser le schéma. Les types valides sont documentés dans
+/// src/lib/content/relations.ts (ex: "particularity", "asset", "software",
+/// "policy", "change", "ticket", "contract").
+model ContentRelation {
+  id              String   @id @default(cuid())
+  sourceType      String   @map("source_type")
+  sourceId        String   @map("source_id")
+  targetType      String   @map("target_type")
+  targetId        String   @map("target_id")
+  relationType    String   @default("related") @map("relation_type")
+  note            String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  createdByUserId String?  @map("created_by_user_id")
+
+  createdBy User? @relation("ContentRelationCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceType, sourceId, targetType, targetId, relationType])
+  @@index([sourceType, sourceId])
+  @@index([targetType, targetId])
+  @@map("content_relations")
+}
+
+// ============================================================================
+// PARTICULARITÉS — connaissances opérationnelles spécifiques à un client
+// ============================================================================
+
+/// Catégorie large et stable (Infrastructure, Logiciels, Utilisateurs, …).
+/// Seedée par scripts/seed-particularity-categories.ts. Partagée entre tous
+/// les clients. Ajout libre par MSP_ADMIN.
+model ParticularityCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  icon        String   @default("📌")
+  color       String   @default("#3B82F6")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isSystem    Boolean  @default(false) @map("is_system") // seedé → non supprimable
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  templates       ParticularityTemplate[]
+  particularities Particularity[]
+
+  @@map("particularity_categories")
+}
+
+/// Template réutilisable — contenu maître qu'on peut appliquer à N clients.
+/// Les instances dérivées pointent sur le template via templateId et leur
+/// syncState reflète l'alignement.
+model ParticularityTemplate {
+  id                   String            @id @default(cuid())
+  title                String
+  categoryId           String?           @map("category_id")
+  summary              String?           @db.Text
+  body                 String            @default("") @db.Text // TipTap HTML
+  tags                 String[]          @default([])
+  /// [{ key, label, required, hint, default }] — variables à résoudre
+  /// lors de l'application à un client.
+  variables            Json?
+  /// Clés OrgCapabilities requises pour appliquer ce template (filtre
+  /// dans ApplyToOrgsModal).
+  requiresCapabilities String[]          @default([]) @map("requires_capabilities")
+  visibilityDefault    ContentVisibility @default(INTERNAL) @map("visibility_default")
+  version              Int               @default(1)
+  publishedAt          DateTime?         @map("published_at")
+  archivedAt           DateTime?         @map("archived_at")
+  createdByUserId      String?           @map("created_by_user_id")
+  updatedByUserId      String?           @map("updated_by_user_id")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  category  ParticularityCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy User?                  @relation("ParticularityTemplateCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy User?                  @relation("ParticularityTemplateUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  instances Particularity[]
+
+  @@index([categoryId])
+  @@index([archivedAt])
+  @@map("particularity_templates")
+}
+
+/// Particularité appliquée à une organisation. Autonome (templateId=null) ou
+/// dérivée d'un ParticularityTemplate.
+model Particularity {
+  id                  String            @id @default(cuid())
+  organizationId      String            @map("organization_id")
+  templateId          String?           @map("template_id")
+  /// Version du template au moment du lien (permet de détecter DRIFTED).
+  templateVersion     Int?              @map("template_version")
+  title               String
+  categoryId          String?           @map("category_id")
+  summary             String?           @db.Text
+  body                String            @default("") @db.Text // TipTap HTML
+  tags                String[]          @default([])
+  resolvedVariables   Json?             @map("resolved_variables")
+  visibility          ContentVisibility @default(INTERNAL)
+  status              ContentStatus     @default(ACTIVE)
+  syncState           ContentSyncState  @default(IN_SYNC) @map("sync_state")
+  version             Int               @default(1)
+  authorId            String?           @map("author_id")
+  updatedByUserId     String?           @map("updated_by_user_id")
+  lastReviewedAt      DateTime?         @map("last_reviewed_at")
+  /// True si la catégorie a été suggérée par l'IA sans correction humaine.
+  /// Sert au feedback loop (memory `category_autoapply`).
+  aiCategorySuggested Boolean           @default(false) @map("ai_category_suggested")
+  /// Full-text search — tsvector populé par trigger (config french_unaccent).
+  searchVector        Unsupported("tsvector")? @map("search_vector")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template     ParticularityTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  category     ParticularityCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  author       User?                  @relation("ParticularityAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  updatedBy    User?                  @relation("ParticularityUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  versions     ParticularityVersion[]
+
+  @@index([organizationId])
+  @@index([categoryId])
+  @@index([templateId])
+  @@index([visibility])
+  @@index([status])
+  @@index([syncState])
+  @@index([searchVector], type: Gin)
+  @@map("particularities")
+}
+
+/// Snapshot immuable d'une particularité — historique + rollback.
+model ParticularityVersion {
+  id              String   @id @default(cuid())
+  particularityId String   @map("particularity_id")
+  version         Int
+  /// Snapshot complet : title, body, summary, categoryId, tags, visibility,
+  /// resolvedVariables. Regénérable par restore.
+  snapshot        Json
+  changeNote      String?  @db.Text @map("change_note")
+  authorId        String?  @map("author_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  particularity Particularity @relation(fields: [particularityId], references: [id], onDelete: Cascade)
+  author        User?         @relation("ParticularityVersionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@unique([particularityId, version])
+  @@index([particularityId, version(sort: Desc)])
+  @@map("particularity_versions")
+}
+
+// ============================================================================
+// LOGICIELS — catalogue global + déclinaison par client, installeurs, licences
+// ============================================================================
+
+/// Catégorie large de logiciel (Métier, Bureautique, Sécurité, …). Seedée.
+model SoftwareCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  icon        String   @default("📦")
+  color       String   @default("#8B5CF6")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isSystem    Boolean  @default(false) @map("is_system")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  templates SoftwareTemplate[]
+  instances SoftwareInstance[]
+
+  @@map("software_categories")
+}
+
+/// Fiche logiciel dans la bibliothèque MSP. Peut être déclinée par client.
+model SoftwareTemplate {
+  id                   String            @id @default(cuid())
+  name                 String
+  vendor               String?
+  categoryId           String?           @map("category_id")
+  version              String?
+  /// Documentation générale du logiciel (HTML riche).
+  body                 String            @default("") @db.Text
+  /// [{ label, url }]
+  links                Json?
+  /// { supportEmail, supportPhone, supportUrl, notes }
+  supportInfo          Json?             @map("support_info")
+  requiresCapabilities String[]          @default([]) @map("requires_capabilities")
+  visibilityDefault    ContentVisibility @default(INTERNAL) @map("visibility_default")
+  tags                 String[]          @default([])
+  schemaVersion        Int               @default(1) @map("schema_version")
+  publishedAt          DateTime?         @map("published_at")
+  archivedAt           DateTime?         @map("archived_at")
+  createdByUserId      String?           @map("created_by_user_id")
+  updatedByUserId      String?           @map("updated_by_user_id")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  category   SoftwareCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy  User?             @relation("SoftwareTemplateCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy  User?             @relation("SoftwareTemplateUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  instances  SoftwareInstance[]
+  installers SoftwareInstaller[] @relation("SoftwareTemplateInstaller")
+  licenses   SoftwareLicense[]   @relation("SoftwareTemplateLicense")
+  procedures SoftwareProcedure[] @relation("SoftwareTemplateProcedure")
+
+  @@index([categoryId])
+  @@index([archivedAt])
+  @@map("software_templates")
+}
+
+/// Logiciel déployé/autorisé chez un client. Peut être natif (pas de template)
+/// ou dérivé.
+model SoftwareInstance {
+  id                         String            @id @default(cuid())
+  organizationId             String            @map("organization_id")
+  templateId                 String?           @map("template_id")
+  templateSchemaVersion      Int?              @map("template_schema_version")
+  name                       String
+  vendor                     String?
+  categoryId                 String?           @map("category_id")
+  version                    String?
+  /// Override de la doc globale pour ce client (HTML, vide = hérite template).
+  bodyOverride               String?           @db.Text @map("body_override")
+  links                      Json?
+  supportInfo                Json?             @map("support_info")
+  tags                       String[]          @default([])
+  visibility                 ContentVisibility @default(INTERNAL)
+  status                     ContentStatus     @default(ACTIVE)
+  syncState                  ContentSyncState  @default(IN_SYNC) @map("sync_state")
+  /// Contact client responsable de la gestion (accès, demandes).
+  responsibleClientContactId String?           @map("responsible_client_contact_id")
+  /// User Cetix responsable de l'administration.
+  responsibleCetixUserId     String?           @map("responsible_cetix_user_id")
+  /// Override de la capacité org `allowEnglishUI` pour ce logiciel précis.
+  /// null = hérite org.
+  allowEnglishUI             Boolean?          @map("allow_english_ui")
+  updatedByUserId            String?           @map("updated_by_user_id")
+  searchVector               Unsupported("tsvector")? @map("search_vector")
+  createdAt                  DateTime          @default(now()) @map("created_at")
+  updatedAt                  DateTime          @updatedAt @map("updated_at")
+
+  organization              Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template                  SoftwareTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  category                  SoftwareCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  responsibleClientContact  Contact?           @relation("SoftwareInstanceClientOwner", fields: [responsibleClientContactId], references: [id], onDelete: SetNull)
+  responsibleCetixUser      User?              @relation("SoftwareInstanceCetixOwner", fields: [responsibleCetixUserId], references: [id], onDelete: SetNull)
+  updatedBy                 User?              @relation("SoftwareInstanceUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  installers                SoftwareInstaller[] @relation("SoftwareInstanceInstaller")
+  licenses                  SoftwareLicense[]   @relation("SoftwareInstanceLicense")
+  procedures                SoftwareProcedure[] @relation("SoftwareInstanceProcedure")
+  contactAccesses           ContactSoftwareAccess[]
+
+  @@index([organizationId])
+  @@index([templateId])
+  @@index([categoryId])
+  @@index([searchVector], type: Gin)
+  @@index([visibility])
+  @@index([status])
+  @@map("software_instances")
+}
+
+enum SoftwareInstallerScope {
+  GLOBAL // rattaché à un SoftwareTemplate, commun à tous les clients
+  ORG    // rattaché à un SoftwareInstance, spécifique à un client
+}
+
+/// Fichier d'installation stocké. Peut être global (catalogue MSP) ou
+/// spécifique à un client. Un token SoftwareDownloadLink permet de partager
+/// l'URL externe vers nexus.cetix.ca/d/<token>.
+model SoftwareInstaller {
+  id                  String                 @id @default(cuid())
+  title               String
+  filename            String
+  sizeBytes           Int                    @map("size_bytes")
+  sha256              String
+  /// Chemin relatif à la racine de stockage (ex : "software/<templateId>/<cuid>.msi")
+  storagePath         String                 @map("storage_path")
+  scope               SoftwareInstallerScope
+  softwareTemplateId  String?                @map("software_template_id")
+  softwareInstanceId  String?                @map("software_instance_id")
+  organizationId      String?                @map("organization_id")
+  notes               String?
+  uploadedByUserId    String?                @map("uploaded_by_user_id")
+  createdAt           DateTime               @default(now()) @map("created_at")
+
+  template     SoftwareTemplate?     @relation("SoftwareTemplateInstaller", fields: [softwareTemplateId], references: [id], onDelete: Cascade)
+  instance     SoftwareInstance?     @relation("SoftwareInstanceInstaller", fields: [softwareInstanceId], references: [id], onDelete: Cascade)
+  organization Organization?         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy   User?                 @relation("SoftwareInstallerUploader", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  downloadLinks SoftwareDownloadLink[]
+
+  @@index([softwareTemplateId])
+  @@index([softwareInstanceId])
+  @@index([organizationId])
+  @@map("software_installers")
+}
+
+/// Lien public signé pour télécharger un installeur depuis l'externe. Token
+/// non-devinable, expiration obligatoire, quota max, PIN optionnel, audit.
+model SoftwareDownloadLink {
+  id              String   @id @default(cuid())
+  installerId     String   @map("installer_id")
+  organizationId  String?  @map("organization_id")
+  /// Token base64url (32 bytes). Unique, indexé.
+  token           String   @unique
+  label           String?
+  expiresAt       DateTime @map("expires_at")
+  maxDownloads    Int?     @map("max_downloads")
+  downloadCount   Int      @default(0) @map("download_count")
+  requirePin      Boolean  @default(false) @map("require_pin")
+  pinHash         String?  @map("pin_hash")
+  lastUsedAt      DateTime? @map("last_used_at")
+  lastUsedIp      String?   @map("last_used_ip")
+  revokedAt       DateTime? @map("revoked_at")
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  installer    SoftwareInstaller      @relation(fields: [installerId], references: [id], onDelete: Cascade)
+  organization Organization?          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?                  @relation("SoftwareDownloadLinkCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  audits       SoftwareDownloadAudit[]
+
+  @@index([installerId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("software_download_links")
+}
+
+model SoftwareDownloadAudit {
+  id           String   @id @default(cuid())
+  linkId       String   @map("link_id")
+  downloadedAt DateTime @default(now()) @map("downloaded_at")
+  ip           String?
+  userAgent    String?  @map("user_agent")
+  success      Boolean  @default(true)
+  failureReason String? @map("failure_reason")
+
+  link SoftwareDownloadLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId, downloadedAt(sort: Desc)])
+  @@map("software_download_audits")
+}
+
+enum SoftwareLicenseScope {
+  GLOBAL_POOL // pool MSP (licences revendues à N clients)
+  ORG         // licence site attribuée à un client
+  PER_SEAT    // licence rattachée à un Asset
+  PER_USER    // licence rattachée à un Contact
+}
+
+/// Licence logiciel. scope détermine les liens (template, instance, org,
+/// contact, asset). licenseKey est stocké chiffré (service applicatif).
+model SoftwareLicense {
+  id                 String               @id @default(cuid())
+  scope              SoftwareLicenseScope
+  softwareTemplateId String?              @map("software_template_id")
+  softwareInstanceId String?              @map("software_instance_id")
+  organizationId     String?              @map("organization_id")
+  contactId          String?              @map("contact_id")
+  assetId            String?              @map("asset_id")
+  contractId         String?              @map("contract_id")
+  /// Clé/identifiant de licence. Stocké chiffré (voir src/lib/security/crypto.ts
+  /// une fois implémenté — pour l'instant en clair, TODO chiffrement at-rest).
+  licenseKey         String?              @db.Text @map("license_key")
+  seats              Int?
+  usedSeats          Int?                 @map("used_seats")
+  startDate          DateTime?            @map("start_date")
+  endDate            DateTime?            @map("end_date")
+  notes              String?              @db.Text
+  visibility         ContentVisibility    @default(INTERNAL)
+  createdByUserId    String?              @map("created_by_user_id")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+
+  template     SoftwareTemplate? @relation("SoftwareTemplateLicense", fields: [softwareTemplateId], references: [id], onDelete: Cascade)
+  instance     SoftwareInstance? @relation("SoftwareInstanceLicense", fields: [softwareInstanceId], references: [id], onDelete: Cascade)
+  organization Organization?     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact?          @relation("SoftwareLicenseContact", fields: [contactId], references: [id], onDelete: SetNull)
+  asset        Asset?            @relation("SoftwareLicenseAsset", fields: [assetId], references: [id], onDelete: SetNull)
+  contract     Contract?         @relation("SoftwareLicenseContract", fields: [contractId], references: [id], onDelete: SetNull)
+  createdBy    User?             @relation("SoftwareLicenseCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([softwareTemplateId])
+  @@index([softwareInstanceId])
+  @@index([organizationId])
+  @@index([endDate])
+  @@index([scope])
+  @@map("software_licenses")
+}
+
+enum SoftwareProcedureKind {
+  INSTALL
+  CONFIG
+  UNINSTALL
+  TROUBLESHOOT
+  UPGRADE
+  OTHER
+}
+
+/// Procédure attachée à un logiciel. Peut être globale (sur un SoftwareTemplate,
+/// commune à tous les clients) ou spécifique (sur un SoftwareInstance, override
+/// ou complément). Si instance a 0 procédures, hérite des procédures du template.
+model SoftwareProcedure {
+  id                  String                 @id @default(cuid())
+  softwareTemplateId  String?                @map("software_template_id")
+  softwareInstanceId  String?                @map("software_instance_id")
+  title               String
+  kind                SoftwareProcedureKind  @default(INSTALL)
+  body                String                 @default("") @db.Text
+  visibility          ContentVisibility      @default(INTERNAL)
+  version             Int                    @default(1)
+  createdByUserId     String?                @map("created_by_user_id")
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+
+  template SoftwareTemplate? @relation("SoftwareTemplateProcedure", fields: [softwareTemplateId], references: [id], onDelete: Cascade)
+  instance SoftwareInstance? @relation("SoftwareInstanceProcedure", fields: [softwareInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([softwareTemplateId])
+  @@index([softwareInstanceId])
+  @@map("software_procedures")
+}
+
+enum ContactSoftwareAccessLevel {
+  USER
+  ADMIN
+  APPROVER
+  NONE
+}
+
+/// Accès attribué à un contact sur un logiciel client. Historisé via
+/// grantedAt/revokedAt plutôt que suppression hard.
+model ContactSoftwareAccess {
+  id                 String                      @id @default(cuid())
+  contactId          String                      @map("contact_id")
+  softwareInstanceId String                      @map("software_instance_id")
+  accessLevel        ContactSoftwareAccessLevel  @default(USER) @map("access_level")
+  grantedAt          DateTime                    @default(now()) @map("granted_at")
+  grantedByUserId    String?                     @map("granted_by_user_id")
+  revokedAt          DateTime?                   @map("revoked_at")
+  note               String?                     @db.Text
+  visibility         ContentVisibility           @default(INTERNAL)
+
+  contact  Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  instance SoftwareInstance @relation(fields: [softwareInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, softwareInstanceId, accessLevel])
+  @@index([contactId])
+  @@index([softwareInstanceId])
+  @@map("contact_software_accesses")
+}
+
+// ============================================================================
+// APPROBATIONS — socle générique pour actions sensibles (GPO deploy, etc.)
+// ============================================================================
+
+enum ApprovalStatusP {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// Demande d'approbation polymorphique. `targetType` + `targetId` identifient
+/// l'objet sur lequel porte la demande (ex: targetType="gpo_instance").
+model ApprovalRequest {
+  id              String          @id @default(cuid())
+  organizationId  String?         @map("organization_id")
+  targetType      String          @map("target_type")
+  targetId        String          @map("target_id")
+  action          String          // "deploy", "publish", "grant_access", …
+  status          ApprovalStatusP @default(PENDING)
+  requestedByUserId String        @map("requested_by_user_id")
+  decidedByUserId   String?       @map("decided_by_user_id")
+  decidedAt         DateTime?     @map("decided_at")
+  justification     String?       @db.Text
+  decisionNote      String?       @db.Text @map("decision_note")
+  payload           Json?
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestedBy  User          @relation("ApprovalRequester", fields: [requestedByUserId], references: [id])
+  decidedBy    User?         @relation("ApprovalDecider", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([targetType, targetId])
+  @@index([requestedByUserId])
+  @@map("approval_requests")
+}
+
+/// Délégué d'approbation pour une organisation + scope.
+model ApprovalDelegate {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  userId         String   @map("user_id")
+  scope          String   @default("all") // "all" | "policies" | "gpo" | "scripts" | "changes"
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation("ApprovalDelegateUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId, scope])
+  @@index([organizationId])
+  @@map("approval_delegates")
+}
+
+// ============================================================================
+// POLITIQUES — GPO, Scripts, PolicyDocuments (mot de passe, accès, rôles…)
+// ============================================================================
+
+enum PolicySubcategory {
+  GPO
+  SCRIPT
+  PWD_AD
+  PWD_ENTRA
+  PRIVILEGED_ACCESS
+  M365_ROLES
+  KEEPASS
+  BACKUP_REPLICATION
+  OTHER
+}
+
+enum GpoScope {
+  COMPUTER
+  USER
+  MIXED
+}
+
+enum ScriptLanguage {
+  POWERSHELL
+  BASH
+  PYTHON
+  BATCH
+  OTHER
+}
+
+/// Catégorie libre pour les fiches Politiques (séparée des catégories
+/// Particularités/Logiciels — sémantiquement distincte).
+model PolicyCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  icon        String   @default("🛡️")
+  color       String   @default("#EF4444")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isSystem    Boolean  @default(false) @map("is_system")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  gpoTemplates      GpoTemplate[]
+  scriptTemplates   ScriptTemplate[]
+  policyDocuments   PolicyDocument[]
+  policyDocumentTemplates PolicyDocumentTemplate[]
+
+  @@map("policy_categories")
+}
+
+// ---------- GPO ----------
+
+/// Modèle de GPO réutilisable. Nom stocké SANS préfixe (`nameStem`) ; le
+/// `computedName` est le préfixe c_/u_/cu_ + stem. `nameOverride` permet
+/// d'écraser le nom auto si besoin (cas hérités).
+model GpoTemplate {
+  id                   String            @id @default(cuid())
+  nameStem             String            @map("name_stem")
+  nameOverride         String?           @map("name_override")
+  scope                GpoScope
+  categoryId           String?           @map("category_id")
+  description          String?           @db.Text
+  body                 String            @default("") @db.Text // procédure HTML
+  deploymentProcedure  String?           @db.Text @map("deployment_procedure")
+  variables            Json?             // [{ key, label, required, hint, default, scope:"domain"|"client" }]
+  dependencies         Json?             // { scripts, scheduledTasks, otherGpos }
+  tags                 String[]          @default([])
+  requiresCapabilities String[]          @default(["hasAD"]) @map("requires_capabilities")
+  visibilityDefault    ContentVisibility @default(INTERNAL) @map("visibility_default")
+  schemaVersion        Int               @default(1) @map("schema_version")
+  publishedAt          DateTime?         @map("published_at")
+  archivedAt           DateTime?         @map("archived_at")
+  createdByUserId      String?           @map("created_by_user_id")
+  updatedByUserId      String?           @map("updated_by_user_id")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  category  PolicyCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy User?           @relation("GpoTemplateCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy User?           @relation("GpoTemplateUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  instances GpoInstance[]
+
+  @@index([categoryId])
+  @@index([scope])
+  @@index([archivedAt])
+  @@map("gpo_templates")
+}
+
+enum GpoInstanceStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  DEPLOYED
+  ARCHIVED
+}
+
+/// Instance d'une GPO appliquée à un client. `computedName` reflète le nom
+/// GPO avec préfixe + variables résolues.
+model GpoInstance {
+  id                    String            @id @default(cuid())
+  organizationId        String            @map("organization_id")
+  templateId            String?           @map("template_id")
+  templateSchemaVersion Int?              @map("template_schema_version")
+  nameStem              String            @map("name_stem")
+  nameOverride          String?           @map("name_override")
+  scope                 GpoScope
+  computedName          String            @map("computed_name")
+  resolvedVariables     Json?             @map("resolved_variables")
+  description           String?           @db.Text
+  bodyOverride          String?           @db.Text @map("body_override")
+  dependencies          Json?
+  status                GpoInstanceStatus @default(DRAFT)
+  visibility            ContentVisibility @default(INTERNAL)
+  syncState             ContentSyncState  @default(IN_SYNC) @map("sync_state")
+  deployedAt            DateTime?         @map("deployed_at")
+  lastApprovalId        String?           @map("last_approval_id")
+  linkedScriptIds       String[]          @default([]) @map("linked_script_ids")
+  linkedAssetIds        String[]          @default([]) @map("linked_asset_ids")
+  updatedByUserId       String?           @map("updated_by_user_id")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template     GpoTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  updatedBy    User?        @relation("GpoInstanceUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([templateId])
+  @@index([status])
+  @@index([visibility])
+  @@map("gpo_instances")
+}
+
+/// Import d'un fichier GPO (XML/backup). L'IA analyse pour proposer
+/// titre/description/procédure/variables.
+model GpoImport {
+  id                String   @id @default(cuid())
+  organizationId    String?  @map("organization_id")
+  uploadedByUserId  String?  @map("uploaded_by_user_id")
+  filename          String
+  rawContent        String   @db.Text @map("raw_content")
+  aiAnalysis        Json?    @map("ai_analysis")
+  status            String   @default("PENDING") // PENDING | ANALYZED | APPLIED | REJECTED
+  resultingTemplateId String? @map("resulting_template_id")
+  resultingInstanceId String? @map("resulting_instance_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  uploadedBy User? @relation("GpoImportUploader", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("gpo_imports")
+}
+
+// ---------- Scripts ----------
+
+model ScriptTemplate {
+  id                String            @id @default(cuid())
+  title             String
+  language          ScriptLanguage
+  categoryId        String?           @map("category_id")
+  bodyCode          String            @default("") @db.Text @map("body_code")
+  bodyDocMarkdown   String?           @db.Text @map("body_doc_markdown")
+  variables         Json?
+  tags              String[]          @default([])
+  runAs             String?           @map("run_as") // "SYSTEM" | "USER" | "CUSTOM:xxx"
+  schedule          String?           // cron-like
+  visibilityDefault ContentVisibility @default(INTERNAL) @map("visibility_default")
+  schemaVersion     Int               @default(1) @map("schema_version")
+  publishedAt       DateTime?         @map("published_at")
+  archivedAt        DateTime?         @map("archived_at")
+  createdByUserId   String?           @map("created_by_user_id")
+  updatedByUserId   String?           @map("updated_by_user_id")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  category     PolicyCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy    User?              @relation("ScriptTemplateCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy    User?              @relation("ScriptTemplateUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  instances    ScriptInstance[]
+  publications ScriptPublication[]
+
+  @@index([categoryId])
+  @@index([language])
+  @@map("script_templates")
+}
+
+/// Variante client d'un script (editable indépendamment quand détachée).
+model ScriptInstance {
+  id                    String            @id @default(cuid())
+  organizationId        String            @map("organization_id")
+  templateId            String?           @map("template_id")
+  templateSchemaVersion Int?              @map("template_schema_version")
+  title                 String
+  language              ScriptLanguage
+  bodyCode              String            @default("") @db.Text @map("body_code")
+  bodyDocMarkdown       String?           @db.Text @map("body_doc_markdown")
+  resolvedVariables     Json?             @map("resolved_variables")
+  runAs                 String?           @map("run_as")
+  schedule              String?
+  visibility            ContentVisibility @default(INTERNAL)
+  syncState             ContentSyncState  @default(IN_SYNC) @map("sync_state")
+  status                ContentStatus     @default(ACTIVE)
+  updatedByUserId       String?           @map("updated_by_user_id")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template     ScriptTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  updatedBy    User?           @relation("ScriptInstanceUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([templateId])
+  @@map("script_instances")
+}
+
+/// Publication officielle d'un script pour un client — version figée, code
+/// rendu avec variables résolues. Utilisée quand l'agent déploie une version
+/// précise approuvée.
+model ScriptPublication {
+  id               String   @id @default(cuid())
+  organizationId   String   @map("organization_id")
+  templateId       String   @map("template_id")
+  publishedVersion Int      @map("published_version")
+  resolvedVariables Json?   @map("resolved_variables")
+  renderedCode     String   @db.Text @map("rendered_code")
+  approvalId       String?  @map("approval_id")
+  publishedAt      DateTime @default(now()) @map("published_at")
+  supersededBy     String?  @map("superseded_by")
+  status           String   @default("ACTIVE") // ACTIVE | SUPERSEDED | REVOKED
+  createdByUserId  String?  @map("created_by_user_id")
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template     ScriptTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  createdBy    User?          @relation("ScriptPublicationCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, templateId])
+  @@index([status])
+  @@map("script_publications")
+}
+
+// ---------- PolicyDocument (PWD_AD, PWD_ENTRA, PRIVILEGED_ACCESS, M365_ROLES, KEEPASS, BACKUP_REPLICATION, OTHER) ----------
+
+model PolicyDocumentTemplate {
+  id                   String            @id @default(cuid())
+  subcategory          PolicySubcategory
+  title                String
+  categoryId           String?           @map("category_id")
+  summary              String?           @db.Text
+  body                 String            @default("") @db.Text
+  structuredFields     Json?             @map("structured_fields")
+  variables            Json?
+  requiresCapabilities String[]          @default([]) @map("requires_capabilities")
+  tags                 String[]          @default([])
+  visibilityDefault    ContentVisibility @default(INTERNAL) @map("visibility_default")
+  schemaVersion        Int               @default(1) @map("schema_version")
+  publishedAt          DateTime?         @map("published_at")
+  archivedAt           DateTime?         @map("archived_at")
+  createdByUserId      String?           @map("created_by_user_id")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  category  PolicyCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy User?             @relation("PolicyDocumentTemplateCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  instances PolicyDocument[]
+
+  @@index([subcategory])
+  @@index([categoryId])
+  @@map("policy_document_templates")
+}
+
+model PolicyDocument {
+  id                    String            @id @default(cuid())
+  organizationId        String            @map("organization_id")
+  templateId            String?           @map("template_id")
+  templateSchemaVersion Int?              @map("template_schema_version")
+  subcategory           PolicySubcategory
+  title                 String
+  categoryId            String?           @map("category_id")
+  summary               String?           @db.Text
+  body                  String            @default("") @db.Text
+  structuredFields      Json?             @map("structured_fields")
+  resolvedVariables     Json?             @map("resolved_variables")
+  tags                  String[]          @default([])
+  visibility            ContentVisibility @default(INTERNAL)
+  status                ContentStatus     @default(ACTIVE)
+  syncState             ContentSyncState  @default(IN_SYNC) @map("sync_state")
+  authorId              String?           @map("author_id")
+  updatedByUserId       String?           @map("updated_by_user_id")
+  lastReviewedAt        DateTime?         @map("last_reviewed_at")
+  /// Full-text search — tsvector populé par trigger (config french_unaccent).
+  searchVector          Unsupported("tsvector")? @map("search_vector")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template     PolicyDocumentTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  category     PolicyCategory?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  author       User?                   @relation("PolicyDocumentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  updatedBy    User?                   @relation("PolicyDocumentUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([subcategory])
+  @@index([visibility])
+  @@index([status])
+  @@index([searchVector], type: Gin)
+  @@map("policy_documents")
+}
+
+// ============================================================================
+// CHANGEMENTS — fil chronologique par client, suggestions IA séparées
+// ============================================================================
+
+enum ChangeStatus {
+  AI_SUGGESTED  // signal IA, pas encore validé
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+  REJECTED
+  ARCHIVED
+}
+
+enum ChangeCategory {
+  INFRASTRUCTURE
+  NETWORK_SECURITY
+  IDENTITY_ACCESS
+  M365_CLOUD
+  SOFTWARE
+  BACKUPS
+  WORKSTATIONS
+  TELECOM_PRINT
+  CONTRACTS
+  ORGANIZATIONAL
+  OTHER
+}
+
+enum ChangeImpact {
+  MINOR
+  MODERATE
+  MAJOR
+  STRUCTURAL
+}
+
+model Change {
+  id             String            @id @default(cuid())
+  organizationId String            @map("organization_id")
+  title          String
+  summary        String?           @db.Text
+  body           String            @default("") @db.Text
+  category       ChangeCategory
+  status         ChangeStatus      @default(AI_SUGGESTED)
+  impact         ChangeImpact      @default(MODERATE)
+  visibility     ContentVisibility @default(INTERNAL)
+  changeDate     DateTime          @map("change_date")
+  detectedAt     DateTime?         @map("detected_at")
+  aiConfidence   Float?            @map("ai_confidence")
+  /// [{type:"ticket"|"project"|"policy"|"note"|"particularity"|..., id:string, excerpt?:string}]
+  sources        Json?
+  manualEntry    Boolean           @default(false) @map("manual_entry")
+  /// Si true, exposable au portail client (CLIENT_ADMIN) à la publication.
+  exposeToClientAdmin Boolean      @default(false) @map("expose_to_client_admin")
+  authorId       String?           @map("author_id")
+  reviewerId     String?           @map("reviewer_id")
+  approverId     String?           @map("approver_id")
+  mergedIntoId   String?           @map("merged_into_id")
+  linkedTicketIds   String[] @default([]) @map("linked_ticket_ids")
+  linkedAssetIds    String[] @default([]) @map("linked_asset_ids")
+  linkedSoftwareIds String[] @default([]) @map("linked_software_ids")
+  linkedPolicyIds   String[] @default([]) @map("linked_policy_ids")
+  linkedParticularityIds String[] @default([]) @map("linked_particularity_ids")
+  searchVector   Unsupported("tsvector")? @map("search_vector")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  publishedAt    DateTime?         @map("published_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User?        @relation("ChangeAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  reviewer     User?        @relation("ChangeReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  approver     User?        @relation("ChangeApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  mergedInto   Change?      @relation("ChangeMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedFrom   Change[]     @relation("ChangeMerge")
+  aiSignals    ChangeAiSignal[] @relation("SignalProposedChange")
+
+  @@index([organizationId, changeDate(sort: Desc)])
+  @@index([status])
+  @@index([category])
+  @@index([impact])
+  @@index([visibility])
+  @@index([searchVector], type: Gin)
+  @@map("changes")
+}
+
+// ============================================================================
+// ACTIFS — garanties, abonnements, contrats de support
+// Additif : étend la fiche actif sans casser l'existant.
+// ============================================================================
+
+enum WarrantyCoverageLevel {
+  BASIC
+  ADVANCED
+  NBD
+  FOUR_HOUR
+  CUSTOM
+}
+
+model AssetWarranty {
+  id              String                 @id @default(cuid())
+  assetId         String                 @map("asset_id")
+  organizationId  String                 @map("organization_id")
+  vendor          String?
+  reference       String?
+  startDate       DateTime               @map("start_date")
+  endDate         DateTime               @map("end_date")
+  coverageLevel   WarrantyCoverageLevel  @default(BASIC) @map("coverage_level")
+  notes           String?                @db.Text
+  visibility      ContentVisibility      @default(INTERNAL)
+  contractId      String?                @map("contract_id")
+  createdByUserId String?                @map("created_by_user_id")
+  createdAt       DateTime               @default(now()) @map("created_at")
+  updatedAt       DateTime               @updatedAt @map("updated_at")
+
+  asset        Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contract     Contract?     @relation("AssetWarrantyContract", fields: [contractId], references: [id], onDelete: SetNull)
+  createdBy    User?         @relation("AssetWarrantyCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([assetId])
+  @@index([organizationId, endDate])
+  @@map("asset_warranties")
+}
+
+enum SubscriptionBillingCycle {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  MULTIYEAR
+  ONE_TIME
+  OTHER
+}
+
+model AssetSubscription {
+  id              String                    @id @default(cuid())
+  assetId         String?                   @map("asset_id")
+  softwareInstanceId String?                @map("software_instance_id")
+  organizationId  String                    @map("organization_id")
+  vendor          String?
+  plan            String?
+  reference       String?
+  startDate       DateTime                  @map("start_date")
+  endDate         DateTime                  @map("end_date")
+  autoRenew       Boolean                   @default(false) @map("auto_renew")
+  billingCycle    SubscriptionBillingCycle  @default(YEARLY) @map("billing_cycle")
+  amount          Float?
+  currency        String                    @default("CAD")
+  renewalNotes    String?                   @db.Text @map("renewal_notes")
+  notes           String?                   @db.Text
+  visibility      ContentVisibility         @default(INTERNAL)
+  contractId      String?                   @map("contract_id")
+  createdByUserId String?                   @map("created_by_user_id")
+  createdAt       DateTime                  @default(now()) @map("created_at")
+  updatedAt       DateTime                  @updatedAt @map("updated_at")
+
+  asset        Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contract     Contract?    @relation("AssetSubscriptionContract", fields: [contractId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("AssetSubscriptionCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([assetId])
+  @@index([organizationId, endDate])
+  @@index([contractId])
+  @@map("asset_subscriptions")
+}
+
+enum SupportTierLevel {
+  L1
+  L2
+  L3
+  TWENTY_FOUR_SEVEN
+  BUSINESS_HOURS
+  CUSTOM
+}
+
+model AssetSupportContract {
+  id              String            @id @default(cuid())
+  assetId         String            @map("asset_id")
+  organizationId  String            @map("organization_id")
+  contractId      String?           @map("contract_id")
+  vendor          String?
+  tier            SupportTierLevel  @default(L1)
+  startDate       DateTime          @map("start_date")
+  endDate         DateTime          @map("end_date")
+  /// { email, phone, portalUrl, notes }
+  contactInfo     Json?             @map("contact_info")
+  notes           String?           @db.Text
+  visibility      ContentVisibility @default(INTERNAL)
+  createdByUserId String?           @map("created_by_user_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  asset        Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contract     Contract?     @relation("AssetSupportContractContract", fields: [contractId], references: [id], onDelete: SetNull)
+  createdBy    User?         @relation("AssetSupportContractCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([assetId])
+  @@index([organizationId, endDate])
+  @@map("asset_support_contracts")
+}
+
+/// Signal brut détecté par l'IA (une ligne par source). Consolidé ensuite
+/// vers un `Change` (status=AI_SUGGESTED) avant publication humaine.
+model ChangeAiSignal {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  sourceType     String   @map("source_type") // ticket | project | project_comment | policy | gpo | script | software | asset | particularity | note
+  sourceId       String   @map("source_id")
+  rawText        String   @db.Text @map("raw_text")
+  detectedAt     DateTime @default(now()) @map("detected_at")
+  confidence     Float    @default(0)
+  proposedChangeId String? @map("proposed_change_id")
+  merged         Boolean  @default(false)
+  status         String   @default("OPEN") // OPEN | PROMOTED | DISMISSED
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  proposedChange  Change?      @relation("SignalProposedChange", fields: [proposedChangeId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, detectedAt(sort: Desc)])
+  @@index([status])
+  @@index([sourceType, sourceId])
+  @@map("change_ai_signals")
 }

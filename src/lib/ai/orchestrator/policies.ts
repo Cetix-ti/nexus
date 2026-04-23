@@ -548,6 +548,42 @@ export const POLICY_SECURITY_INCIDENT_SYNTHESIS: AiPolicy = {
   promptVersion: "security_incident_synthesis-v1",
 };
 
+// ---------------------------------------------------------------------------
+// Content assist (Particularités, puis Politiques/Logiciels/Changements).
+// Une seule policy suffit — la capability est passée via taskKind
+// (`improve_writing`, `suggest_structure`, `summarize`, `suggest_category`,
+// `suggest_tags`, `detect_missing`). Reads seulement, humain décide.
+// ---------------------------------------------------------------------------
+export const POLICY_CONTENT_ASSIST: AiPolicy = {
+  feature: "content_assist",
+  sensitivity: "client_data",
+  allowedProviders: ["ollama", "anthropic", "openai"],
+  scrub: { pii: true, hostnames: false, clientNames: false },
+  cloudScrubOverride: { pii: true, hostnames: true, clientNames: true },
+  temperature: 0.25,
+  maxTokens: 1800,
+  humanApprovalRequired: true,
+  timeoutMs: 120_000,
+  promptVersion: "content_assist-v1",
+};
+
+// ---------------------------------------------------------------------------
+// Content classify — suggestion de catégorie + tags. JSON strict, faible
+// latence attendue, pas d'anthropique (Ollama suffit pour classification).
+// ---------------------------------------------------------------------------
+export const POLICY_CONTENT_CLASSIFY: AiPolicy = {
+  feature: "content_classify",
+  sensitivity: "client_data",
+  allowedProviders: ["ollama", "openai"],
+  scrub: { pii: true, hostnames: false, clientNames: false },
+  temperature: 0.1,
+  maxTokens: 400,
+  responseFormat: "json_object",
+  humanApprovalRequired: true,
+  timeoutMs: 60_000,
+  promptVersion: "content_classify-v1",
+};
+
 export const POLICY_COPILOT_CHAT: AiPolicy = {
   feature: "copilot_chat",
   sensitivity: "client_data",

@@ -31,6 +31,12 @@ export interface PortalUserContext {
     canSeeAllOrgAssets: boolean;
     canManageAssets: boolean;
     canManageContacts: boolean;
+    canSeeParticularities: boolean;
+    canSeePolicies: boolean;
+    canSeeSoftware: boolean;
+    canSeeChanges: boolean;
+    canSeeRenewals: boolean;
+    canSeeLicenseCounts: boolean;
   };
   org: ResolvedOrg;
 }
@@ -119,6 +125,13 @@ export async function getCurrentPortalUser(): Promise<PortalUserContext | null> 
     canSeeAllOrgAssets: pa?.canSeeAllOrgAssets ?? false,
     canManageAssets: pa?.canManageAssets ?? false,
     canManageContacts: pa?.canManageContacts ?? false,
+    // Modules documentaires — défaut true pour ADMIN, false sinon
+    canSeeParticularities: pa?.canSeeParticularities ?? (pa?.portalRole === "ADMIN"),
+    canSeePolicies:        pa?.canSeePolicies        ?? (pa?.portalRole === "ADMIN"),
+    canSeeSoftware:        pa?.canSeeSoftware        ?? (pa?.portalRole === "ADMIN"),
+    canSeeChanges:         pa?.canSeeChanges         ?? (pa?.portalRole === "ADMIN"),
+    canSeeRenewals:        pa?.canSeeRenewals        ?? (pa?.portalRole === "ADMIN"),
+    canSeeLicenseCounts:   pa?.canSeeLicenseCounts   ?? (pa?.portalRole === "ADMIN"),
   };
 
   const portalRole = pa?.portalRole ?? "STANDARD";

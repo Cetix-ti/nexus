@@ -24,6 +24,12 @@ export interface PortalPermissions {
   canSeeAllOrgAssets: boolean;
   canManageAssets: boolean;
   canManageContacts: boolean;
+  canSeeParticularities: boolean;
+  canSeePolicies: boolean;
+  canSeeSoftware: boolean;
+  canSeeChanges: boolean;
+  canSeeRenewals: boolean;
+  canSeeLicenseCounts: boolean;
 }
 
 const DEFAULT_PERMISSIONS: PortalPermissions = {
@@ -46,6 +52,12 @@ const DEFAULT_PERMISSIONS: PortalPermissions = {
   canSeeAllOrgAssets: false,
   canManageAssets: false,
   canManageContacts: false,
+  canSeeParticularities: false,
+  canSeePolicies: false,
+  canSeeSoftware: false,
+  canSeeChanges: false,
+  canSeeRenewals: false,
+  canSeeLicenseCounts: false,
 };
 
 /**
@@ -75,6 +87,12 @@ function permissionsFromRole(role: string): PortalPermissions {
     canSeeAllOrgAssets: isManager,
     canManageAssets: isAdmin,
     canManageContacts: isAdmin,
+    canSeeParticularities: isAdmin,
+    canSeePolicies: isAdmin,
+    canSeeSoftware: isAdmin,
+    canSeeChanges: isAdmin,
+    canSeeRenewals: isAdmin,
+    canSeeLicenseCounts: isAdmin,
   };
 }
 
