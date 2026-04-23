@@ -58,7 +58,7 @@ export function BugReportFab() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-4 right-4 z-40 inline-flex items-center gap-1.5 bg-slate-900 text-white rounded-full shadow-lg hover:bg-slate-800 px-3.5 py-2.5 text-[13px] font-medium sm:bottom-6 sm:right-6"
+          className="fixed z-40 inline-flex items-center gap-1.5 bg-slate-900 text-white rounded-full shadow-lg hover:bg-slate-800 px-3.5 py-2.5 text-[13px] font-medium bottom-24 right-4 sm:bottom-6 sm:right-24"
           aria-label="Signaler un bug"
           title="Signaler un bug"
         >
