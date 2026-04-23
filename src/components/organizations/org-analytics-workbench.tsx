@@ -25,8 +25,18 @@ interface DashboardSummary {
   label: string;
   description?: string;
   parentId?: string | null;
+  /** Liste des orgs attribuées (nouveau champ multi). */
+  organizationIds?: string[];
+  /** @deprecated — ancien champ single, lu pour rétrocompat. */
   organizationId?: string;
   widgets?: string[];
+}
+
+/** Retourne la liste normalisée d'orgIds attribuées à un dashboard. */
+function normalizedOrgs(d: DashboardSummary): string[] {
+  const arr = Array.isArray(d.organizationIds) ? d.organizationIds : [];
+  if (d.organizationId && !arr.includes(d.organizationId)) return [...arr, d.organizationId];
+  return arr;
 }
 
 function loadCustomDashboards(): DashboardSummary[] {
@@ -91,7 +101,7 @@ function WorkbenchInner({ organizationId, organizationName }: { organizationId: 
     };
   }, [organizationId]);
 
-  const scoped = allDashboards.filter((d) => d.organizationId === organizationId);
+  const scoped = allDashboards.filter((d) => normalizedOrgs(d).includes(organizationId));
   const orgNameEnc = encodeURIComponent(organizationName || "");
   const atelierUrl = `/analytics/dashboards?orgContext=${organizationId}&orgName=${orgNameEnc}`;
 

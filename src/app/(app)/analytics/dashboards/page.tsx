@@ -196,12 +196,26 @@ interface ReportDef {
   widgets: WidgetId[];
   parentId?: string | null;
   /**
-   * Si défini : ce rapport custom est attribué à une organisation spécifique.
-   * Il apparaît dans l'onglet Rapports de cette org, ET ici quand on ouvre
-   * la page avec ?orgContext=<orgId>. Les rapports globaux (orgId null) sont
-   * visibles partout. Les rapports built-in du catalogue n'ont pas d'orgId.
+   * Liste des organisations auxquelles ce rapport est attribué. Vide ou
+   * absent = global (visible partout). Un rapport peut être attribué à
+   * plusieurs organisations à la fois — il apparaît alors dans l'onglet
+   * Rapports de chacune et dans /analytics/dashboards?orgContext=<orgId>
+   * pour chacune.
+   */
+  organizationIds?: string[];
+  /**
+   * @deprecated — ancien champ single-org. Lu pour rétrocompat, migré
+   * automatiquement vers `organizationIds` au prochain save.
    */
   organizationId?: string;
+}
+
+/** Retourne la liste normalisée d'orgIds attribuées à un rapport. */
+function getReportOrgs(r: ReportDef): string[] {
+  const arr = Array.isArray(r.organizationIds) ? r.organizationIds : [];
+  // Rétrocompat : si legacy organizationId présent, l'inclure (sans doublon).
+  if (r.organizationId && !arr.includes(r.organizationId)) return [...arr, r.organizationId];
+  return arr;
 }
 
 // Accent couleur par catégorie — utilisé pour la bande verticale, le
@@ -467,7 +481,7 @@ export default function ReportsPage() {
 
   // Charge les noms des orgs référencées par les rapports taggés (une fois).
   useEffect(() => {
-    const ids = Array.from(new Set(customReports.map((r) => r.organizationId).filter((x): x is string => !!x)));
+    const ids = Array.from(new Set(customReports.flatMap((r) => getReportOrgs(r))));
     if (ids.length === 0) return;
     if (ids.every((id) => orgNameById[id])) return;
     fetch("/api/v1/organizations")
@@ -492,7 +506,10 @@ export default function ReportsPage() {
   // que ce qui concerne l'org. Les built-ins du catalogue restent toujours
   // accessibles. Les autres rapports (autres orgs) sont cachés.
   const filteredCustomReports = orgContextId
-    ? customReports.filter((r) => !r.organizationId || r.organizationId === orgContextId)
+    ? customReports.filter((r) => {
+        const orgs = getReportOrgs(r);
+        return orgs.length === 0 || orgs.includes(orgContextId);
+      })
     : customReports;
   const allReports = [
     ...REPORT_CATALOG.filter((r) => showHidden || !hiddenBuiltins.has(r.id)),
@@ -781,8 +798,8 @@ export default function ReportsPage() {
       widgets: parentReport ? [] : (newReportWidgets.length > 0 ? newReportWidgets : ["ticket_kpis", "finance_kpis"]),
       parentId: newReportParentId || null,
       // Si on est en mode atelier d'une org (?orgContext=X), on attribue
-      // le rapport à cette org.
-      organizationId: orgContextId ?? undefined,
+      // le rapport à cette org dès la création (tableau à 1 élément).
+      organizationIds: orgContextId ? [orgContextId] : undefined,
     };
     const updated = [...customReports, report];
     setCustomReports(updated);
@@ -809,10 +826,16 @@ export default function ReportsPage() {
    * Attribue (ou retire) un rapport custom à une organisation. Déclenche une
    * synchronisation avec l'onglet Rapports de l'org concernée via localStorage.
    */
-  function setReportOrganization(reportId: string, organizationId: string | null) {
+  function setReportOrganizations(reportId: string, organizationIds: string[]) {
     if (!reportId.startsWith("custom_")) return;
     const updated = customReports.map((r) =>
-      r.id === reportId ? { ...r, organizationId: organizationId ?? undefined } : r,
+      r.id === reportId
+        ? {
+            ...r,
+            organizationIds: organizationIds.length > 0 ? organizationIds : undefined,
+            organizationId: undefined, // migration : on retire le legacy single-org
+          }
+        : r,
     );
     setCustomReports(updated);
     saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
@@ -1307,25 +1330,31 @@ export default function ReportsPage() {
                 {activeReport.id.startsWith("custom_") && !renamingReport && (
                   <>
                     {(() => {
-                      const orgId = activeReport.organizationId;
-                      const orgName = orgId ? (orgNameById[orgId] ?? "…") : null;
+                      const orgIds = getReportOrgs(activeReport);
+                      const orgNames = orgIds.map((id) => orgNameById[id] ?? "…");
+                      const label = orgIds.length === 0
+                        ? "Attribuer"
+                        : orgIds.length === 1
+                        ? orgNames[0]
+                        : `${orgIds.length} orgs`;
+                      const title = orgIds.length === 0
+                        ? "Attribuer à une ou plusieurs organisations"
+                        : `Attribué à : ${orgNames.join(", ")}`;
                       return (
                         <button
                           onClick={() => setTaggingReportId(activeReport.id)}
                           className={cn(
                             "h-9 inline-flex items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium ring-1 ring-inset transition-all",
-                            orgId
+                            orgIds.length > 0
                               ? "bg-blue-50 text-blue-700 ring-blue-200 hover:bg-blue-100"
                               : "bg-white text-slate-500 ring-slate-200 hover:text-blue-600 hover:ring-blue-200 hover:bg-blue-50"
                           )}
-                          title={orgId ? `Attribué à : ${orgName}` : "Attribuer à une organisation"}
+                          title={title}
                         >
                           <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4" />
                           </svg>
-                          <span className="hidden sm:inline max-w-[120px] truncate">
-                            {orgId ? orgName : "Attribuer"}
-                          </span>
+                          <span className="hidden sm:inline max-w-[140px] truncate">{label}</span>
                         </button>
                       );
                     })()}
@@ -1786,32 +1815,36 @@ export default function ReportsPage() {
             const widgetCount = resolveWidgets(r).length;
             const childCount = getChildren(r.id).length;
             const isCustom = r.id.startsWith("custom_");
-            const taggedOrgName = r.organizationId ? (orgNameById[r.organizationId] ?? "…") : null;
+            const cardOrgIds = getReportOrgs(r);
+            const tagLabel = cardOrgIds.length === 0
+              ? "Attribuer"
+              : cardOrgIds.length === 1
+              ? (orgNameById[cardOrgIds[0]] ?? "…")
+              : `${cardOrgIds.length} orgs`;
+            const tagTitle = cardOrgIds.length === 0
+              ? "Attribuer à une ou plusieurs organisations"
+              : `Attribué à : ${cardOrgIds.map((id) => orgNameById[id] ?? "…").join(", ")}`;
             return (
               <div
                 key={r.id}
                 className="group relative flex flex-col rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-blue-300 hover:shadow-[0_8px_24px_-8px_rgba(37,99,235,0.18)] transition-all min-h-[160px]"
               >
-                {/* Bouton "Attribuer" — overlay en haut à droite, apparaît au hover
-                    sur desktop, visible en permanence si déjà taggué. */}
                 {isCustom && (
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setTaggingReportId(r.id); }}
                     className={cn(
                       "absolute top-2 right-2 z-10 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium transition-all",
-                      taggedOrgName
+                      cardOrgIds.length > 0
                         ? "bg-blue-600 text-white hover:bg-blue-700"
                         : "bg-white/90 text-slate-600 ring-1 ring-slate-200 opacity-0 group-hover:opacity-100 hover:bg-blue-50 hover:text-blue-700 hover:ring-blue-300"
                     )}
-                    title={taggedOrgName ? `Attribué à : ${taggedOrgName}` : "Attribuer à une organisation"}
+                    title={tagTitle}
                   >
                     <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4" />
                     </svg>
-                    <span className="max-w-[100px] truncate">
-                      {taggedOrgName ?? "Attribuer"}
-                    </span>
+                    <span className="max-w-[100px] truncate">{tagLabel}</span>
                   </button>
                 )}
 
@@ -2196,8 +2229,8 @@ export default function ReportsPage() {
             onClose={() => setTaggingReportId(null)}
             itemLabel="Rapport"
             itemName={rep?.label}
-            currentOrgId={rep?.organizationId}
-            onSelect={(orgId) => setReportOrganization(taggingReportId, orgId)}
+            currentOrgIds={rep ? getReportOrgs(rep) : []}
+            onSave={(orgIds) => setReportOrganizations(taggingReportId, orgIds)}
           />
         );
       })()}

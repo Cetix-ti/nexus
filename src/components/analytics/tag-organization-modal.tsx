@@ -1,7 +1,9 @@
 "use client";
 
-// Modal pour attribuer un widget ou un dashboard à une organisation.
-// Réutilisable pour widgets et reports custom.
+// Modal pour attribuer un dashboard à une ou plusieurs organisations.
+// Mode multi par défaut : l'utilisateur peut sélectionner plusieurs orgs
+// et cliquer "Appliquer" pour valider. L'option "Global" décoche toutes
+// les orgs (= visible partout).
 
 import { useEffect, useMemo, useState } from "react";
 import { X, Search, Building2, Globe, Check } from "lucide-react";
@@ -20,15 +22,20 @@ interface Props {
   itemLabel: string;
   /** Nom de l'item courant pour le titre (ex: "Rapport mensuel") */
   itemName?: string;
-  /** Org actuellement attribuée (undefined = global). */
-  currentOrgId: string | undefined;
-  /** Appelé avec l'orgId sélectionné ou null pour "global". */
-  onSelect: (organizationId: string | null) => void;
+  /** Orgs actuellement attribuées. Array vide = global (aucune org). */
+  currentOrgIds: string[];
+  /** Appelé avec la liste finale d'orgIds à l'application. Array vide = global. */
+  onSave: (organizationIds: string[]) => void;
 }
 
-export function TagOrganizationModal({ open, onClose, itemLabel, itemName, currentOrgId, onSelect }: Props) {
+export function TagOrganizationModal({ open, onClose, itemLabel, itemName, currentOrgIds, onSave }: Props) {
   const [orgs, setOrgs] = useState<OrgRow[] | null>(null);
   const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set(currentOrgIds));
+
+  useEffect(() => {
+    if (open) setSelected(new Set(currentOrgIds));
+  }, [open, currentOrgIds]);
 
   useEffect(() => {
     if (!open) return;
@@ -59,7 +66,23 @@ export function TagOrganizationModal({ open, onClose, itemLabel, itemName, curre
     );
   }, [orgs, search]);
 
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function clearAll() { setSelected(new Set()); }
+  function apply() {
+    onSave(Array.from(selected));
+    onClose();
+  }
+
   if (!open) return null;
+
+  const isGlobal = selected.size === 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50">
@@ -67,7 +90,7 @@ export function TagOrganizationModal({ open, onClose, itemLabel, itemName, curre
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 shrink-0">
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold text-slate-900 inline-flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-blue-600" /> Attribuer à une organisation
+              <Building2 className="h-4 w-4 text-blue-600" /> Attribuer à des organisations
             </h2>
             <p className="text-[12px] text-slate-500 mt-0.5 truncate">
               {itemLabel}{itemName ? ` : ${itemName}` : ""}
@@ -78,7 +101,7 @@ export function TagOrganizationModal({ open, onClose, itemLabel, itemName, curre
           </button>
         </div>
 
-        <div className="p-3 border-b border-slate-100 shrink-0">
+        <div className="p-3 border-b border-slate-100 shrink-0 space-y-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
             <input
@@ -89,20 +112,32 @@ export function TagOrganizationModal({ open, onClose, itemLabel, itemName, curre
               className="w-full rounded-md border border-slate-300 pl-7 pr-2 py-1.5 text-[13px] focus:border-blue-500 focus:outline-none"
             />
           </div>
+          <div className="flex items-center gap-2 text-[11px] text-slate-600 flex-wrap">
+            <span>{selected.size} sélectionnée{selected.size !== 1 ? "s" : ""}</span>
+            {selected.size > 0 && (
+              <button onClick={clearAll} className="text-slate-600 hover:text-slate-900 underline">
+                Tout désélectionner (rendre global)
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <button
-            onClick={() => { onSelect(null); onClose(); }}
-            className={`w-full flex items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50 transition-colors border-b border-slate-100 ${currentOrgId == null ? "bg-blue-50/40" : ""}`}
+          <div
+            className={`flex items-start gap-2 px-3 py-2.5 border-b border-slate-100 ${isGlobal ? "bg-blue-50/40" : "bg-slate-50/40"}`}
           >
             <Globe className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-medium text-slate-900">Global (aucune organisation)</div>
-              <div className="text-[11.5px] text-slate-500">Visible partout, non rattaché à un client en particulier.</div>
+              <div className="text-[13px] font-medium text-slate-900">
+                {isGlobal ? "Global (visible partout)" : `Attribué à ${selected.size} organisation${selected.size > 1 ? "s" : ""}`}
+              </div>
+              <div className="text-[11.5px] text-slate-500">
+                {isGlobal
+                  ? "Aucune organisation cochée — le dashboard reste visible partout."
+                  : "Le dashboard apparaît dans l'onglet Rapports de chaque organisation cochée."}
+              </div>
             </div>
-            {currentOrgId == null && <Check className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />}
-          </button>
+          </div>
 
           {orgs === null ? (
             <div className="px-3 py-4 text-[12.5px] text-slate-500 text-center">Chargement…</div>
@@ -110,13 +145,16 @@ export function TagOrganizationModal({ open, onClose, itemLabel, itemName, curre
             <div className="px-3 py-4 text-[12.5px] text-slate-500 text-center">Aucune organisation trouvée.</div>
           ) : (
             filtered.map((o) => {
-              const active = currentOrgId === o.id;
+              const checked = selected.has(o.id);
               return (
                 <button
                   key={o.id}
-                  onClick={() => { onSelect(o.id); onClose(); }}
-                  className={`w-full flex items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0 ${active ? "bg-blue-50/40" : ""}`}
+                  onClick={() => toggle(o.id)}
+                  className={`w-full flex items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0 ${checked ? "bg-blue-50/40" : ""}`}
                 >
+                  <div className={`h-4 w-4 shrink-0 mt-0.5 rounded border ${checked ? "bg-blue-600 border-blue-600 text-white" : "border-slate-300 bg-white"} flex items-center justify-center`}>
+                    {checked && <Check className="h-3 w-3" />}
+                  </div>
                   <Building2 className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <div className="text-[13px] font-medium text-slate-900 truncate">{o.name}</div>
@@ -126,11 +164,19 @@ export function TagOrganizationModal({ open, onClose, itemLabel, itemName, curre
                       </div>
                     )}
                   </div>
-                  {active && <Check className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />}
                 </button>
               );
             })
           )}
+        </div>
+
+        <div className="border-t border-slate-200 px-4 py-3 shrink-0 flex items-center justify-end gap-2">
+          <button onClick={onClose} className="text-[13px] rounded border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
+            Annuler
+          </button>
+          <button onClick={apply} className="text-[13px] rounded bg-slate-900 text-white px-3 py-1.5 hover:bg-slate-800">
+            Appliquer
+          </button>
         </div>
       </div>
     </div>
