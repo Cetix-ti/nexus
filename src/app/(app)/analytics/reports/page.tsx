@@ -119,6 +119,33 @@ export default function AnalyticsReportsPage() {
   const [formRecipients, setFormRecipients] = useState("");
   const [formWidgets, setFormWidgets] = useState<string[]>([]);
 
+  // Widgets custom créés dans /analytics/widgets + dashboards custom créés
+  // dans /analytics/dashboards — on les charge pour pouvoir les sélectionner
+  // dans le rapport et "importer depuis un dashboard" pour pré-remplir
+  // la sélection de widgets.
+  const [customWidgets, setCustomWidgets] = useState<Array<{ id: string; name: string; description: string }>>([]);
+  const [customDashboards, setCustomDashboards] = useState<Array<{ id: string; label: string; description: string; widgets: string[] }>>([]);
+  useEffect(() => {
+    try {
+      const w = localStorage.getItem("nexus:custom-widgets-v2");
+      if (w) {
+        const parsed = JSON.parse(w);
+        if (Array.isArray(parsed)) setCustomWidgets(parsed.map((x: { id: string; name: string; description?: string }) => ({
+          id: x.id, name: x.name, description: x.description ?? "",
+        })));
+      }
+    } catch {}
+    try {
+      const d = localStorage.getItem("nexus:reports:custom");
+      if (d) {
+        const parsed = JSON.parse(d);
+        if (Array.isArray(parsed)) setCustomDashboards(parsed.map((r: { id: string; label: string; description?: string; widgets?: string[] }) => ({
+          id: r.id, label: r.label, description: r.description ?? "", widgets: Array.isArray(r.widgets) ? r.widgets : [],
+        })));
+      }
+    } catch {}
+  }, [showCreate]); // recharge à chaque ouverture du formulaire
+
   // View/edit report content
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -290,6 +317,27 @@ export default function AnalyticsReportsPage() {
         </Button>
       </div>
 
+      {/* Rapport mensuel client — accès rapide */}
+      <Link href="/analytics/monthly-reports" className="block">
+        <Card className="border-blue-200 bg-blue-50/40 hover:bg-blue-50 transition-colors">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="h-10 w-10 rounded-lg bg-blue-600 flex items-center justify-center shrink-0">
+              <FileText className="h-5 w-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[14px] font-semibold text-slate-900">
+                Rapports mensuels client (PDF)
+              </p>
+              <p className="text-[12px] text-slate-600">
+                Livrable mensuel par client — heures facturées, tickets,
+                déplacements, demandeurs. Générés depuis la fiche organisation.
+              </p>
+            </div>
+            <Button variant="outline" size="sm">Voir les rapports →</Button>
+          </CardContent>
+        </Card>
+      </Link>
+
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card><CardContent className="p-4 flex items-center gap-3">
@@ -363,9 +411,53 @@ export default function AnalyticsReportsPage() {
               <label className="block text-[12px] font-medium text-slate-700 mb-1">Destinataires (courriels séparés par des virgules)</label>
               <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none" placeholder="client@entreprise.ca, comptable@entreprise.ca" value={formRecipients} onChange={(e) => setFormRecipients(e.target.value)} />
             </div>
-            {/* Widget selector */}
+            {/* Import depuis un dashboard existant */}
+            {customDashboards.length > 0 && (
+              <div className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+                <label className="block text-[12px] font-medium text-slate-700 mb-1.5">
+                  Importer les widgets depuis un dashboard
+                </label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Select
+                    value=""
+                    onValueChange={(v) => {
+                      const dash = customDashboards.find((d) => d.id === v);
+                      if (dash) {
+                        // Merge sans doublon : garde les widgets déjà cochés et
+                        // ajoute ceux du dashboard qui ne sont pas encore là.
+                        setFormWidgets((prev) => Array.from(new Set([...prev, ...dash.widgets])));
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="flex-1 min-w-[200px]">
+                      <SelectValue placeholder="Choisir un dashboard…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customDashboards.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.label} ({d.widgets.length} widgets)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFormWidgets([])}
+                    disabled={formWidgets.length === 0}
+                  >
+                    Tout vider
+                  </Button>
+                </div>
+                <p className="mt-1.5 text-[10.5px] text-violet-700">
+                  Sélectionne un dashboard pour ajouter tous ses widgets à ce rapport (merge sans doublon).
+                </p>
+              </div>
+            )}
+
+            {/* Widget selector — prédéfinis */}
             <div>
-              <label className="block text-[12px] font-medium text-slate-700 mb-2">Sections du rapport (widgets inclus)</label>
+              <label className="block text-[12px] font-medium text-slate-700 mb-2">Widgets prédéfinis</label>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
                 {WIDGET_OPTIONS.map((w) => {
                   const selected = formWidgets.includes(w.id);
@@ -379,8 +471,36 @@ export default function AnalyticsReportsPage() {
                   );
                 })}
               </div>
-              <p className="mt-1.5 text-[10px] text-slate-400">{formWidgets.length} section{formWidgets.length !== 1 ? "s" : ""} sélectionnée{formWidgets.length !== 1 ? "s" : ""}</p>
             </div>
+
+            {/* Widget selector — custom */}
+            {customWidgets.length > 0 && (
+              <div>
+                <label className="block text-[12px] font-medium text-slate-700 mb-2">
+                  Widgets personnalisés ({customWidgets.length})
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
+                  {customWidgets.map((w) => {
+                    const selected = formWidgets.includes(w.id);
+                    return (
+                      <button
+                        key={w.id}
+                        onClick={() => setFormWidgets((prev) => selected ? prev.filter((id) => id !== w.id) : [...prev, w.id])}
+                        className={cn("rounded-lg px-3 py-2 text-[11px] font-medium text-left transition-all ring-1 ring-inset",
+                          selected ? "bg-violet-50 text-violet-700 ring-violet-200" : "bg-white text-slate-600 ring-slate-200 hover:ring-violet-200"
+                        )}
+                        title={w.description}
+                      >
+                        {w.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <p className="text-[10.5px] text-slate-500">
+              {formWidgets.length} section{formWidgets.length !== 1 ? "s" : ""} sélectionnée{formWidgets.length !== 1 ? "s" : ""}
+            </p>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
               <Button variant="outline" size="sm" onClick={() => { setShowCreate(false); resetForm(); }}>Annuler</Button>
