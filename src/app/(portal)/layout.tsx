@@ -21,26 +21,41 @@ import {
   DollarSign,
   PanelLeftClose,
   PanelLeft,
+  Lightbulb,
+  ShieldCheck,
+  Package,
+  GitCommit,
+  CalendarClock,
 } from "lucide-react";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { PortalImpersonationBanner } from "@/components/portal/impersonation-banner";
 import { LanguageSelector } from "@/components/layout/language-selector";
+import { useLocaleStore } from "@/stores/locale-store";
 
 interface NavItem {
-  label: string;
+  labelKey: string;
+  label?: string;
   href: string;
   icon: any;
   adminOnly?: boolean;
+  /** Nom de la clé de permission (ex: canSeeParticularities) requise pour afficher l'entrée. */
+  requiresPermission?: string;
 }
 
 const navItems: NavItem[] = [
-  { label: "Accueil", href: "/portal", icon: Home },
-  { label: "Billets", href: "/portal/tickets", icon: Ticket },
-  { label: "Actifs", href: "/portal/assets", icon: Monitor },
-  { label: "Projets", href: "/portal/projects", icon: FolderKanban, adminOnly: true },
-  { label: "Rapports", href: "/portal/reports", icon: BarChart3, adminOnly: true },
-  { label: "Finances", href: "/portal/finances", icon: DollarSign, adminOnly: true },
-  { label: "Contacts", href: "/portal/contacts", icon: Users, adminOnly: true },
+  { labelKey: "portal.nav.home", href: "/portal", icon: Home },
+  { labelKey: "portal.nav.tickets", href: "/portal/tickets", icon: Ticket },
+  { labelKey: "portal.nav.assets", href: "/portal/assets", icon: Monitor },
+  { labelKey: "portal.nav.projects", href: "/portal/projects", icon: FolderKanban, adminOnly: true },
+  { labelKey: "portal.nav.reports", href: "/portal/reports", icon: BarChart3, adminOnly: true },
+  { labelKey: "portal.nav.finances", href: "/portal/finances", icon: DollarSign, adminOnly: true },
+  { labelKey: "portal.nav.contacts", href: "/portal/contacts", icon: Users, adminOnly: true },
+  // Modules documentaires (gated par flag, ADMIN = défaut true via derive)
+  { labelKey: "portal.nav.particularities", label: "Particularités", href: "/portal/particularities", icon: Lightbulb, requiresPermission: "canSeeParticularities" },
+  { labelKey: "portal.nav.policies",        label: "Politiques",     href: "/portal/policies",        icon: ShieldCheck, requiresPermission: "canSeePolicies" },
+  { labelKey: "portal.nav.software",        label: "Logiciels",      href: "/portal/software",        icon: Package,     requiresPermission: "canSeeSoftware" },
+  { labelKey: "portal.nav.changes",         label: "Changements",    href: "/portal/changes",         icon: GitCommit,   requiresPermission: "canSeeChanges" },
+  { labelKey: "portal.nav.renewals",        label: "Échéances",      href: "/portal/renewals",        icon: CalendarClock, requiresPermission: "canSeeRenewals" },
 ];
 
 function getInitials(name: string): string {
@@ -59,8 +74,16 @@ export default function PortalLayout({
 }) {
   const pathname = usePathname();
   const { user, organizationName, permissions } = usePortalUser();
+  const t = useLocaleStore((s) => s.t);
   const isAdmin = permissions.portalRole === "admin";
-  const visibleNav = navItems.filter((item) => !item.adminOnly || isAdmin);
+  const visibleNav = navItems.filter((item) => {
+    if (item.adminOnly && !isAdmin) return false;
+    if (item.requiresPermission) {
+      const val = (permissions as unknown as Record<string, boolean>)[item.requiresPermission];
+      if (!val) return false;
+    }
+    return true;
+  });
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -71,9 +94,9 @@ export default function PortalLayout({
     return <div className="min-h-screen bg-[#F9FAFB]">{children}</div>;
   }
 
-  const displayName = user?.name || "Utilisateur";
+  const displayName = user?.name || t("portal.layout.defaultUser");
   const displayEmail = user?.email || "";
-  const orgName = organizationName || "Portail client";
+  const orgName = organizationName || t("portal.layout.defaultOrg");
   const accentGradient = "from-blue-500 to-blue-700";
 
   // Branding: load MSP branding + org logo
@@ -172,7 +195,7 @@ export default function PortalLayout({
                   {orgName}
                 </p>
                 <p className="text-[10.5px] text-neutral-400 uppercase tracking-wider font-medium">
-                  Portail client
+                  {t("portal.layout.clientPortal")}
                 </p>
               </div>
             </div>
@@ -190,7 +213,7 @@ export default function PortalLayout({
               <Link
                 key={item.href}
                 href={item.href}
-                title={sidebarCollapsed ? item.label : undefined}
+                title={sidebarCollapsed ? (item.label ?? t(item.labelKey)) : undefined}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-[14px] font-medium transition-colors",
                   sidebarCollapsed && "justify-center px-2.5",
@@ -200,7 +223,7 @@ export default function PortalLayout({
                 )}
               >
                 <item.icon className="h-[18px] w-[18px] shrink-0" />
-                {!sidebarCollapsed && <span>{item.label}</span>}
+                {!sidebarCollapsed && <span>{item.label ?? t(item.labelKey)}</span>}
               </Link>
             );
           })}
@@ -265,10 +288,10 @@ export default function PortalLayout({
                     className="flex items-center gap-2.5 px-4 py-2 text-[13px] text-neutral-700 hover:bg-neutral-50"
                   >
                     <User className="h-4 w-4 text-neutral-400" />
-                    Mon profil
+                    {t("portal.layout.myProfile")}
                   </Link>
                   <div className="px-4 py-2 border-t border-neutral-100">
-                    <p className="text-[10.5px] font-medium text-neutral-400 uppercase tracking-wider mb-1.5">Langue</p>
+                    <p className="text-[10.5px] font-medium text-neutral-400 uppercase tracking-wider mb-1.5">{t("portal.layout.language")}</p>
                     <LanguageSelector />
                   </div>
                   <button
@@ -279,7 +302,7 @@ export default function PortalLayout({
                     className="w-full text-left flex items-center gap-2.5 px-4 py-2 text-[13px] text-red-600 hover:bg-red-50"
                   >
                     <LogOut className="h-4 w-4" />
-                    Se deconnecter
+                    {t("portal.layout.signOut")}
                   </button>
                 </div>
               </>
@@ -357,7 +380,7 @@ export default function PortalLayout({
                   )}
                   <div>
                     <p className="text-[13px] font-semibold text-neutral-900">{orgName}</p>
-                    <p className="text-[10px] text-neutral-400 uppercase tracking-wider">Portail client</p>
+                    <p className="text-[10px] text-neutral-400 uppercase tracking-wider">{t("portal.layout.clientPortal")}</p>
                   </div>
                 </div>
 
@@ -379,7 +402,7 @@ export default function PortalLayout({
                       )}
                     >
                       <item.icon className="h-4 w-4" />
-                      {item.label}
+                      {item.label ?? t(item.labelKey)}
                     </Link>
                   );
                 })}
@@ -401,7 +424,7 @@ export default function PortalLayout({
                     className="w-full text-left flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-600 hover:bg-red-50"
                   >
                     <LogOut className="h-4 w-4" />
-                    Se deconnecter
+                    {t("portal.layout.signOut")}
                   </button>
                 </div>
               </div>
