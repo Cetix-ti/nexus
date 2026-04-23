@@ -9,51 +9,90 @@
 // Les widgets/rapports sont stockés en localStorage, donc les modifications
 // sont bidirectionnelles : créer/modifier ici ou dans le centre a le même
 // effet, la vue filtrée reflète l'état partagé.
+//
+// Défensif : toutes les lectures localStorage sont tolérantes aux erreurs,
+// et l'ensemble est rendu derrière un boundary React pour qu'une exception
+// ici ne casse pas le reste de l'onglet Rapports.
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { BarChart3, LayoutDashboard, Plus, Settings } from "lucide-react";
+import { BarChart3, LayoutDashboard, Plus, Settings, AlertTriangle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 interface WidgetSummary {
   id: string;
   name: string;
-  description: string;
-  chartType: string;
-  color: string;
+  description?: string;
+  chartType?: string;
+  color?: string;
   organizationId?: string;
 }
 
 interface ReportSummary {
   id: string;
   label: string;
-  description: string;
+  description?: string;
   parentId?: string | null;
   organizationId?: string;
   widgets?: string[];
 }
 
 function loadWidgets(): WidgetSummary[] {
+  if (typeof window === "undefined") return [];
   try {
     const r = localStorage.getItem("nexus:custom-widgets-v2");
-    return r ? JSON.parse(r) : [];
+    const parsed = r ? JSON.parse(r) : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch { return []; }
 }
 function loadCustomReports(): ReportSummary[] {
+  if (typeof window === "undefined") return [];
   try {
     const r = localStorage.getItem("nexus:reports:custom");
-    return r ? JSON.parse(r) : [];
+    const parsed = r ? JSON.parse(r) : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch { return []; }
 }
 
-export function OrgAnalyticsWorkbench({
-  organizationId,
-  organizationName,
-}: {
-  organizationId: string;
-  organizationName: string;
-}) {
+// ----------------------------------------------------------------------------
+// Error boundary : isole cet atelier du reste de l'onglet Rapports.
+// ----------------------------------------------------------------------------
+interface BoundaryState { hasError: boolean; message?: string }
+class WorkbenchErrorBoundary extends React.Component<{ children: React.ReactNode }, BoundaryState> {
+  state: BoundaryState = { hasError: false };
+  static getDerivedStateFromError(err: Error): BoundaryState {
+    return { hasError: true, message: err?.message ?? "Erreur inconnue" };
+  }
+  componentDidCatch(err: unknown) {
+    console.error("[OrgAnalyticsWorkbench]", err);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Card>
+          <div className="p-3 flex items-start gap-2 text-[12.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div>
+              L&apos;atelier analytics n&apos;a pas pu se charger ({this.state.message}). Le reste de la page Rapports fonctionne normalement.
+            </div>
+          </div>
+        </Card>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export function OrgAnalyticsWorkbench(props: { organizationId: string; organizationName: string }) {
+  return (
+    <WorkbenchErrorBoundary>
+      <WorkbenchInner {...props} />
+    </WorkbenchErrorBoundary>
+  );
+}
+
+function WorkbenchInner({ organizationId, organizationName }: { organizationId: string; organizationName: string }) {
   const [widgets, setWidgets] = useState<WidgetSummary[]>([]);
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [allCounts, setAllCounts] = useState({ widgets: 0, reports: 0 });
@@ -78,7 +117,7 @@ export function OrgAnalyticsWorkbench({
     };
   }, [organizationId]);
 
-  const orgNameEnc = encodeURIComponent(organizationName);
+  const orgNameEnc = encodeURIComponent(organizationName || "");
   const widgetsUrl = `/analytics/widgets?orgContext=${organizationId}&orgName=${orgNameEnc}`;
   const dashboardsUrl = `/analytics/dashboards?orgContext=${organizationId}&orgName=${orgNameEnc}`;
 
@@ -91,7 +130,7 @@ export function OrgAnalyticsWorkbench({
               <BarChart3 className="h-4 w-4 text-blue-600" /> Atelier analytics &amp; rapports personnalisés
             </h3>
             <p className="text-[12px] text-slate-500 mt-0.5">
-              Widgets et rapports custom attribués à <strong>{organizationName}</strong>. Synchronisé avec la section
+              Widgets et rapports custom attribués à <strong>{organizationName || "cette organisation"}</strong>. Synchronisé avec la section
               {" "}<Link href="/analytics/dashboards" className="text-blue-600 hover:underline">Analytique centrale</Link> —
               {" "}toute modification ici ou là se reflète des deux côtés.
             </p>
@@ -121,12 +160,11 @@ export function OrgAnalyticsWorkbench({
             }
             items={widgets.map((w) => ({
               id: w.id,
-              label: w.name,
-              description: w.description,
-              accent: w.color,
+              label: w.name || "(sans nom)",
+              description: w.description ?? "",
+              accent: w.color ?? "#2563eb",
               href: widgetsUrl,
             }))}
-            globalCount={allCounts.widgets}
             globalCountLabel={`${allCounts.widgets} widgets au total`}
             globalLink="/analytics/widgets"
             globalLinkLabel="Voir tous les widgets"
@@ -141,12 +179,11 @@ export function OrgAnalyticsWorkbench({
             }
             items={reports.map((r) => ({
               id: r.id,
-              label: r.label,
+              label: r.label || "(sans nom)",
               description: r.description || `${r.widgets?.length ?? 0} widgets`,
               accent: "#6366f1",
               href: dashboardsUrl,
             }))}
-            globalCount={allCounts.reports}
             globalCountLabel={`${allCounts.reports} rapports au total`}
             globalLink="/analytics/dashboards"
             globalLinkLabel="Voir tous les rapports"
@@ -158,7 +195,7 @@ export function OrgAnalyticsWorkbench({
           <span>
             Les boutons <strong>Nouveau widget</strong> et <strong>Ouvrir les rapports</strong> ouvrent l&apos;outil
             analytics central en <em>mode atelier organisation</em> : tout ce qui est créé depuis là est automatiquement
-            attribué à <strong>{organizationName}</strong>.
+            attribué à <strong>{organizationName || "cette organisation"}</strong>.
           </span>
         </div>
       </div>
@@ -168,13 +205,12 @@ export function OrgAnalyticsWorkbench({
 
 function ListSection({
   title, items, emptyLabel, emptyCta,
-  globalCount, globalCountLabel, globalLink, globalLinkLabel,
+  globalCountLabel, globalLink, globalLinkLabel,
 }: {
   title: string;
   items: Array<{ id: string; label: string; description: string; accent: string; href: string }>;
   emptyLabel: string;
   emptyCta: React.ReactNode;
-  globalCount: number;
   globalCountLabel: string;
   globalLink: string;
   globalLinkLabel: string;
