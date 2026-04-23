@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { TagOrganizationModal } from "@/components/analytics/tag-organization-modal";
 import { DashboardGrid, type DashboardItem } from "@/components/widgets/dashboard-grid";
 import {
   TrendingUp,
@@ -458,6 +459,28 @@ export default function ReportsPage() {
   const [renamingReport, setRenamingReport] = useState(false);
   const [reportRenameDraft, setReportRenameDraft] = useState("");
   const [renameFolderDraft, setRenameFolderDraft] = useState("");
+  // Tag organisation : id du rapport courant dont on veut changer l'org.
+  const [taggingReportId, setTaggingReportId] = useState<string | null>(null);
+  // Cache orgId → name pour afficher le badge "Pour [org]" sur les rapports.
+  const [orgNameById, setOrgNameById] = useState<Record<string, string>>({});
+
+  // Charge les noms des orgs référencées par les rapports taggés (une fois).
+  useEffect(() => {
+    const ids = Array.from(new Set(customReports.map((r) => r.organizationId).filter((x): x is string => !!x)));
+    if (ids.length === 0) return;
+    if (ids.every((id) => orgNameById[id])) return;
+    fetch("/api/v1/organizations")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: Array<{ id: string; name: string }>) => {
+        setOrgNameById((prev) => {
+          const next = { ...prev };
+          for (const o of list) if (ids.includes(o.id)) next[o.id] = o.name;
+          return next;
+        });
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customReports]);
 
   // Merged catalog: built-in + custom
   // On filtre les built-ins masqués, sauf quand l'user a activé
@@ -777,6 +800,19 @@ export default function ReportsPage() {
     if (!label) return;
     if (!id.startsWith("custom_")) return;  // Built-in reports are fixed.
     const updated = customReports.map((r) => (r.id === id ? { ...r, label } : r));
+    setCustomReports(updated);
+    saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
+  }
+
+  /**
+   * Attribue (ou retire) un rapport custom à une organisation. Déclenche une
+   * synchronisation avec l'onglet Rapports de l'org concernée via localStorage.
+   */
+  function setReportOrganization(reportId: string, organizationId: string | null) {
+    if (!reportId.startsWith("custom_")) return;
+    const updated = customReports.map((r) =>
+      r.id === reportId ? { ...r, organizationId: organizationId ?? undefined } : r,
+    );
     setCustomReports(updated);
     saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
   }
@@ -1269,6 +1305,29 @@ export default function ReportsPage() {
                 </button>
                 {activeReport.id.startsWith("custom_") && !renamingReport && (
                   <>
+                    {(() => {
+                      const orgId = activeReport.organizationId;
+                      const orgName = orgId ? (orgNameById[orgId] ?? "…") : null;
+                      return (
+                        <button
+                          onClick={() => setTaggingReportId(activeReport.id)}
+                          className={cn(
+                            "h-9 inline-flex items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium ring-1 ring-inset transition-all",
+                            orgId
+                              ? "bg-blue-50 text-blue-700 ring-blue-200 hover:bg-blue-100"
+                              : "bg-white text-slate-500 ring-slate-200 hover:text-blue-600 hover:ring-blue-200 hover:bg-blue-50"
+                          )}
+                          title={orgId ? `Attribué à : ${orgName}` : "Attribuer à une organisation"}
+                        >
+                          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4" />
+                          </svg>
+                          <span className="hidden sm:inline max-w-[120px] truncate">
+                            {orgId ? orgName : "Attribuer"}
+                          </span>
+                        </button>
+                      );
+                    })()}
                     <button
                       onClick={() => {
                         setReportRenameDraft(activeReport.label);
@@ -2072,6 +2131,20 @@ export default function ReportsPage() {
           onClose={() => setPublishingDashboardId(null)}
         />
       )}
+
+      {taggingReportId && (() => {
+        const rep = customReports.find((r) => r.id === taggingReportId);
+        return (
+          <TagOrganizationModal
+            open
+            onClose={() => setTaggingReportId(null)}
+            itemLabel="Rapport"
+            itemName={rep?.label}
+            currentOrgId={rep?.organizationId}
+            onSelect={(orgId) => setReportOrganization(taggingReportId, orgId)}
+          />
+        );
+      })()}
 
       </div>
     </div>
