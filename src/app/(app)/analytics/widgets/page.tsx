@@ -52,7 +52,7 @@ type ChartType =
   | "list" | "line" | "area" | "combo" | "pie" | "donut" | "scatter" | "radar"
   | "funnel" | "treemap" | "heatmap" | "gauge" | "sankey";
 
-interface FieldDef { name: string; label: string; type: string; groupable: boolean; aggregable: boolean }
+interface FieldDef { name: string; label: string; type: string; groupable: boolean; aggregable: boolean; values?: readonly string[]; virtual?: boolean }
 interface DatasetDef { id: string; label: string; fields: FieldDef[]; defaultDateField: string; dateFields?: string[] }
 interface QueryFilter { field: string; operator: string; value: string }
 interface WidgetQuery {

@@ -48,6 +48,17 @@ interface FieldDef {
    * min, puis divisée par 60 ici et arrondie 2 décimales.
    */
   outputDivide?: number;
+  /**
+   * Valeurs possibles pour les champs enum/string. Exposées au builder
+   * de widgets pour présenter un vrai sélecteur au lieu d'un input texte.
+   * Peut être omis pour les strings libres.
+   */
+  values?: readonly string[];
+  /**
+   * Marque un champ comme virtuel (non présent en DB, résolu côté serveur).
+   * Ex: `categoryBaseId` groupe par la racine de l'arbre de catégories.
+   */
+  virtual?: boolean;
 }
 
 interface DatasetDef {
@@ -63,24 +74,40 @@ const DATASETS: Record<string, DatasetDef> = {
     defaultDateField: "createdAt",
     dateFields: ["createdAt", "resolvedAt", "closedAt", "dueAt", "firstResponseAt"],
     fields: [
-      { name: "status", label: "Statut", type: "enum", groupable: true, aggregable: false },
-      { name: "priority", label: "Priorité", type: "enum", groupable: true, aggregable: false },
-      { name: "type", label: "Type", type: "enum", groupable: true, aggregable: false },
-      { name: "urgency", label: "Urgence", type: "enum", groupable: true, aggregable: false },
-      { name: "impact", label: "Impact", type: "enum", groupable: true, aggregable: false },
-      { name: "source", label: "Source", type: "enum", groupable: true, aggregable: false },
+      { name: "status", label: "Statut", type: "enum", groupable: true, aggregable: false,
+        values: ["NEW", "OPEN", "IN_PROGRESS", "ON_SITE", "PENDING", "WAITING_CLIENT", "WAITING_VENDOR", "SCHEDULED", "RESOLVED", "CLOSED", "CANCELLED"] },
+      { name: "priority", label: "Priorité", type: "enum", groupable: true, aggregable: false,
+        values: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+      { name: "type", label: "Type", type: "enum", groupable: true, aggregable: false,
+        values: ["INCIDENT", "SERVICE_REQUEST", "PROBLEM", "CHANGE", "ALERT"] },
+      { name: "urgency", label: "Urgence", type: "enum", groupable: true, aggregable: false,
+        values: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+      { name: "impact", label: "Impact", type: "enum", groupable: true, aggregable: false,
+        values: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+      { name: "source", label: "Source", type: "enum", groupable: true, aggregable: false,
+        values: ["PORTAL", "EMAIL", "PHONE", "CHAT", "API", "MONITORING", "AUTOMATION"] },
+      { name: "prioritySource", label: "Origine priorité", type: "enum", groupable: true, aggregable: false,
+        values: ["DEFAULT", "MANUAL", "AI"] },
+      { name: "categorySource", label: "Origine catégorie", type: "enum", groupable: true, aggregable: false,
+        values: ["DEFAULT", "MANUAL", "AI"] },
       { name: "organizationId", label: "Organisation", type: "relation", groupable: true, aggregable: false },
+      { name: "siteId", label: "Site", type: "relation", groupable: true, aggregable: false },
       { name: "assigneeId", label: "Assigné à", type: "relation", groupable: true, aggregable: false },
       { name: "creatorId", label: "Créé par", type: "relation", groupable: true, aggregable: false },
+      { name: "requesterId", label: "Demandeur", type: "relation", groupable: true, aggregable: false },
       { name: "categoryId", label: "Catégorie", type: "relation", groupable: true, aggregable: false },
+      { name: "categoryBaseId", label: "Catégorie de base", type: "relation", groupable: true, aggregable: false, virtual: true },
       { name: "queueId", label: "File d'attente", type: "relation", groupable: true, aggregable: false },
+      { name: "projectId", label: "Projet lié", type: "relation", groupable: true, aggregable: false },
       { name: "slaBreached", label: "SLA dépassé", type: "boolean", groupable: true, aggregable: false },
       { name: "isOverdue", label: "En retard", type: "boolean", groupable: true, aggregable: false },
       { name: "isEscalated", label: "Escaladé", type: "boolean", groupable: true, aggregable: false },
       { name: "isInternal", label: "Interne", type: "boolean", groupable: true, aggregable: false },
-      { name: "monitoringStage", label: "Stage monitoring", type: "string", groupable: true, aggregable: false },
+      { name: "monitoringStage", label: "Stage monitoring", type: "enum", groupable: true, aggregable: false,
+        values: ["TRIAGE", "INVESTIGATING", "WAITING_PARTS", "WAITING_VENDOR", "SCHEDULED", "RESOLVED"] },
       { name: "requiresOnSite", label: "Sur place requis", type: "boolean", groupable: true, aggregable: false },
-      { name: "approvalStatus", label: "Statut approbation", type: "enum", groupable: true, aggregable: false },
+      { name: "approvalStatus", label: "Statut approbation", type: "enum", groupable: true, aggregable: false,
+        values: ["NOT_REQUIRED", "PENDING", "APPROVED", "REJECTED"] },
       { name: "createdAt", label: "Date de création", type: "date", groupable: true, aggregable: false },
       { name: "resolvedAt", label: "Date de résolution", type: "date", groupable: true, aggregable: false },
       { name: "closedAt", label: "Date de fermeture", type: "date", groupable: true, aggregable: false },
@@ -96,9 +123,12 @@ const DATASETS: Record<string, DatasetDef> = {
     defaultDateField: "startedAt",
     dateFields: ["startedAt", "endedAt", "createdAt"],
     fields: [
-      { name: "coverageStatus", label: "Couverture", type: "enum", groupable: true, aggregable: false },
-      { name: "timeType", label: "Catégorie de base", type: "string", groupable: true, aggregable: false },
-      { name: "approvalStatus", label: "Statut approbation", type: "string", groupable: true, aggregable: false },
+      { name: "coverageStatus", label: "Couverture", type: "enum", groupable: true, aggregable: false,
+        values: ["billable", "non_billable", "included_in_contract", "deducted_from_hour_bank", "hour_bank_overage", "excluded_from_billing", "internal_time", "travel_billable", "travel_non_billable", "msp_overage"] },
+      { name: "timeType", label: "Catégorie de base", type: "enum", groupable: true, aggregable: false,
+        values: ["remote_work", "onsite_work", "travel", "preparation", "administration", "waiting", "follow_up", "internal", "other"] },
+      { name: "approvalStatus", label: "Statut approbation", type: "enum", groupable: true, aggregable: false,
+        values: ["draft", "submitted", "approved", "rejected"] },
       { name: "organizationId", label: "Organisation", type: "relation", groupable: true, aggregable: false },
       { name: "agentId", label: "Technicien", type: "relation", groupable: true, aggregable: false },
       { name: "ticketId", label: "Ticket", type: "relation", groupable: true, aggregable: false },
@@ -384,10 +414,16 @@ const USER_SELECT = { firstName: true, lastName: true };
 const DATASET_RELATION_INCLUDES: Record<string, RelationIncludes> = {
   tickets: {
     organizationId: { organization: { select: { name: true } } },
+    siteId: { site: { select: { name: true } } },
     assigneeId: { assignee: { select: USER_SELECT } },
     creatorId: { creator: { select: USER_SELECT } },
+    requesterId: { requester: { select: { firstName: true, lastName: true } } },
     categoryId: { category: { select: { name: true } } },
+    // Pour le virtual "categoryBaseId" on précharge parentId en plus pour
+    // pouvoir remonter au root de l'arbre de catégories.
+    categoryBaseId: { category: { select: { id: true, name: true, parentId: true } } },
     queueId: { queue: { select: { name: true } } },
+    projectId: { project: { select: { name: true } } },
   },
   time_entries: {
     // Aucune relation déclarée sur TimeEntry — resolveLabels() résout
@@ -439,8 +475,10 @@ function resolveRelationLabel(row: any, groupField: string): string {
   if (groupField === "organizationId") return row.organization?.name ?? row.organizationId ?? "—";
   if (groupField === "assigneeId") return row.assignee ? `${row.assignee.firstName} ${row.assignee.lastName}` : "Non assigné";
   if (groupField === "creatorId") return row.creator ? `${row.creator.firstName} ${row.creator.lastName}` : "—";
+  if (groupField === "requesterId") return row.requester ? `${row.requester.firstName} ${row.requester.lastName}` : "—";
   if (groupField === "categoryId") return row.category?.name ?? "Sans catégorie";
   if (groupField === "queueId") return row.queue?.name ?? "Sans file";
+  if (groupField === "projectId") return row.project?.name ?? "Sans projet";
   if (groupField === "agentId") return row.agentName ?? row.agentId ?? "—";
   if (groupField === "submitterId") return row.submitter ? `${row.submitter.firstName} ${row.submitter.lastName}` : "—";
   if (groupField === "requestedById") return row.requestedBy ? `${row.requestedBy.firstName} ${row.requestedBy.lastName}` : "—";
@@ -449,6 +487,26 @@ function resolveRelationLabel(row: any, groupField: string): string {
   if (groupField === "ownerId") return row.owner ? `${row.owner.firstName} ${row.owner.lastName}` : "—";
   if (groupField === "ticketId") return row.ticketId ?? "—";
   return String(row[groupField] ?? "—");
+}
+
+/**
+ * Résout le nom de la catégorie racine pour une ligne ticket. Utilise
+ * la chaîne parent/child chargée en cache une fois par requête.
+ */
+function resolveCategoryBaseLabel(row: any, categoryTree: Map<string, { id: string; name: string; parentId: string | null }>): string {
+  const cat = row.category as { id?: string; parentId?: string | null; name?: string } | null;
+  if (!cat?.id) return "Sans catégorie";
+  // Walk up jusqu'au root via la map préchargée.
+  let current = categoryTree.get(cat.id);
+  if (!current) return cat.name ?? "Sans catégorie";
+  const seen = new Set<string>([current.id]);
+  while (current.parentId) {
+    const parent = categoryTree.get(current.parentId);
+    if (!parent || seen.has(parent.id)) break;
+    seen.add(parent.id);
+    current = parent;
+  }
+  return current.name;
 }
 
 // ============================================================================
@@ -815,6 +873,41 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
 
   if (groupBy) {
     const fieldDef = def.fields.find((f) => f.name === groupBy);
+
+    // Virtual field : catégorie de base (racine de l'arbre Category).
+    if (fieldDef?.virtual && groupBy === "categoryBaseId" && dataset === "tickets") {
+      const includeSpec = getIncludeSpec(dataset, groupBy);
+      const rows = await model.findMany({ where, ...(includeSpec ? { include: includeSpec } : {}), take: 5000 });
+      const totalRows = rows.length;
+
+      // Précharge l'arbre complet des catégories pour la remontée au root.
+      // Sur-cible quand c'est possible en limitant par organizations des
+      // tickets retournés, sinon on charge tout (borne raisonnable).
+      const orgIdsSet = new Set<string>();
+      for (const r of rows) if (r.organizationId) orgIdsSet.add(r.organizationId);
+      const allCats = await prisma.category.findMany({
+        where: orgIdsSet.size > 0 ? { OR: [{ organizationId: null }, { organizationId: { in: Array.from(orgIdsSet) } }] } : {},
+        select: { id: true, name: true, parentId: true },
+      });
+      const catTree = new Map<string, { id: string; name: string; parentId: string | null }>();
+      for (const c of allCats) catTree.set(c.id, c);
+
+      const groups = new Map<string, { label: string; count: number; values: number[] }>();
+      for (const row of rows) {
+        const label = resolveCategoryBaseLabel(row, catTree);
+        const g = groups.get(label) ?? { label, count: 0, values: [] };
+        g.count += 1;
+        if (aggregateField && row[aggregateField] != null) g.values.push(Number(row[aggregateField]));
+        groups.set(label, g);
+      }
+      let results = Array.from(groups.values()).map((g) => ({
+        label: g.label, value: applyDivide(computeAggregate(aggregate, g.values, g.count, totalRows)),
+      }));
+      sortResults(results, sortBy, sortDir);
+      results = results.slice(0, limit);
+      return { results, total: totalRows, groupedBy: groupBy, aggregate };
+    }
+
     if (fieldDef?.type === "relation") {
       // Include Prisma UNIQUEMENT si le dataset a déclaré cette relation.
       // Sinon on fait un findMany simple et resolveLabels() remappera les

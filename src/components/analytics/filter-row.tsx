@@ -28,7 +28,7 @@ export interface FieldMeta {
   label: string;
   type: string;
   /** Valeurs possibles pour les enums. Si absent, fallback input texte. */
-  values?: string[];
+  values?: readonly string[];
 }
 
 export interface FilterValue {
@@ -273,7 +273,7 @@ function DateValueInput({ filter, onChange }: { filter: FilterValue; onChange: (
 // ----------------------------------------------------------------------------
 function EnumMultiSelect({
   values, selected, onChange,
-}: { values: string[]; selected: string[]; onChange: (next: string[]) => void }) {
+}: { values: readonly string[]; selected: string[]; onChange: (next: string[]) => void }) {
   function toggle(v: string) {
     if (selected.includes(v)) onChange(selected.filter((x) => x !== v));
     else onChange([...selected, v]);
