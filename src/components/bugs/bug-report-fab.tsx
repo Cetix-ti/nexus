@@ -57,6 +57,7 @@ export function BugReportFab() {
     <>
       {!open && (
         <button
+          data-floating-ui
           onClick={() => setOpen(true)}
           className="fixed z-40 inline-flex items-center gap-1.5 bg-slate-900 text-white rounded-full shadow-lg hover:bg-slate-800 px-3.5 py-2.5 text-[13px] font-medium bottom-24 right-4 sm:bottom-6 sm:right-24"
           aria-label="Signaler un bug"

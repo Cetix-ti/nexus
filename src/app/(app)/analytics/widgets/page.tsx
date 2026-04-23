@@ -40,7 +40,6 @@ import { cn } from "@/lib/utils";
 import { remapBaseCategoryResults } from "@/lib/analytics/base-category-remap";
 import { FilterRow } from "@/components/analytics/filter-row";
 import { WidgetAppearance } from "@/components/analytics/widget-appearance";
-import { TagOrganizationModal } from "@/components/analytics/tag-organization-modal";
 import {
   type VisualStyle, DEFAULT_STYLE, mergeStyle,
   colorsForResults, colorForIndex, formatValue,
@@ -329,30 +328,6 @@ export default function WidgetEditorPage() {
     if (!confirm("Supprimer ce widget ?")) return;
     const u = allWidgets.filter((w) => w.id !== id); setWidgets(u); saveWidgets(u);
   }
-  function setWidgetOrganization(widgetId: string, organizationId: string | null) {
-    const u = allWidgets.map((w) =>
-      w.id === widgetId ? { ...w, organizationId: organizationId ?? undefined } : w,
-    );
-    setWidgets(u); saveWidgets(u);
-  }
-  const [taggingWidgetId, setTaggingWidgetId] = useState<string | null>(null);
-  const [widgetOrgNames, setWidgetOrgNames] = useState<Record<string, string>>({});
-  useEffect(() => {
-    const ids = Array.from(new Set(allWidgets.map((w) => w.organizationId).filter((x): x is string => !!x)));
-    if (ids.length === 0) return;
-    if (ids.every((id) => widgetOrgNames[id])) return;
-    fetch("/api/v1/organizations")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list: Array<{ id: string; name: string }>) => {
-        setWidgetOrgNames((prev) => {
-          const next = { ...prev };
-          for (const o of list) if (ids.includes(o.id)) next[o.id] = o.name;
-          return next;
-        });
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allWidgets]);
   function handleDuplicate(w: CustomWidget) {
     const d: CustomWidget = {
       ...w,
@@ -945,7 +920,6 @@ export default function WidgetEditorPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-0.5">
-                      <button onClick={() => setTaggingWidgetId(w.id)} className="h-7 w-7 rounded-md flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="Attribuer à une organisation"><Building2 className="h-3.5 w-3.5" /></button>
                       <button onClick={() => startEdit(w)} className="h-7 w-7 rounded-md flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50"><Pencil className="h-3.5 w-3.5" /></button>
                       <button onClick={() => handleDuplicate(w)} className="h-7 w-7 rounded-md flex items-center justify-center text-slate-400 hover:text-violet-600 hover:bg-violet-50"><Copy className="h-3.5 w-3.5" /></button>
                       <button onClick={() => handleDelete(w.id)} className="h-7 w-7 rounded-md flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
@@ -957,11 +931,6 @@ export default function WidgetEditorPage() {
                     {grp && <Badge variant="default" className="text-[9px]">↳ {grp.label}</Badge>}
                     <Badge variant="default" className="text-[9px]">{CHART_TYPES.find((c) => c.id === w.chartType)?.label}</Badge>
                     {w.query.filters.length > 0 && <Badge variant="warning" className="text-[9px]">{w.query.filters.length} filtre{w.query.filters.length > 1 ? "s" : ""}</Badge>}
-                    {w.organizationId && (
-                      <Badge variant="default" className="text-[9px] bg-blue-50 text-blue-700 ring-blue-200">
-                        <Building2 className="h-2.5 w-2.5 mr-0.5" /> {widgetOrgNames[w.organizationId] ?? "Organisation"}
-                      </Badge>
-                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -970,19 +939,6 @@ export default function WidgetEditorPage() {
         </div>
       )}
 
-      {taggingWidgetId && (() => {
-        const w = allWidgets.find((x) => x.id === taggingWidgetId);
-        return (
-          <TagOrganizationModal
-            open
-            onClose={() => setTaggingWidgetId(null)}
-            itemLabel="Widget"
-            itemName={w?.name}
-            currentOrgId={w?.organizationId}
-            onSelect={(orgId) => setWidgetOrganization(taggingWidgetId, orgId)}
-          />
-        );
-      })()}
     </div>
   );
 }

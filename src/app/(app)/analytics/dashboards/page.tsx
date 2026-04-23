@@ -2489,6 +2489,13 @@ function WidgetAddPanel({ dashItems, onAdd, onClose }: {
 }) {
   const [queryWidgets] = useState<QueryWidget[]>(() => loadQueryWidgets());
 
+  // Cache les FABs flottants (AI chat, Bug report) pendant que ce panneau
+  // est ouvert — sinon le dernier widget de la liste est caché derrière eux.
+  useEffect(() => {
+    document.body.setAttribute("data-hide-floating-ui", "1");
+    return () => { document.body.removeAttribute("data-hide-floating-ui"); };
+  }, []);
+
   return (
     <div className="fixed inset-y-0 right-0 z-50 flex print:hidden">
       <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-[2px]" onClick={onClose} />

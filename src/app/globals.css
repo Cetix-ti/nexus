@@ -160,3 +160,9 @@ body {
     transform: translateX(0);
   }
 }
+
+/* Masquage temporaire des FABs flottants (AI chat, Bug report) quand
+   un panneau latéral est ouvert (ex: ajout de widgets à un dashboard). */
+body[data-hide-floating-ui="1"] [data-floating-ui] {
+  display: none !important;
+}
