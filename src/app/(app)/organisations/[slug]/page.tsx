@@ -53,13 +53,26 @@ import { FreshserviceImportModal } from "@/components/freshservice/freshservice-
 import { Database } from "lucide-react";
 import type { Contract as BillingContract } from "@/lib/billing/types";
 import { ClientBillingOverridesSection } from "@/components/billing/client-billing-overrides-section";
-import { SupportTiersSection } from "@/components/billing/support-tiers-section";
 import { OrgAssetsTab } from "@/components/assets/org-assets-tab";
+import { OrgAssetsTabWrapper } from "@/components/assets/org-assets-tab-wrapper";
 import { OrgSlaSection } from "@/components/sla/org-sla-section";
 import { OrgPortalSection } from "@/components/portal/org-portal-section";
 import { OrgReportsTab } from "@/components/organizations/org-reports-tab";
+import { OrgNetworkSection } from "@/components/organizations/org-network-section";
 import { OrgAiIntelligenceTab } from "@/components/organizations/org-ai-intelligence-tab";
+import { OrgMonthlyReportsTab } from "@/components/reports/monthly/org-monthly-reports-tab";
+import { OrgParticularitiesTab } from "@/components/particularities/org-particularities-tab";
+import { OrgSoftwareTab } from "@/components/software/org-software-tab";
+import { OrgPoliciesTab } from "@/components/policies/org-policies-tab";
+import { OrgChangesTab } from "@/components/changes/org-changes-tab";
+import { ChangesOverviewWidget } from "@/components/changes/overview-widget";
+import { RenewalsWidget } from "@/components/assets/renewals-widget";
+import { OrgMaturitySection } from "@/components/organizations/org-maturity-section";
+import { OrgCapabilitiesSection } from "@/components/organizations/org-capabilities-section";
+import { OrgDossierExportButton } from "@/components/organizations/org-dossier-export";
+import { Lightbulb, ShieldCheck as ShieldCheckIcon, Package, GitCommit } from "lucide-react";
 import { Plus, X } from "lucide-react";
+import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
 
 function portalRoleVariant(role: ClientPortalPermissions["portalRole"] | null): "danger" | "warning" | "primary" | "default" {
   if (role === "admin") return "danger";
@@ -114,6 +127,7 @@ interface OrgTicket {
   priority: "Basse" | "Moyenne" | "Haute" | "Critique";
   requester: string;
   assignee: string | null;
+  assigneeAvatar: string | null;
   createdAt: string;
 }
 
@@ -285,6 +299,10 @@ function OrgTicketsTab({ tickets }: { tickets: OrgTicket[] }) {
   const onSiteTickets = tickets.filter((t) => t.status === "Sur place");
   const otherTickets = tickets.filter((t) => t.status !== "Sur place");
 
+  const avatars = useAgentAvatarsStore((s) => s.avatars);
+  const loadAvatars = useAgentAvatarsStore((s) => s.load);
+  useEffect(() => { loadAvatars(); }, [loadAvatars]);
+
   return (
     <div className="space-y-5">
       {/* SUR PLACE — Featured section */}
@@ -335,15 +353,24 @@ function OrgTicketsTab({ tickets }: { tickets: OrgTicket[] }) {
                 <Badge variant={priorityColor(t.priority)}>{t.priority}</Badge>
                 {t.assignee ? (
                   <div className="flex items-center gap-2 shrink-0">
-                    <div
-                      className={cn(
-                        "h-7 w-7 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[10px] font-semibold ring-2 ring-white shadow-sm",
-                        getAvatarGradient(t.assignee)
-                      )}
-                      title={t.assignee}
-                    >
-                      {getInitialsName(t.assignee)}
-                    </div>
+                    {t.assigneeAvatar ? (
+                      <img
+                        src={t.assigneeAvatar}
+                        alt={t.assignee}
+                        title={t.assignee}
+                        className="h-7 w-7 rounded-full object-cover ring-2 ring-white shadow-sm"
+                      />
+                    ) : (
+                      <div
+                        className={cn(
+                          "h-7 w-7 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[10px] font-semibold ring-2 ring-white shadow-sm",
+                          getAvatarGradient(t.assignee)
+                        )}
+                        title={t.assignee}
+                      >
+                        {getInitialsName(t.assignee)}
+                      </div>
+                    )}
                     <span className="text-[12px] text-slate-700 hidden md:inline">
                       {t.assignee}
                     </span>
@@ -428,14 +455,24 @@ function OrgTicketsTab({ tickets }: { tickets: OrgTicket[] }) {
                       <td className="px-3 py-2.5">
                         {t.assignee ? (
                           <div className="flex items-center gap-2">
-                            <div
-                              className={cn(
-                                "h-6 w-6 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[9px] font-semibold ring-2 ring-white shadow-sm",
-                                getAvatarGradient(t.assignee)
-                              )}
-                            >
-                              {getInitialsName(t.assignee)}
-                            </div>
+                            {t.assigneeAvatar ? (
+                              <img
+                                src={t.assigneeAvatar}
+                                alt={t.assignee}
+                                title={t.assignee}
+                                className="h-6 w-6 rounded-full object-cover ring-2 ring-white shadow-sm"
+                              />
+                            ) : (
+                              <div
+                                className={cn(
+                                  "h-6 w-6 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[9px] font-semibold ring-2 ring-white shadow-sm",
+                                  getAvatarGradient(t.assignee)
+                                )}
+                                title={t.assignee}
+                              >
+                                {getInitialsName(t.assignee)}
+                              </div>
+                            )}
                             <span className="text-[12px] text-slate-700 whitespace-nowrap">
                               {t.assignee}
                             </span>
@@ -493,18 +530,29 @@ const activityIcon = (type: string) => {
 };
 
 // ---------- Tabs ----------
+// Ordre maître défini au niveau architecture : on aligne l'utilisateur sur
+// un parcours cohérent (identité → inventaire → gouvernance documentaire →
+// contrats → livrables → exposition). Les nouveaux modules (Particularités,
+// Politiques, Logiciels, Changements, Rapports mensuels) s'intercalent ici ;
+// les onglets dont le rendu n'existe pas encore affichent un placeholder
+// qui redirige vers leur version transversale dans la sidebar.
 const TABS = [
   { key: "overview", label: "Aperçu" },
-  { key: "sites", label: "Sites" },
   { key: "contacts", label: "Contacts" },
+  { key: "sites", label: "Sites" },
   { key: "tickets", label: "Tickets" },
-  { key: "billing", label: "Facturation" },
-  { key: "contracts", label: "Contrats" },
   { key: "assets", label: "Actifs" },
-  { key: "reports", label: "Rapports" },
-  { key: "ai", label: "Intelligence IA" },
-  { key: "portal_access", label: "Portail client" },
+  { key: "particularities", label: "Particularités" },
+  { key: "policies", label: "Politiques" },
+  { key: "software", label: "Logiciels" },
+  { key: "changes", label: "Changements" },
+  { key: "contracts", label: "Contrats" },
   { key: "sla", label: "SLA" },
+  { key: "billing", label: "Facturation" },
+  { key: "monthly_reports", label: "Rapports mensuels" },
+  { key: "reports", label: "Rapports" },
+  { key: "portal_access", label: "Portail client" },
+  { key: "ai", label: "Intelligence IA" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -804,6 +852,11 @@ function OrgSitesTab({
           </table>
         </div>
       </Card>
+
+      <OrgNetworkSection
+        organizationId={organizationId}
+        sites={sites.map((s) => ({ id: s.id, name: s.name }))}
+      />
     </div>
   );
 }
@@ -831,6 +884,39 @@ export default function OrganizationDetailPage() {
   }, [slugOrId]);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [tabSearch, setTabSearch] = useState("");
+  // Les onglets Facturation / Contrats / Rapports exposent taux, revenus
+  // et marges. On les gate derrière la capabilité "finances" — même pattern
+  // que la sidebar. Les caps sont chargées depuis /api/v1/me (source de
+  // vérité, pas le JWT qui ne se rafraîchit pas).
+  const [userCapabilities, setUserCapabilities] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/v1/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.capabilities) setUserCapabilities(d.capabilities); })
+      .catch(() => {});
+  }, []);
+  const canFinances = userCapabilities.includes("finances");
+  const visibleTabs = useMemo(
+    () =>
+      TABS.filter((t) => {
+        if (
+          t.key === "billing" ||
+          t.key === "contracts" ||
+          t.key === "reports"
+        ) {
+          return canFinances;
+        }
+        return true;
+      }),
+    [canFinances],
+  );
+  // Si le tab actif est gaté et l'utilisateur n'a pas la cap, on retombe
+  // sur "overview" pour éviter un écran blanc.
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.key === activeTab)) {
+      setActiveTab("overview");
+    }
+  }, [visibleTabs, activeTab]);
   const [editingOrg, setEditingOrg] = useState<EditOrgModalOrg | null>(null);
   const [editingContact, setEditingContact] = useState<EditContactModalContact | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -850,6 +936,7 @@ export default function OrganizationDetailPage() {
     activeContracts: number;
     createdAt: string;
     logo: string | null;
+    monthlyReportAutoPublish?: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -1016,6 +1103,7 @@ export default function OrganizationDetailPage() {
             priority: PRIO_FR[t.priority] || "Moyenne",
             requester: t.requesterName || "—",
             assignee: t.assigneeName,
+            assigneeAvatar: t.assigneeAvatar ?? null,
             createdAt: t.createdAt,
           }))
         );
@@ -1149,6 +1237,7 @@ export default function OrganizationDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <OrgDossierExportButton organizationId={orgId} organizationSlug={o.slug} />
           <Button
             variant="outline"
             size="md"
@@ -1230,7 +1319,7 @@ export default function OrganizationDetailPage() {
       {/* Tabs */}
       <div className="border-b border-gray-200 overflow-x-auto">
         <div className="flex gap-0 min-w-max">
-          {TABS.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => { setActiveTab(tab.key); setTabSearch(""); }}
@@ -1248,17 +1337,17 @@ export default function OrganizationDetailPage() {
             </button>
           ))}
         </div>
-        {showTabSearch && (
-          <div className="w-64 pb-2">
-            <Input
-              placeholder="Rechercher..."
-              value={tabSearch}
-              onChange={(e) => setTabSearch(e.target.value)}
-              iconLeft={<Search className="h-4 w-4" />}
-            />
-          </div>
-        )}
       </div>
+      {showTabSearch && (
+        <div className="w-full max-w-xl mt-4 mb-2">
+          <Input
+            placeholder="Rechercher..."
+            value={tabSearch}
+            onChange={(e) => setTabSearch(e.target.value)}
+            iconLeft={<Search className="h-4 w-4" />}
+          />
+        </div>
+      )}
 
       {/* Tab Content */}
       {activeTab === "overview" && (
@@ -1403,6 +1492,16 @@ export default function OrganizationDetailPage() {
               </CardContent>
             </Card>
           </div>
+          <div className="col-span-2 sm:col-span-3">
+            <OrgMaturitySection organizationId={orgId} />
+          </div>
+          <div className="col-span-2 sm:col-span-3 grid gap-4 md:grid-cols-2">
+            <ChangesOverviewWidget organizationId={orgId} />
+            <RenewalsWidget organizationId={orgId} />
+          </div>
+          <div className="col-span-2 sm:col-span-3">
+            <OrgCapabilitiesSection organizationId={orgId} />
+          </div>
         </div>
       )}
 
@@ -1493,13 +1592,9 @@ export default function OrganizationDetailPage() {
       )}
 
       {/* Billing Tab */}
-      {activeTab === "billing" && (
+      {activeTab === "billing" && canFinances && (
         <div className="space-y-5">
           <ClientBillingOverridesSection
-            organizationId={orgId}
-            organizationName={o.name}
-          />
-          <SupportTiersSection
             organizationId={orgId}
             organizationName={o.name}
           />
@@ -1507,7 +1602,7 @@ export default function OrganizationDetailPage() {
       )}
 
       {/* Contracts Tab */}
-      {activeTab === "contracts" && (
+      {activeTab === "contracts" && canFinances && (
         <Card className="overflow-hidden">
           {contractsLoading ? (
             <div className="flex items-center justify-center py-16">
@@ -1624,9 +1719,50 @@ export default function OrganizationDetailPage() {
         </Card>
       )}
 
-      {/* Reports Tab */}
-      {activeTab === "reports" && (
+      {/* Rapports mensuels — livrables PDF cadencés par contrat, auto-publish
+          portail client admin. Distinct de "Rapports" (analytique ad-hoc). */}
+      {activeTab === "monthly_reports" && canFinances && (
+        <div>
+          <div className="mb-3 flex items-center gap-2.5">
+            <div className="h-9 w-9 rounded-lg bg-indigo-50 flex items-center justify-center">
+              <FileText className="h-4.5 w-4.5 text-indigo-700" />
+            </div>
+            <div>
+              <h3 className="text-[15px] font-semibold text-slate-900">
+                Rapports mensuels (livrables client)
+              </h3>
+              <p className="text-[11.5px] text-slate-500 mt-0.5">
+                Rapports PDF formatés à destination du client · auto-publication portail
+              </p>
+            </div>
+          </div>
+          <OrgMonthlyReportsTab
+            organizationId={orgId}
+            initialAutoPublish={dbOrg?.monthlyReportAutoPublish ?? false}
+          />
+        </div>
+      )}
+
+      {/* Rapports (analytique ad-hoc) — tableaux de bord internes, KPIs. */}
+      {activeTab === "reports" && canFinances && (
         <OrgReportsTab organizationId={orgId} />
+      )}
+
+      {/* Particularités — connaissances opérationnelles spécifiques au client. */}
+      {activeTab === "particularities" && (
+        <OrgParticularitiesTab organizationId={orgId} organizationName={o.name} />
+      )}
+
+      {/* Politiques / Logiciels / Changements — placeholders avant modules dédiés.
+          Chaque entrée redirige vers la bibliothèque globale filtrée pour l'org. */}
+      {activeTab === "policies" && (
+        <OrgPoliciesTab organizationId={orgId} organizationName={o.name} />
+      )}
+      {activeTab === "software" && (
+        <OrgSoftwareTab organizationId={orgId} organizationName={o.name} />
+      )}
+      {activeTab === "changes" && (
+        <OrgChangesTab organizationId={orgId} organizationName={o.name} />
       )}
 
       {/* Intelligence IA Tab — Phase 3 : analyse risques, rapports
@@ -1646,9 +1782,9 @@ export default function OrganizationDetailPage() {
         />
       )}
 
-      {/* Assets Tab */}
+      {/* Assets Tab — sous-onglets Matériel / Logiciels (redirect) / Engagements */}
       {activeTab === "assets" && (
-        <OrgAssetsTab organizationId={orgId} organizationName={(org || fallbackOrg).name} />
+        <OrgAssetsTabWrapper organizationId={orgId} organizationName={(org || fallbackOrg).name} />
       )}
 
       {/* SLA Tab */}
@@ -1659,5 +1795,45 @@ export default function OrganizationDetailPage() {
         />
       )}
     </div>
+  );
+}
+
+// Placeholder utilisé pour les onglets Politiques / Logiciels / Changements
+// tant que leurs composants dédiés ne sont pas livrés (phases B2/B3/B4).
+// L'URL `href` pointe vers la bibliothèque globale filtrée pour cette org
+// — évite de paraître vide sans perdre l'entrée de nav.
+function ModuleStub({
+  icon: Icon,
+  title,
+  description,
+  href,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  href: string;
+}) {
+  return (
+    <Card>
+      <div className="p-10 text-center">
+        <div className="mx-auto h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+          <Icon className="h-7 w-7 text-slate-500" />
+        </div>
+        <h3 className="text-[17px] font-semibold text-slate-900">{title}</h3>
+        <p className="mt-2 mx-auto max-w-md text-[13px] text-slate-600 leading-relaxed">
+          {description}
+        </p>
+        <p className="mt-3 mx-auto max-w-md text-[12px] text-slate-500">
+          Ce module arrive bientôt dans la fiche organisation. En attendant, la
+          bibliothèque globale permet déjà de gérer les contenus.
+        </p>
+        <Link
+          href={href}
+          className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-medium px-3.5 py-2"
+        >
+          Ouvrir la bibliothèque
+        </Link>
+      </div>
+    </Card>
   );
 }

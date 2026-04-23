@@ -16,7 +16,7 @@ export async function GET(
   const { id } = await params;
   const contact = await prisma.contact.findUnique({
     where: { id },
-    include: { organization: { select: { id: true, name: true } } },
+    include: { organization: { select: { id: true, name: true, slug: true } } },
   });
   if (!contact) {
     return NextResponse.json({ error: "Contact introuvable" }, { status: 404 });

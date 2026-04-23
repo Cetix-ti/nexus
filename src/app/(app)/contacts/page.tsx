@@ -263,7 +263,13 @@ export default function ContactsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     {contact.vip && <Star className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
-                    <p className="font-semibold text-gray-900 truncate">{contact.firstName} {contact.lastName}</p>
+                    <Link
+                      href={`/contacts/${contact.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-semibold text-gray-900 truncate hover:text-blue-700"
+                    >
+                      {contact.firstName} {contact.lastName}
+                    </Link>
                   </div>
                   <p className="text-[12px] text-gray-500 truncate">{contact.email}</p>
                   <Link

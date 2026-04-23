@@ -82,6 +82,7 @@ export const BUILTIN_WIDGETS: WidgetDefinition[] = [
   { id: "w_dash_my", name: "Mes tickets assignés", description: "Tickets assignés à moi (pleine largeur)", category: "Tableau de bord", icon: "Ticket", defaultSize: "full", availableIn: ["dashboard"], builtIn: true },
   { id: "w_dash_orgs", name: "Tickets par organisation", description: "Top organisations par nombre de tickets", category: "Tableau de bord", icon: "Building2", defaultSize: "full", availableIn: ["dashboard"], builtIn: true },
   { id: "w_dash_ai", name: "Activité IA", description: "Invocations récentes, taux d'acceptation, économies locales", category: "Tableau de bord", icon: "Sparkles", defaultSize: "md", availableIn: ["dashboard"], builtIn: true },
+  { id: "w_dash_renewals", name: "Renouvellements à venir", description: "Garanties, abonnements, contrats de support et licences qui expirent dans 90 jours — tous clients", category: "Tableau de bord", icon: "CalendarDays", defaultSize: "md", availableIn: ["dashboard"], builtIn: true },
 ];
 
 // ===========================================================================

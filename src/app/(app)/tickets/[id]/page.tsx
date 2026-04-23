@@ -31,6 +31,7 @@ import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-edito
 import { AdvancedRichEditor } from "@/components/ui/advanced-rich-editor";
 import { LinkAssetModal } from "@/components/tickets/link-asset-modal";
 import { LinkProjectModal } from "@/components/tickets/link-project-modal";
+import { TicketLinkedChanges } from "@/components/tickets/ticket-linked-changes";
 import { AiTriagePanel } from "@/components/tickets/ai-triage-panel";
 import { AiResponseAssist } from "@/components/tickets/ai-response-assist";
 import { AiResolutionNotes } from "@/components/tickets/ai-resolution-notes";
@@ -42,6 +43,8 @@ import { AiInterventionChecklist } from "@/components/tickets/ai-intervention-ch
 import { AiClientContext } from "@/components/tickets/ai-client-context";
 import { AiCopilotChat } from "@/components/tickets/ai-copilot-chat";
 import { SimilarTicketsWidget } from "@/components/tickets/similar-tickets-widget";
+import { TicketSubtasksWidget } from "@/components/tickets/ticket-subtasks-widget";
+import { TicketDependenciesWidget } from "@/components/tickets/ticket-dependencies-widget";
 import { FeedbackButtons } from "@/components/ai/feedback-buttons";
 import { KbSuggestionsWidget } from "@/components/tickets/kb-suggestions-widget";
 import { ApprentiExemplarsWidget } from "@/components/tickets/apprenti-exemplars-widget";
@@ -1963,6 +1966,9 @@ export default function TicketDetailPage() {
               </SidebarRow>
             </SidebarSection>
 
+            {/* Changements qui citent ce ticket */}
+            {ticket && <TicketLinkedChanges ticketId={ticket.id} />}
+
             {/* Related assets */}
             <SidebarSection title="Actifs liés">
               {linkedAssets.length > 0 ? (
@@ -1994,6 +2000,12 @@ export default function TicketDetailPage() {
                 + Lier un actif
               </button>
             </SidebarSection>
+
+            {/* Sous-tâches (cochables) + dépendances chronologiques.
+                Placés AVANT l'Assistance IA pour que le tech voie d'abord
+                ce qui est sous son contrôle direct. */}
+            <TicketSubtasksWidget ticketId={ticket.id} />
+            <TicketDependenciesWidget ticketId={ticket.id} />
 
             {/* ==============================================================
                 SECTION IA — tout en bas de la sidebar.
@@ -2413,13 +2425,7 @@ function ReminderModal({
           </div>
         </div>
 
-        <footer className="flex items-center justify-between gap-2 border-t border-slate-200 px-5 py-3 bg-slate-50/50">
-          <span className="text-[10.5px] text-slate-400">
-            <kbd className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[9.5px] font-mono">Esc</kbd>{" "}
-            pour fermer ·{" "}
-            <kbd className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[9.5px] font-mono">⌘↵</kbd>{" "}
-            pour enregistrer
-          </span>
+        <footer className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3 bg-slate-50/50">
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}

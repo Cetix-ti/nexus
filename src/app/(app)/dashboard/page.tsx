@@ -15,6 +15,7 @@ import { DashboardGrid, type DashboardItem } from "@/components/widgets/dashboar
 import { WidgetSidebar } from "@/components/widgets/widget-sidebar";
 import { CalendarBoard } from "@/app/(app)/calendar/page";
 import { AiActivityWidget } from "@/components/dashboard/ai-activity-widget";
+import { RenewalsWidget } from "@/components/assets/renewals-widget";
 import {
   TicketsQuickModal,
   type QuickFilter,
@@ -230,6 +231,8 @@ export default function DashboardPage() {
         return <OrgChart data={data.ticketsByOrg} />;
       case "w_dash_ai":
         return <AiActivityWidget />;
+      case "w_dash_renewals":
+        return <RenewalsWidget />;
       default:
         return <div className="p-4 text-center text-slate-400 text-[13px]">Widget « {widgetId} »</div>;
     }

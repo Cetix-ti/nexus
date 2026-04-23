@@ -28,6 +28,13 @@ import {
   UserCircle,
   ShieldAlert,
   Brain,
+  Lightbulb,
+  ShieldCheck,
+  Package,
+  GitCommit,
+  Search,
+  TrendingUp,
+  CheckSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/stores/sidebar";
@@ -66,6 +73,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     items: [
       { label: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
+      { label: "Recherche", href: "/search", icon: Search },
       {
         label: "Tickets",
         href: "/tickets",
@@ -128,6 +136,20 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Supervision", href: "/supervision", icon: BarChart3, minRole: "SUPERVISOR" },
     ],
   },
+  // Bibliothèques — contenus documentaires transversaux (Particularités,
+  // Politiques, Logiciels, Changements). Chaque module a un onglet dédié
+  // dans la fiche organisation ; cette section offre la vue cross-clients.
+  {
+    label: "Bibliothèques",
+    items: [
+      { label: "Particularités clientes", href: "/particularities", icon: Lightbulb, minRole: "TECHNICIAN" },
+      { label: "Politiques",              href: "/policies",        icon: ShieldCheck, minRole: "TECHNICIAN" },
+      { label: "Logiciels",               href: "/software",        icon: Package,     minRole: "TECHNICIAN" },
+      { label: "Changements",             href: "/changes",         icon: GitCommit,   minRole: "TECHNICIAN" },
+      { label: "Approbations",            href: "/approvals",       icon: CheckSquare, minRole: "TECHNICIAN" },
+      { label: "Baseline de maturité",    href: "/baseline",        icon: TrendingUp,  minRole: "SUPERVISOR" },
+    ],
+  },
   {
     label: "Ressources",
     items: [
@@ -136,6 +158,11 @@ const NAV_SECTIONS: NavSection[] = [
         label: "Analytique",
         href: "/analytics/dashboards",
         icon: BarChart3,
+        // Accès aux rapports/dashboards analytiques = données financières
+        // agrégées (revenus par client, rentabilité, etc.). On gate derrière
+        // la même capabilité que Finances pour éviter que n'importe quel
+        // tech voie les taux ou les revenus.
+        requiredCapability: "finances",
         children: [
           { label: "Dashboards", href: "/analytics/dashboards" },
           { label: "Rapports", href: "/analytics/reports" },
@@ -149,38 +176,24 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: "Système",
     items: [
-      {
-        label: "Intelligence IA",
-        href: "/intelligence",
-        icon: Brain,
-        minRole: "MSP_ADMIN",
-        children: [
-          { label: "Vue d'ensemble", href: "/intelligence" },
-          { label: "Journal apprentissage", href: "/intelligence/activity" },
-          { label: "Feedback collectif", href: "/intelligence/feedback" },
-          { label: "Anomalies requester", href: "/intelligence/anomalies" },
-          { label: "Maintenance proposée", href: "/intelligence/maintenance" },
-          { label: "Articles KB à écrire", href: "/intelligence/kb-gaps" },
-          { label: "Chaînes sécurité", href: "/intelligence/security-chains" },
-          { label: "Patterns récurrents", href: "/intelligence/recurring" },
-          { label: "Playbooks", href: "/intelligence/playbooks" },
-          { label: "Coaching techs", href: "/intelligence/techs" },
-          { label: "Taxonomie dédoublée", href: "/intelligence/taxonomy" },
-          {
-            label: "Tickets similaires",
-            href: "/intelligence/similar-learning",
-          },
-          {
-            label: "Suggestions catégorie",
-            href: "/intelligence/category-learning",
-          },
-        ],
-      },
       { label: "Paramètres", href: "/settings", icon: Settings, minRole: "MSP_ADMIN" },
       // Automatisation (ex-« Planificateur ») — tickets récurrents, tâches
       // planifiées, jobs cron internes. En bas du menu car c'est un outil
       // de configuration qu'on visite rarement une fois les règles posées.
       { label: "Automatisation", href: "/scheduling", icon: Zap },
+      {
+        label: "Intelligence IA",
+        href: "/intelligence",
+        icon: Brain,
+        minRole: "SUPER_ADMIN",
+        children: [
+          { label: "Vue d'ensemble", href: "/intelligence" },
+          { label: "Apprentissage", href: "/intelligence/learning" },
+          { label: "Détections", href: "/intelligence/detections" },
+          { label: "Propositions", href: "/intelligence/proposals" },
+          { label: "Coaching techs", href: "/intelligence/techs" },
+        ],
+      },
     ],
   },
 ];
@@ -195,10 +208,22 @@ function NavItemComponent({
   const pathname = usePathname();
   // For items with children, consider active if any child matches
   const hasChildren = !!item.children?.length;
-  const isActive = hasChildren
+  const childActiveFlag = hasChildren
     ? item.children!.some((c) => pathname === c.href || pathname.startsWith(c.href + "/"))
+    : false;
+  const isActive = hasChildren
+    ? childActiveFlag
     : pathname === item.href || pathname.startsWith(item.href + "/");
-  const alwaysExpanded = hasChildren; // Children are always visible, no toggle
+
+  // Sous-items repliables : DÉPLIÉS par défaut pour que les sous-onglets
+  // soient immédiatement visibles sans clic supplémentaire. L'utilisateur
+  // peut replier/déplier manuellement via le chevron. S'il navigue sur
+  // une route enfant, on s'assure que la section reste dépliée (même si
+  // l'user l'avait repliée auparavant).
+  const [expanded, setExpanded] = useState<boolean>(true);
+  useEffect(() => {
+    if (childActiveFlag) setExpanded(true);
+  }, [childActiveFlag]);
 
   const Icon = item.icon;
 
@@ -209,38 +234,70 @@ function NavItemComponent({
 
   return (
     <div>
-      <Link
-        href={effectiveHref}
+      <div
         className={cn(
-          "group relative flex items-center gap-3 rounded-lg text-[13.5px] font-medium transition-all duration-150",
-          collapsed ? "h-10 w-10 mx-auto justify-center" : "h-10 px-3",
+          "group relative flex items-center rounded-lg transition-all duration-150",
+          collapsed ? "h-10 w-10 mx-auto" : "h-10",
           isActive
-            ? "bg-white/[0.07] text-white"
-            : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-100"
+            ? "bg-white/[0.07]"
+            : "hover:bg-white/[0.04]",
         )}
-        title={collapsed ? item.label : undefined}
       >
         {/* Active indicator bar */}
         {isActive && !collapsed && (
           <span className="absolute -left-[11px] top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full bg-blue-500" />
         )}
 
-        <Icon
+        <Link
+          href={effectiveHref}
           className={cn(
-            "shrink-0 transition-colors",
-            "h-[18px] w-[18px]",
-            isActive ? "text-blue-400" : "text-slate-500 group-hover:text-slate-300"
+            "flex items-center gap-3 text-[13.5px] font-medium transition-colors",
+            collapsed
+              ? "w-full h-full justify-center"
+              : "flex-1 min-w-0 h-full pl-3",
+            // Quand l'item a des enfants, on laisse un padding-right plus
+            // petit pour laisser la place au bouton chevron.
+            !collapsed && hasChildren ? "pr-1" : "pr-3",
+            isActive ? "text-white" : "text-slate-400 group-hover:text-slate-100",
           )}
-          strokeWidth={2}
-        />
+          title={collapsed ? item.label : undefined}
+        >
+          <Icon
+            className={cn(
+              "shrink-0 transition-colors h-[18px] w-[18px]",
+              isActive ? "text-blue-400" : "text-slate-500 group-hover:text-slate-300",
+            )}
+            strokeWidth={2}
+          />
+          {!collapsed && (
+            <span className="flex-1 truncate tracking-tight">{item.label}</span>
+          )}
+        </Link>
 
-        {!collapsed && (
-          <span className="flex-1 truncate tracking-tight">{item.label}</span>
+        {/* Chevron pour replier/déplier les sous-items. Pas affiché en
+            mode sidebar rétractée (déjà icône-seule). */}
+        {hasChildren && !collapsed && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            title={expanded ? "Replier" : "Déplier"}
+            className={cn(
+              "h-full px-2 flex items-center justify-center text-slate-500 hover:text-slate-200 transition-colors",
+            )}
+          >
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 transition-transform duration-150",
+                expanded ? "rotate-0" : "-rotate-90",
+              )}
+              strokeWidth={2}
+            />
+          </button>
         )}
-      </Link>
+      </div>
 
-      {/* Sub-items */}
-      {hasChildren && alwaysExpanded && !collapsed && (
+      {/* Sub-items — affichés seulement quand la section est dépliée. */}
+      {hasChildren && expanded && !collapsed && (
         <div className="mt-1 ml-[30px] space-y-0.5 border-l border-slate-800 pl-4 py-1">
           {item.children!.map((child) => {
             const childActive = pathname === child.href;
