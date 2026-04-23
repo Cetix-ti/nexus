@@ -59,6 +59,7 @@ import {
 } from "recharts";
 import { WidgetChart, type ChartType } from "@/components/widgets/widget-chart";
 import { buildDrillDownUrl } from "@/lib/analytics/drill-down";
+import { ExportDashboardButton } from "@/components/analytics/export-dashboard-button";
 
 const PIE_PALETTE = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
@@ -1490,25 +1491,7 @@ export default function ReportsPage() {
                   <GitBranch className="h-3.5 w-3.5" />
                   Parenté
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    // Imprime UNIQUEMENT le dashboard (pas la topbar, sidebar,
-                    // breadcrumbs, etc.) via un mode d'impression spécifique.
-                    document.body.classList.add("printing-dashboard");
-                    // Force le DOM à réappliquer les styles avant print.
-                    requestAnimationFrame(() => {
-                      window.print();
-                      setTimeout(() => {
-                        document.body.classList.remove("printing-dashboard");
-                      }, 500);
-                    });
-                  }}
-                  title="Imprimer le dashboard"
-                >
-                  <Printer className="h-3.5 w-3.5" />
-                </Button>
+                <ExportDashboardButton dashboardLabel={activeReport?.label ?? "dashboard"} />
               </>
             )}
             {/* Mobile-only: dashboard selector — inclut la Galerie comme
