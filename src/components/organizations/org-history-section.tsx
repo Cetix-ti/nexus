@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Clock, Ticket as TicketIcon, Filter, RefreshCw, ExternalLink, Search } from "lucide-react";
+import { Clock, Ticket as TicketIcon, Filter, RefreshCw, ExternalLink, Search, Download, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 type Tab = "time" | "tickets";
@@ -120,6 +120,53 @@ function fmtMoney(n: number | null | undefined): string {
   catch { return `${n.toFixed(2)} $`; }
 }
 
+// --- Sort helpers --------------------------------------------------------
+type SortDir = "asc" | "desc";
+interface SortState<K extends string> { key: K; dir: SortDir }
+
+function applySort<T, K extends string>(
+  rows: T[],
+  sort: SortState<K>,
+  accessor: (row: T, key: K) => unknown,
+): T[] {
+  const arr = [...rows];
+  arr.sort((a, b) => {
+    const va = accessor(a, sort.key);
+    const vb = accessor(b, sort.key);
+    let cmp = 0;
+    if (va == null && vb == null) cmp = 0;
+    else if (va == null) cmp = -1;
+    else if (vb == null) cmp = 1;
+    else if (typeof va === "number" && typeof vb === "number") cmp = va - vb;
+    else cmp = String(va).localeCompare(String(vb), "fr", { numeric: true });
+    return sort.dir === "asc" ? cmp : -cmp;
+  });
+  return arr;
+}
+
+// --- CSV export helpers --------------------------------------------------
+function escapeCsv(v: unknown): string {
+  if (v == null) return "";
+  const s = String(v);
+  if (/[",\n;]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+function downloadCsv(filename: string, rows: Array<Record<string, unknown>>, headers: Array<{ key: string; label: string }>) {
+  const lines = [headers.map((h) => escapeCsv(h.label)).join(";")];
+  for (const row of rows) {
+    lines.push(headers.map((h) => escapeCsv(row[h.key])).join(";"));
+  }
+  const blob = new Blob([`﻿${lines.join("\n")}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // --- Date range helpers --------------------------------------------------
 function toISODate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -184,6 +231,8 @@ export function OrgHistorySection({ organizationId }: { organizationId: string }
 // ============================================================================
 // Time entries list
 // ============================================================================
+type TimeSortKey = "date" | "agent" | "ticket" | "type" | "duration" | "coverage" | "amount";
+
 function TimeEntriesList({ organizationId }: { organizationId: string }) {
   const [preset, setPreset] = useState<DatePreset>("this_month");
   const [from, setFrom] = useState<string>("");
@@ -194,7 +243,15 @@ function TimeEntriesList({ organizationId }: { organizationId: string }) {
   const [rows, setRows] = useState<TimeEntryRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
+  const [sort, setSort] = useState<SortState<TimeSortKey>>({ key: "date", dir: "desc" });
   const pageSize = 25;
+
+  function toggleSort(key: TimeSortKey) {
+    setSort((prev) => prev.key === key
+      ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+      : { key, dir: key === "date" || key === "amount" || key === "duration" ? "desc" : "asc" });
+    setPage(0);
+  }
 
   useEffect(() => {
     if (preset !== "custom") {
@@ -227,13 +284,67 @@ function TimeEntriesList({ organizationId }: { organizationId: string }) {
       const s = agentFilter.toLowerCase();
       x = x.filter((r) => r.agentName.toLowerCase().includes(s));
     }
-    return x;
-  }, [rows, coverageFilter, travelOnly, agentFilter]);
+    return applySort(x, sort, (r, key) => {
+      switch (key) {
+        case "date": return r.startedAt;
+        case "agent": return r.agentName;
+        case "ticket": return r.ticketNumber;
+        case "type": return TIME_TYPE_LABEL[r.timeType] ?? r.timeType;
+        case "duration": return r.durationMinutes;
+        case "coverage": return COVERAGE_LABEL[r.coverageStatus] ?? r.coverageStatus;
+        case "amount": return r.amount ?? 0;
+      }
+    });
+  }, [rows, coverageFilter, travelOnly, agentFilter, sort]);
 
   const paged = filtered ? filtered.slice(page * pageSize, (page + 1) * pageSize) : null;
   const totalPages = filtered ? Math.max(1, Math.ceil(filtered.length / pageSize)) : 1;
   const totalMinutes = filtered?.reduce((s, r) => s + r.durationMinutes, 0) ?? 0;
   const totalAmount = filtered?.reduce((s, r) => s + (r.amount ?? 0), 0) ?? 0;
+
+  function exportCsv() {
+    if (!filtered || filtered.length === 0) return;
+    const today = new Date().toISOString().slice(0, 10);
+    downloadCsv(
+      `saisies-temps-${today}.csv`,
+      filtered.map((r) => ({
+        date: fmtDateTime(r.startedAt),
+        technicien: r.agentName,
+        ticket: `#${r.ticketNumber}`,
+        sujet: r.ticketSubject,
+        type: TIME_TYPE_LABEL[r.timeType] ?? r.timeType,
+        duree_h: (r.durationMinutes / 60).toFixed(2),
+        duree_minutes: r.durationMinutes,
+        couverture: COVERAGE_LABEL[r.coverageStatus] ?? r.coverageStatus,
+        deplacement: r.hasTravelBilled ? "Oui" : "Non",
+        sur_place: r.isOnsite ? "Oui" : "Non",
+        hors_heures: r.isAfterHours ? "Oui" : "Non",
+        weekend: r.isWeekend ? "Oui" : "Non",
+        taux_horaire: r.hourlyRate ?? "",
+        montant: r.amount ?? "",
+        statut_approbation: r.approvalStatus,
+        description: r.description,
+      })),
+      [
+        { key: "date", label: "Date" },
+        { key: "technicien", label: "Technicien" },
+        { key: "ticket", label: "Ticket" },
+        { key: "sujet", label: "Sujet" },
+        { key: "type", label: "Type" },
+        { key: "duree_h", label: "Durée (h)" },
+        { key: "duree_minutes", label: "Durée (min)" },
+        { key: "couverture", label: "Couverture" },
+        { key: "deplacement", label: "Déplacement" },
+        { key: "sur_place", label: "Sur place" },
+        { key: "hors_heures", label: "Hors heures" },
+        { key: "weekend", label: "Weekend" },
+        { key: "taux_horaire", label: "Taux horaire" },
+        { key: "montant", label: "Montant" },
+        { key: "statut_approbation", label: "Statut approbation" },
+        { key: "description", label: "Description" },
+      ],
+    );
+  }
 
   return (
     <div className="space-y-2.5">
@@ -261,13 +372,23 @@ function TimeEntriesList({ organizationId }: { organizationId: string }) {
           placeholder="Nom…"
         />
         <FilterCheckbox label="Déplacement" checked={travelOnly} onChange={(v) => { setTravelOnly(v); setPage(0); }} />
-        <button
-          onClick={load}
-          className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11.5px] text-slate-700 hover:bg-slate-50"
-          title="Rafraîchir"
-        >
-          <RefreshCw className="h-3 w-3" />
-        </button>
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={exportCsv}
+            disabled={!filtered || filtered.length === 0}
+            className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11.5px] text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            title="Exporter en CSV"
+          >
+            <Download className="h-3 w-3" /> CSV
+          </button>
+          <button
+            onClick={load}
+            className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11.5px] text-slate-700 hover:bg-slate-50"
+            title="Rafraîchir"
+          >
+            <RefreshCw className="h-3 w-3" />
+          </button>
+        </div>
       </FilterBar>
 
       {/* Résumé totaux */}
@@ -294,13 +415,13 @@ function TimeEntriesList({ organizationId }: { organizationId: string }) {
             <table className="w-full text-[12px]">
               <thead className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="text-left px-2 py-1.5">Date</th>
-                  <th className="text-left px-2 py-1.5">Technicien</th>
-                  <th className="text-left px-2 py-1.5">Ticket</th>
-                  <th className="text-left px-2 py-1.5">Type</th>
-                  <th className="text-right px-2 py-1.5">Durée</th>
-                  <th className="text-left px-2 py-1.5">Couverture</th>
-                  <th className="text-right px-2 py-1.5">Montant</th>
+                  <SortTh label="Date" sortKey="date" current={sort} onClick={toggleSort} />
+                  <SortTh label="Technicien" sortKey="agent" current={sort} onClick={toggleSort} />
+                  <SortTh label="Ticket" sortKey="ticket" current={sort} onClick={toggleSort} />
+                  <SortTh label="Type" sortKey="type" current={sort} onClick={toggleSort} />
+                  <SortTh label="Durée" sortKey="duration" current={sort} onClick={toggleSort} align="right" />
+                  <SortTh label="Couverture" sortKey="coverage" current={sort} onClick={toggleSort} />
+                  <SortTh label="Montant" sortKey="amount" current={sort} onClick={toggleSort} align="right" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -367,6 +488,8 @@ function TimeEntriesList({ organizationId }: { organizationId: string }) {
 // ============================================================================
 // Tickets list
 // ============================================================================
+type TicketSortKey = "created" | "number" | "subject" | "status" | "priority" | "resolved";
+
 function TicketsList({ organizationId }: { organizationId: string }) {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [priorityFilter, setPriorityFilter] = useState<string>("");
@@ -374,7 +497,16 @@ function TicketsList({ organizationId }: { organizationId: string }) {
   const [rows, setRows] = useState<TicketRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
+  const [sort, setSort] = useState<SortState<TicketSortKey>>({ key: "created", dir: "desc" });
+  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const pageSize = 25;
+
+  function toggleSort(key: TicketSortKey) {
+    setSort((prev) => prev.key === key
+      ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+      : { key, dir: key === "created" || key === "resolved" || key === "number" ? "desc" : "asc" });
+    setPage(0);
+  }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -397,11 +529,51 @@ function TicketsList({ organizationId }: { organizationId: string }) {
     if (!rows) return null;
     let x = rows;
     if (priorityFilter) x = x.filter((t) => t.priority === priorityFilter);
-    return x;
-  }, [rows, priorityFilter]);
+    const PRIORITY_RANK: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+    return applySort(x, sort, (t, key) => {
+      switch (key) {
+        case "created": return t.createdAt;
+        case "number": return t.number;
+        case "subject": return t.subject;
+        case "status": return t.status;
+        case "priority": return PRIORITY_RANK[t.priority] ?? 0;
+        case "resolved": return t.resolvedAt ?? "";
+      }
+    });
+  }, [rows, priorityFilter, sort]);
 
   const paged = filtered ? filtered.slice(page * pageSize, (page + 1) * pageSize) : null;
   const totalPages = filtered ? Math.max(1, Math.ceil(filtered.length / pageSize)) : 1;
+
+  function exportCsv() {
+    if (!filtered || filtered.length === 0) return;
+    const today = new Date().toISOString().slice(0, 10);
+    downloadCsv(
+      `tickets-${today}.csv`,
+      filtered.map((t) => ({
+        numero: t.number,
+        sujet: t.subject,
+        statut: STATUS_LABEL[t.status] ?? t.status,
+        priorite: PRIORITY_LABEL[t.priority] ?? t.priority,
+        type: t.type,
+        cree_le: fmtDate(t.createdAt),
+        resolu_le: t.resolvedAt ? fmtDate(t.resolvedAt) : "",
+        assigne: t.assignee ? `${t.assignee.firstName} ${t.assignee.lastName}`.trim() : "",
+        demandeur: t.requester ? `${t.requester.firstName} ${t.requester.lastName}`.trim() : "",
+      })),
+      [
+        { key: "numero", label: "Numéro" },
+        { key: "sujet", label: "Sujet" },
+        { key: "statut", label: "Statut" },
+        { key: "priorite", label: "Priorité" },
+        { key: "type", label: "Type" },
+        { key: "cree_le", label: "Créé le" },
+        { key: "resolu_le", label: "Résolu le" },
+        { key: "assigne", label: "Assigné à" },
+        { key: "demandeur", label: "Demandeur" },
+      ],
+    );
+  }
 
   return (
     <div className="space-y-2.5">
@@ -433,13 +605,37 @@ function TicketsList({ organizationId }: { organizationId: string }) {
             ...Object.entries(PRIORITY_LABEL).map(([k, v]) => ({ value: k, label: v })),
           ]}
         />
-        <button
-          onClick={load}
-          className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11.5px] text-slate-700 hover:bg-slate-50"
-          title="Rafraîchir"
-        >
-          <RefreshCw className="h-3 w-3" />
-        </button>
+        <div className="ml-auto flex items-center gap-1">
+          <div className="inline-flex rounded border border-slate-300 bg-white overflow-hidden">
+            <button
+              onClick={() => setViewMode("cards")}
+              className={`px-2 py-1 text-[11px] ${viewMode === "cards" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+            >
+              Cartes
+            </button>
+            <button
+              onClick={() => setViewMode("table")}
+              className={`px-2 py-1 text-[11px] ${viewMode === "table" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+            >
+              Tableau
+            </button>
+          </div>
+          <button
+            onClick={exportCsv}
+            disabled={!filtered || filtered.length === 0}
+            className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11.5px] text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            title="Exporter en CSV"
+          >
+            <Download className="h-3 w-3" /> CSV
+          </button>
+          <button
+            onClick={load}
+            className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11.5px] text-slate-700 hover:bg-slate-50"
+            title="Rafraîchir"
+          >
+            <RefreshCw className="h-3 w-3" />
+          </button>
+        </div>
       </FilterBar>
 
       <div className="flex items-center gap-4 flex-wrap text-[11.5px] text-slate-600 pb-1">
@@ -450,6 +646,50 @@ function TicketsList({ organizationId }: { organizationId: string }) {
         <div className="py-6 text-center text-[12px] text-slate-500">Chargement…</div>
       ) : paged.length === 0 ? (
         <div className="py-6 text-center text-[12px] text-slate-500 border border-dashed border-slate-200 rounded">Aucun ticket avec ces filtres.</div>
+      ) : viewMode === "table" ? (
+        <>
+          <div className="overflow-x-auto border border-slate-200 rounded-md">
+            <table className="w-full text-[12px]">
+              <thead className="bg-slate-50 text-[10.5px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <SortTh label="#" sortKey="number" current={sort} onClick={toggleSort} />
+                  <SortTh label="Sujet" sortKey="subject" current={sort} onClick={toggleSort} />
+                  <SortTh label="Statut" sortKey="status" current={sort} onClick={toggleSort} />
+                  <SortTh label="Priorité" sortKey="priority" current={sort} onClick={toggleSort} />
+                  <SortTh label="Créé" sortKey="created" current={sort} onClick={toggleSort} />
+                  <SortTh label="Résolu" sortKey="resolved" current={sort} onClick={toggleSort} />
+                  <th className="text-left px-2 py-1.5">Assigné</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paged.map((t) => (
+                  <tr key={t.id} className="hover:bg-slate-50">
+                    <td className="px-2 py-1.5 text-slate-500 font-mono">
+                      <Link href={`/tickets/${t.id}`} className="text-blue-600 hover:underline">#{t.number}</Link>
+                    </td>
+                    <td className="px-2 py-1.5 text-slate-900 max-w-[400px] truncate">{t.subject}</td>
+                    <td className="px-2 py-1.5">
+                      <span className={`text-[10.5px] rounded px-1.5 py-0.5 ring-1 ring-inset ${STATUS_COLORS[t.status] ?? "bg-slate-100 text-slate-700 ring-slate-200"}`}>
+                        {STATUS_LABEL[t.status] ?? t.status}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <span className={`text-[10.5px] rounded px-1.5 py-0.5 ${PRIORITY_COLORS[t.priority] ?? "bg-slate-100"}`}>
+                        {PRIORITY_LABEL[t.priority] ?? t.priority}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">{fmtDate(t.createdAt)}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">{t.resolvedAt ? fmtDate(t.resolvedAt) : "—"}</td>
+                    <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                      {t.assignee ? `${t.assignee.firstName} ${t.assignee.lastName}` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {totalPages > 1 && <Pagination page={page} totalPages={totalPages} onChange={setPage} />}
+        </>
       ) : (
         <>
           <div className="space-y-1.5">
@@ -545,6 +785,31 @@ function FilterCheckbox({ label, checked, onChange }: { label: string; checked: 
     </label>
   );
 }
+function SortTh<K extends string>({
+  label, sortKey, current, onClick, align = "left",
+}: {
+  label: string;
+  sortKey: K;
+  current: SortState<K>;
+  onClick: (key: K) => void;
+  align?: "left" | "right";
+}) {
+  const active = current.key === sortKey;
+  const Icon = !active ? ArrowUpDown : current.dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <th className={`px-2 py-1.5 ${align === "right" ? "text-right" : "text-left"}`}>
+      <button
+        type="button"
+        onClick={() => onClick(sortKey)}
+        className={`inline-flex items-center gap-1 uppercase tracking-wide text-[10.5px] hover:text-slate-900 transition-colors ${active ? "text-slate-900" : "text-slate-500"}`}
+      >
+        {label}
+        <Icon className="h-3 w-3" />
+      </button>
+    </th>
+  );
+}
+
 function Pagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) {
   return (
     <div className="flex items-center justify-between gap-2 pt-2 text-[11.5px] text-slate-600">
