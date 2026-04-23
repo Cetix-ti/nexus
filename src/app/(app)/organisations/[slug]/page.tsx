@@ -533,7 +533,7 @@ const activityIcon = (type: string) => {
 // Ordre maître défini au niveau architecture : on aligne l'utilisateur sur
 // un parcours cohérent (identité → inventaire → gouvernance documentaire →
 // contrats → livrables → exposition). Les nouveaux modules (Particularités,
-// Politiques, Logiciels, Changements, Rapports mensuels) s'intercalent ici ;
+// Politiques, Logiciels, Changements) s'intercalent ici ;
 // les onglets dont le rendu n'existe pas encore affichent un placeholder
 // qui redirige vers leur version transversale dans la sidebar.
 const TABS = [
@@ -549,7 +549,6 @@ const TABS = [
   { key: "contracts", label: "Contrats" },
   { key: "sla", label: "SLA" },
   { key: "billing", label: "Facturation" },
-  { key: "monthly_reports", label: "Rapports mensuels" },
   { key: "reports", label: "Rapports" },
   { key: "portal_access", label: "Portail client" },
   { key: "ai", label: "Intelligence IA" },
@@ -1213,42 +1212,43 @@ export default function OrganizationDetailPage() {
       </Link>
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-3 sm:items-center sm:gap-4 min-w-0">
           {o.logo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={o.logo}
               alt={o.name}
-              className="h-14 w-14 rounded-xl object-contain bg-white ring-1 ring-slate-200"
+              className="h-12 w-12 sm:h-14 sm:w-14 rounded-xl object-contain bg-white ring-1 ring-slate-200 shrink-0"
             />
           ) : (
-            <div className={cn("flex h-14 w-14 items-center justify-center rounded-xl text-xl font-bold text-white", o.color)}>
+            <div className={cn("flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-xl text-xl font-bold text-white shrink-0", o.color)}>
               {o.name.charAt(0).toUpperCase()}
             </div>
           )}
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{o.name}</h1>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 break-words">{o.name}</h1>
               <Badge variant={planBadgeVariant(o.plan)}>{o.plan}</Badge>
               <Badge variant={statusBadgeVariant(o.status)}>{o.status}</Badge>
             </div>
-            <p className="mt-0.5 text-sm text-gray-500">{o.domain}</p>
+            <p className="mt-0.5 text-[12px] sm:text-sm text-gray-500 truncate">{o.domain}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <OrgDossierExportButton organizationId={orgId} organizationSlug={o.slug} />
           <Button
             variant="outline"
-            size="md"
+            size="sm"
             onClick={() => setImportOpen(true)}
           >
             <Database className="h-4 w-4" strokeWidth={2.25} />
-            Importer Freshservice
+            <span className="hidden sm:inline">Importer Freshservice</span>
+            <span className="sm:hidden">Freshservice</span>
           </Button>
           <Button
             variant="outline"
-            size="md"
+            size="sm"
             onClick={() =>
               setEditingOrg({
                 id: o.id,
@@ -1272,7 +1272,7 @@ export default function OrganizationDetailPage() {
             }
           >
             <Pencil className="h-4 w-4" />
-            Modifier
+            <span className="hidden sm:inline">Modifier</span>
           </Button>
         </div>
       </div>
@@ -1351,11 +1351,11 @@ export default function OrganizationDetailPage() {
 
       {/* Tab Content */}
       {activeTab === "overview" && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
           {/* Left column */}
-          <div className="col-span-2 flex flex-col gap-6">
+          <div className="lg:col-span-2 flex flex-col gap-4 sm:gap-6">
             {/* Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3 lg:gap-4">
               {[
                 { label: "Tickets ouverts", value: o.openTickets, icon: Ticket, color: "text-blue-600 bg-blue-50" },
                 { label: "Contrats actifs", value: o.activeContracts, icon: FileText, color: "text-emerald-600 bg-emerald-50" },
@@ -1492,14 +1492,14 @@ export default function OrganizationDetailPage() {
               </CardContent>
             </Card>
           </div>
-          <div className="col-span-2 sm:col-span-3">
+          <div className="lg:col-span-3">
             <OrgMaturitySection organizationId={orgId} />
           </div>
-          <div className="col-span-2 sm:col-span-3 grid gap-4 md:grid-cols-2">
+          <div className="lg:col-span-3 grid gap-4 md:grid-cols-2">
             <ChangesOverviewWidget organizationId={orgId} />
             <RenewalsWidget organizationId={orgId} />
           </div>
-          <div className="col-span-2 sm:col-span-3">
+          <div className="lg:col-span-3">
             <OrgCapabilitiesSection organizationId={orgId} />
           </div>
         </div>
@@ -1719,33 +1719,32 @@ export default function OrganizationDetailPage() {
         </Card>
       )}
 
-      {/* Rapports mensuels — livrables PDF cadencés par contrat, auto-publish
-          portail client admin. Distinct de "Rapports" (analytique ad-hoc). */}
-      {activeTab === "monthly_reports" && canFinances && (
-        <div>
-          <div className="mb-3 flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-lg bg-indigo-50 flex items-center justify-center">
-              <FileText className="h-4.5 w-4.5 text-indigo-700" />
-            </div>
-            <div>
-              <h3 className="text-[15px] font-semibold text-slate-900">
-                Rapports mensuels (livrables client)
-              </h3>
-              <p className="text-[11.5px] text-slate-500 mt-0.5">
-                Rapports PDF formatés à destination du client · auto-publication portail
-              </p>
-            </div>
-          </div>
-          <OrgMonthlyReportsTab
-            organizationId={orgId}
-            initialAutoPublish={dbOrg?.monthlyReportAutoPublish ?? false}
-          />
-        </div>
-      )}
-
-      {/* Rapports (analytique ad-hoc) — tableaux de bord internes, KPIs. */}
+      {/* Rapports : fusion analytique ad-hoc (OrgReportsTab) + rapports
+          mensuels (livrables client PDF). Un seul onglet, deux sections. */}
       {activeTab === "reports" && canFinances && (
-        <OrgReportsTab organizationId={orgId} />
+        <div className="space-y-6">
+          <OrgReportsTab organizationId={orgId} />
+
+          <div>
+            <div className="mb-3 flex items-center gap-2.5">
+              <div className="h-9 w-9 rounded-lg bg-indigo-50 flex items-center justify-center">
+                <FileText className="h-4.5 w-4.5 text-indigo-700" />
+              </div>
+              <div>
+                <h3 className="text-[15px] font-semibold text-slate-900">
+                  Rapports mensuels (livrables client)
+                </h3>
+                <p className="text-[11.5px] text-slate-500 mt-0.5">
+                  Rapports PDF formatés à destination du client · auto-publication portail
+                </p>
+              </div>
+            </div>
+            <OrgMonthlyReportsTab
+              organizationId={orgId}
+              initialAutoPublish={dbOrg?.monthlyReportAutoPublish ?? false}
+            />
+          </div>
+        </div>
       )}
 
       {/* Particularités — connaissances opérationnelles spécifiques au client. */}
