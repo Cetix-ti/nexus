@@ -15,6 +15,16 @@ const PUBLIC_PATHS = [
   // L'endpoint a sa propre auth (header Authorization contre
   // BITDEFENDER_WEBHOOK_SECRET) — bypass de la session cookie Nexus.
   "/api/v1/integrations/bitdefender/webhook",
+  // Pages de rendu PDF atteintes par Puppeteer (agent serveur, pas de
+  // cookie de session). Protégées par token signé court (verifyReportToken)
+  // côté page — safe à exposer sans session cookie.
+  "/internal/reports/monthly/",
+  // Dossier client 360° — même pattern que monthly, token signé short-lived.
+  "/internal/reports/client-dossier/",
+  // Téléchargement public d'installeurs logiciels. Token 32 bytes signé,
+  // expiration + quota + PIN optionnel côté route — sûr à exposer sans
+  // cookie. Voir src/app/d/[token]/route.ts.
+  "/d/",
   "/_next",
   "/favicon",
   "/images",
