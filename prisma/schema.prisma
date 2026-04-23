@@ -278,6 +278,11 @@ model User {
   budgetLinesUpdated            BudgetLine[]             @relation("BudgetLineUpdater")
   budgetVersionsCreated         BudgetVersion[]          @relation("BudgetVersionAuthor")
   budgetCommentsAuthored        BudgetComment[]          @relation("BudgetCommentAuthor")
+  bugsReported                  BugReport[]              @relation("BugReporter")
+  bugsAssigned                  BugReport[]              @relation("BugAssignee")
+  bugsApproved                  BugReport[]              @relation("BugApprover")
+  bugsRejected                  BugReport[]              @relation("BugRejecter")
+  bugCommentsAuthored           BugComment[]             @relation("BugCommentAuthor")
 
   @@map("users")
 }
@@ -4278,4 +4283,140 @@ model BudgetComment {
 
   @@index([budgetId, createdAt(sort: Desc)])
   @@map("budget_comments")
+}
+
+// ============================================================================
+// BUG REPORTS — Agents signalent des bugs in-app. Après approbation, un worker
+// Claude tourne la nuit et propose une PR GitHub. Pas de merge auto, jamais.
+//
+// Workflow : NEW → TRIAGED → APPROVED_FOR_FIX → FIX_IN_PROGRESS → FIX_PROPOSED
+//            → FIXED (PR merged) | REJECTED | DUPLICATE
+//
+// Auto-fix gated : zones interdites (auth, crypto, migrations, billing
+// critique) — si touchées, le worker abandonne et escalade.
+// ============================================================================
+
+enum BugSeverity {
+  LOW        // cosmétique, texte, styling mineur
+  MEDIUM     // fonctionnalité dégradée mais contournable
+  HIGH       // fonctionnalité cassée, pas de workaround trivial
+  CRITICAL   // perte de données possible, crash, sécurité
+}
+
+enum BugStatus {
+  NEW                  // nouveau signalement, pas trié
+  TRIAGED              // lu et catégorisé, en attente de décision
+  APPROVED_FOR_FIX     // approuvé pour auto-fix nocturne
+  FIX_IN_PROGRESS      // worker en train d'analyser
+  FIX_PROPOSED         // PR ouverte, en attente merge humain
+  FIXED                // PR mergée
+  REJECTED             // refusé (won't fix / by design)
+  DUPLICATE            // doublon d'un autre bug
+}
+
+enum BugFixAttemptStatus {
+  ANALYZING      // Claude lit le code
+  PROPOSED       // patch généré, PR ouverte
+  MERGED         // PR mergée → bug fixé
+  ABANDONED      // worker a décidé d'abandonner (zone interdite, complexité)
+  FAILED         // erreur technique (build/lint/test fail)
+  REJECTED       // utilisateur a rejeté le fix proposé
+}
+
+model BugReport {
+  id                String       @id @default(cuid())
+  title             String
+  description       String       @db.Text
+  stepsToReproduce  String?      @db.Text @map("steps_to_reproduce")
+  severity          BugSeverity  @default(MEDIUM)
+  status            BugStatus    @default(NEW)
+  /// Utilisateur qui a signalé (agent). Pour un bug portail client, on
+  /// peut étendre avec reporterPortalUserId + reporterOrgId plus tard.
+  reporterUserId    String?      @map("reporter_user_id")
+  reporterEmail     String?      @map("reporter_email")
+  /// URL de la page où le bug a été constaté. Capturé côté client.
+  contextUrl        String?      @map("context_url")
+  /// Blob contextuel : navigateur, userAgent, derniers logs console, route
+  /// active, etc. Schéma libre côté client.
+  contextMeta       Json?        @map("context_meta")
+  /// URLs/chemins de screenshots uploadés (via l'endpoint /api/v1/bugs/[id]/attachments).
+  screenshots       Json?
+  /// Lien ticket si le bug provient d'une investigation de ticket.
+  linkedTicketId    String?      @map("linked_ticket_id")
+  duplicateOfId     String?      @map("duplicate_of_id")
+  /// Assignation manuelle pour un fix humain (bypass worker).
+  assignedToUserId  String?      @map("assigned_to_user_id")
+  /// Approbation : token signé pour workflow email + traçabilité.
+  approvalToken     String?      @unique @map("approval_token")
+  approvedForAutoFixAt DateTime? @map("approved_for_auto_fix_at")
+  approvedByUserId  String?      @map("approved_by_user_id")
+  rejectedAt        DateTime?    @map("rejected_at")
+  rejectedByUserId  String?      @map("rejected_by_user_id")
+  rejectionReason   String?      @db.Text @map("rejection_reason")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  reporter          User?              @relation("BugReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  assignedTo        User?              @relation("BugAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  approvedBy        User?              @relation("BugApprover", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  rejectedBy        User?              @relation("BugRejecter", fields: [rejectedByUserId], references: [id], onDelete: SetNull)
+  duplicateOf       BugReport?         @relation("BugDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates        BugReport[]        @relation("BugDuplicates")
+  fixAttempts       BugFixAttempt[]
+  comments          BugComment[]
+
+  @@index([status])
+  @@index([severity])
+  @@index([reporterUserId])
+  @@index([createdAt(sort: Desc)])
+  @@map("bug_reports")
+}
+
+model BugFixAttempt {
+  id              String              @id @default(cuid())
+  bugId           String              @map("bug_id")
+  status          BugFixAttemptStatus @default(ANALYZING)
+  /// Modèle Anthropic utilisé (claude-sonnet-4-6, claude-opus-4-7, etc.)
+  agentModel      String              @map("agent_model")
+  /// Branche git créée : bugfix/bug-{shortId}-slug
+  branch          String?
+  commitSha       String?             @map("commit_sha")
+  prUrl           String?             @map("pr_url")
+  prNumber        Int?                @map("pr_number")
+  /// Résumé généré par Claude du fix proposé (pour email + UI).
+  diffSummary     String?             @db.Text @map("diff_summary")
+  filesChanged    String[]            @map("files_changed")
+  /// Confiance auto-estimée (0-1). Utilisé pour prioriser le review humain.
+  confidence      Float?
+  testsRun        Boolean             @default(false) @map("tests_run")
+  testsPass       Boolean?            @map("tests_pass")
+  /// Coût cumulé (USD) pour traçabilité. Pas un cap — on logge seulement.
+  tokensInput     Int?                @map("tokens_input")
+  tokensOutput    Int?                @map("tokens_output")
+  costUsd         Decimal?            @db.Decimal(10, 4) @map("cost_usd")
+  abortReason     String?             @db.Text @map("abort_reason")
+  logs            String?             @db.Text // stdout/stderr tronqué (50kb max)
+  startedAt       DateTime            @default(now()) @map("started_at")
+  endedAt         DateTime?           @map("ended_at")
+
+  bug BugReport @relation(fields: [bugId], references: [id], onDelete: Cascade)
+
+  @@index([bugId, startedAt(sort: Desc)])
+  @@index([status])
+  @@map("bug_fix_attempts")
+}
+
+model BugComment {
+  id         String   @id @default(cuid())
+  bugId      String   @map("bug_id")
+  body       String   @db.Text
+  authorUserId String? @map("author_user_id")
+  authorName String?  @map("author_name")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  bug    BugReport @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  author User?     @relation("BugCommentAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@index([bugId, createdAt(sort: Desc)])
+  @@map("bug_comments")
 }

@@ -11,6 +11,7 @@ import { UserMenu } from "@/components/layout/user-menu";
 import { NotificationsDropdown } from "@/components/layout/notifications-dropdown";
 import { UserPrefsSyncBoot } from "@/components/user-prefs-sync-boot";
 import { IdleSecurityPrefetcher } from "@/components/security-center/idle-prefetcher";
+import { BugReportFab } from "@/components/bugs/bug-report-fab";
 import { useSidebarStore } from "@/stores/sidebar";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -121,6 +122,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* AI Chat Widget — floating */}
       <AiChatWidget />
+
+      {/* Bug report FAB — floating bottom-right, above AiChat */}
+      <BugReportFab />
 
       {/* Toast notifications — bottom-right */}
       <NotificationToasts />

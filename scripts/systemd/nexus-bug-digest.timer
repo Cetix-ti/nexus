@@ -1,0 +1,12 @@
+[Unit]
+Description=Nexus bug digest — 8h chaque matin
+Requires=nexus-bug-digest.service
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+RandomizedDelaySec=300
+Persistent=true
+Unit=nexus-bug-digest.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Nexus bug reports — daily digest email
+After=network.target nexus.service
+
+[Service]
+Type=oneshot
+User=cetix
+WorkingDirectory=/opt/nexus
+EnvironmentFile=/opt/nexus/.env
+ExecStart=/usr/bin/env npx tsx src/workers/bug-digest-worker.ts
+StandardOutput=append:/var/log/nexus-bug-digest.log
+StandardError=append:/var/log/nexus-bug-digest.log
+TimeoutStartSec=120
