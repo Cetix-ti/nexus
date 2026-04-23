@@ -1,11 +1,23 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { assertSameOrg } from "@/lib/auth/org-access";
+
+async function loadAndAuthorize(me: { id: string; role: string }, id: string) {
+  const existing = await prisma.assetSubscription.findUnique({ where: { id }, select: { organizationId: true } });
+  if (!existing) return { ok: false as const, res: NextResponse.json({ error: "Not found" }, { status: 404 }) };
+  const guard = await assertSameOrg(me as never, existing.organizationId);
+  if (!guard.ok) return { ok: false as const, res: guard.res };
+  return { ok: true as const };
+}
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await ctx.params;
+  const chk = await loadAndAuthorize(me, id);
+  if (!chk.ok) return chk.res;
+
   const body = await req.json();
   const data: Record<string, unknown> = {};
   for (const k of ["vendor", "plan", "reference", "renewalNotes", "notes"]) {
@@ -27,6 +39,8 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await ctx.params;
+  const chk = await loadAndAuthorize(me, id);
+  if (!chk.ok) return chk.res;
   await prisma.assetSubscription.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

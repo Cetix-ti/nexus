@@ -6,8 +6,15 @@ import crypto from "node:crypto";
 const DEFAULT_TTL_SEC = 300;
 
 function getSecret(): string {
-  const s = process.env.NEXUS_REPORT_TOKEN_SECRET ?? process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
-  if (!s) throw new Error("No token secret configured");
+  // Secret dédié obligatoire : empêche qu'un token dossier signé soit
+  // confondu avec un JWT de session (qui utiliserait AUTH_SECRET).
+  const s = process.env.NEXUS_REPORT_TOKEN_SECRET;
+  if (!s || s.length < 32) {
+    throw new Error(
+      "NEXUS_REPORT_TOKEN_SECRET manquant ou trop court (>= 32 caractères requis). " +
+      "Générez-le avec : openssl rand -hex 32",
+    );
+  }
   return s;
 }
 

@@ -206,6 +206,24 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
     const pin = String(form.get("pin") ?? "");
     if (!link.pinHash || !verifyPin(pin, link.pinHash)) {
       await audit(link.id, ip, ua, false, "bad-pin");
+      // Auto-révoque le lien après 5 échecs PIN (défense anti-brute-force
+      // même si le token fuite : l'attaquant ne peut essayer que 5 PIN
+      // avant que le lien devienne inutilisable).
+      const recentFailures = await prisma.softwareDownloadAudit.count({
+        where: {
+          linkId: link.id,
+          success: false,
+          failureReason: "bad-pin",
+          downloadedAt: { gte: new Date(Date.now() - 24 * 3600_000) },
+        },
+      });
+      if (recentFailures >= 5) {
+        await prisma.softwareDownloadLink.update({
+          where: { id: link.id },
+          data: { revokedAt: new Date() },
+        });
+        return errorPage("Lien révoqué", "Trop d'échecs PIN : ce lien a été automatiquement révoqué.", 410);
+      }
       return errorPage("Code incorrect", "Le code fourni est invalide.", 403);
     }
   }

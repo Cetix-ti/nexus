@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { assertSameOrg } from "@/lib/auth/org-access";
 import { computeGpoName } from "@/lib/policies/gpo-naming";
 import type { ContentVisibility, GpoScope, GpoInstanceStatus } from "@prisma/client";
 
@@ -20,6 +21,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     },
   });
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const guard = await assertSameOrg(me, item.organizationId);
+  if (!guard.ok) return guard.res;
   return NextResponse.json(item);
 }
 
@@ -30,6 +33,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const body = await req.json();
   const existing = await prisma.gpoInstance.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const guard = await assertSameOrg(me, existing.organizationId);
+  if (!guard.ok) return guard.res;
 
   const data: Record<string, unknown> = { updatedByUserId: me.id };
   let nameStem = existing.nameStem;
@@ -63,6 +68,10 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await ctx.params;
+  const existing = await prisma.gpoInstance.findUnique({ where: { id }, select: { organizationId: true } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const guard = await assertSameOrg(me, existing.organizationId);
+  if (!guard.ok) return guard.res;
   await prisma.gpoInstance.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { assertUserOrgAccess, getAccessibleOrgIds } from "@/lib/auth/org-access";
 import type { ContentVisibility, SupportTierLevel } from "@prisma/client";
 
 const VIS: ContentVisibility[] = ["INTERNAL", "CLIENT_ADMIN", "CLIENT_ALL"];
@@ -13,8 +14,27 @@ export async function GET(req: Request) {
   const assetId = searchParams.get("assetId");
   const orgId = searchParams.get("orgId");
   const where: Record<string, unknown> = {};
-  if (assetId) where.assetId = assetId;
-  if (orgId) where.organizationId = orgId;
+
+  if (assetId) {
+    const asset = await prisma.asset.findUnique({ where: { id: assetId }, select: { organizationId: true } });
+    if (!asset) return NextResponse.json({ error: "Asset introuvable" }, { status: 404 });
+    const guard = await assertUserOrgAccess(me, asset.organizationId);
+    if (!guard.ok) return guard.res;
+    where.assetId = assetId;
+  }
+  if (orgId) {
+    const guard = await assertUserOrgAccess(me, orgId);
+    if (!guard.ok) return guard.res;
+    where.organizationId = orgId;
+  }
+  if (!assetId && !orgId) {
+    const accessible = await getAccessibleOrgIds(me);
+    if (accessible !== null) {
+      if (accessible.length === 0) return NextResponse.json([]);
+      where.organizationId = { in: accessible };
+    }
+  }
+
   const items = await prisma.assetSupportContract.findMany({
     where,
     include: { asset: { select: { id: true, name: true } }, contract: { select: { id: true, name: true } } },
@@ -33,6 +53,14 @@ export async function POST(req: Request) {
   }
   const asset = await prisma.asset.findUnique({ where: { id: assetId }, select: { organizationId: true } });
   if (!asset) return NextResponse.json({ error: "Asset introuvable" }, { status: 404 });
+  const guard = await assertUserOrgAccess(me, asset.organizationId);
+  if (!guard.ok) return guard.res;
+
+  const startDate = new Date(body.startDate);
+  const endDate = new Date(body.endDate);
+  if (endDate <= startDate) {
+    return NextResponse.json({ error: "endDate doit être postérieure à startDate" }, { status: 400 });
+  }
   const created = await prisma.assetSupportContract.create({
     data: {
       assetId,
@@ -40,8 +68,8 @@ export async function POST(req: Request) {
       contractId: body?.contractId || null,
       vendor: body?.vendor || null,
       tier: TIERS.includes(body?.tier) ? body.tier : "L1",
-      startDate: new Date(body.startDate),
-      endDate: new Date(body.endDate),
+      startDate,
+      endDate,
       contactInfo: body?.contactInfo ?? null,
       notes: body?.notes || null,
       visibility: VIS.includes(body?.visibility) ? body.visibility : "INTERNAL",

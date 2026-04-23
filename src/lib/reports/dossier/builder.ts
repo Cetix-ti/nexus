@@ -28,7 +28,21 @@ const CAPABILITY_LABELS: Record<string, string> = {
   hasSOC: "SOC / Cybersécurité", hasMDM: "MDM", hasKeePass: "KeePass", allowEnglishUI: "Interface anglaise autorisée",
 };
 
-export async function buildDossierPayload(orgId: string): Promise<DossierPayload | null> {
+export interface BuildDossierOptions {
+  // Si true, on exclut le contenu visibility=INTERNAL du payload.
+  // À passer true quand le dossier est consulté hors staff MSP (ex. exposition
+  // future côté portail client). Défaut : false (rendu complet pour staff).
+  excludeInternal?: boolean;
+}
+
+export async function buildDossierPayload(
+  orgId: string,
+  opts: BuildDossierOptions = {},
+): Promise<DossierPayload | null> {
+  const excludeInternal = Boolean(opts.excludeInternal);
+  const visibilityWhere = excludeInternal
+    ? ({ visibility: { not: "INTERNAL" } } as const)
+    : ({} as const);
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
     select: {
@@ -56,12 +70,12 @@ export async function buildDossierPayload(orgId: string): Promise<DossierPayload
 
   const [particularities, software, policies, changes, warranties, subscriptions, supportContracts, contracts, licenses] = await Promise.all([
     prisma.particularity.findMany({
-      where: { organizationId: orgId, status: "ACTIVE" },
+      where: { organizationId: orgId, status: "ACTIVE", ...visibilityWhere },
       select: { title: true, summary: true, visibility: true, category: { select: { name: true } } },
       orderBy: { updatedAt: "desc" }, take: 30,
     }),
     prisma.softwareInstance.findMany({
-      where: { organizationId: orgId, status: "ACTIVE" },
+      where: { organizationId: orgId, status: "ACTIVE", ...visibilityWhere },
       select: { name: true, vendor: true, version: true, category: { select: { name: true } } },
       orderBy: { name: "asc" }, take: 40,
     }),
@@ -69,6 +83,7 @@ export async function buildDossierPayload(orgId: string): Promise<DossierPayload
       where: {
         organizationId: orgId, status: "ACTIVE",
         subcategory: { notIn: ["SCRIPT", "PRIVILEGED_ACCESS", "KEEPASS"] },
+        ...visibilityWhere,
       },
       select: { title: true, subcategory: true, summary: true },
       orderBy: { updatedAt: "desc" }, take: 20,
@@ -78,6 +93,7 @@ export async function buildDossierPayload(orgId: string): Promise<DossierPayload
         organizationId: orgId, mergedIntoId: null,
         status: { in: ["APPROVED", "PUBLISHED"] },
         changeDate: { gte: new Date(Date.now() - 365 * 86400_000) },
+        ...visibilityWhere,
       },
       select: { title: true, summary: true, category: true, impact: true, changeDate: true },
       orderBy: { changeDate: "desc" }, take: 30,

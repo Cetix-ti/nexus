@@ -1,10 +1,22 @@
 // Recherche fédérée — query unique sur particularities, policy_documents,
 // software_instances, changes, articles (KB existant) avec respect visibility.
 // Retour groupé par type.
+//
+// Sécurité :
+//   - Visibility INTERNAL exclue sauf staff MSP (SUPER_ADMIN, MSP_ADMIN,
+//     SUPERVISOR). TECHNICIAN et CLIENT_* n'ont pas accès au contenu interne
+//     via la recherche globale.
+//   - Les clients (rôles CLIENT_*) sont cloués à leurs orgs accessibles ;
+//     agents MSP peuvent scoper via ?orgId= mais l'accès est toujours validé.
+//   - Politiques de catégorie INTERNAL_ONLY (SCRIPT, PRIVILEGED_ACCESS,
+//     KEEPASS) sont retirées pour tout non-staff même si visibility le
+//     permet — règle de défense en profondeur.
+//   - Articles KB : scope orgId forcé si non staff pour éviter leak KB d'autres orgs.
 
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth-utils";
+import { getCurrentUser, isStaffRole } from "@/lib/auth-utils";
+import { getAccessibleOrgIds } from "@/lib/auth/org-access";
 import { Prisma } from "@prisma/client";
 
 interface Hit {
@@ -18,73 +30,127 @@ interface Hit {
   rank: number;
 }
 
+// Agents MSP admins : plein accès. Pour les autres (TECHNICIAN, CLIENT_*),
+// on exclut INTERNAL du résultat.
+const FULL_VISIBILITY_ROLES = new Set(["SUPER_ADMIN", "MSP_ADMIN", "SUPERVISOR"]);
+
 export async function GET(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") ?? "").trim();
-  const orgId = searchParams.get("orgId");
+  const orgIdParam = searchParams.get("orgId");
   if (q.length < 2) return NextResponse.json({ hits: [], groups: {} });
 
   const limit = Math.min(Number(searchParams.get("limit") ?? 40), 100);
-  // tsquery prefix-friendly : remplace espaces par & et ajoute :*
   const tsq = q.split(/\s+/).filter(Boolean).map((w) => `${w}:*`).join(" & ");
-  const orgFilter = orgId ? Prisma.sql`AND organization_id = ${orgId}` : Prisma.empty;
+
+  // --- Scoping org ---------------------------------------------------------
+  // Staff : soit ?orgId= soit tout. Non-staff (CLIENT_*) : cloué à accessibles.
+  const staff = isStaffRole(me.role);
+  let orgScopeIds: string[] | null = null; // null = pas de contrainte
+  if (orgIdParam) {
+    // Valide que le user a accès à cette org.
+    if (staff) {
+      orgScopeIds = [orgIdParam];
+    } else {
+      const accessible = await getAccessibleOrgIds(me);
+      if (!accessible || !accessible.includes(orgIdParam)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      orgScopeIds = [orgIdParam];
+    }
+  } else if (!staff) {
+    const accessible = await getAccessibleOrgIds(me);
+    if (!accessible || accessible.length === 0) {
+      return NextResponse.json({ hits: [], groups: {}, total: 0 });
+    }
+    orgScopeIds = accessible;
+  }
+
+  const orgFilter = orgScopeIds
+    ? Prisma.sql`AND organization_id IN (${Prisma.join(orgScopeIds)})`
+    : Prisma.empty;
+
+  // --- Filtre visibility ---------------------------------------------------
+  // Pour non-admins MSP, on exclut INTERNAL (et PolicySubcategory INTERNAL_ONLY).
+  const fullVis = FULL_VISIBILITY_ROLES.has(me.role);
+  const visFilter = fullVis ? Prisma.empty : Prisma.sql`AND visibility <> 'INTERNAL'`;
+  const policySubcatFilter = fullVis
+    ? Prisma.empty
+    : Prisma.sql`AND subcategory NOT IN ('SCRIPT', 'PRIVILEGED_ACCESS', 'KEEPASS')`;
+
+  // Articles KB : si non-staff et orgScope défini, force scope. Sinon ok
+  // pour staff d'interroger tout KB.
+  const articlesOrgFilter = (() => {
+    if (!staff && orgScopeIds) {
+      return Prisma.sql`AND (organization_id IS NULL OR organization_id IN (${Prisma.join(orgScopeIds)}))`;
+    }
+    if (orgIdParam) {
+      return Prisma.sql`AND (organization_id IS NULL OR organization_id = ${orgIdParam})`;
+    }
+    return Prisma.empty;
+  })();
 
   const [parts, docs, software, changes, articles] = await Promise.all([
     prisma.$queryRaw<Array<{ id: string; title: string; summary: string | null; organization_id: string; rank: number }>>`
       SELECT id, title, summary, organization_id,
-        ts_rank(search_vector, to_tsquery('french_unaccent', ${tsq})) AS rank
+        ts_rank(search_vector, to_tsquery('french_unaccent', ${tsq}))::float AS rank
       FROM particularities
       WHERE search_vector @@ to_tsquery('french_unaccent', ${tsq})
         AND status = 'ACTIVE'
+        ${visFilter}
         ${orgFilter}
       ORDER BY rank DESC
       LIMIT ${limit}
     `,
     prisma.$queryRaw<Array<{ id: string; title: string; summary: string | null; organization_id: string; rank: number }>>`
       SELECT id, title, summary, organization_id,
-        ts_rank(search_vector, to_tsquery('french_unaccent', ${tsq})) AS rank
+        ts_rank(search_vector, to_tsquery('french_unaccent', ${tsq}))::float AS rank
       FROM policy_documents
       WHERE search_vector @@ to_tsquery('french_unaccent', ${tsq})
         AND status = 'ACTIVE'
+        ${visFilter}
+        ${policySubcatFilter}
         ${orgFilter}
       ORDER BY rank DESC
       LIMIT ${limit}
     `,
     prisma.$queryRaw<Array<{ id: string; name: string; vendor: string | null; organization_id: string; rank: number }>>`
       SELECT id, name, vendor, organization_id,
-        ts_rank(search_vector, to_tsquery('french_unaccent', ${tsq})) AS rank
+        ts_rank(search_vector, to_tsquery('french_unaccent', ${tsq}))::float AS rank
       FROM software_instances
       WHERE search_vector @@ to_tsquery('french_unaccent', ${tsq})
         AND status = 'ACTIVE'
+        ${visFilter}
         ${orgFilter}
       ORDER BY rank DESC
       LIMIT ${limit}
     `,
     prisma.$queryRaw<Array<{ id: string; title: string; summary: string | null; organization_id: string; rank: number }>>`
       SELECT id, title, summary, organization_id,
-        ts_rank(search_vector, to_tsquery('french_unaccent', ${tsq})) AS rank
+        ts_rank(search_vector, to_tsquery('french_unaccent', ${tsq}))::float AS rank
       FROM changes
       WHERE search_vector @@ to_tsquery('french_unaccent', ${tsq})
         AND merged_into_id IS NULL
         AND status NOT IN ('REJECTED', 'ARCHIVED')
+        ${visFilter}
         ${orgFilter}
       ORDER BY rank DESC
       LIMIT ${limit}
     `,
     prisma.$queryRaw<Array<{ id: string; title: string; summary: string | null; organization_id: string | null; rank: number }>>`
       SELECT id, title, summary, organization_id,
-        ts_rank(search_vector, websearch_to_tsquery('french_unaccent', ${q})) AS rank
+        ts_rank(search_vector, websearch_to_tsquery('french_unaccent', ${q}))::float AS rank
       FROM articles
       WHERE search_vector @@ websearch_to_tsquery('french_unaccent', ${q})
         AND status = 'PUBLISHED'
+        ${articlesOrgFilter}
       ORDER BY rank DESC
       LIMIT ${limit}
     `,
   ]);
 
-  // Enrichir avec les noms d'organisation (lookup unique)
   const orgIds = new Set<string>();
   for (const r of [...parts, ...docs, ...software, ...changes, ...articles]) {
     if (r.organization_id) orgIds.add(r.organization_id);
