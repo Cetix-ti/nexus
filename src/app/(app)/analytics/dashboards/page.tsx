@@ -58,6 +58,7 @@ import {
   XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import { WidgetChart, type ChartType } from "@/components/widgets/widget-chart";
+import { buildDrillDownUrl } from "@/lib/analytics/drill-down";
 
 const PIE_PALETTE = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
@@ -2471,6 +2472,21 @@ function QueryWidgetRenderer({
   if (!widget) return <Card><CardContent className="p-5 text-center text-slate-400 text-[13px]">Widget « {widgetId} » introuvable</CardContent></Card>;
   if (!result) return <Card><CardContent className="p-5 text-center text-slate-400 text-[13px]">Aucune donnée</CardContent></Card>;
 
+  // Drill-down : click sur un point de données → liste filtrée
+  // correspondante (tickets, time_entries, contacts, etc.).
+  const dataset = typeof widget.query?.dataset === "string" ? widget.query.dataset : "";
+  const groupBy = typeof widget.query?.groupBy === "string" ? widget.query.groupBy : "";
+  const existingFilters = Array.isArray(widget.query?.filters) ? widget.query.filters : [];
+  const handleDrillDown = (dataset && groupBy) ? (label: string) => {
+    const url = buildDrillDownUrl({
+      dataset,
+      groupBy,
+      rawLabel: label,
+      existingFilters: existingFilters as Array<{ field: string; operator?: string; value: string }>,
+    });
+    if (url) window.location.href = url;
+  } : undefined;
+
   // Délègue le rendu au composant partagé qui gère les 19 types de
   // graphiques — mêmes règles que dans /analytics/widgets.
   return (
@@ -2482,6 +2498,7 @@ function QueryWidgetRenderer({
           color={widget.color || "#2563eb"}
           name={widget.name}
           aggregate={typeof widget.query?.aggregate === "string" ? widget.query.aggregate : undefined}
+          onDrillDown={handleDrillDown}
         />
       </CardContent>
     </Card>
