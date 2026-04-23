@@ -1749,6 +1749,10 @@ export default function OrganizationDetailPage() {
           mensuels (livrables client PDF). Un seul onglet, deux sections. */}
       {activeTab === "reports" && canFinances && (
         <div className="space-y-6">
+          {/* Rapports personnalisés attribués à cette org — synchronisés
+              avec /analytics/dashboards. Wrappé en error boundary. */}
+          <OrgAnalyticsWorkbench organizationId={orgId} organizationName={o.name} />
+
           <OrgHistorySection organizationId={orgId} />
 
           <OrgReportsTab organizationId={orgId} />

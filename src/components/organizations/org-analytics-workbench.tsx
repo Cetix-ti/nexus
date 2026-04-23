@@ -1,35 +1,26 @@
 "use client";
 
-// Atelier Analytics — intégré dans l'onglet Rapports d'une organisation.
-// Propose un accès direct aux outils centraux /analytics/widgets et
-// /analytics/dashboards filtrés sur cette organisation via le query-param
-// ?orgContext=<orgId>. Affiche aussi la liste actuelle des widgets et
-// rapports attribués à cette org pour un aperçu rapide.
+// Atelier Analytics — section dans l'onglet Rapports d'une organisation.
+// Expose les dashboards (rapports custom) attribués à cette org, avec un
+// bouton pour ouvrir l'atelier central /analytics/dashboards en mode
+// "orgContext" pour créer/éditer des dashboards scopés à ce client.
 //
-// Les widgets/rapports sont stockés en localStorage, donc les modifications
-// sont bidirectionnelles : créer/modifier ici ou dans le centre a le même
-// effet, la vue filtrée reflète l'état partagé.
+// Les widgets ne sont plus attribuables à une org (décision produit) :
+// on attribue les DASHBOARDS entiers, et les widgets qu'ils contiennent
+// viennent du pool global. Cette section affiche donc uniquement la liste
+// des dashboards taggués.
 //
-// Défensif : toutes les lectures localStorage sont tolérantes aux erreurs,
-// et l'ensemble est rendu derrière un boundary React pour qu'une exception
-// ici ne casse pas le reste de l'onglet Rapports.
+// Défensif : toutes les lectures localStorage sont tolérantes, et le
+// rendu est wrappé dans un error boundary pour qu'une exception ici
+// ne casse pas le reste de l'onglet Rapports.
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { BarChart3, LayoutDashboard, Plus, Settings, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, Plus, ExternalLink, AlertTriangle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-interface WidgetSummary {
-  id: string;
-  name: string;
-  description?: string;
-  chartType?: string;
-  color?: string;
-  organizationId?: string;
-}
-
-interface ReportSummary {
+interface DashboardSummary {
   id: string;
   label: string;
   description?: string;
@@ -38,15 +29,7 @@ interface ReportSummary {
   widgets?: string[];
 }
 
-function loadWidgets(): WidgetSummary[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const r = localStorage.getItem("nexus:custom-widgets-v2");
-    const parsed = r ? JSON.parse(r) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
-}
-function loadCustomReports(): ReportSummary[] {
+function loadCustomDashboards(): DashboardSummary[] {
   if (typeof window === "undefined") return [];
   try {
     const r = localStorage.getItem("nexus:reports:custom");
@@ -56,7 +39,7 @@ function loadCustomReports(): ReportSummary[] {
 }
 
 // ----------------------------------------------------------------------------
-// Error boundary : isole cet atelier du reste de l'onglet Rapports.
+// Error boundary
 // ----------------------------------------------------------------------------
 interface BoundaryState { hasError: boolean; message?: string }
 class WorkbenchErrorBoundary extends React.Component<{ children: React.ReactNode }, BoundaryState> {
@@ -73,9 +56,7 @@ class WorkbenchErrorBoundary extends React.Component<{ children: React.ReactNode
         <Card>
           <div className="p-3 flex items-start gap-2 text-[12.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-            <div>
-              L&apos;atelier analytics n&apos;a pas pu se charger ({this.state.message}). Le reste de la page Rapports fonctionne normalement.
-            </div>
+            <div>L&apos;atelier analytics n&apos;a pas pu se charger ({this.state.message}). Le reste de la page Rapports fonctionne normalement.</div>
           </div>
         </Card>
       );
@@ -93,33 +74,26 @@ export function OrgAnalyticsWorkbench(props: { organizationId: string; organizat
 }
 
 function WorkbenchInner({ organizationId, organizationName }: { organizationId: string; organizationName: string }) {
-  const [widgets, setWidgets] = useState<WidgetSummary[]>([]);
-  const [reports, setReports] = useState<ReportSummary[]>([]);
-  const [allCounts, setAllCounts] = useState({ widgets: 0, reports: 0 });
+  const [allDashboards, setAllDashboards] = useState<DashboardSummary[]>([]);
 
   useEffect(() => {
     function refresh() {
-      const allW = loadWidgets();
-      const allR = loadCustomReports();
-      setAllCounts({ widgets: allW.length, reports: allR.length });
-      setWidgets(allW.filter((w) => w.organizationId === organizationId));
-      setReports(allR.filter((r) => r.organizationId === organizationId));
+      setAllDashboards(loadCustomDashboards());
     }
     refresh();
     const onStorage = () => refresh();
+    const onFocus = () => refresh();
     window.addEventListener("storage", onStorage);
-    // Recharge aussi au focus — couvre le cas où l'user ouvre l'atelier dans
-    // un autre onglet, crée un widget, revient ici.
-    window.addEventListener("focus", onStorage);
+    window.addEventListener("focus", onFocus);
     return () => {
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener("focus", onStorage);
+      window.removeEventListener("focus", onFocus);
     };
   }, [organizationId]);
 
+  const scoped = allDashboards.filter((d) => d.organizationId === organizationId);
   const orgNameEnc = encodeURIComponent(organizationName || "");
-  const widgetsUrl = `/analytics/widgets?orgContext=${organizationId}&orgName=${orgNameEnc}`;
-  const dashboardsUrl = `/analytics/dashboards?orgContext=${organizationId}&orgName=${orgNameEnc}`;
+  const atelierUrl = `/analytics/dashboards?orgContext=${organizationId}&orgName=${orgNameEnc}`;
 
   return (
     <Card>
@@ -127,133 +101,73 @@ function WorkbenchInner({ organizationId, organizationName }: { organizationId: 
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <h3 className="text-[15px] font-semibold text-slate-900 inline-flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-blue-600" /> Atelier analytics &amp; rapports personnalisés
+              <LayoutDashboard className="h-4 w-4 text-blue-600" /> Rapports personnalisés
             </h3>
             <p className="text-[12px] text-slate-500 mt-0.5">
-              Widgets et rapports custom attribués à <strong>{organizationName || "cette organisation"}</strong>. Synchronisé avec la section
-              {" "}<Link href="/analytics/dashboards" className="text-blue-600 hover:underline">Analytique centrale</Link> —
-              {" "}toute modification ici ou là se reflète des deux côtés.
+              Dashboards attribués à <strong>{organizationName || "cette organisation"}</strong>.
+              Synchronisés avec{" "}
+              <Link href="/analytics/dashboards" className="text-blue-600 hover:underline">
+                Analytique centrale
+              </Link> — toute modification des deux côtés se reflète en temps réel.
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link href={widgetsUrl}>
-              <Button size="sm" variant="outline">
-                <Plus className="h-3.5 w-3.5 mr-1" /> Nouveau widget
-              </Button>
-            </Link>
-            <Link href={dashboardsUrl}>
-              <Button size="sm" variant="primary">
-                <LayoutDashboard className="h-3.5 w-3.5 mr-1" /> Ouvrir les rapports
-              </Button>
-            </Link>
+          <Link href={atelierUrl}>
+            <Button size="sm" variant="primary">
+              <Plus className="h-3.5 w-3.5 mr-1" /> Ouvrir l&apos;atelier
+            </Button>
+          </Link>
+        </div>
+
+        {scoped.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/50 px-4 py-6 text-center">
+            <p className="text-[13px] text-slate-600 mb-2">
+              Aucun dashboard attribué à cette organisation.
+            </p>
+            <p className="text-[11.5px] text-slate-500 mb-3">
+              Clique sur &laquo;&nbsp;Ouvrir l&apos;atelier&nbsp;&raquo; pour créer un dashboard
+              qui sera automatiquement attribué à <strong>{organizationName}</strong>.
+              Tu peux aussi attribuer un dashboard existant depuis{" "}
+              <Link href="/analytics/dashboards" className="text-blue-600 hover:underline">l&apos;analytique centrale</Link>.
+            </p>
           </div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {scoped.map((d) => {
+              const href = `/analytics/dashboards?orgContext=${organizationId}&orgName=${orgNameEnc}&view=${d.id}`;
+              return (
+                <Link
+                  key={d.id}
+                  href={href}
+                  className="group rounded-lg border border-slate-200 bg-white hover:border-blue-300 hover:shadow-sm transition-all p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-semibold text-slate-900 truncate group-hover:text-blue-700">
+                        {d.label || "(sans nom)"}
+                      </div>
+                      {d.description && (
+                        <p className="text-[11.5px] text-slate-500 truncate mt-0.5">{d.description}</p>
+                      )}
+                      <div className="text-[11px] text-slate-500 mt-1">
+                        {d.widgets?.length ?? 0} widget{(d.widgets?.length ?? 0) > 1 ? "s" : ""}
+                      </div>
+                    </div>
+                    <ExternalLink className="h-3 w-3 text-slate-300 group-hover:text-blue-500 shrink-0 mt-1" />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <ListSection
-            title={`Widgets attribués (${widgets.length})`}
-            emptyLabel="Aucun widget spécifique à cette organisation."
-            emptyCta={
-              <Link href={widgetsUrl} className="text-[11.5px] text-blue-600 hover:text-blue-700 hover:underline font-medium">
-                Créer un premier widget →
-              </Link>
-            }
-            items={widgets.map((w) => ({
-              id: w.id,
-              label: w.name || "(sans nom)",
-              description: w.description ?? "",
-              accent: w.color ?? "#2563eb",
-              href: widgetsUrl,
-            }))}
-            globalCountLabel={`${allCounts.widgets} widgets au total`}
-            globalLink="/analytics/widgets"
-            globalLinkLabel="Voir tous les widgets"
-          />
-          <ListSection
-            title={`Rapports attribués (${reports.length})`}
-            emptyLabel="Aucun rapport spécifique à cette organisation."
-            emptyCta={
-              <Link href={dashboardsUrl} className="text-[11.5px] text-blue-600 hover:text-blue-700 hover:underline font-medium">
-                Créer un premier rapport →
-              </Link>
-            }
-            items={reports.map((r) => ({
-              id: r.id,
-              label: r.label || "(sans nom)",
-              description: r.description || `${r.widgets?.length ?? 0} widgets`,
-              accent: "#6366f1",
-              href: dashboardsUrl,
-            }))}
-            globalCountLabel={`${allCounts.reports} rapports au total`}
-            globalLink="/analytics/dashboards"
-            globalLinkLabel="Voir tous les rapports"
-          />
-        </div>
-
-        <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11.5px] text-slate-600 inline-flex items-start gap-2">
-          <Settings className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-          <span>
-            Les boutons <strong>Nouveau widget</strong> et <strong>Ouvrir les rapports</strong> ouvrent l&apos;outil
-            analytics central en <em>mode atelier organisation</em> : tout ce qui est créé depuis là est automatiquement
-            attribué à <strong>{organizationName || "cette organisation"}</strong>.
-          </span>
+        <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap">
+          <span>Total pool de dashboards : {allDashboards.length}</span>
+          <span>·</span>
+          <Link href="/analytics/dashboards" className="text-slate-600 hover:text-slate-900 hover:underline">
+            Voir tous les dashboards →
+          </Link>
         </div>
       </div>
     </Card>
-  );
-}
-
-function ListSection({
-  title, items, emptyLabel, emptyCta,
-  globalCountLabel, globalLink, globalLinkLabel,
-}: {
-  title: string;
-  items: Array<{ id: string; label: string; description: string; accent: string; href: string }>;
-  emptyLabel: string;
-  emptyCta: React.ReactNode;
-  globalCountLabel: string;
-  globalLink: string;
-  globalLinkLabel: string;
-}) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white">
-      <div className="px-3 py-2 border-b border-slate-100 text-[12px] font-semibold text-slate-800">
-        {title}
-      </div>
-      {items.length === 0 ? (
-        <div className="px-3 py-4 text-center space-y-2">
-          <p className="text-[12px] text-slate-500">{emptyLabel}</p>
-          {emptyCta}
-        </div>
-      ) : (
-        <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
-          {items.slice(0, 10).map((it) => (
-            <Link key={it.id} href={it.href}
-                  className="block px-3 py-2 hover:bg-slate-50 transition-colors">
-              <div className="flex items-start gap-2">
-                <span className="inline-block h-2 w-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: it.accent }} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[12.5px] font-medium text-slate-900 truncate">{it.label}</div>
-                  {it.description && (
-                    <div className="text-[11px] text-slate-500 truncate">{it.description}</div>
-                  )}
-                </div>
-              </div>
-            </Link>
-          ))}
-          {items.length > 10 && (
-            <div className="px-3 py-1.5 text-[10.5px] text-slate-500 text-center">
-              … et {items.length - 10} autres
-            </div>
-          )}
-        </div>
-      )}
-      <div className="px-3 py-1.5 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-        <span className="text-[10.5px] text-slate-500">{globalCountLabel}</span>
-        <Link href={globalLink} className="text-[10.5px] text-slate-600 hover:text-slate-900 hover:underline">
-          {globalLinkLabel} →
-        </Link>
-      </div>
-    </div>
   );
 }
