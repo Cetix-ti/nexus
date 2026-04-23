@@ -1460,7 +1460,23 @@ export default function ReportsPage() {
                   <GitBranch className="h-3.5 w-3.5" />
                   Parenté
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => window.print()} title="Imprimer">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    // Imprime UNIQUEMENT le dashboard (pas la topbar, sidebar,
+                    // breadcrumbs, etc.) via un mode d'impression spécifique.
+                    document.body.classList.add("printing-dashboard");
+                    // Force le DOM à réappliquer les styles avant print.
+                    requestAnimationFrame(() => {
+                      window.print();
+                      setTimeout(() => {
+                        document.body.classList.remove("printing-dashboard");
+                      }, 500);
+                    });
+                  }}
+                  title="Imprimer le dashboard"
+                >
                   <Printer className="h-3.5 w-3.5" />
                 </Button>
               </>
@@ -2019,20 +2035,30 @@ export default function ReportsPage() {
       {/* Dashboard / Report widgets — drag-and-drop grid */}
       {/* ============================================================ */}
       {activeReport && (
-        <>
+        <div data-print-target>
           {loading && !data && (
             <div className="flex items-center justify-center py-20"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
           )}
 
-          {!loading && dashItems.length === 0 && (
+          {!loading && dashItems.length === 0 && !editMode && (
             <Card><CardContent className="p-12 text-center">
               <LayoutDashboard className="h-8 w-8 text-slate-300 mx-auto mb-3" />
               <h3 className="text-[15px] font-semibold text-slate-900">Aucun widget dans ce rapport</h3>
-              <p className="mt-1 text-[13px] text-slate-500">Cliquez sur « Éditer » puis ajoutez des widgets.</p>
+              <p className="mt-1 text-[13px] text-slate-500 mb-4">Ajoutez des widgets prédéfinis ou vos widgets personnalisés.</p>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setEditMode(true);
+                  setShowWidgetSidebar(true);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" /> Ajouter un widget
+              </Button>
             </CardContent></Card>
           )}
 
-          {data && dashItems.length > 0 && (
+          {data && (dashItems.length > 0 || editMode) && (
             <DashboardGrid
               items={dashItems}
               editMode={editMode}
@@ -2140,7 +2166,7 @@ export default function ReportsPage() {
               }}
             />
           )}
-        </>
+        </div>
       )}
 
       {/* Widget sidebar — built-in + custom widgets */}
