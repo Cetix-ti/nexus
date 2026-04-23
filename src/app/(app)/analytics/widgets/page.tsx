@@ -22,7 +22,7 @@ import {
   Donut, ScatterChart, Radar as RadarIcon, Network,
   Ticket, Clock, User, Building2, FileText, Cpu, Briefcase,
   Receipt, ShoppingCart, Shield, Calendar, Database, Layers,
-  RefreshCw, Check,
+  RefreshCw, Check, Palette,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -32,12 +32,19 @@ import {
   PieChart, Pie, Cell,
   ScatterChart as ReScatterChart, Scatter,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-  Sankey, Treemap, Tooltip as ReTooltip,
-  XAxis, YAxis, CartesianGrid,
+  Sankey, Treemap, Tooltip as ReTooltip, Legend,
+  XAxis, YAxis, CartesianGrid, LabelList,
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { remapBaseCategoryResults } from "@/lib/analytics/base-category-remap";
 import { FilterRow } from "@/components/analytics/filter-row";
+import { WidgetAppearance } from "@/components/analytics/widget-appearance";
+import {
+  type VisualStyle, DEFAULT_STYLE, mergeStyle,
+  colorsForResults, colorForIndex, formatValue,
+  cornerRadiusForBar, cornerRadiusForHorizontalBar, cornerRadiusForTreemap,
+  legendLayoutForPosition, gridStrokeDasharray,
+} from "@/lib/analytics/widget-style";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -84,6 +91,9 @@ interface CustomWidget {
   description: string;
   chartType: ChartType;
   color: string;
+  /** Style visuel — optionnel : les widgets créés avant cette feature utilisent
+   * DEFAULT_STYLE via mergeStyle(). */
+  style?: Partial<VisualStyle>;
   query: WidgetQuery;
   createdAt: string;
 }
@@ -230,6 +240,7 @@ export default function WidgetEditorPage() {
   const [fDesc, setFDesc] = useState("");
   const [fChart, setFChart] = useState<ChartType>("bar");
   const [fColor, setFColor] = useState(COLORS[0]);
+  const [fStyle, setFStyle] = useState<VisualStyle>(() => ({ ...DEFAULT_STYLE }));
   const [fQuery, setFQuery] = useState<WidgetQuery>(emptyQuery());
 
   // Preview state
@@ -259,11 +270,13 @@ export default function WidgetEditorPage() {
   // ==== Form helpers ====
   function resetForm() {
     setFName(""); setFDesc(""); setFChart("bar"); setFColor(COLORS[0]);
+    setFStyle({ ...DEFAULT_STYLE });
     setFQuery(emptyQuery()); setPreviewResults(null); setPreviewError(null);
   }
   function startCreate() { resetForm(); setEditing(null); setCreating(true); }
   function startEdit(w: CustomWidget) {
     setFName(w.name); setFDesc(w.description); setFChart(w.chartType); setFColor(w.color);
+    setFStyle(mergeStyle(w.style, w.color));
     // Les widgets créés avant le changement "période au dashboard"
     // peuvent encore porter des dateFrom/dateTo. On les vide en édition
     // pour éviter qu'ils viennent surcouper la période du dashboard.
@@ -275,7 +288,9 @@ export default function WidgetEditorPage() {
     const w: CustomWidget = {
       id: editing?.id || `cw_${Date.now()}`,
       name: fName.trim(), description: fDesc.trim(),
-      chartType: fChart, color: fColor, query: fQuery,
+      chartType: fChart, color: fColor,
+      style: fStyle,
+      query: fQuery,
       createdAt: editing?.createdAt || new Date().toISOString(),
     };
     const updated = editing ? widgets.map((x) => x.id === editing.id ? w : x) : [...widgets, w];
@@ -712,20 +727,21 @@ export default function WidgetEditorPage() {
                     onChange={(e) => setFQuery((q) => ({ ...q, limit: parseInt(e.target.value) || 20 }))} />
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1.5">Couleur</label>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {COLORS.map((c) => (
-                      <button
-                        key={c}
-                        onClick={() => setFColor(c)}
-                        className={cn("h-7 w-7 rounded-full ring-2 ring-offset-2 transition-all", fColor === c ? "ring-blue-500" : "ring-transparent hover:ring-slate-300")}
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                  </div>
-                </div>
               </div>
+            </StepCard>
+
+            {/* Step 7 — Apparence */}
+            <StepCard number={7} title="Apparence" icon={<Palette className="h-4 w-4" />}>
+              <WidgetAppearance
+                style={fStyle}
+                onChange={(patch) => {
+                  setFStyle((s) => ({ ...s, ...patch }));
+                  // Synchronise fColor (usage legacy partout dans le fichier)
+                  // quand l'utilisateur change la couleur primaire.
+                  if (patch.primaryColor) setFColor(patch.primaryColor);
+                }}
+                labels={previewResults?.map((r) => r.label) ?? []}
+              />
             </StepCard>
 
             {/* Actions */}
@@ -794,6 +810,7 @@ export default function WidgetEditorPage() {
                         results={previewResults}
                         chartType={fChart}
                         color={fColor}
+                        style={fStyle}
                         name={fName || "Aperçu"}
                         aggregate={fQuery.aggregate}
                       />
@@ -1077,20 +1094,32 @@ function StepCard({
 // ===========================================================================
 // Preview renderer (unchanged — shared with dashboard grid via widget-chart.tsx)
 // ===========================================================================
-function WidgetPreview({ results, chartType, color, name, aggregate }: {
-  results: QueryResult[]; chartType: ChartType; color: string; name: string; aggregate: string;
+function WidgetPreview({ results, chartType, color, style: rawStyle, name, aggregate }: {
+  results: QueryResult[]; chartType: ChartType; color: string; style?: VisualStyle; name: string; aggregate: string;
 }) {
   if (!results.length) return <p className="text-center py-4 text-[12px] text-slate-400">Aucun résultat</p>;
 
+  const style = mergeStyle(rawStyle, color);
   const isSingle = results.length === 1 && results[0].label === "Total";
   const maxVal = Math.max(...results.map((r) => r.value), 1);
-  const pieColors = generatePieColors(color, results.length);
+  const barColors = colorsForResults(style, results);
+  const pieColors = style.colorMode !== "single" ? barColors : generatePieColors(style.primaryColor, results.length);
+  const gridDash = gridStrokeDasharray(style);
+  const legendLayout = legendLayoutForPosition(style.legendPosition);
+  const fmt = (v: number) => formatValue(v, style);
+  // Wrappers pour satisfaire les types Recharts (ValueType | undefined).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fmtTooltip: any = (v: any) => fmt(Number(v ?? 0));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fmtAxis: any = (v: any) => fmt(Number(v ?? 0));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fmtLabel: any = (v: any) => fmt(Number(v ?? 0));
 
   if (chartType === "number" || isSingle) {
     return (
       <div className="text-center py-4">
         <p className="text-[11px] text-slate-500 mb-1">{name}</p>
-        <p className="text-3xl font-bold tabular-nums" style={{ color }}>{results[0].value.toLocaleString("fr-CA")}</p>
+        <p className="text-3xl font-bold tabular-nums" style={{ color: style.primaryColor }}>{fmt(results[0].value)}</p>
         <p className="text-[10px] text-slate-400 mt-1">{aggregate}</p>
       </div>
     );
@@ -1100,8 +1129,10 @@ function WidgetPreview({ results, chartType, color, name, aggregate }: {
     const pct = Math.min(100, Math.max(0, results[0].value));
     return (
       <div className="py-4 space-y-2">
-        <div className="flex justify-between"><span className="text-[11px] text-slate-500">{name}</span><span className="text-[14px] font-bold" style={{ color }}>{pct}%</span></div>
-        <div className="h-3 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} /></div>
+        <div className="flex justify-between"><span className="text-[11px] text-slate-500">{name}</span><span className="text-[14px] font-bold" style={{ color: style.primaryColor }}>{fmt(pct)}{style.valueFormat === "percent" ? "" : "%"}</span></div>
+        <div className={cn("h-3 bg-slate-100 overflow-hidden", style.corners === "sharp" ? "rounded-none" : style.corners === "pill" ? "rounded-full" : "rounded-md")}>
+          <div className={cn("h-full", style.corners === "sharp" ? "rounded-none" : style.corners === "pill" ? "rounded-full" : "rounded-md")} style={{ width: `${pct}%`, backgroundColor: style.primaryColor }} />
+        </div>
       </div>
     );
   }
@@ -1110,33 +1141,40 @@ function WidgetPreview({ results, chartType, color, name, aggregate }: {
     return (
       <div className="py-2">
         <p className="text-[11px] text-slate-500 mb-2">{name}</p>
-        <div className="flex items-end gap-1 h-28">
-          {results.map((r, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <div className="w-full relative" style={{ height: "96px" }}>
-                <div className="absolute bottom-0 left-0 right-0 rounded-t" style={{ height: `${Math.max((r.value / maxVal) * 100, 4)}%`, backgroundColor: color }} />
-              </div>
-              <span className="text-[8px] text-slate-400 truncate max-w-full text-center">{r.label}</span>
-            </div>
-          ))}
-        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }} barCategoryGap={`${style.barGapPercent}%`}>
+            {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
+            {style.showXAxis && <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={style.xAxisRotation} textAnchor={style.xAxisRotation === 0 ? "middle" : "end"} height={style.xAxisRotation !== 0 ? 60 : 30} label={style.xAxisTitle ? { value: style.xAxisTitle, position: "insideBottom", offset: -10, fontSize: 11 } : undefined} />}
+            {style.showYAxis && <YAxis tick={{ fontSize: 10 }} tickFormatter={fmtAxis} label={style.yAxisTitle ? { value: style.yAxisTitle, angle: -90, position: "insideLeft", fontSize: 11 } : undefined} />}
+            <ReTooltip formatter={fmtTooltip} />
+            {style.showLegend && <Legend {...legendLayout} />}
+            <Bar dataKey="value" radius={cornerRadiusForBar(style)}>
+              {results.map((_, i) => <Cell key={i} fill={barColors[i]} />)}
+              {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={10} />}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       </div>
     );
   }
 
   if (chartType === "horizontal_bar") {
     return (
-      <div className="py-2 space-y-1.5">
-        <p className="text-[11px] text-slate-500 mb-1">{name}</p>
-        {results.map((r, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-600 w-28 truncate">{r.label}</span>
-            <div className="flex-1 h-4 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full rounded-full" style={{ width: `${(r.value / maxVal) * 100}%`, backgroundColor: color }} />
-            </div>
-            <span className="text-[10px] font-bold text-slate-700 tabular-nums w-16 text-right">{r.value.toLocaleString("fr-CA")}</span>
-          </div>
-        ))}
+      <div className="py-2">
+        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        <ResponsiveContainer width="100%" height={Math.max(220, results.length * 32)}>
+          <BarChart data={results} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
+            {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
+            {style.showXAxis && <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={fmtAxis} />}
+            {style.showYAxis && <YAxis type="category" dataKey="label" tick={{ fontSize: 10 }} width={120} />}
+            <ReTooltip formatter={fmtTooltip} />
+            {style.showLegend && <Legend {...legendLayout} />}
+            <Bar dataKey="value" radius={cornerRadiusForHorizontalBar(style)}>
+              {results.map((_, i) => <Cell key={i} fill={barColors[i]} />)}
+              {style.showDataLabels && <LabelList dataKey="value" position="right" formatter={fmtLabel} fontSize={10} />}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       </div>
     );
   }
@@ -1147,11 +1185,14 @@ function WidgetPreview({ results, chartType, color, name, aggregate }: {
         <p className="text-[11px] text-slate-500 mb-2">{name}</p>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} />
-            <ReTooltip />
-            <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 3 }} />
+            {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
+            {style.showXAxis && <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={style.xAxisRotation} textAnchor={style.xAxisRotation === 0 ? "middle" : "end"} height={style.xAxisRotation !== 0 ? 60 : 30} />}
+            {style.showYAxis && <YAxis tick={{ fontSize: 10 }} tickFormatter={fmtAxis} />}
+            <ReTooltip formatter={fmtTooltip} />
+            {style.showLegend && <Legend {...legendLayout} />}
+            <Line type="monotone" dataKey="value" stroke={style.primaryColor} strokeWidth={style.strokeWidth} dot={{ r: 3 }}>
+              {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={10} />}
+            </Line>
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -1164,11 +1205,14 @@ function WidgetPreview({ results, chartType, color, name, aggregate }: {
         <p className="text-[11px] text-slate-500 mb-2">{name}</p>
         <ResponsiveContainer width="100%" height={220}>
           <AreaChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} />
-            <ReTooltip />
-            <Area type="monotone" dataKey="value" stroke={color} fill={color} fillOpacity={0.25} />
+            {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
+            {style.showXAxis && <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={style.xAxisRotation} textAnchor={style.xAxisRotation === 0 ? "middle" : "end"} height={style.xAxisRotation !== 0 ? 60 : 30} />}
+            {style.showYAxis && <YAxis tick={{ fontSize: 10 }} tickFormatter={fmtAxis} />}
+            <ReTooltip formatter={fmtTooltip} />
+            {style.showLegend && <Legend {...legendLayout} />}
+            <Area type="monotone" dataKey="value" stroke={style.primaryColor} strokeWidth={style.strokeWidth} fill={style.primaryColor} fillOpacity={0.25}>
+              {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={10} />}
+            </Area>
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -1189,14 +1233,19 @@ function WidgetPreview({ results, chartType, color, name, aggregate }: {
               cy="50%"
               outerRadius={80}
               innerRadius={chartType === "donut" ? 45 : 0}
-              label={(e: any) => `${e.label} (${e.value})`}
+              label={style.showDataLabels ? ((e: unknown) => {
+                const entry = e as { name?: string; value?: number };
+                return `${entry.name ?? ""} · ${fmt(Number(entry.value ?? 0))}`;
+              }) as unknown as undefined : false}
               labelLine={false}
             >
               {results.map((_, i) => (
                 <Cell key={i} fill={pieColors[i % pieColors.length]} />
               ))}
             </Pie>
-            <ReTooltip />
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            <ReTooltip formatter={((v: any) => fmt(Number(v))) as any} />
+            {style.showLegend && <Legend {...legendLayout} />}
           </PieChart>
         </ResponsiveContainer>
       </div>
