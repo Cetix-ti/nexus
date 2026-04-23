@@ -23,7 +23,7 @@ import {
   Donut, ScatterChart, Radar as RadarIcon, Network,
   Ticket, Clock, User, Building2, FileText, Cpu, Briefcase,
   Receipt, ShoppingCart, Shield, Calendar, Database, Layers,
-  RefreshCw, Check, Palette,
+  RefreshCw, Check, Palette, Sparkles,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -40,6 +40,7 @@ import { cn } from "@/lib/utils";
 import { remapBaseCategoryResults } from "@/lib/analytics/base-category-remap";
 import { FilterRow } from "@/components/analytics/filter-row";
 import { WidgetAppearance } from "@/components/analytics/widget-appearance";
+import { WidgetAiAssistant, type WidgetDraft } from "@/components/analytics/widget-ai-assistant";
 import {
   type VisualStyle, DEFAULT_STYLE, mergeStyle,
   colorsForResults, colorForIndex, formatValue,
@@ -408,6 +409,22 @@ export default function WidgetEditorPage() {
     setFQuery(preset.query);
     setCreating(true);
   }
+
+  /** Applique un widget généré par l'IA au formulaire. */
+  function applyAiDraft(draft: WidgetDraft) {
+    resetForm();
+    setEditing(null);
+    setFName(draft.name);
+    setFDesc(draft.description ?? "");
+    setFChart(draft.chartType as ChartType);
+    const color = draft.color ?? COLORS[0];
+    setFColor(color);
+    setFStyle({ ...DEFAULT_STYLE, primaryColor: color });
+    setFQuery(draft.query as WidgetQuery);
+    setCreating(true);
+  }
+
+  const [aiOpen, setAiOpen] = useState(false);
   function startEdit(w: CustomWidget) {
     setFName(w.name); setFDesc(w.description); setFChart(w.chartType); setFColor(w.color);
     setFStyle(mergeStyle(w.style, w.color));
@@ -579,9 +596,14 @@ export default function WidgetEditorPage() {
           <p className="mt-0.5 text-[13px] text-slate-500">{datasets.length} datasets · {widgets.length} widgets {orgContextId ? "visibles dans cet atelier" : "créés"}</p>
         </div>
         {!creating && (
-          <Button variant="primary" size="sm" onClick={startCreate}>
-            <Plus className="h-3.5 w-3.5" /> Nouveau widget
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" size="sm" onClick={() => setAiOpen(true)}>
+              <Sparkles className="h-3.5 w-3.5" /> Créer avec l&apos;IA
+            </Button>
+            <Button variant="primary" size="sm" onClick={startCreate}>
+              <Plus className="h-3.5 w-3.5" /> Nouveau widget
+            </Button>
+          </div>
         )}
       </div>
 
@@ -1092,6 +1114,13 @@ export default function WidgetEditorPage() {
         </div>
       )}
 
+      {aiOpen && (
+        <WidgetAiAssistant
+          open
+          onClose={() => setAiOpen(false)}
+          onApply={applyAiDraft}
+        />
+      )}
     </div>
   );
 }

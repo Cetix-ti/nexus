@@ -34,7 +34,7 @@ const FINANCE_GATED_FIELDS = new Set([
 // Dataset definitions
 // ============================================================================
 
-interface FieldDef {
+export interface FieldDef {
   name: string;
   label: string;
   type: "enum" | "string" | "number" | "boolean" | "date" | "relation";
@@ -61,14 +61,14 @@ interface FieldDef {
   virtual?: boolean;
 }
 
-interface DatasetDef {
+export interface DatasetDef {
   model: string;
   fields: FieldDef[];
   defaultDateField: string;
   dateFields: string[];
 }
 
-const DATASETS: Record<string, DatasetDef> = {
+export const DATASETS: Record<string, DatasetDef> = {
   tickets: {
     model: "ticket",
     defaultDateField: "createdAt",
