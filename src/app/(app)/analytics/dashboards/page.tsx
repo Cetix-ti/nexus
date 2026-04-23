@@ -1768,58 +1768,87 @@ export default function ReportsPage() {
             const isFav = favorites.includes(r.id);
             const widgetCount = resolveWidgets(r).length;
             const childCount = getChildren(r.id).length;
+            const isCustom = r.id.startsWith("custom_");
+            const taggedOrgName = r.organizationId ? (orgNameById[r.organizationId] ?? "…") : null;
             return (
-              <button
+              <div
                 key={r.id}
-                type="button"
-                onClick={() => setView(r.id)}
-                className="group relative flex flex-col text-left rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-blue-300 hover:shadow-[0_8px_24px_-8px_rgba(37,99,235,0.18)] transition-all p-5 min-h-[160px]"
+                className="group relative flex flex-col rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-blue-300 hover:shadow-[0_8px_24px_-8px_rgba(37,99,235,0.18)] transition-all min-h-[160px]"
               >
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="h-10 w-10 rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                    {r.icon}
+                {/* Bouton "Attribuer" — overlay en haut à droite, apparaît au hover
+                    sur desktop, visible en permanence si déjà taggué. */}
+                {isCustom && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setTaggingReportId(r.id); }}
+                    className={cn(
+                      "absolute top-2 right-2 z-10 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium transition-all",
+                      taggedOrgName
+                        ? "bg-blue-600 text-white hover:bg-blue-700"
+                        : "bg-white/90 text-slate-600 ring-1 ring-slate-200 opacity-0 group-hover:opacity-100 hover:bg-blue-50 hover:text-blue-700 hover:ring-blue-300"
+                    )}
+                    title={taggedOrgName ? `Attribué à : ${taggedOrgName}` : "Attribuer à une organisation"}
+                  >
+                    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4" />
+                    </svg>
+                    <span className="max-w-[100px] truncate">
+                      {taggedOrgName ?? "Attribuer"}
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setView(r.id)}
+                  className="flex flex-col text-left p-5 flex-1"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="h-10 w-10 rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      {r.icon}
+                    </div>
+                    <div className="flex items-center gap-1 pr-16">
+                      {isFav && (
+                        <span className="text-amber-500 text-[14px]" title="Favori">
+                          ★
+                        </span>
+                      )}
+                      {isPrimary && (
+                        <span className="text-[8.5px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
+                          Défaut
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    {isFav && (
-                      <span className="text-amber-500 text-[14px]" title="Favori">
-                        ★
+                  <h3 className="text-[14px] font-semibold text-slate-900 leading-tight mb-1.5 group-hover:text-blue-700 transition-colors">
+                    {r.label}
+                  </h3>
+                  <p className="text-[11.5px] text-slate-500 leading-relaxed line-clamp-2 mb-3">
+                    {r.description}
+                  </p>
+                  <div className="mt-auto flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-medium text-slate-600">
+                      {widgetCount} widget{widgetCount > 1 ? "s" : ""}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[10.5px] font-medium text-slate-500 capitalize">
+                      {r.category}
+                    </span>
+                    {childCount > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10.5px] font-medium text-violet-700">
+                        {childCount} enfant{childCount > 1 ? "s" : ""}
                       </span>
                     )}
-                    {isPrimary && (
-                      <span className="text-[8.5px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
-                        Défaut
+                    {r.parentId && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10.5px] font-medium text-violet-700"
+                        title="Hérite d'un parent"
+                      >
+                        ↳
                       </span>
                     )}
                   </div>
-                </div>
-                <h3 className="text-[14px] font-semibold text-slate-900 leading-tight mb-1.5 group-hover:text-blue-700 transition-colors">
-                  {r.label}
-                </h3>
-                <p className="text-[11.5px] text-slate-500 leading-relaxed line-clamp-2 mb-3">
-                  {r.description}
-                </p>
-                <div className="mt-auto flex items-center gap-2 flex-wrap">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-medium text-slate-600">
-                    {widgetCount} widget{widgetCount > 1 ? "s" : ""}
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[10.5px] font-medium text-slate-500 capitalize">
-                    {r.category}
-                  </span>
-                  {childCount > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10.5px] font-medium text-violet-700">
-                      {childCount} enfant{childCount > 1 ? "s" : ""}
-                    </span>
-                  )}
-                  {r.parentId && (
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10.5px] font-medium text-violet-700"
-                      title="Hérite d'un parent"
-                    >
-                      ↳
-                    </span>
-                  )}
-                </div>
-              </button>
+                </button>
+              </div>
             );
           })}
         </div>
