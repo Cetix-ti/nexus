@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Plus, Pencil, Trash2, Copy, X, Save, BarChart3, Hash, List,
   Table, Activity, ArrowLeft, Filter, Play,
@@ -96,6 +97,12 @@ interface CustomWidget {
   style?: Partial<VisualStyle>;
   query: WidgetQuery;
   createdAt: string;
+  /**
+   * Si défini : widget attribué à une organisation spécifique. Visible dans
+   * l'onglet Rapports de cette org ET dans /analytics?orgContext=<orgId>.
+   * Les widgets globaux (undefined) restent visibles partout.
+   */
+  organizationId?: string;
 }
 // `source` optionnel : quand la requête est dual-source (Sankey cashflow
 // Revenus + Dépenses par exemple), chaque ligne porte le libellé de son
@@ -230,7 +237,21 @@ const emptyQuery = (): WidgetQuery => ({
 // Page
 // ===========================================================================
 export default function WidgetEditorPage() {
-  const [widgets, setWidgets] = useState<CustomWidget[]>(() => loadWidgets());
+  // Contexte organisation : si ?orgContext=<orgId> dans l'URL, la page se
+  // comporte comme un atelier scoped à cette org — filtre les widgets et
+  // tag les nouveaux avec cet orgId. Utilisé par l'onglet Rapports des orgs.
+  const searchParams = useSearchParams();
+  const orgContextId = searchParams?.get("orgContext") ?? null;
+  const orgContextName = searchParams?.get("orgName") ?? null;
+
+  const [allWidgets, setAllWidgets] = useState<CustomWidget[]>(() => loadWidgets());
+  // Vue filtrée : si orgContextId défini, on montre les widgets de cette org
+  // + les widgets globaux. Sinon on montre tout.
+  const widgets = useMemo(() => {
+    if (!orgContextId) return allWidgets;
+    return allWidgets.filter((w) => !w.organizationId || w.organizationId === orgContextId);
+  }, [allWidgets, orgContextId]);
+  const setWidgets = setAllWidgets;
   const [datasets, setDatasets] = useState<DatasetDef[]>([]);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<CustomWidget | null>(null);
@@ -292,17 +313,32 @@ export default function WidgetEditorPage() {
       style: fStyle,
       query: fQuery,
       createdAt: editing?.createdAt || new Date().toISOString(),
+      // Lors de l'édition on conserve l'orgId existant. En création, on
+      // applique l'orgContext de l'URL (si on est en mode atelier organisation).
+      organizationId: editing?.organizationId ?? orgContextId ?? undefined,
     };
-    const updated = editing ? widgets.map((x) => x.id === editing.id ? w : x) : [...widgets, w];
+    // On écrit dans le pool global, pas la vue filtrée — sinon on perd les
+    // widgets d'autres orgs.
+    const updated = editing
+      ? allWidgets.map((x) => x.id === editing.id ? w : x)
+      : [...allWidgets, w];
     setWidgets(updated); saveWidgets(updated); setCreating(false); resetForm();
   }
   function handleDelete(id: string) {
     if (!confirm("Supprimer ce widget ?")) return;
-    const u = widgets.filter((w) => w.id !== id); setWidgets(u); saveWidgets(u);
+    const u = allWidgets.filter((w) => w.id !== id); setWidgets(u); saveWidgets(u);
   }
   function handleDuplicate(w: CustomWidget) {
-    const d: CustomWidget = { ...w, id: `cw_${Date.now()}`, name: `${w.name} (copie)`, createdAt: new Date().toISOString() };
-    const u = [...widgets, d]; setWidgets(u); saveWidgets(u);
+    const d: CustomWidget = {
+      ...w,
+      id: `cw_${Date.now()}`,
+      name: `${w.name} (copie)`,
+      createdAt: new Date().toISOString(),
+      // Un duplicata hérite de l'orgId source, OU bascule sur l'orgContext
+      // actif si on est en mode atelier d'une autre org.
+      organizationId: orgContextId ?? w.organizationId,
+    };
+    const u = [...allWidgets, d]; setWidgets(u); saveWidgets(u);
   }
 
   function addFilter() {
@@ -419,15 +455,15 @@ export default function WidgetEditorPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-[13px] mb-1">
+          <div className="flex items-center gap-2 text-[13px] mb-1 flex-wrap">
             <Link href="/analytics/dashboards" className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
               <ArrowLeft className="h-3.5 w-3.5" /> Analytique
             </Link>
           </div>
           <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">Éditeur de widgets</h1>
-          <p className="mt-0.5 text-[13px] text-slate-500">{datasets.length} datasets · {widgets.length} widgets créés</p>
+          <p className="mt-0.5 text-[13px] text-slate-500">{datasets.length} datasets · {widgets.length} widgets {orgContextId ? "visibles dans cet atelier" : "créés"}</p>
         </div>
         {!creating && (
           <Button variant="primary" size="sm" onClick={startCreate}>
@@ -435,6 +471,21 @@ export default function WidgetEditorPage() {
           </Button>
         )}
       </div>
+
+      {orgContextId && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 flex items-start gap-2 flex-wrap">
+          <Building2 className="h-4 w-4 text-blue-700 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0 text-[12.5px] text-blue-900">
+            <strong>Atelier organisation{orgContextName ? ` : ${orgContextName}` : ""}</strong>
+            <div className="text-[11.5px] text-blue-800 mt-0.5">
+              Les widgets créés ici seront attribués à cette organisation. Les widgets globaux restent visibles.
+            </div>
+          </div>
+          <Link href="/analytics/widgets" className="text-[11.5px] text-blue-700 hover:text-blue-800 underline font-medium shrink-0">
+            Voir tous les widgets →
+          </Link>
+        </div>
+      )}
 
       {/* ============================================================ */}
       {/* Builder */}

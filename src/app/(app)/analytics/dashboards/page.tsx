@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { DashboardGrid, type DashboardItem } from "@/components/widgets/dashboard-grid";
 import {
@@ -38,6 +38,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Trash2,
+  Share2,
   Undo2,
   Redo2,
   Save,
@@ -52,11 +53,10 @@ import {
   LineChart, Line,
   AreaChart, Area,
   PieChart as RePieChart, Pie, Cell,
-  ScatterChart as ReScatterChart, Scatter,
-  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-  Sankey, Tooltip as ReTooltip,
+  Tooltip as ReTooltip,
   XAxis, YAxis, CartesianGrid,
 } from "recharts";
+import { WidgetChart, type ChartType } from "@/components/widgets/widget-chart";
 
 const PIE_PALETTE = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
@@ -67,6 +67,7 @@ function pickPieColors(baseColor: string, count: number): string[] {
   return Array.from({ length: count }, (_, i) => palette[i % palette.length]);
 }
 import { cn } from "@/lib/utils";
+import { remapBaseCategoryResults } from "@/lib/analytics/base-category-remap";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -192,7 +193,25 @@ interface ReportDef {
   category: "tickets" | "facturation" | "performance" | "contrats" | "complet";
   widgets: WidgetId[];
   parentId?: string | null;
+  /**
+   * Si défini : ce rapport custom est attribué à une organisation spécifique.
+   * Il apparaît dans l'onglet Rapports de cette org, ET ici quand on ouvre
+   * la page avec ?orgContext=<orgId>. Les rapports globaux (orgId null) sont
+   * visibles partout. Les rapports built-in du catalogue n'ont pas d'orgId.
+   */
+  organizationId?: string;
 }
+
+// Accent couleur par catégorie — utilisé pour la bande verticale, le
+// fond de l'icône et le badge catégorie des cartes de galerie. Donne
+// un repère visuel pour scanner rapidement la galerie.
+const CATEGORY_ACCENT: Record<string, { bar: string; bg: string; fg: string; ring: string }> = {
+  tickets:     { bar: "#3B82F6", bg: "#EFF6FF", fg: "#1D4ED8", ring: "rgba(59,130,246,0.18)" },
+  facturation: { bar: "#10B981", bg: "#ECFDF5", fg: "#047857", ring: "rgba(16,185,129,0.18)" },
+  performance: { bar: "#F59E0B", bg: "#FFFBEB", fg: "#B45309", ring: "rgba(245,158,11,0.18)" },
+  contrats:    { bar: "#8B5CF6", bg: "#F5F3FF", fg: "#6D28D9", ring: "rgba(139,92,246,0.18)" },
+  complet:     { bar: "#64748B", bg: "#F8FAFC", fg: "#334155", ring: "rgba(100,116,139,0.18)" },
+};
 
 const REPORT_CATALOG: ReportDef[] = [
   {
@@ -339,6 +358,22 @@ function loadPrimary(): string { try { return localStorage.getItem(PRIMARY_KEY) 
 function savePrimary(id: string) { try { localStorage.setItem(PRIMARY_KEY, id); } catch {} }
 function loadCustomReports(): ReportDef[] { try { const r = localStorage.getItem(CUSTOM_REPORTS_KEY); if (r) return JSON.parse(r); } catch {} return []; }
 function saveCustomReports(reports: ReportDef[]) { try { localStorage.setItem(CUSTOM_REPORTS_KEY, JSON.stringify(reports)); } catch {} }
+
+// Set des IDs de dashboards built-in (REPORT_CATALOG) que l'user a
+// choisi de masquer. Persisté en localStorage ; restaurables via le
+// panneau Filtres (bouton "Afficher les masqués").
+const HIDDEN_BUILTINS_KEY = "nexus:reports:hidden-builtins";
+function loadHiddenBuiltins(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HIDDEN_BUILTINS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  } catch { return new Set(); }
+}
+function saveHiddenBuiltins(set: Set<string>) {
+  try { localStorage.setItem(HIDDEN_BUILTINS_KEY, JSON.stringify(Array.from(set))); } catch {}
+}
 function loadFolders(): DashboardFolder[] { try { const r = localStorage.getItem(FOLDERS_KEY); if (r) return JSON.parse(r); } catch {} return []; }
 function saveFolders(folders: DashboardFolder[]) { try { localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders)); } catch {} }
 function loadRecent(): string[] { try { const r = localStorage.getItem(RECENT_KEY); if (r) return JSON.parse(r); } catch {} return []; }
@@ -361,6 +396,12 @@ const isSectionGallery = (v: string) =>
   v === GALLERY_VIEW || v === FAV_VIEW || v === RECENT_VIEW || v === ALL_VIEW || isFolderView(v);
 
 export default function ReportsPage() {
+  // Contexte organisation : ?orgContext=<orgId> filtre les rapports custom
+  // à cette org + tag les nouveaux rapports créés ici.
+  const searchParams = useSearchParams();
+  const orgContextId = searchParams?.get("orgContext") ?? null;
+  const orgContextName = searchParams?.get("orgName") ?? null;
+
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState("30");
@@ -372,6 +413,14 @@ export default function ReportsPage() {
   const [showWidgetSidebar, setShowWidgetSidebar] = useState(false);
   const [visibleWidgets, setVisibleWidgets] = useState<WidgetId[]>(() => loadVisible());
   const [favorites, setFavorites] = useState<string[]>(() => loadFavorites());
+  const [hiddenBuiltins, setHiddenBuiltins] = useState<Set<string>>(() => loadHiddenBuiltins());
+  // Toggle dans le panneau Filtres — quand true, on affiche aussi les
+  // dashboards built-in masqués pour permettre la restauration.
+  const [showHidden, setShowHidden] = useState(false);
+  // Range personnalisé — ISO dates (YYYY-MM-DD). Quand `days` === "custom",
+  // la période effective est calculée à partir de ces deux champs.
+  const [customFrom, setCustomFrom] = useState<string>("");
+  const [customTo, setCustomTo] = useState<string>("");
   const [primaryId, setPrimaryId] = useState<string>(() => loadPrimary());
   const [editMode, setEditMode] = useState(false);
   // Historique pour undo/redo (style Office) en mode édition.
@@ -387,6 +436,9 @@ export default function ReportsPage() {
   const [editBaseline, setEditBaseline] = useState<DashboardItem[] | null>(null);
   const [customReports, setCustomReports] = useState<ReportDef[]>(() => loadCustomReports());
   const [showCreateReport, setShowCreateReport] = useState(false);
+  // État de la modale "Publier au portail" — ouvre avec un dashboardId
+  // ciblé, null = fermée.
+  const [publishingDashboardId, setPublishingDashboardId] = useState<string | null>(null);
   const [newReportName, setNewReportName] = useState("");
   const [newReportDesc, setNewReportDesc] = useState("");
   const [newReportWidgets, setNewReportWidgets] = useState<WidgetId[]>([]);
@@ -402,10 +454,26 @@ export default function ReportsPage() {
   // Menu "•••" pour déplacer un dashboard vers un dossier. Null = fermé.
   const [moveMenuForId, setMoveMenuForId] = useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  // Rename mode pour le dashboard affiché dans le header (custom uniquement).
+  const [renamingReport, setRenamingReport] = useState(false);
+  const [reportRenameDraft, setReportRenameDraft] = useState("");
   const [renameFolderDraft, setRenameFolderDraft] = useState("");
 
   // Merged catalog: built-in + custom
-  const allReports = [...REPORT_CATALOG, ...customReports];
+  // On filtre les built-ins masqués, sauf quand l'user a activé
+  // "Afficher les masqués" dans le panneau filtres (pour pouvoir les
+  // restaurer ou cliquer dessus temporairement).
+  // Si on est en mode atelier organisation, on filtre les rapports custom à
+  // cette org (+ les rapports globaux sans orgId) pour que l'agent ne voie
+  // que ce qui concerne l'org. Les built-ins du catalogue restent toujours
+  // accessibles. Les autres rapports (autres orgs) sont cachés.
+  const filteredCustomReports = orgContextId
+    ? customReports.filter((r) => !r.organizationId || r.organizationId === orgContextId)
+    : customReports;
+  const allReports = [
+    ...REPORT_CATALOG.filter((r) => showHidden || !hiddenBuiltins.has(r.id)),
+    ...filteredCustomReports,
+  ];
 
   // Resolve widgets through parent chain (child inherits parent's widgets)
   function resolveWidgets(report: ReportDef): WidgetId[] {
@@ -550,12 +618,22 @@ export default function ReportsPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    fetch(`/api/v1/reports/global?days=${days}`)
+    // Pour le range custom, on approxime en jours depuis la plage pour
+    // rester compatible avec l'API actuelle (days uniquement). Si on
+    // veut passer from/to exacts à l'API global, il faudra l'étendre.
+    let effectiveDays = days;
+    if (days === "custom" && customFrom && customTo) {
+      const from = new Date(customFrom).getTime();
+      const to = new Date(customTo).getTime();
+      const n = Math.max(1, Math.ceil((to - from) / 86_400_000));
+      effectiveDays = String(n);
+    }
+    fetch(`/api/v1/reports/global?days=${effectiveDays}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [days]);
+  }, [days, customFrom, customTo]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -678,6 +756,9 @@ export default function ReportsPage() {
       category: "complet",
       widgets: parentReport ? [] : (newReportWidgets.length > 0 ? newReportWidgets : ["ticket_kpis", "finance_kpis"]),
       parentId: newReportParentId || null,
+      // Si on est en mode atelier d'une org (?orgContext=X), on attribue
+      // le rapport à cette org.
+      organizationId: orgContextId ?? undefined,
     };
     const updated = [...customReports, report];
     setCustomReports(updated);
@@ -689,6 +770,15 @@ export default function ReportsPage() {
     setNewReportParentId("");
     setView(id);
     setFavorites((prev) => { const next = [...prev, id]; saveFavorites(next); return next; });
+  }
+
+  function renameReport(id: string, newLabel: string) {
+    const label = newLabel.trim();
+    if (!label) return;
+    if (!id.startsWith("custom_")) return;  // Built-in reports are fixed.
+    const updated = customReports.map((r) => (r.id === id ? { ...r, label } : r));
+    setCustomReports(updated);
+    saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
   }
 
   function setReportParent(reportId: string, parentId: string | null) {
@@ -704,17 +794,30 @@ export default function ReportsPage() {
   }
 
   function deleteReport(id: string) {
-    if (!id.startsWith("custom_")) return;
-    if (!confirm("Supprimer ce rapport personnalisé ?")) return;
-    // Detach children: remove parentId reference
-    const updated = customReports
-      .filter((r) => r.id !== id)
-      .map((r) => r.parentId === id ? { ...r, parentId: null } : r);
-    setCustomReports(updated);
-    saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
+    if (id.startsWith("custom_")) {
+      // Custom : suppression réelle (retire de la liste + layout + favori).
+      if (!confirm("Supprimer ce rapport personnalisé ?")) return;
+      const updated = customReports
+        .filter((r) => r.id !== id)
+        .map((r) => r.parentId === id ? { ...r, parentId: null } : r);
+      setCustomReports(updated);
+      saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
+      setFavorites((prev) => { const next = prev.filter((f) => f !== id); saveFavorites(next); return next; });
+      if (view === id) setView(loadPrimary());
+      try { localStorage.removeItem(`nexus:report-layout:${id}`); } catch {}
+      return;
+    }
+    // Built-in : masquage (ajout à un set localStorage). Restaurable
+    // depuis le panneau Filtres ("Dashboards masqués").
+    if (!confirm("Masquer ce dashboard de la liste ? Il restera restaurable depuis le panneau Filtres.")) return;
+    setHiddenBuiltins((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      saveHiddenBuiltins(next);
+      return next;
+    });
     setFavorites((prev) => { const next = prev.filter((f) => f !== id); saveFavorites(next); return next; });
     if (view === id) setView(loadPrimary());
-    try { localStorage.removeItem(`nexus:report-layout:${id}`); } catch {}
   }
 
   function toggleWidget(id: WidgetId) {
@@ -763,7 +866,24 @@ export default function ReportsPage() {
   // d'afficher tous les dashboards sans groupement.
 
   return (
-    <div className="flex gap-3 min-h-0">
+    <div className="flex flex-col gap-3 min-h-0">
+      {orgContextId && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 flex items-start gap-2 flex-wrap">
+          <svg className="h-4 w-4 text-blue-700 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4" />
+          </svg>
+          <div className="flex-1 min-w-0 text-[12.5px] text-blue-900">
+            <strong>Atelier organisation{orgContextName ? ` : ${orgContextName}` : ""}</strong>
+            <div className="text-[11.5px] text-blue-800 mt-0.5">
+              Les rapports créés ici seront attribués à cette organisation. Les rapports globaux restent visibles.
+            </div>
+          </div>
+          <a href="/analytics/dashboards" className="text-[11.5px] text-blue-700 hover:text-blue-800 underline font-medium shrink-0">
+            Voir tous les rapports →
+          </a>
+        </div>
+      )}
+      <div className="flex gap-3 min-h-0">
       {/* ============================================================ */}
       {/* Left sidebar — dashboard list */}
       {/* ============================================================ */}
@@ -1065,21 +1185,43 @@ export default function ReportsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div>
-              <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
-                {view === GALLERY_VIEW
-                  ? "Galerie de tableaux de bord"
-                  : view === FAV_VIEW
-                    ? "Mes Favoris"
-                    : view === RECENT_VIEW
-                      ? "Récents"
-                      : view === ALL_VIEW
-                        ? "Tous les dashboards"
-                        : isFolderView(view)
-                          ? (folders.find((f) => f.id === folderViewId(view))?.name ?? "Dossier")
-                          : activeReport
-                            ? activeReport.label
-                            : "Dashboards"}
-              </h1>
+              {renamingReport && activeReport?.id.startsWith("custom_") ? (
+                <input
+                  autoFocus
+                  value={reportRenameDraft}
+                  onChange={(e) => setReportRenameDraft(e.target.value)}
+                  onBlur={() => {
+                    renameReport(activeReport.id, reportRenameDraft);
+                    setRenamingReport(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      renameReport(activeReport.id, reportRenameDraft);
+                      setRenamingReport(false);
+                    }
+                    if (e.key === "Escape") {
+                      setRenamingReport(false);
+                    }
+                  }}
+                  className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900 bg-white border-b-2 border-blue-400 px-1 py-0.5 focus:outline-none w-full max-w-md"
+                />
+              ) : (
+                <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
+                  {view === GALLERY_VIEW
+                    ? "Galerie de tableaux de bord"
+                    : view === FAV_VIEW
+                      ? "Mes Favoris"
+                      : view === RECENT_VIEW
+                        ? "Récents"
+                        : view === ALL_VIEW
+                          ? "Tous les dashboards"
+                          : isFolderView(view)
+                            ? (folders.find((f) => f.id === folderViewId(view))?.name ?? "Dossier")
+                            : activeReport
+                              ? activeReport.label
+                              : "Dashboards"}
+                </h1>
+              )}
               <p className="mt-0.5 text-[13px] text-slate-500">
                 {view === GALLERY_VIEW
                   ? `${allReports.length} tableau${allReports.length > 1 ? "x" : ""} de bord disponibles — clique pour ouvrir`
@@ -1112,18 +1254,41 @@ export default function ReportsPage() {
               </p>
             </div>
             {activeReport && (
-              <button
-                onClick={() => toggleFavorite(activeReport.id)}
-                className={cn(
-                  "mt-0.5 h-9 w-9 rounded-lg flex items-center justify-center text-[20px] transition-all ring-1 ring-inset",
-                  favorites.includes(activeReport.id)
-                    ? "text-amber-500 ring-amber-200 bg-amber-50 hover:bg-amber-100"
-                    : "text-slate-300 ring-slate-200 bg-white hover:text-amber-400 hover:ring-amber-200 hover:bg-amber-50"
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <button
+                  onClick={() => toggleFavorite(activeReport.id)}
+                  className={cn(
+                    "h-9 w-9 rounded-lg flex items-center justify-center text-[20px] transition-all ring-1 ring-inset",
+                    favorites.includes(activeReport.id)
+                      ? "text-amber-500 ring-amber-200 bg-amber-50 hover:bg-amber-100"
+                      : "text-slate-300 ring-slate-200 bg-white hover:text-amber-400 hover:ring-amber-200 hover:bg-amber-50"
+                  )}
+                  title={favorites.includes(activeReport.id) ? "Retirer des favoris" : "Ajouter aux favoris"}
+                >
+                  {favorites.includes(activeReport.id) ? "★" : "☆"}
+                </button>
+                {activeReport.id.startsWith("custom_") && !renamingReport && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setReportRenameDraft(activeReport.label);
+                        setRenamingReport(true);
+                      }}
+                      className="h-9 w-9 rounded-lg flex items-center justify-center text-slate-400 ring-1 ring-inset ring-slate-200 bg-white hover:text-blue-600 hover:ring-blue-200 hover:bg-blue-50 transition-all"
+                      title="Renommer le dashboard"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => deleteReport(activeReport.id)}
+                      className="h-9 w-9 rounded-lg flex items-center justify-center text-slate-400 ring-1 ring-inset ring-slate-200 bg-white hover:text-red-600 hover:ring-red-200 hover:bg-red-50 transition-all"
+                      title="Supprimer le dashboard"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </>
                 )}
-                title={favorites.includes(activeReport.id) ? "Retirer des favoris" : "Ajouter aux favoris"}
-              >
-                {favorites.includes(activeReport.id) ? "★" : "☆"}
-              </button>
+              </div>
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -1186,10 +1351,46 @@ export default function ReportsPage() {
                     </Button>
                   </>
                 ) : (
-                  <Button variant="outline" size="sm" onClick={enterEditMode}>
-                    <LayoutDashboard className="h-3.5 w-3.5" />
-                    Éditer
-                  </Button>
+                  <>
+                    <Button variant="outline" size="sm" onClick={enterEditMode}>
+                      <LayoutDashboard className="h-3.5 w-3.5" />
+                      Éditer
+                    </Button>
+                    {/* Publier au portail — disponible en mode view,
+                        pas en mode édition (éviter de publier un
+                        état non sauvegardé). Ouvre la modale qui
+                        sérialise l'état persisté. */}
+                    {activeReport && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPublishingDashboardId(activeReport.id)}
+                          title="Publier ce dashboard au portail client"
+                        >
+                          <Share2 className="h-3.5 w-3.5" />
+                          Publier
+                        </Button>
+                        {/* Supprimer ce dashboard — disponible sur TOUS
+                            (custom + built-in). Pour les built-in, c'est
+                            en fait un "masquer" qui alimente un set
+                            localStorage et peut être rétabli depuis
+                            le panneau Filtres. */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => deleteReport(activeReport.id)}
+                          className="text-red-600 hover:text-red-700 hover:border-red-300"
+                          title={activeReport.id.startsWith("custom_")
+                            ? "Supprimer ce dashboard"
+                            : "Masquer ce dashboard de la liste"}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {activeReport.id.startsWith("custom_") ? "Supprimer" : "Masquer"}
+                        </Button>
+                      </>
+                    )}
+                  </>
                 )}
                 <Button
                   variant={showParentPanel ? "primary" : "outline"}
@@ -1239,69 +1440,18 @@ export default function ReportsPage() {
         </div>
 
       {/* ============================================================ */}
-      {/* Parent/child management panel */}
+      {/* Parent → enfants : UX inversée. On choisit d'abord un parent
+          (n'importe quel dashboard), puis on coche les enfants à
+          attacher parmi les dashboards custom disponibles. */}
       {/* ============================================================ */}
       {showParentPanel && (
-        <Card className="border-violet-200 bg-violet-50/20">
-          <CardContent className="p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <GitBranch className="h-4 w-4 text-violet-600" />
-                <h3 className="text-[15px] font-semibold text-slate-900">Relations parent / enfant</h3>
-              </div>
-              <button onClick={() => setShowParentPanel(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <p className="text-[12px] text-slate-500">
-              Un dashboard enfant hérite automatiquement des widgets de son parent. Modifiez les relations ci-dessous.
-            </p>
-            <div className="space-y-1">
-              {allReports.map((r) => {
-                const parentReport = r.parentId ? allReports.find((p) => p.id === r.parentId) : null;
-                const children = getChildren(r.id);
-                const isCustom = r.id.startsWith("custom_");
-                return (
-                  <div key={r.id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/60 transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={cn("text-[12.5px] font-medium truncate", view === r.id ? "text-blue-700" : "text-slate-800")}>{r.label}</span>
-                        {parentReport && (
-                          <span className="text-[10px] bg-violet-100 text-violet-600 rounded px-1.5 py-0.5 shrink-0">
-                            ↳ {parentReport.label}
-                          </span>
-                        )}
-                        {children.length > 0 && (
-                          <span className="text-[10px] bg-blue-100 text-blue-600 rounded px-1.5 py-0.5 shrink-0">
-                            {children.length} enfant{children.length > 1 ? "s" : ""}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {isCustom ? (
-                      <Select
-                        value={r.parentId || "_none"}
-                        onValueChange={(v) => setReportParent(r.id, v === "_none" ? null : v)}
-                      >
-                        <SelectTrigger className="w-48 h-8 text-[11px]"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="_none">Aucun parent</SelectItem>
-                          {allReports
-                            .filter((p) => p.id !== r.id && p.parentId !== r.id)
-                            .map((p) => (
-                              <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <span className="text-[10px] text-slate-400 italic">Prédéfini</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+        <ParentChildrenPanel
+          allReports={allReports}
+          getChildren={getChildren}
+          setReportParent={setReportParent}
+          onClose={() => setShowParentPanel(false)}
+          initialParentId={view && !isSectionGallery(view) ? view : undefined}
+        />
       )}
 
       {/* ============================================================ */}
@@ -1432,32 +1582,60 @@ export default function ReportsPage() {
                 </div>
               )}
 
-              {/* Period */}
-              <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Période</label>
-                <div className="grid grid-cols-5 gap-1">
-                  {[
-                    { value: "7", label: "7j" },
-                    { value: "30", label: "30j" },
-                    { value: "90", label: "3m" },
-                    { value: "180", label: "6m" },
-                    { value: "365", label: "12m" },
-                  ].map((p) => (
+              {/* Période — picker riche avec presets glissants ET
+                  presets calendaires (YTD, mois dernier, etc.) + range
+                  custom pour une plage arbitraire. Le state `days`
+                  continue d'exister pour la compat API mais c'est
+                  désormais calculé à partir du preset choisi. */}
+              <PeriodPicker
+                days={days}
+                setDays={setDays}
+                customFrom={customFrom}
+                customTo={customTo}
+                setCustomFrom={setCustomFrom}
+                setCustomTo={setCustomTo}
+              />
+
+              {/* Dashboards masqués */}
+              {hiddenBuiltins.size > 0 && (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                      Dashboards masqués ({hiddenBuiltins.size})
+                    </label>
                     <button
-                      key={p.value}
-                      onClick={() => setDays(p.value)}
-                      className={cn(
-                        "rounded-lg py-2 text-[12px] font-medium transition-all",
-                        days === p.value
-                          ? "bg-blue-100 text-blue-700 ring-1 ring-blue-200"
-                          : "bg-slate-50 text-slate-600 hover:bg-slate-100 ring-1 ring-slate-200"
-                      )}
+                      onClick={() => setShowHidden(!showHidden)}
+                      className="text-[11px] text-blue-600 hover:text-blue-700 font-medium"
                     >
-                      {p.label}
+                      {showHidden ? "Masquer" : "Afficher"} la liste
                     </button>
-                  ))}
+                  </div>
+                  {showHidden && (
+                    <div className="mt-2 space-y-1">
+                      {Array.from(hiddenBuiltins).map((id) => {
+                        const rep = REPORT_CATALOG.find((r) => r.id === id);
+                        if (!rep) return null;
+                        return (
+                          <div key={id} className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+                            <span className="text-[12px] text-slate-700 truncate">{rep.label}</span>
+                            <button
+                              onClick={() => setHiddenBuiltins((prev) => {
+                                const next = new Set(prev);
+                                next.delete(id);
+                                saveHiddenBuiltins(next);
+                                return next;
+                              })}
+                              className="text-[10.5px] text-blue-600 hover:text-blue-700 font-medium shrink-0"
+                            >
+                              Restaurer
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
 
               {/* Organization */}
               <div>
@@ -1640,11 +1818,19 @@ export default function ReportsPage() {
 
         if (sectionReports.length === 0) {
           return (
-            <Card>
-              <CardContent className="p-12 text-center">
-                <LayoutDashboard className="h-8 w-8 text-slate-300 mx-auto mb-3" />
-                <h3 className="text-[15px] font-semibold text-slate-900">{emptyTitle}</h3>
-                <p className="mt-1 text-[13px] text-slate-500">{emptyHint}</p>
+            <Card className="border-dashed border-slate-300">
+              <CardContent className="p-14 text-center">
+                <div className="mx-auto mb-4 h-14 w-14 rounded-2xl bg-gradient-to-br from-blue-50 to-violet-50 ring-1 ring-inset ring-blue-100 flex items-center justify-center">
+                  <LayoutDashboard className="h-6 w-6 text-blue-500" />
+                </div>
+                <h3 className="text-[16px] font-semibold text-slate-900">{emptyTitle}</h3>
+                <p className="mt-1.5 text-[13px] text-slate-500 max-w-sm mx-auto leading-relaxed">{emptyHint}</p>
+                {view === ALL_VIEW && (
+                  <Button variant="primary" size="sm" className="mt-5" onClick={() => setShowCreateReport(true)}>
+                    <Plus className="h-3.5 w-3.5" />
+                    Créer un dashboard
+                  </Button>
+                )}
               </CardContent>
             </Card>
           );
@@ -1657,46 +1843,84 @@ export default function ReportsPage() {
               const isFav = favorites.includes(r.id);
               const widgetCount = resolveWidgets(r).length;
               const childCount = getChildren(r.id).length;
+              const isCustom = r.id.startsWith("custom_");
+              // Accent par catégorie — bande colorée verticale à gauche
+              // + fond icône. Permet de scanner la galerie plus vite.
+              const accent = CATEGORY_ACCENT[r.category] ?? CATEGORY_ACCENT.complet;
               return (
-                <button
+                <div
                   key={r.id}
-                  type="button"
+                  className="group relative flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-slate-300 hover:shadow-[0_12px_32px_-12px_rgba(15,23,42,0.18)] hover:-translate-y-0.5 transition-all cursor-pointer"
                   onClick={() => setView(r.id)}
-                  className="group relative flex flex-col text-left rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-blue-300 hover:shadow-[0_8px_24px_-8px_rgba(37,99,235,0.18)] transition-all p-5 min-h-[160px]"
                 >
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div className="h-10 w-10 rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      {r.icon}
+                  {/* Bande verticale colorée par catégorie — accent visuel subtil */}
+                  <div
+                    className="absolute left-0 top-0 bottom-0 w-1"
+                    style={{ backgroundColor: accent.bar }}
+                  />
+                  <div className="flex flex-col flex-1 p-5 pl-6">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div
+                        className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform ring-1 ring-inset"
+                        style={{
+                          backgroundColor: accent.bg,
+                          color: accent.fg,
+                          boxShadow: `inset 0 0 0 1px ${accent.ring}`,
+                        }}
+                      >
+                        {r.icon}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {isFav && (
+                          <span className="text-amber-500 text-[16px] drop-shadow-sm" title="Favori">★</span>
+                        )}
+                        {isPrimary && (
+                          <span className="text-[8.5px] font-bold uppercase tracking-wider bg-blue-600 text-white rounded-full px-2 py-0.5 shadow-sm">
+                            Défaut
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPublishingDashboardId(r.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 rounded-lg bg-slate-100 hover:bg-blue-600 text-slate-500 hover:text-white inline-flex items-center justify-center"
+                          title="Publier au portail client"
+                        >
+                          <Share2 className="h-3 w-3" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {isFav && <span className="text-amber-500 text-[14px]" title="Favori">★</span>}
-                      {isPrimary && (
-                        <span className="text-[8.5px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
-                          Défaut
+                    <h3 className="text-[15px] font-semibold text-slate-900 leading-tight mb-1.5 group-hover:text-blue-700 transition-colors">
+                      {r.label}
+                    </h3>
+                    <p className="text-[12px] text-slate-500 leading-relaxed line-clamp-2 mb-4">
+                      {r.description}
+                    </p>
+                    <div className="mt-auto flex items-center gap-1.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-700 tabular-nums">
+                        {widgetCount} widget{widgetCount > 1 ? "s" : ""}
+                      </span>
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold capitalize"
+                        style={{ backgroundColor: accent.bg, color: accent.fg }}
+                      >
+                        {r.category}
+                      </span>
+                      {childCount > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10.5px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200">
+                          {childCount} enfant{childCount > 1 ? "s" : ""}
+                        </span>
+                      )}
+                      {isCustom && (
+                        <span className="ml-auto text-[9.5px] font-bold uppercase tracking-wider text-slate-400">
+                          Custom
                         </span>
                       )}
                     </div>
                   </div>
-                  <h3 className="text-[14px] font-semibold text-slate-900 leading-tight mb-1.5 group-hover:text-blue-700 transition-colors">
-                    {r.label}
-                  </h3>
-                  <p className="text-[11.5px] text-slate-500 leading-relaxed line-clamp-2 mb-3">
-                    {r.description}
-                  </p>
-                  <div className="mt-auto flex items-center gap-2 flex-wrap">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-medium text-slate-600">
-                      {widgetCount} widget{widgetCount > 1 ? "s" : ""}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[10.5px] font-medium text-slate-500 capitalize">
-                      {r.category}
-                    </span>
-                    {childCount > 0 && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10.5px] font-medium text-violet-700">
-                        {childCount} enfant{childCount > 1 ? "s" : ""}
-                      </span>
-                    )}
-                  </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -1818,7 +2042,12 @@ export default function ReportsPage() {
                   case "top_tickets":
                     return fd ? <TopTicketsWidget data={fd} /> : null;
                   default:
-                    return <QueryWidgetRenderer widgetId={widgetId} />;
+                    return <QueryWidgetRenderer
+                      widgetId={widgetId}
+                      dashboardDays={days === "custom" ? 0 : (Number(days) || 30)}
+                      customFrom={days === "custom" ? customFrom : undefined}
+                      customTo={days === "custom" ? customTo : undefined}
+                    />;
                 }
               }}
             />
@@ -1834,6 +2063,205 @@ export default function ReportsPage() {
           onClose={() => setShowWidgetSidebar(false)}
         />
       )}
+
+      {/* Modale "Publier au portail" — sérialise le dashboard + ses
+          widgets custom et appelle /api/v1/dashboards/published. */}
+      {publishingDashboardId && (
+        <PublishDashboardModal
+          dashboard={allReports.find((r) => r.id === publishingDashboardId)!}
+          onClose={() => setPublishingDashboardId(null)}
+        />
+      )}
+
+      </div>
+    </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// PublishDashboardModal — snapshot du dashboard (widgets + layout) +
+// envoi à /api/v1/dashboards/published. Permet aussi de RETIRER une
+// publication existante.
+// ===========================================================================
+function PublishDashboardModal({
+  dashboard, onClose,
+}: {
+  dashboard: ReportDef;
+  onClose: () => void;
+}) {
+  const [orgs, setOrgs] = useState<Array<{ id: string; name: string }>>([]);
+  const [orgId, setOrgId] = useState<string>("");
+  const [existing, setExisting] = useState<{ id: string; organizationId: string | null; organizationName: string | null; updatedAt: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const [orgsRes, pubRes] = await Promise.all([
+        fetch("/api/v1/organizations").then((r) => r.ok ? r.json() : []).catch(() => []),
+        fetch(`/api/v1/dashboards/published?dashboardKey=${encodeURIComponent(dashboard.id)}`)
+          .then((r) => r.ok ? r.json() : [])
+          .catch(() => []),
+      ]);
+      const orgList = Array.isArray(orgsRes) ? orgsRes : (orgsRes?.data ?? []);
+      setOrgs(orgList.map((o: any) => ({ id: o.id, name: o.name })));
+      const publishedHere = Array.isArray(pubRes) ? pubRes[0] : null;
+      if (publishedHere) {
+        setExisting({
+          id: publishedHere.id,
+          organizationId: publishedHere.organizationId,
+          organizationName: publishedHere.organizationName,
+          updatedAt: publishedHere.updatedAt,
+        });
+        setOrgId(publishedHere.organizationId ?? "");
+      }
+      setLoading(false);
+    }
+    load();
+  }, [dashboard.id]);
+
+  // Sérialise le dashboard : on prend le layout depuis localStorage
+  // (nexus:report-layout:{id}) et les widgets custom concernés.
+  function buildSnapshot() {
+    const layoutRaw = localStorage.getItem(`nexus:report-layout:${dashboard.id}`);
+    const layout: any[] = layoutRaw ? JSON.parse(layoutRaw) : [];
+    const usedWidgetIds = new Set(layout.map((it: any) => it.widgetId));
+    const allWidgetsRaw = localStorage.getItem(QUERY_WIDGETS_KEY);
+    const allWidgets: any[] = allWidgetsRaw ? JSON.parse(allWidgetsRaw) : [];
+    // On ne retient que les widgets custom référencés par le layout —
+    // les widgets built-in (ticket_kpis, finance_kpis, …) ne sont pas
+    // publiables au portail (ils s'appuient sur des endpoints agent).
+    const widgets = allWidgets.filter((w) => usedWidgetIds.has(w.id));
+    // Filtre le layout aux seuls items dont le widget est inclus.
+    const includedIds = new Set(widgets.map((w) => w.id));
+    const cleanLayout = layout.filter((it: any) => includedIds.has(it.widgetId));
+    return { widgets, layout: cleanLayout };
+  }
+
+  async function publish() {
+    setSaving(true);
+    setMsg(null);
+    const snapshot = buildSnapshot();
+    if (snapshot.widgets.length === 0) {
+      setMsg("Ce dashboard ne contient aucun widget personnalisé publiable.");
+      setSaving(false);
+      return;
+    }
+    const res = await fetch("/api/v1/dashboards/published", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dashboardKey: dashboard.id,
+        label: dashboard.label,
+        description: dashboard.description,
+        organizationId: orgId || null,
+        config: snapshot,
+      }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setMsg(`Échec : ${d.error ?? res.status}`);
+    } else {
+      setMsg("Dashboard publié ✓");
+      setTimeout(onClose, 1200);
+    }
+    setSaving(false);
+  }
+
+  async function unpublish() {
+    if (!existing) return;
+    if (!confirm("Retirer ce dashboard du portail client ?")) return;
+    setSaving(true);
+    const res = await fetch(`/api/v1/dashboards/published?id=${existing.id}`, { method: "DELETE" });
+    if (res.ok) {
+      setExisting(null);
+      setMsg("Publication retirée.");
+      setTimeout(onClose, 1000);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4 sm:p-6">
+      <div className="relative w-full max-w-lg my-8 rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
+          <div>
+            <h2 className="text-[17px] font-semibold tracking-tight text-slate-900">Publier au portail client</h2>
+            <p className="text-[12.5px] text-slate-500 mt-0.5">{dashboard.label}</p>
+          </div>
+          <button onClick={onClose} className="h-9 w-9 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 flex items-center justify-center">
+            ×
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {loading ? (
+            <div className="py-8 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+          ) : (
+            <>
+              <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-[11.5px] text-blue-900 leading-relaxed">
+                <strong>Snapshot figé.</strong> Le portail affiche la version publiée
+                ici. Toute modification ultérieure du dashboard côté agent n&apos;aura
+                effet que si tu re-publies depuis cette fenêtre.
+                <br />
+                <br />
+                Seuls les <strong>widgets personnalisés</strong> (basés sur requêtes)
+                sont publiés. Les widgets KPI intégrés (tickets, finance…) restent
+                agent-only.
+              </div>
+
+              <div>
+                <label className="block text-[12px] font-medium text-slate-700 mb-1.5">
+                  Organisation destinataire
+                </label>
+                <Select value={orgId || "__all__"} onValueChange={(v) => setOrgId(v === "__all__" ? "" : v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">Toutes les organisations (portail)</SelectItem>
+                    {orgs.map((o) => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Les contacts de cette organisation verront le dashboard dans
+                  leur section <strong>Rapports</strong> (s&apos;ils ont la permission
+                  de voir les rapports). Les requêtes sont automatiquement
+                  scopées à leur organisation.
+                </p>
+              </div>
+
+              {existing && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2 text-[11.5px] text-emerald-900">
+                  ✓ Déjà publié pour {existing.organizationName ?? "toutes les organisations"} le{" "}
+                  {new Date(existing.updatedAt).toLocaleDateString("fr-CA")}
+                </div>
+              )}
+
+              {msg && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-700">
+                  {msg}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-200">
+          {existing ? (
+            <Button variant="outline" size="sm" onClick={unpublish} disabled={saving} className="text-red-600 hover:text-red-700">
+              Retirer du portail
+            </Button>
+          ) : <div />}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>Annuler</Button>
+            <Button variant="primary" size="sm" onClick={publish} disabled={saving || loading}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {existing ? "Re-publier" : "Publier"}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1842,7 +2270,24 @@ export default function ReportsPage() {
 // ===========================================================================
 // Query widget renderer — loads & executes a custom widget's query
 // ===========================================================================
-function QueryWidgetRenderer({ widgetId }: { widgetId: string }) {
+function QueryWidgetRenderer({
+  widgetId,
+  dashboardDays = 30,
+  customFrom,
+  customTo,
+}: {
+  widgetId: string;
+  /**
+   * Jours glissants. > 0 = calcule un range [now - days, now].
+   * 0 = pas d'override (laisse le widget utiliser sa propre config,
+   * ou "toute la période" si le widget n'en a pas) — utilisé quand
+   * l'user a sélectionné "Plage personnalisée" (voir customFrom/To).
+   */
+  dashboardDays?: number;
+  /** Range custom (ISO yyyy-mm-dd). Pris en compte si dashboardDays === 0. */
+  customFrom?: string;
+  customTo?: string;
+}) {
   const [result, setResult] = useState<{ label: string; value: number }[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [widget, setWidget] = useState<QueryWidget | null>(null);
@@ -1852,142 +2297,64 @@ function QueryWidgetRenderer({ widgetId }: { widgetId: string }) {
     const w = widgets.find((x) => x.id === widgetId);
     if (!w) { setLoading(false); return; }
     setWidget(w);
+
+    // Cascade période :
+    //  - dashboardDays > 0 → range glissant [now - N, now]
+    //  - dashboardDays = 0 + customFrom/To → range fixe
+    //  - sinon → pas d'override, le widget utilise ses propres dates
+    //    (ou aucune si dateField absent).
+    let overrideDateFrom: string | undefined;
+    let overrideDateTo: string | undefined;
+    if (dashboardDays > 0 && w.query?.dateField) {
+      const to = new Date();
+      const from = new Date();
+      from.setDate(to.getDate() - dashboardDays);
+      overrideDateFrom = from.toISOString();
+      overrideDateTo = to.toISOString();
+    } else if (dashboardDays === 0 && customFrom && customTo && w.query?.dateField) {
+      overrideDateFrom = new Date(customFrom).toISOString();
+      // Ajoute 23:59:59 à customTo pour inclure toute la journée.
+      const toDate = new Date(customTo);
+      toDate.setHours(23, 59, 59, 999);
+      overrideDateTo = toDate.toISOString();
+    }
+
     fetch("/api/v1/analytics/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(w.query),
+      body: JSON.stringify({ ...w.query, overrideDateFrom, overrideDateTo }),
     })
       .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d?.results) setResult(d.results); })
+      .then((d) => {
+        if (d?.results) {
+          // Remap timeType raw → libellé catégorie de base (côté client,
+          // puisque les customisations user vivent en localStorage).
+          setResult(remapBaseCategoryResults(
+            (w.query?.groupBy as string | undefined) ?? null,
+            d.results,
+          ));
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [widgetId]);
+  }, [widgetId, dashboardDays, customFrom, customTo]);
 
   if (loading) return <Card><CardContent className="p-5 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-slate-400" /></CardContent></Card>;
   if (!widget) return <Card><CardContent className="p-5 text-center text-slate-400 text-[13px]">Widget « {widgetId} » introuvable</CardContent></Card>;
   if (!result) return <Card><CardContent className="p-5 text-center text-slate-400 text-[13px]">Aucune donnée</CardContent></Card>;
 
-  const color = widget.color || "#2563eb";
-  const maxVal = Math.max(...result.map((r) => r.value), 1);
-  const isSingle = result.length === 1 && result[0].label === "Total";
-
+  // Délègue le rendu au composant partagé qui gère les 19 types de
+  // graphiques — mêmes règles que dans /analytics/widgets.
   return (
     <Card>
       <CardContent className="p-4">
-        <p className="text-[11px] font-semibold text-slate-500 mb-2">{widget.name}</p>
-        {(widget.chartType === "number" || isSingle) ? (
-          <div className="text-center py-2">
-            <p className="text-3xl font-bold tabular-nums" style={{ color }}>{result[0]?.value?.toLocaleString("fr-CA") ?? "—"}</p>
-          </div>
-        ) : widget.chartType === "bar" ? (
-          <div className="flex items-end gap-1 h-24">
-            {result.map((r, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <div className="w-full relative" style={{ height: "80px" }}>
-                  <div className="absolute bottom-0 left-0 right-0 rounded-t" style={{ height: `${Math.max((r.value / maxVal) * 100, 4)}%`, backgroundColor: color }} />
-                </div>
-                <span className="text-[8px] text-slate-400 truncate max-w-full text-center">{r.label}</span>
-              </div>
-            ))}
-          </div>
-        ) : widget.chartType === "horizontal_bar" ? (
-          <div className="space-y-1.5">
-            {result.map((r, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-600 w-24 truncate">{r.label}</span>
-                <div className="flex-1 h-4 rounded-full bg-slate-100 overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${(r.value / maxVal) * 100}%`, backgroundColor: color }} />
-                </div>
-                <span className="text-[10px] font-bold tabular-nums w-14 text-right">{r.value.toLocaleString("fr-CA")}</span>
-              </div>
-            ))}
-          </div>
-        ) : widget.chartType === "line" ? (
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={result} margin={{ top: 5, right: 10, left: 0, bottom: 15 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 10 }} />
-              <ReTooltip />
-              <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 3 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        ) : widget.chartType === "area" ? (
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={result} margin={{ top: 5, right: 10, left: 0, bottom: 15 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 10 }} />
-              <ReTooltip />
-              <Area type="monotone" dataKey="value" stroke={color} fill={color} fillOpacity={0.25} />
-            </AreaChart>
-          </ResponsiveContainer>
-        ) : widget.chartType === "pie" || widget.chartType === "donut" ? (
-          <ResponsiveContainer width="100%" height={200}>
-            <RePieChart>
-              <Pie
-                data={result}
-                dataKey="value"
-                nameKey="label"
-                cx="50%"
-                cy="50%"
-                outerRadius={70}
-                innerRadius={widget.chartType === "donut" ? 40 : 0}
-                label={(e: any) => `${e.label}`}
-                labelLine={false}
-              >
-                {result.map((_, i) => (
-                  <Cell key={i} fill={pickPieColors(color, result.length)[i]} />
-                ))}
-              </Pie>
-              <ReTooltip />
-            </RePieChart>
-          </ResponsiveContainer>
-        ) : widget.chartType === "scatter" ? (
-          <ResponsiveContainer width="100%" height={200}>
-            <ReScatterChart margin={{ top: 5, right: 10, left: 0, bottom: 15 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="x" tick={{ fontSize: 10 }} />
-              <YAxis dataKey="y" tick={{ fontSize: 10 }} />
-              <ReTooltip cursor={{ strokeDasharray: "3 3" }} />
-              <Scatter data={result.map((r, i) => ({ x: i + 1, y: r.value, label: r.label }))} fill={color} />
-            </ReScatterChart>
-          </ResponsiveContainer>
-        ) : widget.chartType === "radar" ? (
-          <ResponsiveContainer width="100%" height={220}>
-            <RadarChart data={result}>
-              <PolarGrid stroke="#e2e8f0" />
-              <PolarAngleAxis dataKey="label" tick={{ fontSize: 10 }} />
-              <PolarRadiusAxis tick={{ fontSize: 9 }} />
-              <Radar dataKey="value" stroke={color} fill={color} fillOpacity={0.4} />
-              <ReTooltip />
-            </RadarChart>
-          </ResponsiveContainer>
-        ) : widget.chartType === "sankey" ? (
-          <ResponsiveContainer width="100%" height={220}>
-            <Sankey
-              data={{
-                nodes: [{ name: "Total" }, ...result.map((r) => ({ name: r.label }))],
-                links: result.map((r, i) => ({ source: 0, target: i + 1, value: r.value || 1 })),
-              }}
-              nodePadding={20}
-              nodeWidth={12}
-              link={{ stroke: color, strokeOpacity: 0.4 }}
-              node={{ stroke: color, fill: color } as any}
-            >
-              <ReTooltip />
-            </Sankey>
-          </ResponsiveContainer>
-        ) : (
-          <div className="space-y-1">
-            {result.map((r, i) => (
-              <div key={i} className="flex justify-between py-1 border-b border-slate-100 last:border-0">
-                <span className="text-[11px] text-slate-700">{r.label}</span>
-                <span className="text-[11px] font-bold tabular-nums" style={{ color }}>{r.value.toLocaleString("fr-CA")}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        <WidgetChart
+          results={result}
+          chartType={widget.chartType as ChartType}
+          color={widget.color || "#2563eb"}
+          name={widget.name}
+          aggregate={typeof widget.query?.aggregate === "string" ? widget.query.aggregate : undefined}
+        />
       </CardContent>
     </Card>
   );
@@ -2700,5 +3067,408 @@ function DashboardRow({
         </div>
       )}
     </div>
+  );
+}
+
+// ===========================================================================
+// PeriodPicker — sélecteur de période avancé pour le panneau Filtres.
+// Combine presets glissants (7j/30j/...) + presets calendaires
+// (aujourd'hui, YTD, mois dernier, trimestre dernier) + range custom.
+// ===========================================================================
+function PeriodPicker({
+  days, setDays, customFrom, customTo, setCustomFrom, setCustomTo,
+}: {
+  days: string;
+  setDays: (v: string) => void;
+  customFrom: string;
+  customTo: string;
+  setCustomFrom: (v: string) => void;
+  setCustomTo: (v: string) => void;
+}) {
+  const isCustom = days === "custom";
+
+  // Presets glissants : expriment une durée relative à aujourd'hui.
+  // `days` prend la valeur exacte en jours, ce qui est compatible avec
+  // l'API existante (GET /reports/global?days=N).
+  const rollingPresets = [
+    { value: "7",   label: "7 jours" },
+    { value: "30",  label: "30 jours" },
+    { value: "90",  label: "3 mois" },
+    { value: "180", label: "6 mois" },
+    { value: "365", label: "1 an" },
+  ];
+
+  // Presets calendaires : on calcule à la volée le `days` équivalent
+  // selon la date courante. Appliqués au clic, pas stockés comme
+  // "YTD" car l'API ne comprend que jours glissants.
+  const calendarPresets = [
+    {
+      key: "today",
+      label: "Aujourd'hui",
+      apply: () => { setDays("1"); },
+    },
+    {
+      key: "last_week",
+      label: "Semaine dernière",
+      apply: () => { setDays("7"); },
+    },
+    {
+      key: "last_month",
+      label: "Mois dernier",
+      apply: () => {
+        // Du 1er du mois dernier au dernier jour du mois dernier.
+        const now = new Date();
+        const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const endLast = new Date(now.getFullYear(), now.getMonth(), 0);
+        setCustomFrom(lastMonth.toISOString().slice(0, 10));
+        setCustomTo(endLast.toISOString().slice(0, 10));
+        setDays("custom");
+      },
+    },
+    {
+      key: "last_quarter",
+      label: "Trimestre dernier",
+      apply: () => {
+        const now = new Date();
+        const currentQ = Math.floor(now.getMonth() / 3);
+        const lastQStartMonth = currentQ === 0 ? 9 : (currentQ - 1) * 3;
+        const lastQYear = currentQ === 0 ? now.getFullYear() - 1 : now.getFullYear();
+        const start = new Date(lastQYear, lastQStartMonth, 1);
+        const end = new Date(lastQYear, lastQStartMonth + 3, 0);
+        setCustomFrom(start.toISOString().slice(0, 10));
+        setCustomTo(end.toISOString().slice(0, 10));
+        setDays("custom");
+      },
+    },
+    {
+      key: "ytd",
+      label: "Année en cours",
+      apply: () => {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), 0, 1);
+        const diffDays = Math.max(1, Math.ceil((now.getTime() - start.getTime()) / 86_400_000));
+        setDays(String(diffDays));
+      },
+    },
+    {
+      key: "last_year",
+      label: "Année dernière",
+      apply: () => {
+        const now = new Date();
+        const start = new Date(now.getFullYear() - 1, 0, 1);
+        const end = new Date(now.getFullYear() - 1, 11, 31);
+        setCustomFrom(start.toISOString().slice(0, 10));
+        setCustomTo(end.toISOString().slice(0, 10));
+        setDays("custom");
+      },
+    },
+  ];
+
+  return (
+    <div className="space-y-3">
+      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        Période
+      </label>
+
+      {/* Presets glissants — grille compacte */}
+      <div>
+        <p className="mb-1.5 text-[10.5px] font-medium text-slate-500">Glissante (depuis aujourd'hui)</p>
+        <div className="grid grid-cols-5 gap-1">
+          {rollingPresets.map((p) => (
+            <button
+              key={p.value}
+              onClick={() => setDays(p.value)}
+              className={cn(
+                "rounded-lg py-2 text-[11px] font-medium transition-all",
+                days === p.value && !isCustom
+                  ? "bg-blue-100 text-blue-700 ring-1 ring-blue-200"
+                  : "bg-slate-50 text-slate-600 hover:bg-slate-100 ring-1 ring-slate-200",
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Presets calendaires — liste de boutons pills */}
+      <div>
+        <p className="mb-1.5 text-[10.5px] font-medium text-slate-500">Calendaire</p>
+        <div className="flex flex-wrap gap-1">
+          {calendarPresets.map((p) => (
+            <button
+              key={p.key}
+              onClick={p.apply}
+              className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Range personnalisé */}
+      <div>
+        <button
+          onClick={() => setDays(isCustom ? "30" : "custom")}
+          className={cn(
+            "w-full text-left rounded-md border px-2.5 py-1.5 text-[11.5px] font-medium transition-colors",
+            isCustom
+              ? "border-blue-200 bg-blue-50 text-blue-700"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+          )}
+        >
+          {isCustom ? "✓ Plage personnalisée" : "Utiliser une plage personnalisée"}
+        </button>
+        {isCustom && (
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10.5px] font-medium text-slate-500 mb-0.5">Du</label>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-[12px] focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10.5px] font-medium text-slate-500 mb-0.5">Au</label>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-[12px] focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// ParentChildrenPanel — sélection d'un parent, puis cases à cocher pour
+// attacher/détacher des dashboards enfants. Inverse de l'ancien flux où
+// il fallait ouvrir chaque enfant pour lui choisir un parent.
+//
+// Règle : seuls les dashboards CUSTOM (id commence par "custom_") peuvent
+// être attachés comme enfants (les built-in sont prédéfinis et ne
+// supportent pas l'héritage). N'importe quel dashboard peut ÊTRE un
+// parent. Les relations circulaires sont évitées côté UI (un candidat
+// enfant ne peut pas être le parent actuel, ni avoir le parent comme
+// descendant).
+// ===========================================================================
+function ParentChildrenPanel({
+  allReports,
+  getChildren,
+  setReportParent,
+  onClose,
+  initialParentId,
+}: {
+  allReports: ReportDef[];
+  getChildren: (id: string) => ReportDef[];
+  setReportParent: (id: string, parentId: string | null) => void;
+  onClose: () => void;
+  initialParentId?: string;
+}) {
+  const [parentId, setParentId] = useState<string>(initialParentId ?? allReports[0]?.id ?? "");
+  const [search, setSearch] = useState("");
+
+  const parent = allReports.find((r) => r.id === parentId);
+
+  // Candidats enfants : tous les dashboards CUSTOM sauf le parent
+  // lui-même et sauf ceux dont attacher créerait un cycle (si le
+  // parent est déjà dans leur chaîne descendante).
+  function isDescendantOf(targetId: string, ancestorId: string, visited = new Set<string>()): boolean {
+    if (visited.has(targetId)) return false;
+    visited.add(targetId);
+    const kids = getChildren(ancestorId);
+    for (const k of kids) {
+      if (k.id === targetId) return true;
+      if (isDescendantOf(targetId, k.id, visited)) return true;
+    }
+    return false;
+  }
+
+  const candidates = allReports
+    .filter((r) => r.id.startsWith("custom_"))
+    .filter((r) => r.id !== parentId)
+    .filter((r) => !isDescendantOf(parentId, r.id))
+    .filter((r) => !search.trim() || r.label.toLowerCase().includes(search.toLowerCase().trim()));
+
+  const currentChildIds = new Set(getChildren(parentId).map((c) => c.id));
+
+  function toggleChild(childId: string, checked: boolean) {
+    if (checked) {
+      setReportParent(childId, parentId);
+    } else {
+      setReportParent(childId, null);
+    }
+  }
+
+  function attachAll() {
+    for (const c of candidates) {
+      if (!currentChildIds.has(c.id)) setReportParent(c.id, parentId);
+    }
+  }
+
+  function detachAll() {
+    for (const id of currentChildIds) {
+      setReportParent(id, null);
+    }
+  }
+
+  return (
+    <Card className="border-violet-200 bg-gradient-to-br from-violet-50/40 via-white to-white shadow-sm">
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="h-9 w-9 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center">
+              <GitBranch className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-[15px] font-semibold text-slate-900">Relations parent → enfants</h3>
+              <p className="text-[11.5px] text-slate-500 mt-0.5">
+                Choisis un parent, puis coche les dashboards à attacher. Les enfants
+                héritent automatiquement des widgets du parent.
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="h-8 w-8 rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 flex items-center justify-center">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
+          {/* Sélecteur de parent */}
+          <div>
+            <label className="block text-[10.5px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
+              Parent
+            </label>
+            <Select value={parentId} onValueChange={setParentId}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {allReports.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    <span className="inline-flex items-center gap-1.5">
+                      {r.label}
+                      {r.id.startsWith("custom_")
+                        ? <span className="text-[9px] text-violet-500 uppercase tracking-wider">Custom</span>
+                        : <span className="text-[9px] text-slate-400 uppercase tracking-wider">Prédéfini</span>}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {parent && (
+              <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 px-3 py-2.5">
+                <p className="text-[11px] text-violet-700 font-semibold uppercase tracking-wider">
+                  Parent sélectionné
+                </p>
+                <p className="mt-0.5 text-[13px] font-semibold text-slate-900">{parent.label}</p>
+                <p className="text-[11.5px] text-slate-600 leading-snug">{parent.description}</p>
+                <p className="mt-2 text-[11px] text-violet-700">
+                  {currentChildIds.size} enfant{currentChildIds.size !== 1 ? "s" : ""} actuellement attaché{currentChildIds.size !== 1 ? "s" : ""}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Liste des enfants candidats */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+                Enfants (dashboards custom)
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={attachAll}
+                  disabled={!parentId || candidates.length === 0 || candidates.every((c) => currentChildIds.has(c.id))}
+                  className="text-[11px] text-blue-600 hover:text-blue-700 disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                >
+                  Tout attacher
+                </button>
+                <span className="text-slate-300">·</span>
+                <button
+                  type="button"
+                  onClick={detachAll}
+                  disabled={currentChildIds.size === 0}
+                  className="text-[11px] text-red-500 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                >
+                  Tout détacher
+                </button>
+              </div>
+            </div>
+            <div className="mb-2">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Rechercher un dashboard custom…"
+                className="w-full rounded-md border border-slate-200 px-3 py-1.5 text-[12px] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white max-h-[420px] overflow-y-auto divide-y divide-slate-100">
+              {candidates.length === 0 ? (
+                <div className="p-5 text-center text-[12px] text-slate-400">
+                  {search.trim()
+                    ? "Aucun dashboard custom ne correspond à cette recherche."
+                    : "Aucun dashboard custom disponible à attacher (crée-en d'abord via « Nouveau rapport »)."}
+                </div>
+              ) : (
+                candidates.map((c) => {
+                  const attached = currentChildIds.has(c.id);
+                  const currentParent = c.parentId ? allReports.find((p) => p.id === c.parentId) : null;
+                  const hasOtherParent = currentParent && currentParent.id !== parentId;
+                  return (
+                    <label
+                      key={c.id}
+                      className={cn(
+                        "flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors",
+                        attached ? "bg-violet-50/60 hover:bg-violet-50" : "hover:bg-slate-50",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={attached}
+                        onChange={(e) => toggleChild(c.id, e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn(
+                            "text-[13px] font-medium truncate",
+                            attached ? "text-violet-900" : "text-slate-800",
+                          )}>
+                            {c.label}
+                          </span>
+                          {hasOtherParent && (
+                            <span
+                              className="text-[9.5px] rounded bg-amber-50 text-amber-700 px-1.5 py-0.5 ring-1 ring-inset ring-amber-200"
+                              title={`Déjà attaché à ${currentParent?.label} — cocher ici le déplacera`}
+                            >
+                              Déjà attaché : {currentParent?.label}
+                            </span>
+                          )}
+                        </div>
+                        {c.description && (
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5">{c.description}</p>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+            <p className="mt-2 text-[10.5px] text-slate-500">
+              Coché = l'enfant hérite des widgets du parent. Si un dashboard est
+              déjà attaché à un autre parent, cocher ici le réassignera.
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

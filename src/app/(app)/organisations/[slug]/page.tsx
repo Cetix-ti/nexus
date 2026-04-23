@@ -58,6 +58,7 @@ import { OrgAssetsTabWrapper } from "@/components/assets/org-assets-tab-wrapper"
 import { OrgSlaSection } from "@/components/sla/org-sla-section";
 import { OrgPortalSection } from "@/components/portal/org-portal-section";
 import { OrgReportsTab } from "@/components/organizations/org-reports-tab";
+import { OrgAnalyticsWorkbench } from "@/components/organizations/org-analytics-workbench";
 import { OrgNetworkSection } from "@/components/organizations/org-network-section";
 import { OrgAiIntelligenceTab } from "@/components/organizations/org-ai-intelligence-tab";
 import { OrgBudgetTab } from "@/components/budgets/org-budget-tab";
@@ -1726,6 +1727,8 @@ export default function OrganizationDetailPage() {
           mensuels (livrables client PDF). Un seul onglet, deux sections. */}
       {activeTab === "reports" && canFinances && (
         <div className="space-y-6">
+          <OrgAnalyticsWorkbench organizationId={orgId} organizationName={o.name} />
+
           <OrgReportsTab organizationId={orgId} />
 
           <div>
