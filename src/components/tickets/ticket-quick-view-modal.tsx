@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -36,7 +36,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-editor";
+import { Switch } from "@/components/ui/switch";
 import { OrgLogo } from "@/components/organizations/org-logo";
+import {
+  loadWorkTypes,
+  bumpHourBankUsage,
+  type WorkTypeOption,
+} from "@/components/billing/client-billing-overrides-section";
 import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
 import {
   STATUS_CONFIG,
@@ -155,6 +161,7 @@ export function TicketQuickViewModal({
   onStatusChange,
 }: TicketQuickViewModalProps) {
   const { data: session } = useSession();
+  const router = useRouter();
   const sessUser = session?.user as
     | { firstName?: string; lastName?: string; email?: string }
     | undefined;
@@ -174,6 +181,23 @@ export function TicketQuickViewModal({
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [localComments, setLocalComments] = useState<LocalComment[]>([]);
+  // Le store liste les tickets sans `descriptionHtml` (payload trop lourd).
+  // Quand la modale s'ouvre on fetch le HTML sanitizé pour préserver la mise
+  // en page des courriels entrants (gras, images inline, listes, etc.).
+  const [descriptionHtml, setDescriptionHtml] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || !ticket?.id) { setDescriptionHtml(null); return; }
+    let cancelled = false;
+    fetch(`/api/v1/tickets/${ticket.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d) return;
+        const html = (d.data ?? d)?.descriptionHtml;
+        if (typeof html === "string" && html.trim()) setDescriptionHtml(html);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [open, ticket?.id]);
   const [localStatus, setLocalStatus] = useState<TicketStatus | undefined>(
     ticket?.status
   );
@@ -183,9 +207,46 @@ export function TicketQuickViewModal({
 
   // Quick time-entry state
   const [timeOpen, setTimeOpen] = useState(false);
-  const [timeType, setTimeType] = useState<"remote_work" | "onsite_work" | "other_work">(
-    "remote_work"
+  // Types de travail configurés pour l'organisation du ticket. Mêmes
+  // règles que dans AddTimeModal : fallback par défaut si rien n'est
+  // configuré, refresh quand on ouvre le formulaire ou quand l'org change.
+  const ticketOrgId = (ticket as unknown as { organizationId?: string })?.organizationId ?? "";
+  const [workTypes, setWorkTypes] = useState<WorkTypeOption[]>(() =>
+    ticketOrgId ? loadWorkTypes(ticketOrgId) : [],
   );
+  const [workTypeId, setWorkTypeId] = useState<string>(
+    () => (ticketOrgId ? loadWorkTypes(ticketOrgId)[0]?.id ?? "" : ""),
+  );
+  useEffect(() => {
+    if (!timeOpen || !ticketOrgId) return;
+    const list = loadWorkTypes(ticketOrgId);
+    setWorkTypes(list);
+    setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
+  }, [timeOpen, ticketOrgId]);
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (!e.key || !e.key.startsWith("nexus:client-work-types:")) return;
+      if (!ticketOrgId) return;
+      const list = loadWorkTypes(ticketOrgId);
+      setWorkTypes(list);
+      setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [ticketOrgId]);
+  const selectedWorkType = workTypes.find((w) => w.id === workTypeId) ?? workTypes[0];
+  const timeType = selectedWorkType?.timeType ?? "remote_work";
+  const [isAfterHours, setIsAfterHours] = useState(false);
+  const [isWeekend, setIsWeekend] = useState(false);
+  const [forceNonBillable, setForceNonBillable] = useState(false);
+  const [hasTravelBilled, setHasTravelBilled] = useState(false);
+  const [travelConflicts, setTravelConflicts] = useState<Array<{
+    id: string;
+    ticketId: string;
+    ticketNumber: number | null;
+    ticketSubject: string | null;
+    agentName: string | null;
+  }>>([]);
   const [timeMinutes, setTimeMinutes] = useState<number>(30);
   // Date de la saisie — par défaut aujourd'hui.
   const [timeDate, setTimeDate] = useState(() => {
@@ -202,6 +263,18 @@ export function TicketQuickViewModal({
   const [timeSaving, setTimeSaving] = useState(false);
   const [timeError, setTimeError] = useState<string | null>(null);
   const [timeSaved, setTimeSaved] = useState(false);
+
+  // Détection de déplacements déjà facturés pour ce client à la date saisie.
+  // Fetch déclenché à l'ouverture du form et au changement de date.
+  useEffect(() => {
+    if (!timeOpen || !ticketOrgId || !timeDate) { setTravelConflicts([]); return; }
+    const ctrl = new AbortController();
+    fetch(`/api/v1/time-entries/travel-conflicts?orgId=${ticketOrgId}&date=${timeDate}`, { signal: ctrl.signal })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => setTravelConflicts(d?.conflicts ?? []))
+      .catch(() => { /* silent */ });
+    return () => ctrl.abort();
+  }, [timeOpen, ticketOrgId, timeDate]);
 
   // Reset state when the modal switches to a DIFFERENT ticket.
   //
@@ -230,7 +303,13 @@ export function TicketQuickViewModal({
     setTimeDescription("");
     setTimeError(null);
     setTimeSaved(false);
-    setTimeType("remote_work");
+    setIsAfterHours(false);
+    setIsWeekend(false);
+    setForceNonBillable(false);
+    // Re-sélectionne le premier type de travail de la nouvelle org.
+    const list = ticketOrgId ? loadWorkTypes(ticketOrgId) : [];
+    setWorkTypes(list);
+    setWorkTypeId(list[0]?.id ?? "");
     setLocalStatus(ticket?.status);
     setLocalPriority(ticket?.priority);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -334,6 +413,10 @@ export function TicketQuickViewModal({
           durationMinutes: Math.round(timeMinutes),
           description: timeDescription.trim() || undefined,
           isOnsite: timeType === "onsite_work",
+          hasTravelBilled,
+          isAfterHours,
+          isWeekend,
+          ...(forceNonBillable ? { coverageStatus: "non_billable" } : {}),
         }),
       });
       if (!res.ok) {
@@ -341,6 +424,11 @@ export function TicketQuickViewModal({
         throw new Error(err.error || `Erreur ${res.status}`);
       }
       setTimeSaved(true);
+      // Déduit les heures de la banque du client si applicable.
+      bumpHourBankUsage(orgId, Math.round(timeMinutes), {
+        forceNonBillable,
+        workTypeId: selectedWorkType?.id ?? null,
+      });
       setTimeDescription("");
       setTimeMinutes(30);
       setTimeout(() => {
@@ -465,12 +553,20 @@ export function TicketQuickViewModal({
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <Link href={`/tickets/${ticket.id}`} onClick={onClose}>
-              <Button variant="outline" size="sm">
-                <ExternalLink className="h-3.5 w-3.5" strokeWidth={2.25} />
-                Page complète
-              </Button>
-            </Link>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                // Navigue d'abord, puis ferme la modale. Un simple
+                // <Link onClick={onClose}> démonte l'anchor avant que la
+                // navigation s'exécute (React 19) → rien ne se passe.
+                router.push(`/tickets/${ticket.id}`);
+                onClose();
+              }}
+            >
+              <ExternalLink className="h-3.5 w-3.5" strokeWidth={2.25} />
+              Page complète
+            </Button>
             <button
               type="button"
               onClick={onClose}
@@ -492,9 +588,14 @@ export function TicketQuickViewModal({
                 <h3 className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500 mb-2">
                   Description
                 </h3>
-                {ticket.description.includes("<") ? (
+                {descriptionHtml ? (
                   <div
-                    className="text-[13px] text-slate-700 leading-relaxed prose prose-sm prose-slate max-w-none [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_strong]:font-semibold [&_img]:max-w-full [&_img]:rounded-lg"
+                    className="text-[13px] text-slate-700 leading-relaxed prose prose-sm prose-slate max-w-none break-words [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:break-all [&_strong]:font-semibold [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_blockquote]:border-l-4 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-500 [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
+                    dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+                  />
+                ) : ticket.description.includes("<") ? (
+                  <div
+                    className="text-[13px] text-slate-700 leading-relaxed prose prose-sm prose-slate max-w-none break-words [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_strong]:font-semibold [&_img]:max-w-full [&_img]:rounded-lg"
                     dangerouslySetInnerHTML={{ __html: ticket.description }}
                   />
                 ) : (
@@ -871,21 +972,29 @@ export function TicketQuickViewModal({
                       </button>
                     </div>
 
-                    <Select
-                      value={timeType}
-                      onValueChange={(v) =>
-                        setTimeType(v as "remote_work" | "onsite_work" | "other_work")
-                      }
-                    >
-                      <SelectTrigger className="h-8 text-[12px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="remote_work">Travail à distance</SelectItem>
-                        <SelectItem value="onsite_work">Intervention sur place</SelectItem>
-                        <SelectItem value="other_work">Autre</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {workTypes.length === 0 ? (
+                      <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                        Aucun type de travail configuré pour ce client.
+                        Configure-les dans Organisations → Facturation → Types
+                        de travail.
+                      </p>
+                    ) : (
+                      <Select
+                        value={workTypeId}
+                        onValueChange={setWorkTypeId}
+                      >
+                        <SelectTrigger className="h-8 text-[12px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {workTypes.map((w) => (
+                            <SelectItem key={w.id} value={w.id}>
+                              {w.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
@@ -961,6 +1070,58 @@ export function TicketQuickViewModal({
                       className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
                     />
 
+                    {/* Horaire — Jour par défaut, Soir/Weekend cohabitent */}
+                    <div className="rounded-md border border-slate-200 bg-slate-50/50 p-2">
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-[9.5px] font-semibold uppercase tracking-wider text-slate-500">
+                          Horaire
+                        </span>
+                        {!isAfterHours && !isWeekend && (
+                          <span className="text-[9.5px] font-medium text-blue-700 bg-blue-50 rounded px-1.5 py-0.5">
+                            Jour (par défaut)
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-1">
+                        <label className="flex items-center justify-between gap-2 px-1">
+                          <span className="text-[11.5px] text-slate-700">De soir</span>
+                          <Switch checked={isAfterHours} onCheckedChange={setIsAfterHours} />
+                        </label>
+                        <label className="flex items-center justify-between gap-2 px-1">
+                          <span className="text-[11.5px] text-slate-700">Weekend</span>
+                          <Switch checked={isWeekend} onCheckedChange={setIsWeekend} />
+                        </label>
+                      </div>
+                      <div className="mt-1 border-t border-slate-200 pt-1 space-y-0.5">
+                        <label className="flex items-center justify-between gap-2 px-1">
+                          <span className="text-[11.5px] text-slate-700">Facturer un déplacement</span>
+                          <Switch checked={hasTravelBilled} onCheckedChange={setHasTravelBilled} />
+                        </label>
+                        <label className="flex items-center justify-between gap-2 px-1">
+                          <span className="text-[11.5px] text-slate-700">Forcer non-facturable</span>
+                          <Switch checked={forceNonBillable} onCheckedChange={setForceNonBillable} />
+                        </label>
+                      </div>
+                    </div>
+
+                    {travelConflicts.length > 0 && hasTravelBilled && (
+                      <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11.5px]">
+                        <div className="font-semibold text-amber-900 mb-0.5">
+                          ⚠️ Déplacement déjà facturé ce jour-là pour ce client
+                        </div>
+                        <ul className="text-amber-900 space-y-0.5">
+                          {travelConflicts.map((c) => (
+                            <li key={c.id}>
+                              <span className="font-medium">{c.agentName ?? "Technicien inconnu"}</span>
+                              {" · Ticket "}
+                              {c.ticketNumber != null ? `#${c.ticketNumber}` : c.ticketId.slice(0, 8)}
+                              {c.ticketSubject ? ` — ${c.ticketSubject}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
                     {timeError ? (
                       <p className="text-[11px] text-red-600">{timeError}</p>
                     ) : null}
@@ -977,7 +1138,7 @@ export function TicketQuickViewModal({
                       className="w-full"
                       onClick={handleSaveTimeEntry}
                       loading={timeSaving}
-                      disabled={timeSaving || timeSaved}
+                      disabled={timeSaving || timeSaved || !selectedWorkType}
                     >
                       Enregistrer
                     </Button>
