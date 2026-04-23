@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { AssetEngagementsSection } from "@/components/assets/asset-engagements-section";
 
 interface RelatedTicket {
   id: string;
@@ -375,6 +376,9 @@ export default function AssetDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Engagements — garanties / abonnements / contrats de support */}
+          <AssetEngagementsSection assetId={asset.id} />
         </div>
 
         {/* Right column */}
