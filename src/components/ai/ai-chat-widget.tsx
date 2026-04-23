@@ -184,6 +184,7 @@ export function AiChatWidget() {
       {/* Floating button */}
       {!open && (
         <button
+          data-floating-ui
           onClick={() => setOpen(true)}
           className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-violet-600 to-blue-600 text-white shadow-lg shadow-violet-500/30 hover:shadow-xl hover:shadow-violet-500/40 hover:scale-105 transition-all flex items-center justify-center"
         >

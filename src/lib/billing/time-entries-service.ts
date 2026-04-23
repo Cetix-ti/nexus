@@ -18,6 +18,7 @@ export interface TimeEntryRow {
   isWeekend: boolean;
   isUrgent: boolean;
   isOnsite: boolean;
+  hasTravelBilled: boolean;
   coverageStatus: string;
   coverageReason: string;
   hourlyRate: number | null;
@@ -102,6 +103,7 @@ export async function listTimeEntries(
     isWeekend: r.isWeekend,
     isUrgent: r.isUrgent,
     isOnsite: r.isOnsite,
+    hasTravelBilled: r.hasTravelBilled,
     coverageStatus: r.coverageStatus,
     coverageReason: r.coverageReason,
     hourlyRate: r.hourlyRate,
@@ -125,16 +127,41 @@ export async function createTimeEntry(input: {
   isWeekend?: boolean;
   isUrgent?: boolean;
   isOnsite?: boolean;
+  hasTravelBilled?: boolean;
+  // Ces 4 champs sont ignorés (laissés pour compat) — le serveur les
+  // recalcule via resolveDecisionForEntry() avec son état de vérité.
   coverageStatus?: string;
   coverageReason?: string;
   hourlyRate?: number | null;
   amount?: number | null;
+  forceNonBillable?: boolean;
 }) {
   const { checkBillingLock, BillingLockError } = await import("./period-lock");
   const lockMsg = await checkBillingLock(input.startedAt);
   if (lockMsg) throw new BillingLockError(lockMsg);
 
-  return prisma.timeEntry.create({
+  // Revalidation serveur : on ne fait JAMAIS confiance au client pour
+  // le rate / amount / coverage. Seuls les champs factuels (durée, type,
+  // flags contextuels) viennent du client.
+  const { resolveDecisionForEntry, bumpContractHourBank } = await import("./server-decide");
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: input.ticketId },
+    select: { categoryId: true },
+  });
+  const { decision, contract } = await resolveDecisionForEntry({
+    organizationId: input.organizationId,
+    timeType: input.timeType,
+    durationMinutes: input.durationMinutes,
+    startedAt: input.startedAt,
+    isOnsite: input.isOnsite,
+    isAfterHours: input.isAfterHours,
+    isWeekend: input.isWeekend,
+    isUrgent: input.isUrgent,
+    ticketCategoryId: ticket?.categoryId ?? undefined,
+    forceNonBillable: input.forceNonBillable,
+  });
+
+  const created = await prisma.timeEntry.create({
     data: {
       ticketId: input.ticketId,
       organizationId: input.organizationId,
@@ -148,12 +175,29 @@ export async function createTimeEntry(input: {
       isWeekend: input.isWeekend ?? false,
       isUrgent: input.isUrgent ?? false,
       isOnsite: input.isOnsite ?? false,
-      coverageStatus: input.coverageStatus ?? "pending",
-      coverageReason: input.coverageReason ?? "",
-      hourlyRate: input.hourlyRate ?? null,
-      amount: input.amount ?? null,
+      hasTravelBilled: input.hasTravelBilled ?? false,
+      coverageStatus: decision.status,
+      coverageReason: decision.reason,
+      hourlyRate: decision.rate ?? null,
+      amount: decision.amount ?? null,
     },
   });
+
+  // Banque d'heures : si la décision a consommé du solde, on incrémente
+  // atomiquement côté serveur (source de vérité, plus besoin du
+  // localStorage bumpHourBankUsage côté client).
+  if (
+    contract &&
+    (decision.status === "deducted_from_hour_bank" || decision.status === "hour_bank_overage") &&
+    contract.hourBank
+  ) {
+    const consumedMinutes = decision.status === "deducted_from_hour_bank"
+      ? input.durationMinutes
+      : Math.max(0, contract.hourBank.totalHoursPurchased * 60 - contract.hourBank.hoursConsumed * 60);
+    await bumpContractHourBank(contract.id, consumedMinutes);
+  }
+
+  return created;
 }
 
 export async function updateTimeEntry(id: string, patch: any) {
@@ -184,6 +228,7 @@ export async function updateTimeEntry(id: string, patch: any) {
   if (patch.isWeekend !== undefined) data.isWeekend = patch.isWeekend;
   if (patch.isUrgent !== undefined) data.isUrgent = patch.isUrgent;
   if (patch.isOnsite !== undefined) data.isOnsite = patch.isOnsite;
+  if (patch.hasTravelBilled !== undefined) data.hasTravelBilled = patch.hasTravelBilled;
   if (patch.coverageStatus !== undefined) data.coverageStatus = patch.coverageStatus;
   if (patch.coverageReason !== undefined) data.coverageReason = patch.coverageReason;
   if (patch.hourlyRate !== undefined) data.hourlyRate = patch.hourlyRate;

@@ -183,6 +183,12 @@ function SortableWidget({
     // View mode: explicitly span H rows so widgets aren't flattened to a
     // single 60-px track. Keep minHeight as a belt-and-suspenders for
     // browsers that ignore the row span when content is shorter.
+    //
+    // `h-full` + `[&>*]:h-full` : force the (single) child to fill the full
+    // height of the grid cell. Sans ça, si une ligne du grid devient tall
+    // à cause d'un widget voisin avec beaucoup de contenu, un widget plus
+    // court laisse un trou visible en bas de sa cellule. `min-h-0` évite
+    // que le flex enfant déborde.
     return (
       <div
         style={{
@@ -190,7 +196,7 @@ function SortableWidget({
           gridRow: rowSpan,
           minHeight: isMobile ? "auto" : `${displayH * ROW_PX}px`,
         }}
-        className="w-full"
+        className="w-full h-full flex flex-col [&>*]:flex-1 [&>*]:min-h-0"
       >
         {children}
       </div>
@@ -209,7 +215,7 @@ function SortableWidget({
         onSelect?.();
       }}
       className={cn(
-        "relative rounded-xl bg-white transition-shadow",
+        "relative rounded-xl bg-white transition-shadow flex flex-col",
         isDragging
           ? "ring-2 ring-blue-500 shadow-2xl"
           : isResizing
@@ -288,13 +294,15 @@ function SortableWidget({
         </button>
       </div>
 
-      {/* Content — dimmed during resize for clearer size feedback */}
+      {/* Content — dimmed during resize for clearer size feedback.
+          `flex-1` + `[&>*]:h-full` : le contenu occupe toute la hauteur
+          disponible de la carte, même si les données sont peu nombreuses.
+          Pas de trou entre la fin des données et le bas de la carte. */}
       <div
         className={cn(
-          "overflow-auto transition-opacity",
+          "flex-1 min-h-0 overflow-auto transition-opacity [&>*]:h-full",
           isResizing && "opacity-40",
         )}
-        style={{ maxHeight: `${displayH * ROW_PX - 32}px` }}
       >
         {children}
       </div>

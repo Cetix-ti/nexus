@@ -64,6 +64,14 @@ export function BugDetail({ bugId }: { bugId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [comment, setComment] = useState("");
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (previewIndex === null) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPreviewIndex(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [previewIndex]);
 
   async function load() {
     const r = await fetch(`/api/v1/bugs/${bugId}`);
@@ -180,11 +188,17 @@ export function BugDetail({ bugId }: { bugId: string }) {
             <div>
               <div className="text-[11px] uppercase tracking-wide text-slate-500 font-medium">Captures</div>
               <div className="flex items-center gap-2 flex-wrap mt-1">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 {bug.screenshots.map((s, i) => (
-                  <a key={i} href={s} target="_blank" rel="noopener" className="block">
-                    <img src={s} alt={`screenshot ${i + 1}`} className="h-20 w-20 object-cover rounded border border-slate-300" />
-                  </a>
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setPreviewIndex(i)}
+                    className="block p-0 border-0 bg-transparent cursor-zoom-in"
+                    aria-label={`Agrandir la capture ${i + 1}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={s} alt={`screenshot ${i + 1}`} className="h-20 w-20 object-cover rounded border border-slate-300 hover:border-slate-500 transition-colors" />
+                  </button>
                 ))}
               </div>
             </div>
@@ -283,6 +297,36 @@ export function BugDetail({ bugId }: { bugId: string }) {
           ))}
         </div>
       </div>
+      {previewIndex !== null && bug.screenshots && bug.screenshots[previewIndex] && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Aperçu de la capture"
+          onClick={() => setPreviewIndex(null)}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 cursor-zoom-out"
+        >
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setPreviewIndex(null); }}
+            className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2"
+            aria-label="Fermer"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={bug.screenshots[previewIndex]}
+            alt={`Capture ${previewIndex + 1}`}
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl cursor-default"
+          />
+          {bug.screenshots.length > 1 && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/70 text-xs tabular-nums bg-black/40 px-2 py-1 rounded">
+              {previewIndex + 1} / {bug.screenshots.length}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

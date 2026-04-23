@@ -5,7 +5,7 @@ import {
   createTimeEntry,
   deleteTimeEntry,
 } from "@/lib/billing/time-entries-service";
-import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { getCurrentUser, hasCapability, hasMinimumRole } from "@/lib/auth-utils";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -26,10 +26,15 @@ const createSchema = z.object({
   isWeekend: z.boolean().optional(),
   isUrgent: z.boolean().optional(),
   isOnsite: z.boolean().optional(),
+  hasTravelBilled: z.boolean().optional(),
+  // Les 4 champs suivants restent acceptés pour compat avec la modale
+  // actuelle, mais le serveur IGNORE leur valeur et recalcule tout via
+  // decideBilling. Ils servent uniquement à ne pas casser la signature.
   coverageStatus: z.string().optional(),
   coverageReason: z.string().optional(),
   hourlyRate: z.number().optional().nullable(),
   amount: z.number().optional().nullable(),
+  forceNonBillable: z.boolean().optional(),
 });
 
 export async function GET(req: Request) {
@@ -52,6 +57,13 @@ export async function GET(req: Request) {
     to: toStr ? new Date(toStr) : undefined,
   });
 
+  // Les champs `hourlyRate` et `amount` sont sensibles (confidentialité
+  // tarifaire). On les redacte pour tout utilisateur sans la capacité
+  // "finances". Ils restent accessibles via /finances et /analytics pour
+  // les rôles autorisés (qui appliquent leur propre gate).
+  if (!hasCapability(me, "finances")) {
+    return NextResponse.json(rows.map((r) => ({ ...r, hourlyRate: null, amount: null })));
+  }
   return NextResponse.json(rows);
 }
 
@@ -88,10 +100,7 @@ export async function POST(req: Request) {
       isWeekend: d.isWeekend,
       isUrgent: d.isUrgent,
       isOnsite: d.isOnsite,
-      coverageStatus: d.coverageStatus,
-      coverageReason: d.coverageReason,
-      hourlyRate: d.hourlyRate ?? null,
-      amount: d.amount ?? null,
+      forceNonBillable: d.forceNonBillable,
     });
     return NextResponse.json(created, { status: 201 });
   } catch (e) {

@@ -14,7 +14,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
-  TIME_TYPE_LABELS,
   TIME_TYPE_ICONS,
   type TimeType,
   type TimeEntry,
@@ -22,6 +21,10 @@ import {
 import { decideBilling } from "@/lib/billing/engine";
 import { mockBillingProfiles, mockContracts } from "@/lib/billing/mock-data";
 import { CoverageBadge } from "./coverage-badge";
+import {
+  loadWorkTypes,
+  type WorkTypeOption,
+} from "./client-billing-overrides-section";
 
 interface AddTimeModalProps {
   open: boolean;
@@ -57,19 +60,80 @@ export function AddTimeModal({
   organizationName,
   onSave,
 }: AddTimeModalProps) {
-  const [timeType, setTimeType] = useState<TimeType>("remote_work");
+  // Types de travail filtrés pour cette organisation (configurés dans
+  // Organisations → Facturation → "Types de travail"). Fallback au
+  // catalogue complet si aucun n'est configuré.
+  // On relit le localStorage chaque fois que la modale devient visible,
+  // sinon une config faite dans un autre onglet n'est pas reflétée ici
+  // tant que la page n'est pas rechargée (la modale reste montée entre
+  // deux ouvertures).
+  const [workTypes, setWorkTypesState] = useState<WorkTypeOption[]>(() =>
+    loadWorkTypes(organizationId),
+  );
+  const [workTypeId, setWorkTypeId] = useState<string>(
+    () => loadWorkTypes(organizationId)[0]?.id ?? "",
+  );
+  useEffect(() => {
+    if (!open) return;
+    const list = loadWorkTypes(organizationId);
+    setWorkTypesState(list);
+    // Garde une sélection valide si le type courant a été retiré côté
+    // facturation entre-temps.
+    setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
+  }, [open, organizationId]);
+  // Cross-tab : si l'utilisateur modifie la liste dans un autre onglet,
+  // reflète le changement dès que le storage émet l'event.
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (!e.key || !e.key.startsWith("nexus:client-work-types:")) return;
+      const list = loadWorkTypes(organizationId);
+      setWorkTypesState(list);
+      setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [organizationId]);
+  const selectedWorkType =
+    workTypes.find((w) => w.id === workTypeId) ?? workTypes[0];
+  const timeType: TimeType = selectedWorkType?.timeType ?? "remote_work";
   const [date, setDate] = useState(todayISODate());
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
   const [manualMode, setManualMode] = useState(true);
   const [manualMinutes, setManualMinutes] = useState(60);
   const [description, setDescription] = useState("");
-  const [isOnsite, setIsOnsite] = useState(false);
+  // Sur place est dérivé du type de travail sélectionné.
+  const isOnsite = selectedWorkType?.timeType === "onsite_work";
+  // Horaire : Jour par défaut. Les toggles De soir / Weekend peuvent
+  // coexister (ex. samedi soir).
   const [isAfterHours, setIsAfterHours] = useState(false);
   const [isWeekend, setIsWeekend] = useState(false);
-  const [isUrgent, setIsUrgent] = useState(false);
   const [forceNonBillable, setForceNonBillable] = useState(false);
+  const [hasTravelBilled, setHasTravelBilled] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Détection de déplacements déjà facturés ce même jour pour cette org.
+  // Rechargé quand la date ou l'org change. Non-bloquant : si l'API échoue
+  // on affiche juste pas d'avertissement.
+  const [travelConflicts, setTravelConflicts] = useState<Array<{
+    id: string;
+    ticketId: string;
+    ticketNumber: number | null;
+    ticketSubject: string | null;
+    agentName: string | null;
+    startedAt: string;
+  }>>([]);
+  useEffect(() => {
+    if (!organizationId || !date) { setTravelConflicts([]); return; }
+    const ctrl = new AbortController();
+    fetch(`/api/v1/time-entries/travel-conflicts?orgId=${organizationId}&date=${date}`, {
+      signal: ctrl.signal,
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => setTravelConflicts(d?.conflicts ?? []))
+      .catch(() => { /* silent — non-bloquant */ });
+    return () => ctrl.abort();
+  }, [organizationId, date]);
 
   // Load current user name
   const [currentUserName, setCurrentUserName] = useState("—");
@@ -119,7 +183,7 @@ export function AddTimeModal({
       isOnsite,
       isAfterHours,
       isWeekend,
-      isUrgent,
+      isUrgent: false,
       organizationId,
       contract,
       billingProfile,
@@ -131,7 +195,6 @@ export function AddTimeModal({
     isOnsite,
     isAfterHours,
     isWeekend,
-    isUrgent,
     organizationId,
     contract,
     billingProfile,
@@ -140,25 +203,19 @@ export function AddTimeModal({
 
   if (!open) return null;
 
-  function handleTypeChange(t: TimeType) {
-    setTimeType(t);
-    if (t === "onsite_work") setIsOnsite(true);
-    if (t === "remote_work") setIsOnsite(false);
-  }
-
   function reset() {
-    setTimeType("remote_work");
+    const first = workTypes[0]?.id ?? "";
+    setWorkTypeId(first);
     setDate(todayISODate());
     setStartTime("09:00");
     setEndTime("10:00");
     setManualMode(false);
     setManualMinutes(60);
     setDescription("");
-    setIsOnsite(false);
     setIsAfterHours(false);
     setIsWeekend(false);
-    setIsUrgent(false);
     setForceNonBillable(false);
+    setHasTravelBilled(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -191,8 +248,12 @@ export function AddTimeModal({
         description,
         isAfterHours,
         isWeekend,
-        isUrgent,
+        isUrgent: false,
         isOnsite,
+        hasTravelBilled,
+        // Preview seulement — le serveur recalcule autoritairement via
+        // resolveDecisionForEntry(). On l'envoie pour compat mais le POST
+        // remplace ces 4 champs par la décision serveur.
         coverageStatus: decision.status,
         coverageReason: decision.reason,
         hourlyRate: decision.rate,
@@ -200,10 +261,15 @@ export function AddTimeModal({
         approvalStatus: "draft",
         createdAt: now,
         updatedAt: now,
+        // Flag transmis au serveur pour qu'il honore le toggle "Forcer non
+        // facturable" dans sa revalidation.
+        ...(forceNonBillable ? { forceNonBillable: true } as any : {}),
       };
       // Awaité : sans await, on fermait la modale avant que le POST ait
       // rendu, et l'utilisateur pouvait ré-ouvrir puis re-poster.
       await onSave(entry);
+      // La décrémentation du solde de banque d'heures est maintenant
+      // faite côté serveur dans createTimeEntry(). Pas de double-compte.
       reset();
       onClose();
     } finally {
@@ -239,20 +305,27 @@ export function AddTimeModal({
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           <div>
             <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-              Type de temps
+              Type de travail
             </label>
-            <Select value={timeType} onValueChange={(v) => handleTypeChange(v as TimeType)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.keys(TIME_TYPE_LABELS) as TimeType[]).map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {TIME_TYPE_ICONS[t]} {TIME_TYPE_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {workTypes.length === 0 ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+                Aucun type de travail configuré pour ce client. Configure-les
+                dans Organisations → Facturation → Types de travail.
+              </p>
+            ) : (
+              <Select value={workTypeId} onValueChange={setWorkTypeId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {workTypes.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {TIME_TYPE_ICONS[w.timeType]} {w.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -361,20 +434,71 @@ export function AddTimeModal({
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 rounded-xl border border-slate-200/80 bg-slate-50/50 p-4">
-            {[
-              { label: "Sur site", value: isOnsite, set: setIsOnsite },
-              { label: "Heures supplémentaires", value: isAfterHours, set: setIsAfterHours },
-              { label: "Week-end", value: isWeekend, set: setIsWeekend },
-              { label: "Intervention urgente", value: isUrgent, set: setIsUrgent },
-              { label: "Forcer non-facturable", value: forceNonBillable, set: setForceNonBillable },
-            ].map((row) => (
-              <label key={row.label} className="flex items-center justify-between gap-3 px-2 py-1.5">
-                <span className="text-[13px] text-slate-700">{row.label}</span>
-                <Switch checked={row.value} onCheckedChange={row.set} />
+          {/* Horaire : Jour par défaut. De soir et Weekend sont des
+              cases à cocher qui peuvent coexister (ex : samedi soir). */}
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Horaire
+              </span>
+              {!isAfterHours && !isWeekend && (
+                <span className="text-[11px] font-medium text-blue-700 bg-blue-50 rounded px-1.5 py-0.5">
+                  Jour (par défaut)
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label className="flex items-center justify-between gap-3 px-2 py-1.5">
+                <span className="text-[13px] text-slate-700">De soir</span>
+                <Switch checked={isAfterHours} onCheckedChange={setIsAfterHours} />
               </label>
-            ))}
+              <label className="flex items-center justify-between gap-3 px-2 py-1.5">
+                <span className="text-[13px] text-slate-700">Weekend</span>
+                <Switch checked={isWeekend} onCheckedChange={setIsWeekend} />
+              </label>
+            </div>
+            <div className="mt-2 border-t border-slate-200 pt-2 space-y-1">
+              <label className="flex items-center justify-between gap-3 px-2 py-1.5">
+                <span className="text-[13px] text-slate-700">Facturer un déplacement</span>
+                <Switch checked={hasTravelBilled} onCheckedChange={setHasTravelBilled} />
+              </label>
+              <label className="flex items-center justify-between gap-3 px-2 py-1.5">
+                <span className="text-[13px] text-slate-700">Forcer non-facturable</span>
+                <Switch checked={forceNonBillable} onCheckedChange={setForceNonBillable} />
+              </label>
+            </div>
           </div>
+
+          {/* Avertissement : un autre technicien a déjà facturé un déplacement
+              chez ce client le même jour. Laisse la décision à l'utilisateur. */}
+          {travelConflicts.length > 0 && hasTravelBilled && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 sm:p-4">
+              <div className="flex items-start gap-2.5">
+                <div className="shrink-0 text-amber-600 mt-0.5">⚠️</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold text-amber-900">
+                    Déplacement déjà facturé ce jour-là chez {organizationName}
+                  </div>
+                  <ul className="mt-1.5 space-y-1 text-[12.5px] text-amber-900">
+                    {travelConflicts.map((c) => (
+                      <li key={c.id} className="flex flex-wrap items-center gap-x-2">
+                        <span className="font-medium">{c.agentName ?? "Technicien inconnu"}</span>
+                        <span className="text-amber-700">·</span>
+                        <span>
+                          Ticket{" "}
+                          {c.ticketNumber != null ? `#${c.ticketNumber}` : c.ticketId.slice(0, 8)}
+                          {c.ticketSubject ? ` — ${c.ticketSubject}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-[11.5px] text-amber-800">
+                    Vérifiez avec votre collègue avant de facturer un second déplacement. Décochez le toggle ci-dessus si non applicable.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {decision && (
             <div className="rounded-xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">

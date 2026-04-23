@@ -58,6 +58,8 @@ import { OrgAssetsTabWrapper } from "@/components/assets/org-assets-tab-wrapper"
 import { OrgSlaSection } from "@/components/sla/org-sla-section";
 import { OrgPortalSection } from "@/components/portal/org-portal-section";
 import { OrgReportsTab } from "@/components/organizations/org-reports-tab";
+import { OrgAnalyticsWorkbench } from "@/components/organizations/org-analytics-workbench";
+import { OrgHistorySection } from "@/components/organizations/org-history-section";
 import { OrgNetworkSection } from "@/components/organizations/org-network-section";
 import { OrgAiIntelligenceTab } from "@/components/organizations/org-ai-intelligence-tab";
 import { OrgBudgetTab } from "@/components/budgets/org-budget-tab";
@@ -1594,13 +1596,34 @@ export default function OrganizationDetailPage() {
         )
       )}
 
-      {/* Billing Tab */}
+      {/* Billing Tab — overrides tarifaires + rapports mensuels + auto-publish */}
       {activeTab === "billing" && canFinances && (
-        <div className="space-y-5">
+        <div className="space-y-6">
           <ClientBillingOverridesSection
             organizationId={orgId}
             organizationName={o.name}
           />
+
+          <div>
+            <div className="mb-3 flex items-center gap-2.5">
+              <div className="h-9 w-9 rounded-lg bg-indigo-50 flex items-center justify-center">
+                <FileText className="h-4.5 w-4.5 text-indigo-700" />
+              </div>
+              <div>
+                <h3 className="text-[15px] font-semibold text-slate-900">
+                  Rapports mensuels (livrables client)
+                </h3>
+                <p className="text-[11.5px] text-slate-500 mt-0.5">
+                  Génération PDF, publication automatique et historique des
+                  rapports envoyés au client.
+                </p>
+              </div>
+            </div>
+            <OrgMonthlyReportsTab
+              organizationId={orgId}
+              initialAutoPublish={dbOrg?.monthlyReportAutoPublish ?? false}
+            />
+          </div>
         </div>
       )}
 
@@ -1726,27 +1749,13 @@ export default function OrganizationDetailPage() {
           mensuels (livrables client PDF). Un seul onglet, deux sections. */}
       {activeTab === "reports" && canFinances && (
         <div className="space-y-6">
-          <OrgReportsTab organizationId={orgId} />
+          {/* Rapports personnalisés attribués à cette org — synchronisés
+              avec /analytics/dashboards. Wrappé en error boundary. */}
+          <OrgAnalyticsWorkbench organizationId={orgId} organizationName={o.name} />
 
-          <div>
-            <div className="mb-3 flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-lg bg-indigo-50 flex items-center justify-center">
-                <FileText className="h-4.5 w-4.5 text-indigo-700" />
-              </div>
-              <div>
-                <h3 className="text-[15px] font-semibold text-slate-900">
-                  Rapports mensuels (livrables client)
-                </h3>
-                <p className="text-[11.5px] text-slate-500 mt-0.5">
-                  Rapports PDF formatés à destination du client · auto-publication portail
-                </p>
-              </div>
-            </div>
-            <OrgMonthlyReportsTab
-              organizationId={orgId}
-              initialAutoPublish={dbOrg?.monthlyReportAutoPublish ?? false}
-            />
-          </div>
+          <OrgHistorySection organizationId={orgId} />
+
+          <OrgReportsTab organizationId={orgId} />
         </div>
       )}
 
