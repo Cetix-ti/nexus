@@ -1499,6 +1499,12 @@ model TimeEntry {
   isWeekend       Boolean   @default(false) @map("is_weekend")
   isUrgent        Boolean   @default(false) @map("is_urgent")
   isOnsite        Boolean   @default(false) @map("is_onsite")
+  /// Déplacement facturé au client pour cette saisie. Décorrélé de isOnsite :
+  /// un technicien peut se déplacer sans facturer le déplacement (ex: courtoisie,
+  /// contrat FTIG inclusif) OU facturer un déplacement sur un travail partiellement
+  /// sur place. Utilisé par les widgets analytics pour compter les déplacements
+  /// et par la détection de doublons même-jour même-client.
+  hasTravelBilled Boolean   @default(false) @map("has_travel_billed")
   coverageStatus  String    @default("pending") @map("coverage_status")
   coverageReason  String    @default("") @map("coverage_reason")
   hourlyRate      Float?    @map("hourly_rate")

@@ -103,6 +103,7 @@ const DATASETS: Record<string, DatasetDef> = {
       { name: "agentId", label: "Technicien", type: "relation", groupable: true, aggregable: false },
       { name: "ticketId", label: "Ticket", type: "relation", groupable: true, aggregable: false },
       { name: "isOnsite", label: "Sur place", type: "boolean", groupable: true, aggregable: false },
+      { name: "hasTravelBilled", label: "Déplacement facturé", type: "boolean", groupable: true, aggregable: false },
       { name: "isAfterHours", label: "Hors heures", type: "boolean", groupable: true, aggregable: false },
       { name: "isWeekend", label: "Fin de semaine", type: "boolean", groupable: true, aggregable: false },
       { name: "isUrgent", label: "Urgent", type: "boolean", groupable: true, aggregable: false },
