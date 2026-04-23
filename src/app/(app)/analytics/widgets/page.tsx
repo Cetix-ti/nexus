@@ -233,6 +233,106 @@ const emptyQuery = (): WidgetQuery => ({
   sortBy: "value", sortDir: "desc", limit: 20, dateField: "", dateFrom: "", dateTo: "",
 });
 
+// ---------------------------------------------------------------------------
+// Presets — widgets prédéfinis que l'utilisateur peut créer en 1 clic.
+// Chaque preset remplit le formulaire ; l'utilisateur peut ensuite ajuster.
+// ---------------------------------------------------------------------------
+interface WidgetPreset {
+  id: string;
+  label: string;
+  description: string;
+  chartType: ChartType;
+  color: string;
+  query: WidgetQuery;
+}
+
+const WIDGET_PRESETS: WidgetPreset[] = [
+  {
+    id: "travel_count_total",
+    label: "Nombre de déplacements facturés",
+    description: "Total des saisies de temps où le déplacement a été coché",
+    chartType: "number",
+    color: "#d97706",
+    query: {
+      dataset: "time_entries",
+      filters: [{ field: "hasTravelBilled", operator: "eq", value: "true" }],
+      groupBy: "", aggregate: "count", aggregateField: "",
+      sortBy: "value", sortDir: "desc", limit: 20,
+      dateField: "startedAt", dateFrom: "", dateTo: "",
+    },
+  },
+  {
+    id: "travel_count_by_agent",
+    label: "Déplacements par technicien",
+    description: "Nombre de déplacements facturés décomposé par technicien",
+    chartType: "horizontal_bar",
+    color: "#d97706",
+    query: {
+      dataset: "time_entries",
+      filters: [{ field: "hasTravelBilled", operator: "eq", value: "true" }],
+      groupBy: "agentId", aggregate: "count", aggregateField: "",
+      sortBy: "value", sortDir: "desc", limit: 15,
+      dateField: "startedAt", dateFrom: "", dateTo: "",
+    },
+  },
+  {
+    id: "travel_count_by_org",
+    label: "Déplacements par client",
+    description: "Nombre de déplacements facturés par organisation",
+    chartType: "horizontal_bar",
+    color: "#2563eb",
+    query: {
+      dataset: "time_entries",
+      filters: [{ field: "hasTravelBilled", operator: "eq", value: "true" }],
+      groupBy: "organizationId", aggregate: "count", aggregateField: "",
+      sortBy: "value", sortDir: "desc", limit: 15,
+      dateField: "startedAt", dateFrom: "", dateTo: "",
+    },
+  },
+  {
+    id: "travel_trend_monthly",
+    label: "Tendance mensuelle des déplacements",
+    description: "Évolution mensuelle des déplacements facturés",
+    chartType: "line",
+    color: "#059669",
+    query: {
+      dataset: "time_entries",
+      filters: [{ field: "hasTravelBilled", operator: "eq", value: "true" }],
+      groupBy: "startedAt_by_month", aggregate: "count", aggregateField: "",
+      sortBy: "chronological", sortDir: "asc", limit: 24,
+      dateField: "startedAt", dateFrom: "", dateTo: "",
+    },
+  },
+  {
+    id: "hours_billable_by_category",
+    label: "Heures facturables par catégorie",
+    description: "Total d'heures décomposé par catégorie de base (timeType)",
+    chartType: "donut",
+    color: "#7c3aed",
+    query: {
+      dataset: "time_entries",
+      filters: [{ field: "coverageStatus", operator: "in", value: "billable,travel_billable,hour_bank_overage,msp_overage" }],
+      groupBy: "timeType", aggregate: "sum", aggregateField: "durationMinutes",
+      sortBy: "value", sortDir: "desc", limit: 10,
+      dateField: "startedAt", dateFrom: "", dateTo: "",
+    },
+  },
+  {
+    id: "tickets_by_status",
+    label: "Tickets par statut",
+    description: "Répartition actuelle des tickets par statut",
+    chartType: "pie",
+    color: "#2563eb",
+    query: {
+      dataset: "tickets",
+      filters: [],
+      groupBy: "status", aggregate: "count", aggregateField: "",
+      sortBy: "value", sortDir: "desc", limit: 15,
+      dateField: "createdAt", dateFrom: "", dateTo: "",
+    },
+  },
+];
+
 // ===========================================================================
 // Page
 // ===========================================================================
@@ -295,6 +395,19 @@ export default function WidgetEditorPage() {
     setFQuery(emptyQuery()); setPreviewResults(null); setPreviewError(null);
   }
   function startCreate() { resetForm(); setEditing(null); setCreating(true); }
+
+  /** Démarre une création avec un preset prérempli. */
+  function startCreateFromPreset(preset: WidgetPreset) {
+    resetForm();
+    setEditing(null);
+    setFName(preset.label);
+    setFDesc(preset.description);
+    setFChart(preset.chartType);
+    setFColor(preset.color);
+    setFStyle({ ...DEFAULT_STYLE, primaryColor: preset.color });
+    setFQuery(preset.query);
+    setCreating(true);
+  }
   function startEdit(w: CustomWidget) {
     setFName(w.name); setFDesc(w.description); setFChart(w.chartType); setFColor(w.color);
     setFStyle(mergeStyle(w.style, w.color));
@@ -887,15 +1000,55 @@ export default function WidgetEditorPage() {
       )}
 
       {/* ============================================================ */}
+      {/* Presets — création rapide */}
+      {/* ============================================================ */}
+      {!creating && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+              <div>
+                <h3 className="text-[14px] font-semibold text-slate-900 inline-flex items-center gap-1.5">
+                  <BarChart3 className="h-4 w-4 text-violet-600" /> Modèles prédéfinis
+                </h3>
+                <p className="text-[11.5px] text-slate-500 mt-0.5">
+                  Crée un widget en un clic à partir d&apos;un modèle courant. Tu peux ensuite l&apos;ajuster.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {WIDGET_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => startCreateFromPreset(p)}
+                  className="text-left rounded-lg border border-slate-200 bg-white hover:border-violet-300 hover:shadow-sm transition-all p-3"
+                >
+                  <div className="flex items-start gap-2">
+                    <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: p.color + "20" }}>
+                      {CHART_TYPES.find((c) => c.id === p.chartType)?.icon ?? <BarChart3 className="h-4 w-4" style={{ color: p.color }} />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[12.5px] font-semibold text-slate-900 truncate">{p.label}</div>
+                      <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{p.description}</p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ============================================================ */}
       {/* Widget cards */}
       {/* ============================================================ */}
       {widgets.length === 0 && !creating && (
         <Card>
           <CardContent className="p-12 text-center">
             <BarChart3 className="h-8 w-8 text-slate-300 mx-auto mb-3" />
-            <h3 className="text-[15px] font-semibold text-slate-900">Aucun widget</h3>
-            <p className="mt-1 text-[13px] text-slate-500">Créez des widgets personnalisés avec l&apos;assistant visuel.</p>
-            <Button variant="primary" className="mt-4" onClick={startCreate}><Plus className="h-4 w-4" /> Créer</Button>
+            <h3 className="text-[15px] font-semibold text-slate-900">Aucun widget créé</h3>
+            <p className="mt-1 text-[13px] text-slate-500">Commence avec un modèle ci-dessus, ou lance l&apos;assistant vide.</p>
+            <Button variant="primary" className="mt-4" onClick={startCreate}><Plus className="h-4 w-4" /> Créer depuis zéro</Button>
           </CardContent>
         </Card>
       )}
