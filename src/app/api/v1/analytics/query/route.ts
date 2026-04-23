@@ -785,48 +785,97 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
   const fieldTypes = new Map<string, string>();
   for (const fd of def.fields) fieldTypes.set(fd.name, fd.type);
 
+  /**
+   * Coerce une valeur brute (souvent string venant du client) vers le type
+   * attendu par Prisma pour ce champ. Retourne `undefined` si la coercion
+   * échoue (valeur vide, string invalide sur un champ number/bool/date) :
+   * le caller doit alors SKIPPER le filtre plutôt que crasher Prisma.
+   */
   function coerce(field: string, raw: unknown): unknown {
     const t = fieldTypes.get(field);
-    if (raw == null) return raw;
+    if (raw == null) return undefined;
+    // String vide = filtre non renseigné → skip (évite les erreurs Prisma
+    // quand la valeur n'a pas été saisie).
+    if (typeof raw === "string" && raw.trim() === "") return undefined;
     if (t === "date") {
-      // Accepte Date, ISO string ("2026-04-23" ou full ISO), ou timestamp.
       if (raw instanceof Date) return raw;
       const d = new Date(raw as string | number);
-      return Number.isNaN(d.getTime()) ? raw : d;
+      return Number.isNaN(d.getTime()) ? undefined : d;
     }
     if (t === "number") {
       const n = typeof raw === "number" ? raw : Number(raw);
-      return Number.isNaN(n) ? raw : n;
+      return Number.isNaN(n) ? undefined : n;
     }
     if (t === "boolean") {
       if (typeof raw === "boolean") return raw;
       const s = String(raw).toLowerCase();
       if (s === "true" || s === "1") return true;
       if (s === "false" || s === "0") return false;
-      return raw;
+      return undefined; // Non-parseable → skip
     }
     return raw;
   }
 
   for (const f of filters) {
     if (!f.field || (f.value === undefined && f.operator !== "isnull")) continue;
+    // String vide sur opérateur non-isnull → skip (évite d'envoyer "" à Prisma).
+    if (f.operator !== "isnull" && typeof f.value === "string" && f.value.trim() === "") continue;
+
     switch (f.operator) {
-      case "eq": where[f.field] = coerce(f.field, f.value); break;
-      case "neq": where[f.field] = { not: coerce(f.field, f.value) }; break;
-      case "gt": where[f.field] = { gt: coerce(f.field, f.value) }; break;
-      case "lt": where[f.field] = { lt: coerce(f.field, f.value) }; break;
-      case "gte": where[f.field] = { gte: coerce(f.field, f.value) }; break;
-      case "lte": where[f.field] = { lte: coerce(f.field, f.value) }; break;
-      case "in": {
-        const raw: unknown[] = Array.isArray(f.value) ? f.value : String(f.value).split(",").map((s: string) => s.trim()).filter(Boolean);
-        where[f.field] = { in: raw.map((v: unknown) => coerce(f.field, v)) };
+      case "eq": {
+        const v = coerce(f.field, f.value);
+        if (v !== undefined) where[f.field] = v;
         break;
       }
-      case "contains": where[f.field] = { contains: f.value, mode: "insensitive" }; break;
+      case "neq": {
+        const v = coerce(f.field, f.value);
+        if (v !== undefined) where[f.field] = { not: v };
+        break;
+      }
+      case "gt": {
+        const v = coerce(f.field, f.value);
+        if (v !== undefined) where[f.field] = { gt: v };
+        break;
+      }
+      case "lt": {
+        const v = coerce(f.field, f.value);
+        if (v !== undefined) where[f.field] = { lt: v };
+        break;
+      }
+      case "gte": {
+        const v = coerce(f.field, f.value);
+        if (v !== undefined) where[f.field] = { gte: v };
+        break;
+      }
+      case "lte": {
+        const v = coerce(f.field, f.value);
+        if (v !== undefined) where[f.field] = { lte: v };
+        break;
+      }
+      case "in": {
+        const rawList: unknown[] = Array.isArray(f.value)
+          ? f.value
+          : String(f.value).split(",").map((s: string) => s.trim()).filter(Boolean);
+        const coerced = rawList.map((v: unknown) => coerce(f.field, v)).filter((v) => v !== undefined);
+        if (coerced.length > 0) where[f.field] = { in: coerced };
+        break;
+      }
+      case "contains": {
+        if (typeof f.value !== "string" || !f.value.trim()) break;
+        where[f.field] = { contains: f.value, mode: "insensitive" };
+        break;
+      }
       case "isnull": where[f.field] = f.value === false ? { not: null } : null; break;
       case "between": {
         const [lo, hi] = Array.isArray(f.value) ? f.value : String(f.value).split(",");
-        where[f.field] = { gte: coerce(f.field, lo), lte: coerce(f.field, hi) };
+        const lov = coerce(f.field, lo);
+        const hiv = coerce(f.field, hi);
+        if (lov !== undefined || hiv !== undefined) {
+          const range: Record<string, unknown> = {};
+          if (lov !== undefined) range.gte = lov;
+          if (hiv !== undefined) range.lte = hiv;
+          where[f.field] = range;
+        }
         break;
       }
     }
