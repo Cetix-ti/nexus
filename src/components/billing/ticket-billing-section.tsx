@@ -175,7 +175,7 @@ export function TicketBillingSection({
       <div className="flex items-center gap-1 border-b border-slate-200/80 px-3 sm:px-5 pt-3 overflow-x-auto">
         {[
           { id: "time" as Tab, label: "Temps", icon: Clock, count: timeEntries.length },
-          { id: "travel" as Tab, label: "Déplacements", icon: Car, count: travelEntries.length },
+          { id: "travel" as Tab, label: "Déplacements", icon: Car, count: timeEntries.filter((e) => e.hasTravelBilled).length + travelEntries.length },
           { id: "expense" as Tab, label: "Dépenses", icon: Receipt, count: expenseEntries.length },
         ].map((t) => {
           const Icon = t.icon;
@@ -255,6 +255,7 @@ export function TicketBillingSection({
               );
               if (res.ok) setReloadTime((k) => k + 1);
             }}
+            hideDescription
           />
         )}
         {tab === "travel" && (() => {
@@ -269,7 +270,7 @@ export function TicketBillingSection({
                 id: `te-travel-${e.id}`,
                 date: e.startedAt,
                 icon: "🚗",
-                label: "Déplacement (synchronisé avec la saisie de temps)",
+                label: "Déplacement",
                 description: e.description || "Déplacement facturé",
                 agent: e.agentName,
                 metric: minutes != null ? `${minutes} min` : "Durée non saisie",
@@ -327,6 +328,7 @@ export function TicketBillingSection({
                   setTravelEntries((prev) => prev.filter((e) => e.id !== id));
                 }
               }}
+              hideDescription
             />
           );
         })()}
@@ -457,11 +459,14 @@ function EntryList({
   empty,
   onEdit,
   onDelete,
+  hideDescription,
 }: {
   rows: EntryRow[];
   empty: string;
   onEdit?: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Masque la colonne/section Description (vue bureau et mobile). */
+  hideDescription?: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -485,7 +490,7 @@ function EntryList({
               {format(new Date(r.date), "dd MMM")}
             </span>
           </div>
-          {r.description && (
+          {!hideDescription && r.description && (
             <p className="text-[12px] text-slate-600 mb-1.5 break-words">{r.description}</p>
           )}
           <div className="flex items-center justify-between flex-wrap gap-1.5">
@@ -519,9 +524,9 @@ function EntryList({
           <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             <th className="px-3 py-2.5">Date</th>
             <th className="px-3 py-2.5">Type</th>
-            <th className="px-3 py-2.5">Description</th>
+            {!hideDescription && <th className="px-3 py-2.5">Description</th>}
             <th className="px-3 py-2.5">Agent</th>
-            <th className="px-3 py-2.5 text-right">Quantité</th>
+            <th className="px-3 py-2.5 text-right">Temps</th>
             <th className="px-3 py-2.5">Couverture</th>
             <th className="px-3 py-2.5"></th>
           </tr>
@@ -538,9 +543,11 @@ function EntryList({
                   <span className="text-slate-700">{r.label}</span>
                 </div>
               </td>
-              <td className="px-3 py-3 text-slate-600 max-w-xs truncate" title={r.description}>
-                {r.description}
-              </td>
+              {!hideDescription && (
+                <td className="px-3 py-3 text-slate-600 max-w-xs truncate" title={r.description}>
+                  {r.description}
+                </td>
+              )}
               <td className="px-3 py-3">
                 <div className="flex items-center gap-1.5">
                   <Avatar className="h-5 w-5">
