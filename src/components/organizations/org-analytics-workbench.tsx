@@ -16,7 +16,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { LayoutDashboard, Plus, ExternalLink, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, Plus, ExternalLink, AlertTriangle, Calendar, Mail } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -47,6 +47,36 @@ function loadCustomDashboards(): DashboardSummary[] {
     return Array.isArray(parsed) ? parsed : [];
   } catch { return []; }
 }
+
+// Rapports programmés partagés avec /analytics/reports. On lit les mêmes
+// entrées localStorage et on filtre par org ciblée.
+interface ScheduledReportSummary {
+  id: string;
+  name: string;
+  description?: string;
+  dashboardIds?: string[];
+  organizationIds?: string[];
+  recipients?: string[];
+  frequency?: string;
+  isActive?: boolean;
+}
+
+function loadScheduledReports(): ScheduledReportSummary[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const r = localStorage.getItem("nexus:scheduled-reports");
+    const parsed = r ? JSON.parse(r) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+const FREQ_LABELS: Record<string, string> = {
+  weekly:     "Hebdomadaire",
+  biweekly:   "Aux deux semaines",
+  monthly:    "Mensuel",
+  quarterly:  "Trimestriel",
+  on_demand:  "Sur demande",
+};
 
 // ----------------------------------------------------------------------------
 // Error boundary
@@ -85,10 +115,12 @@ export function OrgAnalyticsWorkbench(props: { organizationId: string; organizat
 
 function WorkbenchInner({ organizationId, organizationName }: { organizationId: string; organizationName: string }) {
   const [allDashboards, setAllDashboards] = useState<DashboardSummary[]>([]);
+  const [allScheduledReports, setAllScheduledReports] = useState<ScheduledReportSummary[]>([]);
 
   useEffect(() => {
     function refresh() {
       setAllDashboards(loadCustomDashboards());
+      setAllScheduledReports(loadScheduledReports());
     }
     refresh();
     const onStorage = () => refresh();
@@ -102,6 +134,9 @@ function WorkbenchInner({ organizationId, organizationName }: { organizationId: 
   }, [organizationId]);
 
   const scoped = allDashboards.filter((d) => normalizedOrgs(d).includes(organizationId));
+  const scopedScheduled = allScheduledReports.filter(
+    (r) => Array.isArray(r.organizationIds) && r.organizationIds.includes(organizationId),
+  );
   const orgNameEnc = encodeURIComponent(organizationName || "");
   const atelierUrl = `/analytics/dashboards?orgContext=${organizationId}&orgName=${orgNameEnc}`;
 
@@ -176,6 +211,86 @@ function WorkbenchInner({ organizationId, organizationName }: { organizationId: 
           <Link href="/analytics/dashboards" className="text-slate-600 hover:text-slate-900 hover:underline">
             Voir tous les dashboards →
           </Link>
+        </div>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Rapports programmés assignés à cette organisation. Les dashboards */}
+        {/* qu'ils contiennent s'ouvrent en mode orgContext → filtre auto.   */}
+        {/* ---------------------------------------------------------------- */}
+        <div className="border-t border-slate-200 pt-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+            <div className="min-w-0">
+              <h3 className="text-[14px] font-semibold text-slate-900 inline-flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-blue-600" /> Rapports programmés
+              </h3>
+              <p className="text-[11.5px] text-slate-500 mt-0.5">
+                Rapports par courriel ciblant cette organisation. Les dashboards inclus
+                sont filtrés automatiquement par <strong>{organizationName || "cette organisation"}</strong>.
+              </p>
+            </div>
+            <Link href="/analytics/reports" className="text-[11.5px] text-blue-600 hover:text-blue-700 font-medium">
+              Gérer →
+            </Link>
+          </div>
+
+          {scopedScheduled.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-3 py-3 text-center text-[12px] text-slate-500">
+              Aucun rapport programmé n&apos;est assigné à cette organisation.
+              <Link href="/analytics/reports" className="ml-1 text-blue-600 hover:underline">Créer →</Link>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {scopedScheduled.map((r) => {
+                const dashboardIds = Array.isArray(r.dashboardIds) ? r.dashboardIds : [];
+                const firstDashboard = dashboardIds[0];
+                const href = firstDashboard
+                  ? `/analytics/dashboards?orgContext=${organizationId}&orgName=${orgNameEnc}&view=${firstDashboard}`
+                  : `/analytics/reports`;
+                return (
+                  <Link
+                    key={r.id}
+                    href={href}
+                    className="group flex items-start gap-3 rounded-lg border border-slate-200 bg-white hover:border-blue-300 hover:shadow-sm px-3 py-2 transition-all"
+                  >
+                    <div className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                      <Calendar className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[12.5px] font-semibold text-slate-900 group-hover:text-blue-700 truncate">
+                          {r.name || "Sans nom"}
+                        </span>
+                        {r.isActive === false && (
+                          <span className="text-[9.5px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 rounded px-1.5">
+                            Désactivé
+                          </span>
+                        )}
+                        {r.frequency && (
+                          <span className="text-[10px] text-slate-500 bg-slate-50 ring-1 ring-inset ring-slate-200 rounded px-1.5 py-0">
+                            {FREQ_LABELS[r.frequency] ?? r.frequency}
+                          </span>
+                        )}
+                      </div>
+                      {r.description && (
+                        <p className="text-[11px] text-slate-500 truncate mt-0.5">{r.description}</p>
+                      )}
+                      <div className="mt-1 flex items-center gap-3 flex-wrap text-[10.5px] text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <LayoutDashboard className="h-2.5 w-2.5" />
+                          {dashboardIds.length} dashboard{dashboardIds.length !== 1 ? "s" : ""}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Mail className="h-2.5 w-2.5" />
+                          {(r.recipients ?? []).length} destinataire{(r.recipients ?? []).length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                    </div>
+                    <ExternalLink className="h-3 w-3 text-slate-300 group-hover:text-blue-500 shrink-0 mt-1" />
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </Card>

@@ -763,12 +763,14 @@ export default function ReportsPage() {
       const n = Math.max(1, Math.ceil((to - from) / 86_400_000));
       effectiveDays = String(n);
     }
-    fetch(`/api/v1/reports/global?days=${effectiveDays}`)
+    const qs = new URLSearchParams({ days: effectiveDays });
+    if (orgContextId) qs.set("organizationId", orgContextId);
+    fetch(`/api/v1/reports/global?${qs.toString()}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [days, customFrom, customTo]);
+  }, [days, customFrom, customTo, orgContextId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1142,7 +1144,7 @@ export default function ReportsPage() {
           <div className="flex-1 min-w-0 text-[12.5px] text-blue-900">
             <strong>Atelier organisation{orgContextName ? ` : ${orgContextName}` : ""}</strong>
             <div className="text-[11.5px] text-blue-800 mt-0.5">
-              Les rapports créés ici seront attribués à cette organisation. Les rapports globaux restent visibles.
+              Les nouveaux rapports sont attribués à cette organisation et les widgets sont filtrés automatiquement sur ses données.
             </div>
           </div>
           <a href="/analytics/dashboards" className="text-[11.5px] text-blue-700 hover:text-blue-800 underline font-medium shrink-0">
@@ -2184,6 +2186,7 @@ export default function ReportsPage() {
                       overrideChartType={item?.overrideChartType}
                       titleScale={item?.titleScale}
                       chartScale={item?.chartScale}
+                      orgContextId={orgContextId}
                     />;
                 }
                 })();
@@ -2709,6 +2712,7 @@ function QueryWidgetRenderer({
   overrideChartType,
   titleScale = 1,
   chartScale = 1,
+  orgContextId,
 }: {
   widgetId: string;
   /**
@@ -2729,6 +2733,13 @@ function QueryWidgetRenderer({
   titleScale?: number;
   /** Échelle du graphique (wrapper zoom autour de WidgetChart). */
   chartScale?: number;
+  /**
+   * Si défini, injecte automatiquement un filtre `organizationId = X` dans
+   * la requête — utilisé quand le dashboard est vu dans le contexte d'une
+   * organisation (atelier ou onglet Rapports d'org). Évite à l'utilisateur
+   * de créer un dashboard par client : un seul rapport global suffit.
+   */
+  orgContextId?: string | null;
 }) {
   const [result, setResult] = useState<{ label: string; value: number }[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2761,10 +2772,22 @@ function QueryWidgetRenderer({
       overrideDateTo = toDate.toISOString();
     }
 
+    // Injection automatique d'un filtre organisation quand on est dans un
+    // contexte d'org (atelier ou onglet Rapports de l'org). Respecte les
+    // filtres existants : on remplace un éventuel filtre organizationId
+    // déjà présent pour éviter les contradictions.
+    const baseFilters = Array.isArray(w.query?.filters) ? (w.query.filters as Array<{ field: string; operator: string; value: string }>) : [];
+    const filtersWithOrg = orgContextId
+      ? [
+          ...baseFilters.filter((f) => f.field !== "organizationId"),
+          { field: "organizationId", operator: "eq", value: orgContextId },
+        ]
+      : baseFilters;
+
     fetch("/api/v1/analytics/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...w.query, overrideDateFrom, overrideDateTo }),
+      body: JSON.stringify({ ...w.query, filters: filtersWithOrg, overrideDateFrom, overrideDateTo }),
     })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => {
@@ -2779,7 +2802,7 @@ function QueryWidgetRenderer({
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [widgetId, dashboardDays, customFrom, customTo]);
+  }, [widgetId, dashboardDays, customFrom, customTo, orgContextId]);
 
   if (loading) return <Card><CardContent className="p-5 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-slate-400" /></CardContent></Card>;
   if (!widget) return <Card><CardContent className="p-5 text-center text-slate-400 text-[13px]">Widget « {widgetId} » introuvable</CardContent></Card>;

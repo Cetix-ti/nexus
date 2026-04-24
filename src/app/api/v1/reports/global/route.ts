@@ -14,6 +14,12 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const days = parseInt(url.searchParams.get("days") || "30", 10);
+  // Optionnel : filtre organisation. Quand fourni, toutes les requêtes
+  // (tickets, time entries, contrats) sont scopées à cette organisation.
+  // Utilisé quand un dashboard est consulté dans le contexte d'une org
+  // (atelier ou onglet Rapports d'org).
+  const organizationId = url.searchParams.get("organizationId") || null;
+  const orgWhere = organizationId ? { organizationId } : {};
 
   const since = new Date();
   since.setDate(since.getDate() - days);
@@ -43,32 +49,32 @@ export async function GET(req: Request) {
       activeContracts,
       ticketsResolved,
     ] = await Promise.all([
-      prisma.ticket.count(),
-      prisma.ticket.count({ where: { createdAt: { gte: since } } }),
-      prisma.ticket.count({ where: { resolvedAt: { gte: since } } }),
+      prisma.ticket.count({ where: { ...orgWhere } }),
+      prisma.ticket.count({ where: { ...orgWhere, createdAt: { gte: since } } }),
+      prisma.ticket.count({ where: { ...orgWhere, resolvedAt: { gte: since } } }),
       prisma.ticket.count({
-        where: { status: { in: ["NEW", "OPEN", "IN_PROGRESS", "ON_SITE", "WAITING_CLIENT"] } },
+        where: { ...orgWhere, status: { in: ["NEW", "OPEN", "IN_PROGRESS", "ON_SITE", "WAITING_CLIENT"] } },
       }),
-      prisma.ticket.count({ where: { slaBreached: true, createdAt: { gte: since } } }),
-      prisma.ticket.groupBy({ by: ["status"], where: { createdAt: { gte: since } }, _count: true }),
-      prisma.ticket.groupBy({ by: ["priority"], where: { createdAt: { gte: since } }, _count: true }),
-      prisma.ticket.groupBy({ by: ["type"], where: { createdAt: { gte: since } }, _count: true }),
+      prisma.ticket.count({ where: { ...orgWhere, slaBreached: true, createdAt: { gte: since } } }),
+      prisma.ticket.groupBy({ by: ["status"], where: { ...orgWhere, createdAt: { gte: since } }, _count: true }),
+      prisma.ticket.groupBy({ by: ["priority"], where: { ...orgWhere, createdAt: { gte: since } }, _count: true }),
+      prisma.ticket.groupBy({ by: ["type"], where: { ...orgWhere, createdAt: { gte: since } }, _count: true }),
       prisma.ticket.groupBy({
         by: ["organizationId"],
-        where: { createdAt: { gte: since } },
+        where: { ...orgWhere, createdAt: { gte: since } },
         _count: true,
         orderBy: { _count: { organizationId: "desc" } },
         take: 15,
       }),
       prisma.ticket.groupBy({
         by: ["assigneeId"],
-        where: { resolvedAt: { gte: since }, assigneeId: { not: null } },
+        where: { ...orgWhere, resolvedAt: { gte: since }, assigneeId: { not: null } },
         _count: true,
         orderBy: { _count: { assigneeId: "desc" } },
         take: 15,
       }),
       prisma.timeEntry.findMany({
-        where: { startedAt: { gte: since } },
+        where: { ...orgWhere, startedAt: { gte: since } },
         select: {
           startedAt: true,
           durationMinutes: true, coverageStatus: true, hourlyRate: true, amount: true,
@@ -77,22 +83,22 @@ export async function GET(req: Request) {
         },
       }),
       prisma.timeEntry.findMany({
-        where: { startedAt: { gte: prevStart, lt: since } },
+        where: { ...orgWhere, startedAt: { gte: prevStart, lt: since } },
         select: { durationMinutes: true, amount: true },
       }),
       prisma.timeEntry.findMany({
-        where: { startedAt: { gte: twelveMonthsAgo } },
+        where: { ...orgWhere, startedAt: { gte: twelveMonthsAgo } },
         select: {
           startedAt: true, durationMinutes: true, amount: true,
           coverageStatus: true, organizationId: true, agentId: true,
         },
       }),
       prisma.contract.findMany({
-        where: { status: "ACTIVE" },
+        where: { ...orgWhere, status: "ACTIVE" },
         include: { organization: { select: { name: true } } },
       }),
       prisma.ticket.findMany({
-        where: { resolvedAt: { not: null, gte: since } },
+        where: { ...orgWhere, resolvedAt: { not: null, gte: since } },
         select: { createdAt: true, resolvedAt: true },
       }),
     ]);
