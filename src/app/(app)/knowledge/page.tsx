@@ -374,19 +374,19 @@ export default function KnowledgePage() {
                     <th className="px-4 py-2 text-left text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Titre
                     </th>
-                    <th className="px-4 py-2 text-left text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
+                    <th className="hidden sm:table-cell px-4 py-2 text-left text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Catégorie
                     </th>
                     <th className="px-4 py-2 text-left text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Statut
                     </th>
-                    <th className="px-4 py-2 text-center text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
+                    <th className="hidden md:table-cell px-4 py-2 text-center text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Vues
                     </th>
-                    <th className="px-4 py-2 text-center text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
+                    <th className="hidden md:table-cell px-4 py-2 text-center text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Utile
                     </th>
-                    <th className="px-4 py-2 text-left text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
+                    <th className="hidden sm:table-cell px-4 py-2 text-left text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Mis à jour
                     </th>
                     <th className="px-4 py-2 text-right text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
@@ -408,7 +408,7 @@ export default function KnowledgePage() {
                           </Link>
                           <p className="text-[10.5px] text-neutral-400">par {article.author}</p>
                         </td>
-                        <td className="px-4 py-2">
+                        <td className="hidden sm:table-cell px-4 py-2">
                           <span className="text-[12.5px] text-neutral-700">
                             {categoryName(article.categoryId)}
                           </span>
@@ -416,19 +416,19 @@ export default function KnowledgePage() {
                         <td className="px-4 py-2">
                           <Badge variant={statusConf.variant}>{statusConf.label}</Badge>
                         </td>
-                        <td className="px-4 py-2 text-center">
+                        <td className="hidden md:table-cell px-4 py-2 text-center">
                           <div className="flex items-center justify-center gap-1 text-[12.5px] text-neutral-600">
                             <Eye className="h-3 w-3 text-neutral-400" />
                             {article.views.toLocaleString("fr-CA")}
                           </div>
                         </td>
-                        <td className="px-4 py-2 text-center">
+                        <td className="hidden md:table-cell px-4 py-2 text-center">
                           <div className="flex items-center justify-center gap-1 text-[12.5px] text-neutral-600">
                             <ThumbsUp className="h-3 w-3 text-neutral-400" />
                             {article.helpful}
                           </div>
                         </td>
-                        <td className="px-4 py-2 text-[12.5px] text-neutral-500">
+                        <td className="hidden sm:table-cell px-4 py-2 text-[12.5px] text-neutral-500">
                           {new Date(article.updatedAt).toLocaleDateString("fr-CA", {
                             year: "numeric",
                             month: "short",
