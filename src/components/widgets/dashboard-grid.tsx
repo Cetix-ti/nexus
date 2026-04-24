@@ -10,7 +10,7 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Trash2, Plus, Move } from "lucide-react";
+import { Trash2, Plus, Move, Sliders } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -25,6 +25,22 @@ export interface DashboardItem {
   widgetId: string;
   w: number; // 1-20 columns
   h: number; // 1-12 row units
+  /**
+   * Échelle visuelle du contenu (1 = normal, 1.5 = 150%). Appliquée via
+   * CSS zoom dans le rendu de la cellule — permet d'agrandir le texte
+   * et les graphiques d'un widget spécifique sur un dashboard donné.
+   */
+  fontScale?: number;
+  /**
+   * Override de couleur pour ce widget dans ce dashboard uniquement.
+   * S'applique aux widgets personnalisés (QueryWidget).
+   */
+  overrideColor?: string;
+  /**
+   * Override du type de graphique (bar / line / pie / …) pour ce widget
+   * dans ce dashboard uniquement. S'applique aux widgets personnalisés.
+   */
+  overrideChartType?: string;
 }
 
 interface DashboardGridProps {
@@ -34,7 +50,19 @@ interface DashboardGridProps {
   onRemove: (id: string) => void;
   onResize: (id: string, w: number, h: number) => void;
   onAddClick: () => void;
-  renderWidget: (widgetId: string, w: number, h: number) => React.ReactNode;
+  /**
+   * Rendu d'un widget. Le 4e paramètre — `item` — expose le DashboardItem
+   * complet (fontScale, overrides) au moment du rendu. Les anciens
+   * callers (widgetId/w/h) fonctionnent toujours : les paramètres
+   * supplémentaires sont simplement ignorés.
+   */
+  renderWidget: (widgetId: string, w: number, h: number, item?: DashboardItem) => React.ReactNode;
+  /**
+   * Optionnel — appelé quand l'user clique sur l'icône "Apparence" d'une
+   * cellule sélectionnée en mode édition. Le caller affiche alors sa
+   * propre UI (popover, drawer) pour configurer fontScale/overrides.
+   */
+  onConfigure?: (id: string) => void;
 }
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
@@ -131,12 +159,13 @@ const HEIGHT_PRESETS: Array<{ label: string; h: number }> = [
 ];
 
 function SortableWidget({
-  item, editMode, onRemove, onResize, isMobile, isLaptop, selected, onSelect, children,
+  item, editMode, onRemove, onResize, onConfigure, isMobile, isLaptop, selected, onSelect, children,
 }: {
   item: DashboardItem;
   editMode: boolean;
   onRemove: () => void;
   onResize: (w: number, h: number) => void;
+  onConfigure?: () => void;
   isMobile?: boolean;
   isLaptop?: boolean;
   selected?: boolean;
@@ -284,14 +313,26 @@ function SortableWidget({
             </div>
           )}
         </div>
-        <button
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
-          title="Retirer ce widget"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
+        <div className="flex items-center gap-0.5 shrink-0">
+          {selected && onConfigure && (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onConfigure(); }}
+              className="h-5 w-5 rounded flex items-center justify-center text-blue-600 hover:text-blue-800 hover:bg-blue-100 transition-colors"
+              title="Apparence (taille, couleur, type)"
+            >
+              <Sliders className="h-3 w-3" />
+            </button>
+          )}
+          <button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+            title="Retirer ce widget"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
       </div>
 
       {/* Content — dimmed during resize for clearer size feedback.
@@ -373,7 +414,7 @@ const LAPTOP_FULL_WIDTH_WIDGETS = new Set([
 ]);
 
 export function DashboardGrid({
-  items, editMode, onReorder, onRemove, onResize, onAddClick, renderWidget,
+  items, editMode, onReorder, onRemove, onResize, onAddClick, renderWidget, onConfigure,
 }: DashboardGridProps) {
   const { mobile: isMobile, laptop: isLaptop } = useViewport();
   // Id du widget "sélectionné" (cliqué sur son header). Affiche un ring plus
@@ -510,8 +551,9 @@ export function DashboardGrid({
               onSelect={() => setSelectedId(item.id)}
               onRemove={() => onRemove(item.id)}
               onResize={(w, h) => onResize(item.id, w, h)}
+              onConfigure={onConfigure ? () => onConfigure(item.id) : undefined}
             >
-              {renderWidget(item.widgetId, item.w, item.h)}
+              {renderWidget(item.widgetId, item.w, item.h, item)}
             </SortableWidget>
           ))}
 

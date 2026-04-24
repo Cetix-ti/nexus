@@ -70,6 +70,7 @@ import { WidgetChart, type ChartType } from "@/components/widgets/widget-chart";
 import { buildDrillDownUrl } from "@/lib/analytics/drill-down";
 import { ExportDashboardButton } from "@/components/analytics/export-dashboard-button";
 import { AnalyticsSectionTabs } from "@/components/analytics/section-tabs";
+import { DashboardItemAppearance } from "@/components/analytics/dashboard-item-appearance";
 
 const PIE_PALETTE = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
@@ -501,6 +502,11 @@ export default function ReportsPage() {
   const [managingTags, setManagingTags] = useState(false);
   const [assignTagsReportId, setAssignTagsReportId] = useState<string | null>(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  // Id du widget dont on configure l'apparence spécifique à ce dashboard
+  // (fontScale, couleur, type de graphique). Null = aucun — popover fermé.
+  const [configureItemId, setConfigureItemId] = useState<string | null>(null);
+  // Ferme le popover d'apparence dès qu'on quitte le mode édition.
+  useEffect(() => { if (!editMode) setConfigureItemId(null); }, [editMode]);
   const tagDefById = useMemo(() => {
     const map: Record<string, TagDef> = {};
     for (const t of tagDefs) map[t.id] = t;
@@ -611,6 +617,9 @@ export default function ReportsPage() {
   function handleGridReorder(items: DashboardItem[]) { applyLayoutChange(items); }
   function handleGridRemove(id: string) { applyLayoutChange(dashItems.filter((i) => i.id !== id)); }
   function handleGridResize(id: string, w: number, h: number) { applyLayoutChange(dashItems.map((i) => i.id === id ? { ...i, w, h } : i)); }
+  function handleGridItemUpdate(id: string, patch: Partial<DashboardItem>) {
+    applyLayoutChange(dashItems.map((i) => i.id === id ? { ...i, ...patch } : i));
+  }
   function handleGridAdd(widgetId: string) {
     const newItem: DashboardItem = { id: `di_${widgetId}_${Date.now()}`, widgetId, w: 20, h: 3 };
     applyLayoutChange([...dashItems, newItem]);
@@ -2275,12 +2284,21 @@ export default function ReportsPage() {
               onRemove={handleGridRemove}
               onResize={handleGridResize}
               onAddClick={() => setShowWidgetSidebar(true)}
-              renderWidget={(widgetId: string, w: number, h: number) => {
+              onConfigure={(id) => setConfigureItemId(id)}
+              renderWidget={(widgetId: string, w: number, h: number, item) => {
                 // Adapt grid columns based on widget width
                 const isNarrow = w <= 4;
                 const isWide = w >= 8;
                 const kpiCols = isNarrow ? "grid-cols-2" : isWide ? "grid-cols-3 lg:grid-cols-6" : "grid-cols-2 sm:grid-cols-3";
 
+                const fontScale = item?.fontScale ?? 1;
+                const wrap = (node: React.ReactNode) => (
+                  fontScale !== 1
+                    ? <div style={{ zoom: fontScale }} className="h-full">{node}</div>
+                    : node
+                );
+
+                const node = (() => {
                 switch (widgetId) {
                   case "ticket_kpis":
                     return tk ? (
@@ -2370,8 +2388,12 @@ export default function ReportsPage() {
                       dashboardDays={days === "custom" ? 0 : (Number(days) || 30)}
                       customFrom={days === "custom" ? customFrom : undefined}
                       customTo={days === "custom" ? customTo : undefined}
+                      overrideColor={item?.overrideColor}
+                      overrideChartType={item?.overrideChartType}
                     />;
                 }
+                })();
+                return wrap(node);
               }}
             />
           )}
@@ -2432,6 +2454,21 @@ export default function ReportsPage() {
             allTags={tagDefs}
             onCreateTag={(tag) => addTagDefinition(tag)}
             onSaveAssignment={(ids) => assignTagsToReport(assignTagsReportId, ids)}
+          />
+        );
+      })()}
+
+      {configureItemId && (() => {
+        const target = dashItems.find((i) => i.id === configureItemId);
+        if (!target) return null;
+        const BUILTIN_IDS = new Set<string>(WIDGETS.map((w) => w.id));
+        const supportsStyleOverride = !BUILTIN_IDS.has(target.widgetId);
+        return (
+          <DashboardItemAppearance
+            item={target}
+            supportsStyleOverride={supportsStyleOverride}
+            onChange={(patch) => handleGridItemUpdate(target.id, patch)}
+            onClose={() => setConfigureItemId(null)}
           />
         );
       })()}
@@ -2835,6 +2872,8 @@ function QueryWidgetRenderer({
   dashboardDays = 30,
   customFrom,
   customTo,
+  overrideColor,
+  overrideChartType,
 }: {
   widgetId: string;
   /**
@@ -2847,6 +2886,10 @@ function QueryWidgetRenderer({
   /** Range custom (ISO yyyy-mm-dd). Pris en compte si dashboardDays === 0. */
   customFrom?: string;
   customTo?: string;
+  /** Override de couleur pour ce widget dans ce dashboard uniquement. */
+  overrideColor?: string;
+  /** Override du type de graphique pour ce widget dans ce dashboard uniquement. */
+  overrideChartType?: string;
 }) {
   const [result, setResult] = useState<{ label: string; value: number }[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2925,8 +2968,8 @@ function QueryWidgetRenderer({
       <CardContent className="p-4">
         <WidgetChart
           results={result}
-          chartType={widget.chartType as ChartType}
-          color={widget.color || "#2563eb"}
+          chartType={(overrideChartType || widget.chartType) as ChartType}
+          color={overrideColor || widget.color || "#2563eb"}
           name={widget.name}
           aggregate={typeof widget.query?.aggregate === "string" ? widget.query.aggregate : undefined}
           onDrillDown={handleDrillDown}
