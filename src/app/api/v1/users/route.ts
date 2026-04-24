@@ -32,10 +32,13 @@ const userUpdateSchema = z
     email: z.string().email().optional(),
     firstName: z.string().min(1).max(100).optional(),
     lastName: z.string().min(1).max(100).optional(),
-    role: z.enum(ROLE_VALUES).optional(),
+    // `role` accepte une valeur système (ROLE_VALUES) OU une clé de
+    // CustomRole. Validation fine dans le handler (lookup Prisma).
+    role: z.string().max(50).optional(),
     phone: z.string().max(50).optional().nullable(),
     password: z.string().min(8).max(200).optional(),
     isActive: z.boolean().optional(),
+    mileageAllocationEnabled: z.boolean().optional(),
     // Data URI base64 (image/*) ou null pour supprimer.
     // Limite ~700 Ko encodé (~512 Ko binaire).
     avatar: z.string().max(700_000).nullable().optional(),
@@ -60,6 +63,7 @@ function serializeUser(u: {
   firstName: string;
   lastName: string;
   role: string;
+  customRoleKey?: string | null;
   avatar: string | null;
   phone: string | null;
   isActive: boolean;
@@ -75,6 +79,10 @@ function serializeUser(u: {
     lastName: u.lastName,
     name: `${u.firstName} ${u.lastName}`.trim(),
     role: u.role,
+    customRoleKey: u.customRoleKey ?? null,
+    // "effectiveRole" = la clé que l'UI expose dans le dropdown :
+    // rôle custom si assigné, sinon rôle système.
+    effectiveRole: u.customRoleKey ?? u.role,
     avatar: u.avatar,
     phone: u.phone,
     isActive: u.isActive,
@@ -119,8 +127,10 @@ export async function GET(req: Request) {
       firstName: true,
       lastName: true,
       role: true,
+      customRoleKey: true,
       phone: true,
       isActive: true,
+      mileageAllocationEnabled: true,
       capabilities: true,
       lastLoginAt: true,
       ...(includeAvatar ? { avatar: true } : {}),
@@ -136,9 +146,12 @@ export async function GET(req: Request) {
       lastName: u.lastName,
       name: `${u.firstName} ${u.lastName}`.trim(),
       role: u.role,
+      customRoleKey: (u as any).customRoleKey ?? null,
+      effectiveRole: (u as any).customRoleKey ?? u.role,
       avatar: (u as any).avatar ?? null,
       phone: u.phone,
       isActive: u.isActive,
+      mileageAllocationEnabled: (u as any).mileageAllocationEnabled !== false,
       capabilities: (u as any).capabilities ?? [],
       lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
       ...(includeSignature
@@ -228,13 +241,37 @@ export async function PATCH(req: Request) {
       { status: 400 }
     );
   }
-  const { id, password, role, isActive, email, avatar, capabilities, ...rest } = parsed.data;
+  const { id, password, role, isActive, email, avatar, capabilities, mileageAllocationEnabled, ...rest } = parsed.data;
   const isSelf = id === me.id;
   const isAdmin = hasMinimumRole(me.role, "MSP_ADMIN");
   if (!isSelf && !isAdmin) return forbidden();
-  // Only admins can change role / activation / email / capabilities.
-  if ((role !== undefined || isActive !== undefined || capabilities !== undefined) && !isAdmin) {
+  // Only admins can change role / activation / email / capabilities /
+  // allocation km (affecte la paie — pas de self-edit possible).
+  if ((role !== undefined || isActive !== undefined || capabilities !== undefined || mileageAllocationEnabled !== undefined) && !isAdmin) {
     return forbidden();
+  }
+
+  // Dispatch role système vs rôle custom. Si `role` est une valeur de
+  // UserRole enum, on l'écrit direct + reset customRoleKey. Sinon on
+  // lookup CustomRole, écrit role=parentRole (fallback TECHNICIAN) et
+  // customRoleKey=key. Permet au dropdown de mélanger les deux types.
+  let roleWrite: UserRole | undefined;
+  let customRoleKeyWrite: string | null | undefined;
+  if (role !== undefined) {
+    if ((ROLE_VALUES as readonly string[]).includes(role)) {
+      roleWrite = role as UserRole;
+      customRoleKeyWrite = null; // reset override
+    } else {
+      const custom = await prisma.customRole.findUnique({
+        where: { key: role },
+        select: { key: true, parentRole: true },
+      });
+      if (!custom) {
+        return NextResponse.json({ error: `Rôle « ${role} » inconnu` }, { status: 400 });
+      }
+      roleWrite = (custom.parentRole ?? "TECHNICIAN") as UserRole;
+      customRoleKeyWrite = custom.key;
+    }
   }
 
   try {
@@ -243,8 +280,10 @@ export async function PATCH(req: Request) {
       data: {
         ...rest,
         ...(email !== undefined ? { email: email.toLowerCase() } : {}),
-        ...(role !== undefined ? { role } : {}),
+        ...(roleWrite !== undefined ? { role: roleWrite } : {}),
+        ...(customRoleKeyWrite !== undefined ? { customRoleKey: customRoleKeyWrite } : {}),
         ...(isActive !== undefined ? { isActive } : {}),
+        ...(mileageAllocationEnabled !== undefined ? { mileageAllocationEnabled } : {}),
         ...(capabilities !== undefined ? { capabilities } : {}),
         ...(avatar !== undefined ? { avatar: avatar ? await optimizeAvatar(avatar) : null } : {}),
         ...(password

@@ -27,6 +27,7 @@ const createSchema = z.object({
   isUrgent: z.boolean().optional(),
   isOnsite: z.boolean().optional(),
   hasTravelBilled: z.boolean().optional(),
+  travelDurationMinutes: z.number().int().min(0).max(24 * 60).nullable().optional(),
   // Les 4 champs suivants restent acceptés pour compat avec la modale
   // actuelle, mais le serveur IGNORE leur valeur et recalcule tout via
   // decideBilling. Ils servent uniquement à ne pas casser la signature.
@@ -100,6 +101,8 @@ export async function POST(req: Request) {
       isWeekend: d.isWeekend,
       isUrgent: d.isUrgent,
       isOnsite: d.isOnsite,
+      hasTravelBilled: d.hasTravelBilled,
+      travelDurationMinutes: d.travelDurationMinutes,
       forceNonBillable: d.forceNonBillable,
     });
     return NextResponse.json(created, { status: 201 });

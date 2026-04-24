@@ -14,7 +14,6 @@ import {
   Settings,
   LayoutDashboard,
   ArrowRight,
-  CornerDownLeft,
   Receipt,
   Monitor,
 } from "lucide-react";
@@ -346,27 +345,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-slate-100 px-4 py-2 bg-slate-50/40 flex items-center justify-between text-[10.5px] text-slate-500">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono text-[9.5px] shadow-sm">
-                ↑↓
-              </kbd>
-              naviguer
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono text-[9.5px] shadow-sm inline-flex items-center">
-                <CornerDownLeft className="h-2.5 w-2.5" />
-              </kbd>
-              ouvrir
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono text-[9.5px] shadow-sm">
-                Esc
-              </kbd>
-              fermer
-            </span>
-          </div>
+        <div className="border-t border-slate-100 px-4 py-2 bg-slate-50/40 flex items-center justify-end text-[10.5px] text-slate-500">
           <span className="font-medium">{results.length} résultats</span>
         </div>
       </div>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { useLocaleStore } from "@/stores/locale-store";
 import {
   ArrowLeft,
   Send,
@@ -59,18 +60,18 @@ interface TicketDetail {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const STATUS_LABELS: Record<string, string> = {
-  NEW: "Nouveau",
-  OPEN: "Ouvert",
-  IN_PROGRESS: "En cours",
-  ON_SITE: "Sur site",
-  PENDING: "En attente",
-  WAITING_CLIENT: "Attente client",
-  WAITING_VENDOR: "Attente fournisseur",
-  SCHEDULED: "Planifié",
-  RESOLVED: "Résolu",
-  CLOSED: "Fermé",
-  CANCELLED: "Annulé",
+const STATUS_KEY: Record<string, string> = {
+  NEW: "portal.status.new",
+  OPEN: "portal.status.open",
+  IN_PROGRESS: "portal.status.in_progress",
+  ON_SITE: "portal.status.on_site",
+  PENDING: "portal.status.pending",
+  WAITING_CLIENT: "portal.status.waiting_client",
+  WAITING_VENDOR: "portal.status.waiting_vendor",
+  SCHEDULED: "portal.status.scheduled",
+  RESOLVED: "portal.status.resolved",
+  CLOSED: "portal.status.closed",
+  CANCELLED: "portal.status.cancelled",
 };
 
 const STATUS_VARIANT: Record<string, "default" | "primary" | "success" | "warning" | "danger"> = {
@@ -87,11 +88,11 @@ const STATUS_VARIANT: Record<string, "default" | "primary" | "success" | "warnin
   CANCELLED: "default",
 };
 
-const PRIORITY_LABELS: Record<string, string> = {
-  CRITICAL: "Critique",
-  HIGH: "Haute",
-  MEDIUM: "Moyenne",
-  LOW: "Basse",
+const PRIORITY_KEY: Record<string, string> = {
+  CRITICAL: "portal.priority.critical",
+  HIGH: "portal.priority.high",
+  MEDIUM: "portal.priority.medium",
+  LOW: "portal.priority.low",
 };
 
 const PRIORITY_VARIANT: Record<string, "default" | "primary" | "success" | "warning" | "danger"> = {
@@ -101,12 +102,12 @@ const PRIORITY_VARIANT: Record<string, "default" | "primary" | "success" | "warn
   LOW: "default",
 };
 
-const TYPE_LABELS: Record<string, string> = {
-  INCIDENT: "Incident",
-  SERVICE_REQUEST: "Demande de service",
-  PROBLEM: "Problème",
-  CHANGE: "Changement",
-  ALERT: "Alerte",
+const TYPE_KEY: Record<string, string> = {
+  INCIDENT: "portal.type.incident",
+  SERVICE_REQUEST: "portal.type.service_request",
+  PROBLEM: "portal.type.problem",
+  CHANGE: "portal.type.change",
+  ALERT: "portal.type.alert",
 };
 
 function formatDate(iso: string): string {
@@ -136,6 +137,7 @@ function formatDateShort(iso: string): string {
 export default function PortalTicketDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const tr = useLocaleStore((s) => s.t);
   const id = params.id as string;
 
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
@@ -158,11 +160,11 @@ export default function PortalTicketDetailPage() {
       const json = await res.json();
       setTicket(json.data);
     } catch (err: any) {
-      setError(err.message || "Impossible de charger le billet");
+      setError(err.message || tr("portal.ticketDetail.cannotLoad"));
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, tr]);
 
   useEffect(() => {
     fetchTicket();
@@ -192,7 +194,7 @@ export default function PortalTicketDetailPage() {
       );
       setReply("");
     } catch (err: any) {
-      setSendError(err.message || "Impossible d'envoyer la réponse");
+      setSendError(err.message || tr("portal.ticketDetail.cannotSendReply"));
     } finally {
       setSending(false);
     }
@@ -204,7 +206,7 @@ export default function PortalTicketDetailPage() {
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
         <span className="ml-3 text-sm text-neutral-500">
-          Chargement du billet...
+          {tr("portal.ticketDetail.loading")}
         </span>
       </div>
     );
@@ -219,29 +221,29 @@ export default function PortalTicketDetailPage() {
           className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-          Retour
+          {tr("portal.ticketDetail.back")}
         </button>
         <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
           <AlertTriangle className="h-8 w-8 text-red-400 mx-auto mb-3" />
           <p className="text-sm font-medium text-red-700">
-            {error || "Billet introuvable"}
+            {error || tr("portal.ticketDetail.notFound")}
           </p>
           <button
             onClick={fetchTicket}
             className="mt-3 text-sm text-red-600 underline hover:text-red-800"
           >
-            Réessayer
+            {tr("portal.ticketDetail.retry")}
           </button>
         </div>
       </div>
     );
   }
 
-  const statusLabel = STATUS_LABELS[ticket.status] ?? ticket.status;
+  const statusLabel = STATUS_KEY[ticket.status] ? tr(STATUS_KEY[ticket.status]) : ticket.status;
   const statusVariant = STATUS_VARIANT[ticket.status] ?? "default";
-  const priorityLabel = PRIORITY_LABELS[ticket.priority] ?? ticket.priority;
+  const priorityLabel = PRIORITY_KEY[ticket.priority] ? tr(PRIORITY_KEY[ticket.priority]) : ticket.priority;
   const priorityVariant = PRIORITY_VARIANT[ticket.priority] ?? "default";
-  const typeLabel = TYPE_LABELS[ticket.type] ?? ticket.type;
+  const typeLabel = TYPE_KEY[ticket.type] ? tr(TYPE_KEY[ticket.type]) : ticket.type;
 
   const isClosed = ticket.status === "CLOSED" || ticket.status === "CANCELLED";
 
@@ -253,7 +255,7 @@ export default function PortalTicketDetailPage() {
         className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
-        Retour aux billets
+        {tr("portal.ticketDetail.backToTickets")}
       </Link>
 
       {/* En-tête du billet */}
@@ -272,13 +274,13 @@ export default function PortalTicketDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-6">
         {/* Contenu principal */}
-        <div className="space-y-6">
+        <div className="space-y-6 min-w-0">
           {/* Description */}
-          <div className="rounded-xl border border-neutral-200 bg-white shadow-sm p-6">
+          <div className="rounded-xl border border-neutral-200 bg-white shadow-sm p-6 overflow-hidden">
             <h2 className="text-sm font-semibold text-neutral-900 mb-3">
-              Description
+              {tr("portal.ticketDetail.description")}
             </h2>
             {(() => {
               // Préférence : descriptionHtml déjà sanitizé côté serveur
@@ -288,7 +290,7 @@ export default function PortalTicketDetailPage() {
               if (html) {
                 return (
                   <div
-                    className="text-sm text-neutral-700 leading-relaxed prose prose-sm prose-neutral max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_img]:max-w-full [&_img]:rounded-lg [&_blockquote]:border-l-4 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-500 [&_blockquote]:my-2 [&_table]:border-collapse [&_table]:my-2 [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_th]:bg-slate-50"
+                    className="text-sm text-neutral-700 leading-relaxed prose prose-sm prose-neutral max-w-none break-words [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline [&_a]:break-all [&_strong]:font-semibold [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_blockquote]:border-l-4 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-500 [&_blockquote]:my-2 [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_table]:border-collapse [&_table]:my-2 [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_th]:bg-slate-50"
                     dangerouslySetInnerHTML={{ __html: html }}
                   />
                 );
@@ -296,7 +298,7 @@ export default function PortalTicketDetailPage() {
               if (ticket.description.includes("<")) {
                 return (
                   <div
-                    className="text-sm text-neutral-600 leading-relaxed prose prose-sm prose-neutral max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_img]:max-w-full [&_img]:rounded-lg"
+                    className="text-sm text-neutral-600 leading-relaxed prose prose-sm prose-neutral max-w-none break-words [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline [&_a]:break-all [&_strong]:font-semibold [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_pre]:whitespace-pre-wrap [&_pre]:break-words"
                     dangerouslySetInnerHTML={{ __html: ticket.description }}
                   />
                 );
@@ -310,10 +312,10 @@ export default function PortalTicketDetailPage() {
           </div>
 
           {/* Conversation */}
-          <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
+          <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
             <div className="p-5 border-b border-neutral-100">
               <h2 className="text-sm font-semibold text-neutral-900">
-                Conversation
+                {tr("portal.ticketDetail.conversation")}
                 {ticket.comments.length > 0 && (
                   <span className="ml-2 text-neutral-400 font-normal">
                     ({ticket.comments.length})
@@ -324,7 +326,7 @@ export default function PortalTicketDetailPage() {
 
             {ticket.comments.length === 0 ? (
               <div className="p-8 text-center text-sm text-neutral-400">
-                Aucun message pour le moment.
+                {tr("portal.ticketDetail.noMessages")}
               </div>
             ) : (
               <div className="divide-y divide-neutral-100">
@@ -352,7 +354,7 @@ export default function PortalTicketDetailPage() {
                             </span>
                             {!isPortalUser && (
                               <span className="text-[10px] font-medium bg-blue-50 text-[#2563EB] rounded-full px-2 py-0.5">
-                                Support
+                                {tr("portal.ticketDetail.support")}
                               </span>
                             )}
                             <span className="text-xs text-neutral-400">
@@ -364,7 +366,7 @@ export default function PortalTicketDetailPage() {
                             if (html) {
                               return (
                                 <div
-                                  className="mt-2 text-sm text-neutral-700 leading-relaxed prose prose-sm prose-neutral max-w-none [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline [&_strong]:font-semibold [&_img]:max-w-full [&_img]:rounded-lg [&_blockquote]:border-l-4 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-500 [&_blockquote]:my-2 [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_th]:bg-slate-50"
+                                  className="mt-2 text-sm text-neutral-700 leading-relaxed prose prose-sm prose-neutral max-w-none break-words [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 [&_a]:underline [&_a]:break-all [&_strong]:font-semibold [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_blockquote]:border-l-4 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-500 [&_blockquote]:my-2 [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_th]:bg-slate-50"
                                   dangerouslySetInnerHTML={{ __html: html }}
                                 />
                               );
@@ -387,13 +389,13 @@ export default function PortalTicketDetailPage() {
             {!isClosed ? (
               <div className="p-5 border-t border-neutral-100 bg-[#F9FAFB] rounded-b-xl">
                 <label className="text-sm font-medium text-neutral-700 block mb-2">
-                  Écrire une réponse
+                  {tr("portal.ticketDetail.writeReply")}
                 </label>
                 <textarea
                   rows={4}
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
-                  placeholder="Écrivez votre message ici..."
+                  placeholder={tr("portal.ticketDetail.replyPlaceholder")}
                   className="w-full rounded-lg border border-neutral-200 bg-white p-3 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 resize-none"
                   disabled={sending}
                 />
@@ -416,14 +418,14 @@ export default function PortalTicketDetailPage() {
                     ) : (
                       <Send className="h-4 w-4" />
                     )}
-                    {sending ? "Envoi..." : "Envoyer"}
+                    {sending ? tr("portal.ticketDetail.sending") : tr("portal.ticketDetail.send")}
                   </button>
                 </div>
               </div>
             ) : (
               <div className="p-5 border-t border-neutral-100 bg-[#F9FAFB] rounded-b-xl text-center">
                 <p className="text-sm text-neutral-400">
-                  Ce billet est fermé. Vous ne pouvez plus y répondre.
+                  {tr("portal.ticketDetail.closedNotice")}
                 </p>
               </div>
             )}
@@ -433,14 +435,14 @@ export default function PortalTicketDetailPage() {
         {/* Barre latérale */}
         <div className="space-y-4">
           <div className="rounded-xl border border-neutral-200 bg-white shadow-sm p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-neutral-900">Détails</h3>
+            <h3 className="text-sm font-semibold text-neutral-900">{tr("portal.ticketDetail.details")}</h3>
 
             <div className="space-y-3.5">
               <div className="flex items-center gap-3">
                 <AlertCircle className="h-4 w-4 text-neutral-400 shrink-0" />
                 <div>
                   <p className="text-[11px] text-neutral-400 uppercase tracking-wider font-medium">
-                    Statut
+                    {tr("portal.ticketDetail.status")}
                   </p>
                   <Badge variant={statusVariant} className="mt-0.5">
                     {statusLabel}
@@ -452,7 +454,7 @@ export default function PortalTicketDetailPage() {
                 <Tag className="h-4 w-4 text-neutral-400 shrink-0" />
                 <div>
                   <p className="text-[11px] text-neutral-400 uppercase tracking-wider font-medium">
-                    Priorité
+                    {tr("portal.ticketDetail.priority")}
                   </p>
                   <Badge variant={priorityVariant} className="mt-0.5">
                     {priorityLabel}
@@ -464,7 +466,7 @@ export default function PortalTicketDetailPage() {
                 <Tag className="h-4 w-4 text-neutral-400 shrink-0" />
                 <div>
                   <p className="text-[11px] text-neutral-400 uppercase tracking-wider font-medium">
-                    Type
+                    {tr("portal.ticketDetail.type")}
                   </p>
                   <p className="text-sm text-neutral-700 mt-0.5">
                     {typeLabel}
@@ -476,7 +478,7 @@ export default function PortalTicketDetailPage() {
                 <Tag className="h-4 w-4 text-neutral-400 shrink-0" />
                 <div>
                   <p className="text-[11px] text-neutral-400 uppercase tracking-wider font-medium">
-                    Catégorie
+                    {tr("portal.ticketDetail.category")}
                   </p>
                   <p className="text-sm text-neutral-700 mt-0.5">
                     {ticket.categoryName}
@@ -488,7 +490,7 @@ export default function PortalTicketDetailPage() {
                 <UserCircle className="h-4 w-4 text-neutral-400 shrink-0" />
                 <div>
                   <p className="text-[11px] text-neutral-400 uppercase tracking-wider font-medium">
-                    Demandeur
+                    {tr("portal.ticketDetail.requester")}
                   </p>
                   <p className="text-sm text-neutral-700 mt-0.5">
                     {ticket.requesterName}
@@ -501,7 +503,7 @@ export default function PortalTicketDetailPage() {
                   <UserCircle className="h-4 w-4 text-neutral-400 shrink-0" />
                   <div>
                     <p className="text-[11px] text-neutral-400 uppercase tracking-wider font-medium">
-                      Assigné à
+                      {tr("portal.ticketDetail.assignedTo")}
                     </p>
                     <p className="text-sm text-neutral-700 mt-0.5">
                       {ticket.assigneeName}
@@ -514,7 +516,7 @@ export default function PortalTicketDetailPage() {
                 <Calendar className="h-4 w-4 text-neutral-400 shrink-0" />
                 <div>
                   <p className="text-[11px] text-neutral-400 uppercase tracking-wider font-medium">
-                    Créé le
+                    {tr("portal.ticketDetail.createdAt")}
                   </p>
                   <p className="text-sm text-neutral-700 mt-0.5">
                     {formatDateShort(ticket.createdAt)}
@@ -526,7 +528,7 @@ export default function PortalTicketDetailPage() {
                 <Clock className="h-4 w-4 text-neutral-400 shrink-0" />
                 <div>
                   <p className="text-[11px] text-neutral-400 uppercase tracking-wider font-medium">
-                    Dernière mise à jour
+                    {tr("portal.ticketDetail.lastUpdate")}
                   </p>
                   <p className="text-sm text-neutral-700 mt-0.5">
                     {formatDateShort(ticket.updatedAt)}
@@ -539,7 +541,7 @@ export default function PortalTicketDetailPage() {
                   <Clock className="h-4 w-4 text-neutral-400 shrink-0" />
                   <div>
                     <p className="text-[11px] text-neutral-400 uppercase tracking-wider font-medium">
-                      Échéance
+                      {tr("portal.ticketDetail.dueDate")}
                     </p>
                     <p className="text-sm text-neutral-700 mt-0.5">
                       {formatDateShort(ticket.dueAt)}
@@ -553,7 +555,7 @@ export default function PortalTicketDetailPage() {
                   <Clock className="h-4 w-4 text-neutral-400 shrink-0" />
                   <div>
                     <p className="text-[11px] text-neutral-400 uppercase tracking-wider font-medium">
-                      Résolu le
+                      {tr("portal.ticketDetail.resolvedAt")}
                     </p>
                     <p className="text-sm text-neutral-700 mt-0.5">
                       {formatDateShort(ticket.resolvedAt)}

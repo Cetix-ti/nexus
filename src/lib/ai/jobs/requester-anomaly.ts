@@ -209,6 +209,7 @@ export async function detectRequesterAnomalies(): Promise<{
       organizationId: true,
       organization: { select: { name: true } },
       requester: { select: { email: true } },
+      category: { select: { name: true } },
     },
   });
   if (recent.length === 0) return stats;
@@ -280,8 +281,9 @@ export async function detectRequesterAnomalies(): Promise<{
       (t) => t.categoryId && !knownCats.has(t.categoryId),
     );
     if (foreignCat && baseline.sampleSize >= 15) {
+      const catLabel = foreignCat.category?.name ?? "inconnue";
       signals.push(
-        `catégorie inhabituelle pour ce demandeur (${foreignCat.categoryId})`,
+        `catégorie inhabituelle pour ce demandeur (${catLabel})`,
       );
       if (severity === "low") severity = "medium";
     }

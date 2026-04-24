@@ -3,9 +3,11 @@
 import { useRouter } from "next/navigation";
 import { Eye, X } from "lucide-react";
 import { usePortalImpersonation } from "@/stores/portal-impersonation-store";
+import { useLocaleStore } from "@/stores/locale-store";
 
 export function PortalImpersonationBanner() {
   const router = useRouter();
+  const t = useLocaleStore((s) => s.t);
   const impersonating = usePortalImpersonation((s) => s.impersonating);
   const stop = usePortalImpersonation((s) => s.stopImpersonation);
 
@@ -17,9 +19,9 @@ export function PortalImpersonationBanner() {
         <div className="flex items-center gap-2 min-w-0">
           <Eye className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">
-            Vous visualisez le portail comme{" "}
+            {t("portal.impersonation.viewing")}{" "}
             <strong>{impersonating.name}</strong> ({impersonating.email}) —{" "}
-            {impersonating.organizationName} · rôle{" "}
+            {impersonating.organizationName} · {t("portal.impersonation.role")}{" "}
             <strong>{impersonating.role}</strong>
           </span>
         </div>
@@ -32,7 +34,7 @@ export function PortalImpersonationBanner() {
           className="inline-flex items-center gap-1.5 rounded-md bg-amber-950/15 hover:bg-amber-950/25 px-2.5 py-1 text-[11.5px] font-semibold transition-colors shrink-0"
         >
           <X className="h-3 w-3" />
-          Quitter l&apos;impersonation
+          {t("portal.impersonation.exit")}
         </button>
       </div>
     </div>

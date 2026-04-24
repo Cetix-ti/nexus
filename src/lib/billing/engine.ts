@@ -70,17 +70,29 @@ interface BillingContext {
 
 /**
  * Compute the applicable hourly rate based on context.
- * Order: forceX > urgent > afterHours/weekend > onsite/remote > standard
+ *
+ * Règle métier (services professionnels / T&M — catégorie de base) :
+ *   - Weekend  → taux standard × 2
+ *   - De soir  → taux standard × 1,5
+ *   - Urgence  → urgentRate (taux explicite du profil)
+ *   - Sur place → onsiteRate, sinon remoteRate
+ *
+ * Les multiplicateurs 1,5× / 2× ne s'appliquent QU'ICI (computeRate) et
+ * donc uniquement dans les paths T&M de decideBilling — les contrats
+ * hour_bank (overageRate) et MSP monthly (mspExcludedRate / rates de
+ * dépassement spécifiques) gardent leur logique propre.
+ *
+ * Weekend prime sur After-hours si les deux sont cochés (cas samedi
+ * soir : le coefficient 2× l'emporte).
  */
 function computeRate(ctx: BillingContext): number {
   const p = ctx.billingProfile;
   if (ctx.timeType === "travel") return p.travelRate;
   if (ctx.isUrgent) return p.urgentRate;
-  if (ctx.isWeekend) return p.weekendRate;
-  if (ctx.isAfterHours) return p.afterHoursRate;
+  if (ctx.isWeekend) return p.standardRate * 2;
+  if (ctx.isAfterHours) return p.standardRate * 1.5;
   if (ctx.isOnsite) return p.onsiteRate;
-  if (!ctx.isOnsite) return p.remoteRate;
-  return p.standardRate;
+  return p.remoteRate;
 }
 
 function applyMinimumAndRounding(
@@ -107,6 +119,26 @@ function decideHourBank(
   contract: Contract,
   bank: HourBankSettings
 ): BillingDecision {
+  // Les déplacements ont une sémantique propre (taux travel, catégorie
+  // "travel_billable" pour le reporting). On les traite AVANT le check
+  // d'éligibilité du timeType — sinon un travel non éligible tombe dans
+  // "billable" au lieu de "travel_billable".
+  if (ctx.timeType === "travel" && !bank.includesTravel) {
+    const rate = ctx.billingProfile.travelRate;
+    const billable = applyMinimumAndRounding(
+      ctx.durationMinutes,
+      ctx.billingProfile
+    );
+    return {
+      status: "travel_billable",
+      reason: "Le déplacement n'est pas inclus dans la banque d'heures",
+      rate,
+      amount: minutesToAmount(billable, rate),
+      contractId: contract.id,
+      appliedRule: "hour_bank.travel_excluded",
+    };
+  }
+
   // Check if this time type is eligible for the bank
   if (!bank.eligibleTimeTypes.includes(ctx.timeType)) {
     // Falls back to billable extra at standard rate
@@ -122,23 +154,6 @@ function decideHourBank(
       amount: minutesToAmount(billable, rate),
       contractId: contract.id,
       appliedRule: "hour_bank.ineligible_type",
-    };
-  }
-
-  // Check travel inclusion
-  if (ctx.timeType === "travel" && !bank.includesTravel) {
-    const rate = ctx.billingProfile.travelRate;
-    const billable = applyMinimumAndRounding(
-      ctx.durationMinutes,
-      ctx.billingProfile
-    );
-    return {
-      status: "travel_billable",
-      reason: "Le déplacement n'est pas inclus dans la banque d'heures",
-      rate,
-      amount: minutesToAmount(billable, rate),
-      contractId: contract.id,
-      appliedRule: "hour_bank.travel_excluded",
     };
   }
 
@@ -259,24 +274,9 @@ function decideMSPPlan(
     };
   }
 
-  // Check time type inclusion
-  if (!plan.includedTimeTypes.includes(ctx.timeType)) {
-    const rate = ctx.billingProfile.mspExcludedRate;
-    const billable = applyMinimumAndRounding(
-      ctx.durationMinutes,
-      ctx.billingProfile
-    );
-    return {
-      status: "msp_overage",
-      reason: `Type de temps « ${ctx.timeType} » non inclus dans le forfait MSP`,
-      rate,
-      amount: minutesToAmount(billable, rate),
-      contractId: contract.id,
-      appliedRule: "msp.excluded_time_type",
-    };
-  }
-
-  // Travel handling
+  // Travel handling — AVANT le check includedTimeTypes pour que la
+  // sémantique "déplacement" (status travel_billable, taux travelRate)
+  // prenne précédence sur la règle générique "type non inclus".
   if (ctx.timeType === "travel") {
     if (!plan.includesTravel) {
       const rate = ctx.billingProfile.travelRate;
@@ -298,6 +298,23 @@ function decideMSPPlan(
       reason: "Déplacement inclus dans le forfait MSP",
       contractId: contract.id,
       appliedRule: "msp.travel_included",
+    };
+  }
+
+  // Check time type inclusion (pour les types non-travel)
+  if (!plan.includedTimeTypes.includes(ctx.timeType)) {
+    const rate = ctx.billingProfile.mspExcludedRate;
+    const billable = applyMinimumAndRounding(
+      ctx.durationMinutes,
+      ctx.billingProfile
+    );
+    return {
+      status: "msp_overage",
+      reason: `Type de temps « ${ctx.timeType} » non inclus dans le forfait MSP`,
+      rate,
+      amount: minutesToAmount(billable, rate),
+      contractId: contract.id,
+      appliedRule: "msp.excluded_time_type",
     };
   }
 

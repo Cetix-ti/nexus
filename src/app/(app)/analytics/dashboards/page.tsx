@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { TagOrganizationModal } from "@/components/analytics/tag-organization-modal";
@@ -69,6 +69,20 @@ import {
 import { WidgetChart, type ChartType } from "@/components/widgets/widget-chart";
 import { buildDrillDownUrl } from "@/lib/analytics/drill-down";
 import { ExportDashboardButton } from "@/components/analytics/export-dashboard-button";
+import { AnalyticsSectionTabs } from "@/components/analytics/section-tabs";
+import { DashboardItemAppearance } from "@/components/analytics/dashboard-item-appearance";
+import {
+  WidgetCatalogPicker,
+  renderAddAction,
+  renderToggleAction,
+  type UnifiedWidget,
+} from "@/components/analytics/widget-catalog-picker";
+import {
+  loadWidgetMeta,
+  saveWidgetMeta,
+  updateWidgetMeta,
+  type WidgetMetaStore,
+} from "@/lib/analytics/widget-meta";
 
 const PIE_PALETTE = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
@@ -410,6 +424,45 @@ function loadFolders(): DashboardFolder[] { try { const r = localStorage.getItem
 function saveFolders(folders: DashboardFolder[]) { try { localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders)); } catch {} }
 function loadRecent(): string[] { try { const r = localStorage.getItem(RECENT_KEY); if (r) return JSON.parse(r); } catch {} return []; }
 function saveRecent(ids: string[]) { try { localStorage.setItem(RECENT_KEY, JSON.stringify(ids)); } catch {} }
+
+// Filtres persistés par dashboard — pour qu'ils soient conservés entre
+// sessions et restitués automatiquement à l'ouverture d'un dashboard.
+interface PersistedFilters {
+  filterOrg: string;
+  filterAgent: string;
+  days: string;
+  customFrom: string;
+  customTo: string;
+}
+const DEFAULT_FILTERS: PersistedFilters = {
+  filterOrg: "all", filterAgent: "all", days: "30", customFrom: "", customTo: "",
+};
+function loadReportFilters(reportId: string): PersistedFilters | null {
+  try {
+    const r = localStorage.getItem(`nexus:report-filters:${reportId}`);
+    if (r) {
+      const parsed = JSON.parse(r);
+      if (parsed && typeof parsed === "object") {
+        return {
+          filterOrg: typeof parsed.filterOrg === "string" ? parsed.filterOrg : "all",
+          filterAgent: typeof parsed.filterAgent === "string" ? parsed.filterAgent : "all",
+          days: typeof parsed.days === "string" ? parsed.days : "30",
+          customFrom: typeof parsed.customFrom === "string" ? parsed.customFrom : "",
+          customTo: typeof parsed.customTo === "string" ? parsed.customTo : "",
+        };
+      }
+    }
+  } catch {}
+  return null;
+}
+function saveReportFilters(reportId: string, f: PersistedFilters) {
+  try { localStorage.setItem(`nexus:report-filters:${reportId}`, JSON.stringify(f)); } catch {}
+}
+function isDashboardView(view: string): boolean {
+  // Les "pseudo-views" (galerie, favoris, récents, tous, dossier) commencent
+  // par "__". Tout le reste est un reportId réel (built-in ou custom).
+  return !view.startsWith("__");
+}
 function loadCollapsedSections(): Record<string, boolean> { try { const r = localStorage.getItem(COLLAPSED_SECTIONS_KEY); if (r) return JSON.parse(r); } catch {} return {}; }
 function saveCollapsedSections(s: Record<string, boolean>) { try { localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify(s)); } catch {} }
 
@@ -440,7 +493,42 @@ export default function ReportsPage() {
   // Page par défaut = galerie de dashboards (liste visuelle).
   // L'utilisateur peut ensuite pinner un dashboard en favori avec "défaut"
   // mais le landing reste la galerie pour plus de clarté.
-  const [view, setView] = useState<string>(GALLERY_VIEW);
+  //
+  // La vue est synchronisée avec l'URL (query param `?view=...`) pour que :
+  //   - Le bouton « Précédent » du navigateur revienne à la galerie, pas
+  //     à la page précédente avant /analytics/dashboards (ex : onglet
+  //     Rapports programmés).
+  //   - Un rechargement/partage d'URL conserve le dashboard ouvert.
+  const [view, setViewState] = useState<string>(() => {
+    if (typeof window === "undefined") return GALLERY_VIEW;
+    const v = new URLSearchParams(window.location.search).get("view");
+    return v || GALLERY_VIEW;
+  });
+  // Wrapper qui met à jour l'état ET pousse une entrée dans l'historique
+  // en préservant les autres query params (orgContext, orgName…).
+  const setView = useCallback((next: string) => {
+    setViewState(next);
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (next === GALLERY_VIEW) params.delete("view");
+    else params.set("view", next);
+    const qs = params.toString();
+    const url = `/analytics/dashboards${qs ? `?${qs}` : ""}`;
+    // Ne push que si l'URL change réellement — évite de polluer l'historique.
+    if (window.location.pathname + window.location.search !== url) {
+      window.history.pushState(null, "", url);
+    }
+  }, []);
+  // popstate : re-sync l'état interne quand l'user clique sur Précédent/
+  // Suivant. Lit le param depuis l'URL courante et met à jour `view`.
+  useEffect(() => {
+    function onPop() {
+      const v = new URLSearchParams(window.location.search).get("view");
+      setViewState(v || GALLERY_VIEW);
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const [showConfig, setShowConfig] = useState(false);
   const [showWidgetSidebar, setShowWidgetSidebar] = useState(false);
   const [visibleWidgets, setVisibleWidgets] = useState<WidgetId[]>(() => loadVisible());
@@ -476,8 +564,6 @@ export default function ReportsPage() {
   const [newReportWidgets, setNewReportWidgets] = useState<WidgetId[]>([]);
   const [newReportParentId, setNewReportParentId] = useState<string>("");
   const [showParentPanel, setShowParentPanel] = useState(false);
-  // Sidebar repliée par défaut — libère l'espace pour la galerie/dashboard.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [folders, setFolders] = useState<DashboardFolder[]>(() => loadFolders());
   const [recent, setRecent] = useState<string[]>(() => loadRecent());
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(
@@ -499,15 +585,33 @@ export default function ReportsPage() {
   const [tagDefs, setTagDefs] = useState<TagDef[]>(() => loadTagDefinitions());
   const [managingTags, setManagingTags] = useState(false);
   const [assignTagsReportId, setAssignTagsReportId] = useState<string | null>(null);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  // Id du widget dont on configure l'apparence spécifique à ce dashboard
+  // (fontScale, couleur, type de graphique). Null = aucun — popover fermé.
+  const [configureItemId, setConfigureItemId] = useState<string | null>(null);
+  // Ferme le popover d'apparence dès qu'on quitte le mode édition.
+  useEffect(() => { if (!editMode) setConfigureItemId(null); }, [editMode]);
+  // Catalogue unifié (built-in + custom) et métadonnées widget-niveau.
+  // Remonte queryWidgets au niveau page pour partager avec la modale de
+  // création et le drawer d'ajout.
+  const [queryWidgets] = useState<QueryWidget[]>(() => loadQueryWidgets());
+  const [widgetMeta, setWidgetMeta] = useState<WidgetMetaStore>(() => loadWidgetMeta());
+  const [createReportSearch, setCreateReportSearch] = useState("");
+  const [widgetAttributeTargetId, setWidgetAttributeTargetId] = useState<string | null>(null);
+  const [widgetTagTargetId, setWidgetTagTargetId] = useState<string | null>(null);
   const tagDefById = useMemo(() => {
     const map: Record<string, TagDef> = {};
     for (const t of tagDefs) map[t.id] = t;
     return map;
   }, [tagDefs]);
 
-  // Charge les noms des orgs référencées par les rapports taggés (une fois).
+  // Charge les noms des orgs référencées par les rapports ET widgets
+  // taggés (une fois). Inclut les IDs provenant de widgetMeta en plus
+  // des customReports — même objectif d'affichage des badges "Pour [org]".
   useEffect(() => {
-    const ids = Array.from(new Set(customReports.flatMap((r) => getReportOrgs(r))));
+    const reportOrgIds = customReports.flatMap((r) => getReportOrgs(r));
+    const widgetOrgIds = Object.values(widgetMeta).flatMap((m) => m.organizationIds ?? []);
+    const ids = Array.from(new Set([...reportOrgIds, ...widgetOrgIds]));
     if (ids.length === 0) return;
     if (ids.every((id) => orgNameById[id])) return;
     fetch("/api/v1/organizations")
@@ -521,7 +625,7 @@ export default function ReportsPage() {
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customReports]);
+  }, [customReports, widgetMeta]);
 
   // Merged catalog: built-in + custom
   // On filtre les built-ins masqués, sauf quand l'user a activé
@@ -555,16 +659,38 @@ export default function ReportsPage() {
     return allReports.filter((r) => r.parentId === reportId);
   }
 
-  // Dashboard items layout per report — persisted in localStorage
-  const layoutKey = `nexus:report-layout:${view}`;
+  // Dashboard items layout per report — persisted in localStorage.
+  //
+  // Héritage parent → enfant : un dashboard enfant (parentId défini) ne
+  // garde PAS son propre layout. Il lit et écrit directement dans le
+  // layout du parent-racine (en remontant la chaîne). Conséquence : toute
+  // modification du parent (ajout/retrait de widgets, réorganisation,
+  // apparence) se répercute immédiatement sur ses enfants. Seuls les
+  // filtres (org, agent, période) restent per-child.
+  function findLayoutRoot(reportId: string): string {
+    const report = allReports.find((r) => r.id === reportId);
+    if (!report) return reportId;
+    let cur = report;
+    const seen = new Set<string>();
+    while (cur.parentId && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      const parent = allReports.find((r) => r.id === cur.parentId);
+      if (!parent) break;
+      cur = parent;
+    }
+    return cur.id;
+  }
+  const layoutReportId = findLayoutRoot(view);
+  const layoutKey = `nexus:report-layout:${layoutReportId}`;
   const [dashItems, setDashItems] = useState<DashboardItem[]>([]);
 
-  // Build dashboard items from report widgets when view changes
+  // Build dashboard items from report widgets when view (or parent chain) changes.
   useEffect(() => {
     const report = allReports.find((r) => r.id === view);
     if (!report) return;
     const widgets = resolveWidgets(report);
-    // Try to load saved layout
+    // Try to load saved layout — pour un enfant, `layoutKey` pointe déjà
+    // vers le layout du parent-racine.
     try {
       const saved = localStorage.getItem(layoutKey);
       if (saved) {
@@ -581,7 +707,8 @@ export default function ReportsPage() {
       w: defaultW(wId),
       h: defaultH(wId),
     })));
-  }, [view, customReports]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, layoutReportId, customReports]);
 
   function persistDashLayout(items: DashboardItem[]) {
     try { localStorage.setItem(layoutKey, JSON.stringify(items)); } catch {}
@@ -609,6 +736,9 @@ export default function ReportsPage() {
   function handleGridReorder(items: DashboardItem[]) { applyLayoutChange(items); }
   function handleGridRemove(id: string) { applyLayoutChange(dashItems.filter((i) => i.id !== id)); }
   function handleGridResize(id: string, w: number, h: number) { applyLayoutChange(dashItems.map((i) => i.id === id ? { ...i, w, h } : i)); }
+  function handleGridItemUpdate(id: string, patch: Partial<DashboardItem>) {
+    applyLayoutChange(dashItems.map((i) => i.id === id ? { ...i, ...patch } : i));
+  }
   function handleGridAdd(widgetId: string) {
     const newItem: DashboardItem = { id: `di_${widgetId}_${Date.now()}`, widgetId, w: 20, h: 3 };
     applyLayoutChange([...dashItems, newItem]);
@@ -683,6 +813,44 @@ export default function ReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode, editHistory, editFuture, dashItems, editBaseline]);
 
+  // Filtres globaux (panneau Filtres) — déclarés AVANT `load` car la
+  // callback en dépend. Restaurés depuis localStorage à chaque changement
+  // de dashboard (useEffect plus bas) pour que les filtres appliqués
+  // à un dashboard persistent entre sessions.
+  const [filterOrg, setFilterOrg] = useState("all");
+  const [filterAgent, setFilterAgent] = useState("all");
+  const [showFilters, setShowFilters] = useState(false);
+  // Drapeau « on vient de charger des filtres depuis le storage » — évite
+  // que le useEffect de sauvegarde ré-écrive les filtres de l'ancien
+  // dashboard sous la clé du nouveau pendant que les setters asynchrones
+  // se propagent.
+  const skipNextFilterSaveRef = useRef(false);
+
+  // --- Persistance des filtres par dashboard ---
+  // À l'ouverture d'un dashboard (view ≠ pseudo-view), restaure ses
+  // filtres sauvegardés, ou réinitialise aux valeurs par défaut.
+  useEffect(() => {
+    if (!isDashboardView(view)) return;
+    const saved = loadReportFilters(view) ?? DEFAULT_FILTERS;
+    skipNextFilterSaveRef.current = true;
+    setFilterOrg(saved.filterOrg);
+    setFilterAgent(saved.filterAgent);
+    setDays(saved.days);
+    setCustomFrom(saved.customFrom);
+    setCustomTo(saved.customTo);
+  }, [view]);
+
+  // Sauvegarde à chaque modification d'un filtre, sauf juste après un
+  // chargement (pour ne pas re-sauvegarder les valeurs fraîchement lues).
+  useEffect(() => {
+    if (!isDashboardView(view)) return;
+    if (skipNextFilterSaveRef.current) {
+      skipNextFilterSaveRef.current = false;
+      return;
+    }
+    saveReportFilters(view, { filterOrg, filterAgent, days, customFrom, customTo });
+  }, [view, filterOrg, filterAgent, days, customFrom, customTo]);
+
   const load = useCallback(() => {
     setLoading(true);
     // Pour le range custom, on approxime en jours depuis la plage pour
@@ -695,12 +863,17 @@ export default function ReportsPage() {
       const n = Math.max(1, Math.ceil((to - from) / 86_400_000));
       effectiveDays = String(n);
     }
-    fetch(`/api/v1/reports/global?days=${effectiveDays}`)
+    // orgContextId (atelier d'org) prime, sinon on prend le filtre « Organisation »
+    // du panneau de filtres s'il est actif.
+    const effectiveOrgId = orgContextId ?? (filterOrg !== "all" ? filterOrg : null);
+    const qs = new URLSearchParams({ days: effectiveDays });
+    if (effectiveOrgId) qs.set("organizationId", effectiveOrgId);
+    fetch(`/api/v1/reports/global?${qs.toString()}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [days, customFrom, customTo]);
+  }, [days, customFrom, customTo, orgContextId, filterOrg]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -868,14 +1041,38 @@ export default function ReportsPage() {
   }
 
   function setReportParent(reportId: string, parentId: string | null) {
+    const before = customReports.find((r) => r.id === reportId) ?? null;
+    const wasChild = !!before?.parentId;
+    const oldParentId = before?.parentId ?? null;
+
     const updated = customReports.map((r) =>
       r.id === reportId ? { ...r, parentId } : r
     );
     setCustomReports(updated);
     saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
-    // Clear saved layout so it rebuilds from the new parent's widgets
+
     if (parentId) {
+      // Devient (ou reste) enfant : supprime son layout propre, il héritera
+      // maintenant de celui du parent (findLayoutRoot remonte la chaîne).
       try { localStorage.removeItem(`nexus:report-layout:${reportId}`); } catch {}
+    } else if (wasChild) {
+      // Devient indépendant : copie le layout qu'il héritait dans sa
+      // propre clé pour qu'il garde l'apparence actuelle.
+      try {
+        let rootId = oldParentId;
+        // Remonte la chaîne au cas où l'ancien parent était lui-même un enfant.
+        const seen = new Set<string>();
+        while (rootId && !seen.has(rootId)) {
+          seen.add(rootId);
+          const p = customReports.find((r) => r.id === rootId);
+          if (!p?.parentId) break;
+          rootId = p.parentId;
+        }
+        if (rootId) {
+          const inherited = localStorage.getItem(`nexus:report-layout:${rootId}`);
+          if (inherited) localStorage.setItem(`nexus:report-layout:${reportId}`, inherited);
+        }
+      } catch {}
     }
   }
 
@@ -946,10 +1143,61 @@ export default function ReportsPage() {
     saveTagDefinitions(next);
   }
 
+  /** Attribue un widget (built-in ou custom) à des organisations. */
+  function setWidgetOrganizations(widgetId: string, orgIds: string[]) {
+    const next = updateWidgetMeta(widgetMeta, widgetId, { organizationIds: orgIds });
+    setWidgetMeta(next);
+    saveWidgetMeta(next);
+  }
+
+  /** Attache des balises (tag IDs) à un widget (built-in ou custom). */
+  function assignTagsToWidget(widgetId: string, tagIds: string[]) {
+    const next = updateWidgetMeta(widgetMeta, widgetId, { tags: tagIds });
+    setWidgetMeta(next);
+    saveWidgetMeta(next);
+  }
+
+  /**
+   * Construit la liste unifiée des widgets disponibles pour les pickers
+   * (modale création + drawer d'ajout). Built-in + custom, dans cet ordre.
+   */
+  const unifiedWidgets: UnifiedWidget[] = [
+    ...WIDGETS.map((w) => ({
+      id: w.id as string,
+      label: w.label,
+      description: w.description,
+      icon: w.icon,
+      kind: "builtin" as const,
+    })),
+    ...queryWidgets.map((w) => ({
+      id: w.id,
+      label: w.name,
+      description: w.description,
+      icon: <BarChart3 className="h-4 w-4" />,
+      kind: "custom" as const,
+      color: w.color,
+    })),
+  ];
+
+  /** Maps utilitaires pour afficher les badges dans le picker. */
+  const widgetOrgIdsMap: Record<string, string[]> = {};
+  const widgetTagIdsMap: Record<string, string[]> = {};
+  for (const id of Object.keys(widgetMeta)) {
+    const meta = widgetMeta[id];
+    if (meta.organizationIds?.length) widgetOrgIdsMap[id] = meta.organizationIds;
+    if (meta.tags?.length) widgetTagIdsMap[id] = meta.tags;
+  }
+
   function deleteReport(id: string) {
     if (id.startsWith("custom_")) {
       // Custom : suppression réelle (retire de la liste + layout + favori).
       if (!confirm("Supprimer ce rapport personnalisé ?")) return;
+      // Avant suppression : capture le layout du parent pour le recopier
+      // sur chaque enfant orphelin (sinon ils perdent leur apparence
+      // héritée en même temps que leur parent).
+      let parentLayout: string | null = null;
+      try { parentLayout = localStorage.getItem(`nexus:report-layout:${id}`); } catch {}
+      const orphans = customReports.filter((r) => r.parentId === id);
       const updated = customReports
         .filter((r) => r.id !== id)
         .map((r) => r.parentId === id ? { ...r, parentId: null } : r);
@@ -958,6 +1206,12 @@ export default function ReportsPage() {
       setFavorites((prev) => { const next = prev.filter((f) => f !== id); saveFavorites(next); return next; });
       if (view === id) setView(loadPrimary());
       try { localStorage.removeItem(`nexus:report-layout:${id}`); } catch {}
+      // Recopie le layout hérité sur chaque orphelin.
+      if (parentLayout) {
+        for (const o of orphans) {
+          try { localStorage.setItem(`nexus:report-layout:${o.id}`, parentLayout); } catch {}
+        }
+      }
       return;
     }
     // Built-in : masquage (ajout à un set localStorage). Restaurable
@@ -981,10 +1235,7 @@ export default function ReportsPage() {
     });
   }
 
-  // Global filters
-  const [filterOrg, setFilterOrg] = useState("all");
-  const [filterAgent, setFilterAgent] = useState("all");
-  const [showFilters, setShowFilters] = useState(false);
+  // Global filters — state déclaré plus haut (juste avant `load`).
 
   // Org and agent lists for filter dropdowns
   const orgList = data ? [...new Set([
@@ -1020,6 +1271,7 @@ export default function ReportsPage() {
 
   return (
     <div className="flex flex-col gap-3 min-h-0">
+      <AnalyticsSectionTabs section="reports" />
       {orgContextId && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 flex items-start gap-2 flex-wrap">
           <svg className="h-4 w-4 text-blue-700 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1028,7 +1280,7 @@ export default function ReportsPage() {
           <div className="flex-1 min-w-0 text-[12.5px] text-blue-900">
             <strong>Atelier organisation{orgContextName ? ` : ${orgContextName}` : ""}</strong>
             <div className="text-[11.5px] text-blue-800 mt-0.5">
-              Les rapports créés ici seront attribués à cette organisation. Les rapports globaux restent visibles.
+              Les nouveaux rapports sont attribués à cette organisation et les widgets sont filtrés automatiquement sur ses données.
             </div>
           </div>
           <a href="/analytics/dashboards" className="text-[11.5px] text-blue-700 hover:text-blue-800 underline font-medium shrink-0">
@@ -1038,305 +1290,6 @@ export default function ReportsPage() {
       )}
       <div className="flex gap-3 min-h-0">
       {/* ============================================================ */}
-      {/* Left sidebar — dashboard list */}
-      {/* ============================================================ */}
-      <div className={cn(
-        "hidden md:flex shrink-0 flex-col gap-3 print:hidden transition-all duration-200",
-        // Collapsed = 36 px (bouton + mini-icônes favoris). Expanded : largeur
-        // plus généreuse (240/288 px) pour que les noms de dossiers et de
-        // dashboards soient bien lisibles sans truncate agressif.
-        sidebarCollapsed ? "w-9" : "md:w-60 lg:w-72"
-      )}>
-        {sidebarCollapsed ? (
-          /* Collapsed sidebar — just a thin bar with expand button */
-          <Card className="py-2 flex flex-col items-center gap-1">
-            <button
-              onClick={() => setSidebarCollapsed(false)}
-              className="h-8 w-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-              title="Ouvrir le panneau"
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </button>
-            <div className="w-5 h-px bg-slate-200 my-1" />
-            {/* Mini icons for active report hint */}
-            {favorites.slice(0, 6).map((fId) => {
-              const r = allReports.find((rep) => rep.id === fId);
-              if (!r) return null;
-              const isActive = view === fId;
-              return (
-                <button
-                  key={fId}
-                  onClick={() => setView(fId)}
-                  className={cn(
-                    "h-7 w-7 rounded-md flex items-center justify-center text-[10px] font-bold transition-all",
-                    isActive
-                      ? "bg-blue-100 text-blue-700"
-                      : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                  )}
-                  title={r.label}
-                >
-                  {r.label.charAt(0)}
-                </button>
-              );
-            })}
-          </Card>
-        ) : (
-          /* Expanded sidebar */
-          <Card className="overflow-hidden">
-            <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-              <h2 className="text-[13px] font-semibold text-slate-900">Dashboards</h2>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setManagingTags(true)}
-                  className="h-6 w-6 rounded-md flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors"
-                  title="Gérer les balises"
-                >
-                  <TagIcon className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={addFolder}
-                  className="h-6 w-6 rounded-md flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors"
-                  title="Nouveau dossier"
-                >
-                  <FolderPlus className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={() => setShowCreateReport(true)}
-                  className="h-6 w-6 rounded-md flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors"
-                  title="Nouveau dashboard"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={() => setSidebarCollapsed(true)}
-                  className="h-6 w-6 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-                  title="Réduire le panneau"
-                >
-                  <PanelLeftClose className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-            <div className="overflow-y-auto max-h-[calc(100vh-180px)] px-1.5 pb-2 space-y-2">
-              {/* Lien permanent vers la galerie. */}
-              <button
-                onClick={() => setView(GALLERY_VIEW)}
-                className={cn(
-                  "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12.5px] text-left transition-all",
-                  view === GALLERY_VIEW
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-slate-600 hover:bg-slate-50",
-                )}
-              >
-                <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />
-                <span className="flex-1 truncate">Galerie</span>
-              </button>
-
-              {/* Mes Favoris — toujours en tête, fixe */}
-              <SidebarSection
-                title="Mes Favoris"
-                icon={<span className="text-[11px] text-amber-500">★</span>}
-                count={favorites.length}
-                collapsed={!!collapsedSections["__fav__"]}
-                onToggle={() => toggleSection("__fav__")}
-                onTitleClick={() => setView(FAV_VIEW)}
-                isSelected={view === FAV_VIEW}
-                accentClass="text-amber-500"
-              >
-                {favorites.length === 0 ? (
-                  <p className="px-2 py-1 text-[11px] text-slate-400 italic">
-                    Clique ☆ sur un dashboard pour l&apos;ajouter ici.
-                  </p>
-                ) : (
-                  favorites.map((fId) => {
-                    const r = allReports.find((rep) => rep.id === fId);
-                    if (!r) return null;
-                    return (
-                      <DashboardRow
-                        key={`fav-${fId}`}
-                        report={r}
-                        isActive={view === fId}
-                        isPrimary={primaryId === fId}
-                        isFav={true}
-                        folders={folders}
-                        onOpen={() => setView(fId)}
-                        onToggleFav={() => toggleFavorite(fId)}
-                        onAddToFolder={(folderId) => addDashboardToFolder(folderId, fId)}
-                        moveMenuOpen={moveMenuForId === `fav-${fId}`}
-                        setMoveMenuOpen={(open) =>
-                          setMoveMenuForId(open ? `fav-${fId}` : null)
-                        }
-                      />
-                    );
-                  })
-                )}
-              </SidebarSection>
-
-              {/* Récents — 5 derniers consultés */}
-              <SidebarSection
-                title="Récents"
-                icon={<Clock className="h-3 w-3 text-slate-400" />}
-                count={recent.length}
-                collapsed={!!collapsedSections["__recent__"]}
-                onToggle={() => toggleSection("__recent__")}
-                onTitleClick={() => setView(RECENT_VIEW)}
-                isSelected={view === RECENT_VIEW}
-                accentClass="text-slate-500"
-              >
-                {recent.length === 0 ? (
-                  <p className="px-2 py-1 text-[11px] text-slate-400 italic">
-                    Tes derniers dashboards consultés apparaîtront ici.
-                  </p>
-                ) : (
-                  recent.map((rId) => {
-                    const r = allReports.find((rep) => rep.id === rId);
-                    if (!r) return null;
-                    return (
-                      <DashboardRow
-                        key={`rec-${rId}`}
-                        report={r}
-                        isActive={view === rId}
-                        isPrimary={primaryId === rId}
-                        isFav={favorites.includes(rId)}
-                        folders={folders}
-                        onOpen={() => setView(rId)}
-                        onToggleFav={() => toggleFavorite(rId)}
-                        onAddToFolder={(folderId) => addDashboardToFolder(folderId, rId)}
-                        moveMenuOpen={moveMenuForId === `rec-${rId}`}
-                        setMoveMenuOpen={(open) =>
-                          setMoveMenuForId(open ? `rec-${rId}` : null)
-                        }
-                      />
-                    );
-                  })
-                )}
-              </SidebarSection>
-
-              {/* Dossiers créés par l'utilisateur */}
-              {folders.map((folder) => {
-                const key = `folder:${folder.id}`;
-                const isRenaming = renamingFolderId === folder.id;
-                return (
-                  <SidebarSection
-                    key={folder.id}
-                    title={folder.name}
-                    icon={<Folder className="h-3 w-3 text-blue-500" />}
-                    count={folder.dashboardIds.length}
-                    collapsed={!!collapsedSections[key]}
-                    onToggle={() => toggleSection(key)}
-                    onTitleClick={() => setView(`${FOLDER_VIEW_PREFIX}${folder.id}`)}
-                    isSelected={view === `${FOLDER_VIEW_PREFIX}${folder.id}`}
-                    accentClass="text-blue-500"
-                    renaming={isRenaming}
-                    renameValue={renameFolderDraft}
-                    onRenameChange={setRenameFolderDraft}
-                    onRenameCommit={() => {
-                      renameFolder(folder.id, renameFolderDraft);
-                      setRenamingFolderId(null);
-                    }}
-                    onRenameCancel={() => setRenamingFolderId(null)}
-                    actions={
-                      <>
-                        <button
-                          onClick={() => {
-                            setRenamingFolderId(folder.id);
-                            setRenameFolderDraft(folder.name);
-                          }}
-                          className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                          title="Renommer"
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                        <button
-                          onClick={() => deleteFolder(folder.id)}
-                          className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-600"
-                          title="Supprimer"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </>
-                    }
-                  >
-                    {folder.dashboardIds.length === 0 ? (
-                      <p className="px-2 py-1 text-[11px] text-slate-400 italic">
-                        Dossier vide. Utilise ⋯ sur un dashboard pour l&apos;ajouter.
-                      </p>
-                    ) : (
-                      folder.dashboardIds.map((dId) => {
-                        const r = allReports.find((rep) => rep.id === dId);
-                        if (!r) return null;
-                        return (
-                          <DashboardRow
-                            key={`${folder.id}-${dId}`}
-                            report={r}
-                            isActive={view === dId}
-                            isPrimary={primaryId === dId}
-                            isFav={favorites.includes(dId)}
-                            folders={folders}
-                            onOpen={() => setView(dId)}
-                            onToggleFav={() => toggleFavorite(dId)}
-                            onAddToFolder={(folderId) => addDashboardToFolder(folderId, dId)}
-                            onRemoveFromFolder={() => removeDashboardFromFolder(folder.id, dId)}
-                            moveMenuOpen={moveMenuForId === `${folder.id}-${dId}`}
-                            setMoveMenuOpen={(open) =>
-                              setMoveMenuForId(open ? `${folder.id}-${dId}` : null)
-                            }
-                          />
-                        );
-                      })
-                    )}
-                  </SidebarSection>
-                );
-              })}
-
-              {/* Tous les dashboards (non classés + tous, pour découvrir) */}
-              {(() => {
-                const foldered = new Set(folders.flatMap((f) => f.dashboardIds));
-                const unfiledCount = allReports.filter((r) => !foldered.has(r.id)).length;
-                return (
-                  <SidebarSection
-                    title="Tous les dashboards"
-                    icon={<LayoutDashboard className="h-3 w-3 text-slate-400" />}
-                    count={allReports.length}
-                    collapsed={collapsedSections["__all__"] ?? true}
-                    onToggle={() => toggleSection("__all__")}
-                    onTitleClick={() => setView(ALL_VIEW)}
-                    isSelected={view === ALL_VIEW}
-                    accentClass="text-slate-500"
-                    hint={
-                      unfiledCount > 0
-                        ? `${unfiledCount} non classé${unfiledCount > 1 ? "s" : ""}`
-                        : undefined
-                    }
-                  >
-                    {allReports.map((r) => {
-                      const inFolder = foldered.has(r.id);
-                      return (
-                        <DashboardRow
-                          key={`all-${r.id}`}
-                          report={r}
-                          isActive={view === r.id}
-                          isPrimary={primaryId === r.id}
-                          isFav={favorites.includes(r.id)}
-                          folders={folders}
-                          onOpen={() => setView(r.id)}
-                          onToggleFav={() => toggleFavorite(r.id)}
-                          onAddToFolder={(folderId) => addDashboardToFolder(folderId, r.id)}
-                          dimmed={inFolder}
-                          moveMenuOpen={moveMenuForId === `all-${r.id}`}
-                          setMoveMenuOpen={(open) =>
-                            setMoveMenuForId(open ? `all-${r.id}` : null)
-                          }
-                        />
-                      );
-                    })}
-                  </SidebarSection>
-                );
-              })()}
-            </div>
-          </Card>
-        )}
-      </div>
-
       {/* ============================================================ */}
       {/* Main content */}
       {/* ============================================================ */}
@@ -1660,10 +1613,52 @@ export default function ReportsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button variant="primary" size="sm" onClick={() => setShowCreateReport(true)} className="hidden md:inline-flex">
-              <Plus className="h-3.5 w-3.5" />
-              Nouveau
-            </Button>
+            <div className="relative hidden md:block">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setCreateMenuOpen((v) => !v)}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Nouveau
+                <ChevronDown className="h-3 w-3 opacity-80" />
+              </Button>
+              {createMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setCreateMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-40 w-52 rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreateMenuOpen(false);
+                        setShowCreateReport(true);
+                      }}
+                      className="w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-50"
+                    >
+                      <LayoutDashboard className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[12.5px] font-medium text-slate-900">Nouveau dashboard</div>
+                        <div className="text-[10.5px] text-slate-500">Assemble tes widgets</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreateMenuOpen(false);
+                        addFolder();
+                      }}
+                      className="w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-50"
+                    >
+                      <FolderPlus className="h-4 w-4 mt-0.5 text-amber-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[12.5px] font-medium text-slate-900">Nouveau dossier</div>
+                        <div className="text-[10.5px] text-slate-500">Regroupe plusieurs dashboards</div>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1731,19 +1726,27 @@ export default function ReportsPage() {
             ) : (
               <div>
                 <label className="block text-[12px] font-medium text-slate-700 mb-2">Widgets à inclure</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
-                  {WIDGETS.map((w) => {
-                    const selected = newReportWidgets.includes(w.id);
-                    return (
-                      <button key={w.id} onClick={() => setNewReportWidgets((prev) => selected ? prev.filter((id) => id !== w.id) : [...prev, w.id])}
-                        className={cn("flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-all ring-1 ring-inset text-[11px]",
-                          selected ? "bg-blue-50 ring-blue-200 text-blue-700 font-medium" : "bg-white ring-slate-200 text-slate-600 hover:ring-blue-200"
-                        )}>
-                        {w.icon}
-                        <span className="truncate">{w.label}</span>
-                      </button>
-                    );
-                  })}
+                <div className="max-h-[360px] overflow-y-auto pr-1">
+                  <WidgetCatalogPicker
+                    widgets={unifiedWidgets}
+                    search={createReportSearch}
+                    onSearchChange={setCreateReportSearch}
+                    renderAction={(w) => renderToggleAction(
+                      w,
+                      newReportWidgets.includes(w.id as WidgetId),
+                      (id) => setNewReportWidgets((prev) =>
+                        prev.includes(id as WidgetId)
+                          ? prev.filter((x) => x !== id)
+                          : [...prev, id as WidgetId],
+                      ),
+                    )}
+                    onAttribute={(w) => setWidgetAttributeTargetId(w.id)}
+                    onTag={(w) => setWidgetTagTargetId(w.id)}
+                    orgIdsByWidgetId={widgetOrgIdsMap}
+                    tagIdsByWidgetId={widgetTagIdsMap}
+                    orgNameById={orgNameById}
+                    tagDefById={tagDefById}
+                  />
                 </div>
                 <p className="mt-2 text-[11px] text-slate-400">{newReportWidgets.length} widgets sélectionnés — vous pourrez les modifier après la création</p>
               </div>
@@ -1946,25 +1949,6 @@ export default function ReportsPage() {
 
         return (
           <div className="space-y-8">
-            {/* Barre d'en-tête avec le bouton "Créer un dashboard" en première position */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
-              <button
-                type="button"
-                onClick={() => setShowCreateReport(true)}
-                className="group flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white/60 hover:bg-blue-50/60 hover:border-blue-400 transition-all p-6 min-h-[160px]"
-              >
-                <div className="h-11 w-11 rounded-xl bg-slate-100 group-hover:bg-blue-100 flex items-center justify-center transition-colors">
-                  <Plus className="h-5 w-5 text-slate-500 group-hover:text-blue-700" />
-                </div>
-                <p className="text-[13px] font-semibold text-slate-700 group-hover:text-blue-700">
-                  Créer un dashboard
-                </p>
-                <p className="text-[11.5px] text-slate-500 text-center">
-                  Assemble tes widgets favoris
-                </p>
-              </button>
-            </div>
-
             {sections.map((section) => (
               <div key={section.key} className="space-y-3">
                 <div className="flex items-center gap-2 border-b border-slate-200 pb-1.5">
@@ -1986,10 +1970,20 @@ export default function ReportsPage() {
                       tagDefs={r.tags?.map((id) => tagDefById[id]).filter(Boolean) as TagDef[] ?? []}
                       orgIds={getReportOrgs(r)}
                       orgNameById={orgNameById}
+                      folders={folders}
                       onOpen={() => setView(r.id)}
                       onTagOrg={() => setTaggingReportId(r.id)}
                       onTagLabels={() => setAssignTagsReportId(r.id)}
                       onDuplicate={() => duplicateReport(r.id)}
+                      onToggleFolder={(folderId) => {
+                        const folder = folders.find((f) => f.id === folderId);
+                        if (!folder) return;
+                        if (folder.dashboardIds.includes(r.id)) {
+                          removeDashboardFromFolder(folderId, r.id);
+                        } else {
+                          addDashboardToFolder(folderId, r.id);
+                        }
+                      }}
                     />
                   ))}
                 </div>
@@ -2220,12 +2214,21 @@ export default function ReportsPage() {
               onRemove={handleGridRemove}
               onResize={handleGridResize}
               onAddClick={() => setShowWidgetSidebar(true)}
-              renderWidget={(widgetId: string, w: number, h: number) => {
+              onConfigure={(id) => setConfigureItemId(id)}
+              renderWidget={(widgetId: string, w: number, h: number, item) => {
                 // Adapt grid columns based on widget width
                 const isNarrow = w <= 4;
                 const isWide = w >= 8;
                 const kpiCols = isNarrow ? "grid-cols-2" : isWide ? "grid-cols-3 lg:grid-cols-6" : "grid-cols-2 sm:grid-cols-3";
 
+                const fontScale = item?.fontScale ?? 1;
+                const wrap = (node: React.ReactNode) => (
+                  fontScale !== 1
+                    ? <div style={{ zoom: fontScale }} className="h-full">{node}</div>
+                    : node
+                );
+
+                const node = (() => {
                 switch (widgetId) {
                   case "ticket_kpis":
                     return tk ? (
@@ -2315,8 +2318,15 @@ export default function ReportsPage() {
                       dashboardDays={days === "custom" ? 0 : (Number(days) || 30)}
                       customFrom={days === "custom" ? customFrom : undefined}
                       customTo={days === "custom" ? customTo : undefined}
+                      overrideColor={item?.overrideColor}
+                      overrideChartType={item?.overrideChartType}
+                      titleScale={item?.titleScale}
+                      chartScale={item?.chartScale}
+                      orgContextId={orgContextId ?? (filterOrg !== "all" ? filterOrg : null)}
                     />;
                 }
+                })();
+                return wrap(node);
               }}
             />
           )}
@@ -2329,6 +2339,14 @@ export default function ReportsPage() {
           dashItems={dashItems}
           onAdd={handleGridAdd}
           onClose={() => setShowWidgetSidebar(false)}
+          widgets={unifiedWidgets}
+          onAttribute={(widgetId) => setWidgetAttributeTargetId(widgetId)}
+          onTag={(widgetId) => setWidgetTagTargetId(widgetId)}
+          widgetOrgIdsMap={widgetOrgIdsMap}
+          widgetTagIdsMap={widgetTagIdsMap}
+          orgNameById={orgNameById}
+          tagDefById={tagDefById}
+          hasCustomWidgets={queryWidgets.length > 0}
         />
       )}
 
@@ -2381,6 +2399,52 @@ export default function ReportsPage() {
         );
       })()}
 
+      {configureItemId && (() => {
+        const target = dashItems.find((i) => i.id === configureItemId);
+        if (!target) return null;
+        const BUILTIN_IDS = new Set<string>(WIDGETS.map((w) => w.id));
+        const supportsStyleOverride = !BUILTIN_IDS.has(target.widgetId);
+        return (
+          <DashboardItemAppearance
+            item={target}
+            supportsStyleOverride={supportsStyleOverride}
+            onChange={(patch) => handleGridItemUpdate(target.id, patch)}
+            onClose={() => setConfigureItemId(null)}
+          />
+        );
+      })()}
+
+      {widgetAttributeTargetId && (() => {
+        const w = unifiedWidgets.find((x) => x.id === widgetAttributeTargetId);
+        const meta = widgetMeta[widgetAttributeTargetId] ?? {};
+        return (
+          <TagOrganizationModal
+            open
+            onClose={() => setWidgetAttributeTargetId(null)}
+            itemLabel="Widget"
+            itemName={w?.label}
+            currentOrgIds={meta.organizationIds ?? []}
+            onSave={(orgIds) => setWidgetOrganizations(widgetAttributeTargetId, orgIds)}
+          />
+        );
+      })()}
+
+      {widgetTagTargetId && (() => {
+        const w = unifiedWidgets.find((x) => x.id === widgetTagTargetId);
+        const meta = widgetMeta[widgetTagTargetId] ?? {};
+        return (
+          <AssignTagsModal
+            open
+            onClose={() => setWidgetTagTargetId(null)}
+            itemName={w?.label}
+            currentTagIds={meta.tags ?? []}
+            allTags={tagDefs}
+            onCreateTag={(tag) => addTagDefinition(tag)}
+            onSaveAssignment={(ids) => assignTagsToWidget(widgetTagTargetId, ids)}
+          />
+        );
+      })()}
+
       </div>
     </div>
     </div>
@@ -2394,7 +2458,8 @@ export default function ReportsPage() {
 // ===========================================================================
 function GalleryCard({
   report, isFav, isPrimary, widgetCount, childCount, tagDefs,
-  orgIds, orgNameById, onOpen, onTagOrg, onTagLabels, onDuplicate,
+  orgIds, orgNameById, folders, onOpen, onTagOrg, onTagLabels,
+  onDuplicate, onToggleFolder,
 }: {
   report: ReportDef;
   isFav: boolean;
@@ -2404,12 +2469,16 @@ function GalleryCard({
   tagDefs: TagDef[];
   orgIds: string[];
   orgNameById: Record<string, string>;
+  folders: DashboardFolder[];
   onOpen: () => void;
   onTagOrg: () => void;
   onTagLabels: () => void;
   onDuplicate: () => void;
+  onToggleFolder: (folderId: string) => void;
 }) {
+  const [folderMenuOpen, setFolderMenuOpen] = useState(false);
   const isCustom = report.id.startsWith("custom_");
+  const currentFolderIds = folders.filter((f) => f.dashboardIds.includes(report.id)).map((f) => f.id);
   const orgLabel = orgIds.length === 0 ? "" : orgIds.length === 1 ? (orgNameById[orgIds[0]] ?? "…") : `${orgIds.length} orgs`;
   const orgTitle = orgIds.length === 0
     ? "Attribuer à une ou plusieurs organisations"
@@ -2457,6 +2526,65 @@ function GalleryCard({
         >
           <Copy className="h-3 w-3" />
         </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setFolderMenuOpen((v) => !v); }}
+            className={cn(
+              "inline-flex items-center justify-center h-6 w-6 rounded-md ring-1 transition-all",
+              currentFolderIds.length > 0
+                ? "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100"
+                : "bg-white/90 text-slate-500 ring-slate-200 opacity-0 group-hover:opacity-100 hover:bg-amber-50 hover:text-amber-700 hover:ring-amber-300",
+            )}
+            title={
+              currentFolderIds.length === 0
+                ? "Ajouter à un dossier"
+                : `Dans ${currentFolderIds.length} dossier${currentFolderIds.length > 1 ? "s" : ""}`
+            }
+          >
+            <Folder className="h-3 w-3" />
+          </button>
+          {folderMenuOpen && (
+            <div
+              className="absolute right-0 top-full mt-1 z-30 w-56 rounded-lg border border-slate-200 bg-white shadow-lg py-1"
+              onClick={(e) => e.stopPropagation()}
+              onMouseLeave={() => setFolderMenuOpen(false)}
+            >
+              <p className="px-3 py-1 text-[9.5px] font-semibold uppercase tracking-wider text-slate-400">
+                Dossiers
+              </p>
+              {folders.length === 0 ? (
+                <p className="px-3 py-1.5 text-[11px] text-slate-500 italic">
+                  Aucun dossier — crée-en un depuis la sidebar ou le bouton « + Nouveau ».
+                </p>
+              ) : (
+                folders.map((f) => {
+                  const isIn = f.dashboardIds.includes(report.id);
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleFolder(f.id);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50 text-left"
+                    >
+                      <div className={cn(
+                        "h-3.5 w-3.5 shrink-0 rounded border flex items-center justify-center",
+                        isIn ? "bg-blue-600 border-blue-600 text-white" : "border-slate-300 bg-white",
+                      )}>
+                        {isIn && <CheckCircle2 className="h-2.5 w-2.5" />}
+                      </div>
+                      <Folder className="h-3 w-3 text-blue-500 shrink-0" />
+                      <span className="truncate flex-1">{f.name}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <button
@@ -2716,6 +2844,11 @@ function QueryWidgetRenderer({
   dashboardDays = 30,
   customFrom,
   customTo,
+  overrideColor,
+  overrideChartType,
+  titleScale = 1,
+  chartScale = 1,
+  orgContextId,
 }: {
   widgetId: string;
   /**
@@ -2728,6 +2861,21 @@ function QueryWidgetRenderer({
   /** Range custom (ISO yyyy-mm-dd). Pris en compte si dashboardDays === 0. */
   customFrom?: string;
   customTo?: string;
+  /** Override de couleur pour ce widget dans ce dashboard uniquement. */
+  overrideColor?: string;
+  /** Override du type de graphique pour ce widget dans ce dashboard uniquement. */
+  overrideChartType?: string;
+  /** Échelle du titre (rendu séparément au-dessus du graphique). */
+  titleScale?: number;
+  /** Échelle du graphique (wrapper zoom autour de WidgetChart). */
+  chartScale?: number;
+  /**
+   * Si défini, injecte automatiquement un filtre `organizationId = X` dans
+   * la requête — utilisé quand le dashboard est vu dans le contexte d'une
+   * organisation (atelier ou onglet Rapports d'org). Évite à l'utilisateur
+   * de créer un dashboard par client : un seul rapport global suffit.
+   */
+  orgContextId?: string | null;
 }) {
   const [result, setResult] = useState<{ label: string; value: number }[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2760,10 +2908,22 @@ function QueryWidgetRenderer({
       overrideDateTo = toDate.toISOString();
     }
 
+    // Injection automatique d'un filtre organisation quand on est dans un
+    // contexte d'org (atelier ou onglet Rapports de l'org). Respecte les
+    // filtres existants : on remplace un éventuel filtre organizationId
+    // déjà présent pour éviter les contradictions.
+    const baseFilters = Array.isArray(w.query?.filters) ? (w.query.filters as Array<{ field: string; operator: string; value: string }>) : [];
+    const filtersWithOrg = orgContextId
+      ? [
+          ...baseFilters.filter((f) => f.field !== "organizationId"),
+          { field: "organizationId", operator: "eq", value: orgContextId },
+        ]
+      : baseFilters;
+
     fetch("/api/v1/analytics/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...w.query, overrideDateFrom, overrideDateTo }),
+      body: JSON.stringify({ ...w.query, filters: filtersWithOrg, overrideDateFrom, overrideDateTo }),
     })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => {
@@ -2778,7 +2938,7 @@ function QueryWidgetRenderer({
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [widgetId, dashboardDays, customFrom, customTo]);
+  }, [widgetId, dashboardDays, customFrom, customTo, orgContextId]);
 
   if (loading) return <Card><CardContent className="p-5 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-slate-400" /></CardContent></Card>;
   if (!widget) return <Card><CardContent className="p-5 text-center text-slate-400 text-[13px]">Widget « {widgetId} » introuvable</CardContent></Card>;
@@ -2804,14 +2964,24 @@ function QueryWidgetRenderer({
   return (
     <Card>
       <CardContent className="p-4">
-        <WidgetChart
-          results={result}
-          chartType={widget.chartType as ChartType}
-          color={widget.color || "#2563eb"}
-          name={widget.name}
-          aggregate={typeof widget.query?.aggregate === "string" ? widget.query.aggregate : undefined}
-          onDrillDown={handleDrillDown}
-        />
+        {widget.name && (
+          <div
+            style={titleScale !== 1 ? { zoom: titleScale } : undefined}
+            className="mb-1"
+          >
+            <p className="text-[12px] font-semibold text-slate-800">{widget.name}</p>
+          </div>
+        )}
+        <div style={chartScale !== 1 ? { zoom: chartScale } : undefined}>
+          <WidgetChart
+            results={result}
+            chartType={(overrideChartType || widget.chartType) as ChartType}
+            color={overrideColor || widget.color || "#2563eb"}
+            name=""
+            aggregate={typeof widget.query?.aggregate === "string" ? widget.query.aggregate : undefined}
+            onDrillDown={handleDrillDown}
+          />
+        </div>
       </CardContent>
     </Card>
   );
@@ -2837,12 +3007,24 @@ function loadQueryWidgets(): QueryWidget[] {
   return [];
 }
 
-function WidgetAddPanel({ dashItems, onAdd, onClose }: {
+function WidgetAddPanel({
+  dashItems, onAdd, onClose, widgets,
+  onAttribute, onTag, widgetOrgIdsMap, widgetTagIdsMap,
+  orgNameById, tagDefById, hasCustomWidgets,
+}: {
   dashItems: DashboardItem[];
   onAdd: (widgetId: string) => void;
   onClose: () => void;
+  widgets: UnifiedWidget[];
+  onAttribute: (widgetId: string) => void;
+  onTag: (widgetId: string) => void;
+  widgetOrgIdsMap: Record<string, string[]>;
+  widgetTagIdsMap: Record<string, string[]>;
+  orgNameById: Record<string, string>;
+  tagDefById: Record<string, TagDef>;
+  hasCustomWidgets: boolean;
 }) {
-  const [queryWidgets] = useState<QueryWidget[]>(() => loadQueryWidgets());
+  const [search, setSearch] = useState("");
 
   // Cache les FABs flottants (AI chat, Bug report) pendant que ce panneau
   // est ouvert — sinon le dernier widget de la liste est caché derrière eux.
@@ -2854,7 +3036,7 @@ function WidgetAddPanel({ dashItems, onAdd, onClose }: {
   return (
     <div className="fixed inset-y-0 right-0 z-50 flex print:hidden">
       <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative ml-auto w-[380px] max-w-[90vw] h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col">
+      <div className="relative ml-auto w-[420px] max-w-[90vw] h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-2">
             <div className="h-9 w-9 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
@@ -2862,7 +3044,17 @@ function WidgetAddPanel({ dashItems, onAdd, onClose }: {
             </div>
             <div>
               <h2 className="text-[15px] font-semibold text-slate-900">Ajouter des widgets</h2>
-              <p className="text-[11px] text-slate-500">{dashItems.length} widgets actuellement</p>
+              <p className="text-[11px] text-slate-500">
+                {dashItems.length} widget{dashItems.length > 1 ? "s" : ""} actuellement
+                {!hasCustomWidgets && (
+                  <>
+                    {" · "}
+                    <Link href="/analytics/widgets" className="text-blue-600 hover:text-blue-700">
+                      Créer un widget perso
+                    </Link>
+                  </>
+                )}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
@@ -2870,90 +3062,23 @@ function WidgetAddPanel({ dashItems, onAdd, onClose }: {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-          {/* Built-in widgets */}
-          <div>
-            <p className="px-1 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Widgets prédéfinis</p>
-            <div className="space-y-1.5">
-              {WIDGETS.map((w) => {
-                const alreadyUsed = dashItems.some((di) => di.widgetId === w.id);
-                return (
-                  <div key={w.id} className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all ring-1 ring-inset",
-                    alreadyUsed ? "bg-emerald-50/30 ring-emerald-200/60" : "bg-white ring-slate-200/60 hover:ring-blue-200 hover:bg-blue-50/20"
-                  )}>
-                    <div className={cn(
-                      "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
-                      alreadyUsed ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"
-                    )}>
-                      {w.icon}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12px] font-medium text-slate-800 truncate">{w.label}</p>
-                      <p className="text-[10px] text-slate-500 truncate">{w.description}</p>
-                    </div>
-                    {alreadyUsed ? (
-                      <span className="text-[10px] text-emerald-600 font-medium shrink-0">Actif</span>
-                    ) : (
-                      <button onClick={() => onAdd(w.id)}
-                        className="shrink-0 h-7 w-7 rounded-md bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition-colors">
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* User query-builder widgets */}
-          {queryWidgets.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between px-1 mb-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mes widgets ({queryWidgets.length})</p>
-                <Link href="/analytics/widgets" className="text-[11px] text-blue-600 hover:text-blue-700 font-medium">
-                  Gérer
-                </Link>
-              </div>
-              <div className="space-y-1.5">
-                {queryWidgets.map((w) => {
-                  const alreadyUsed = dashItems.some((di) => di.widgetId === w.id);
-                  return (
-                    <div key={w.id} className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all ring-1 ring-inset",
-                      alreadyUsed ? "bg-emerald-50/30 ring-emerald-200/60" : "bg-white ring-slate-200/60 hover:ring-blue-200 hover:bg-blue-50/20"
-                    )}>
-                      <div className={cn(
-                        "h-8 w-8 rounded-lg flex items-center justify-center shrink-0"
-                      )} style={{ backgroundColor: (alreadyUsed ? "#05966920" : w.color + "20") }}>
-                        <BarChart3 className="h-4 w-4" style={{ color: alreadyUsed ? "#059669" : w.color }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[12px] font-medium text-slate-800 truncate">{w.name}</p>
-                        <p className="text-[10px] text-slate-500 truncate">{w.description}</p>
-                      </div>
-                      {alreadyUsed ? (
-                        <span className="text-[10px] text-emerald-600 font-medium shrink-0">Actif</span>
-                      ) : (
-                        <button onClick={() => onAdd(w.id)}
-                          className="shrink-0 h-7 w-7 rounded-md bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition-colors">
-                          <Plus className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          {queryWidgets.length === 0 && (
-            <div className="text-center py-4">
-              <p className="text-[12px] text-slate-400 mb-2">Aucun widget personnalisé</p>
-              <Link href="/analytics/widgets" className="text-[11px] text-blue-600 hover:text-blue-700 font-medium">
-                Créer dans l&apos;éditeur de widgets
-              </Link>
-            </div>
-          )}
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          <WidgetCatalogPicker
+            widgets={widgets}
+            search={search}
+            onSearchChange={setSearch}
+            renderAction={(w) => renderAddAction(
+              w,
+              dashItems.some((di) => di.widgetId === w.id),
+              onAdd,
+            )}
+            onAttribute={(w) => onAttribute(w.id)}
+            onTag={(w) => onTag(w.id)}
+            orgIdsByWidgetId={widgetOrgIdsMap}
+            tagIdsByWidgetId={widgetTagIdsMap}
+            orgNameById={orgNameById}
+            tagDefById={tagDefById}
+          />
         </div>
       </div>
     </div>
@@ -3572,9 +3697,35 @@ function PeriodPicker({
       apply: () => { setDays("1"); },
     },
     {
+      key: "current_week",
+      label: "Semaine en cours",
+      apply: () => {
+        // Du lundi de la semaine courante jusqu'à aujourd'hui (inclus).
+        const now = new Date();
+        const day = now.getDay(); // 0 = dim, 1 = lun, …
+        const mondayOffset = day === 0 ? 6 : day - 1;
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset);
+        setCustomFrom(start.toISOString().slice(0, 10));
+        setCustomTo(now.toISOString().slice(0, 10));
+        setDays("custom");
+      },
+    },
+    {
       key: "last_week",
       label: "Semaine dernière",
       apply: () => { setDays("7"); },
+    },
+    {
+      key: "current_month",
+      label: "Mois en cours",
+      apply: () => {
+        // Du 1er du mois courant jusqu'à aujourd'hui (inclus).
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        setCustomFrom(start.toISOString().slice(0, 10));
+        setCustomTo(now.toISOString().slice(0, 10));
+        setDays("custom");
+      },
     },
     {
       key: "last_month",

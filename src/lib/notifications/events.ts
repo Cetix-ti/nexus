@@ -162,6 +162,21 @@ export const EVENTS: EventSpec[] = [
     category: "system",
     defaults: { inApp: false, email: true },
   },
+  {
+    key: "bug_reported",
+    label: "Bug signalé dans Nexus",
+    description:
+      "Un utilisateur a signalé un bug via le bouton flottant. Notifie les admins pour triage et approbation.",
+    category: "system",
+    defaults: { inApp: true, email: false },
+  },
+  {
+    key: "bug_reported_ack",
+    label: "Accusé de réception d'un bug signalé",
+    description: "Confirme au reporter que son signalement est bien enregistré.",
+    category: "system",
+    defaults: { inApp: true, email: false },
+  },
 ];
 
 export const EVENT_KEYS = EVENTS.map((e) => e.key);

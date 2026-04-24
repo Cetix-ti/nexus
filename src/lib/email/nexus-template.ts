@@ -66,6 +66,8 @@ export const EVENT_ACCENTS: Record<string, { bg: string; fg: string; label: stri
   backup_failed: { bg: "#FEE2E2", fg: "#991B1B", label: "Sauvegarde" },
   monitoring_alert: { bg: "#FEE2E2", fg: "#991B1B", label: "Alerte" },
   weekly_digest: { bg: "#E0F2FE", fg: "#075985", label: "Résumé" },
+  bug_reported: { bg: "#FEE2E2", fg: "#991B1B", label: "Bug signalé" },
+  bug_reported_ack: { bg: "#E0F2FE", fg: "#075985", label: "Bug enregistré" },
 };
 
 export interface NexusEmailOptions {

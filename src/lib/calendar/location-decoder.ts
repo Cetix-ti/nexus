@@ -42,8 +42,16 @@ export interface DecodableOrg {
 export interface DecodedLocation {
   ok: true;
   agents: DecodableAgent[];
+  /** ID de la PREMIÈRE org matchée (rétro-compat). Pour un bloc lieu à
+   *  plusieurs codes (ex: "SADB/BDU"), consulter `organizations` pour la
+   *  liste complète. `null` pour office/remote/personal. */
   organizationId: string | null;
   organizationName: string | null;
+  /** Toutes les organisations matchées par le bloc lieu — utile pour les
+   *  événements multi-clients ("SF/MV SADB/BDU"). Vide quand
+   *  locationKind !== "client". Contient au moins 1 entrée quand
+   *  organizationId est non-null. */
+  organizations?: Array<{ id: string; name: string }>;
   /** Libellé brut du bloc "emplacement" (ex: "LV" / "BUREAU" / "TÉLÉTRAVAIL"). */
   locationTag: string;
   /**
@@ -598,7 +606,44 @@ export function decodeLocationTitle(
     };
   }
 
-  // Code client.
+  // Code client. Le bloc lieu peut contenir plusieurs codes séparés par
+  // `/` ou `+` ("SADB/BDU" → deux clients visités dans la même journée).
+  // Comportement :
+  //   - Si TOUS les sous-tokens matchent un client connu → événement multi-orgs,
+  //     on retourne la liste complète dans `organizations` et la première
+  //     dans `organizationId` pour la rétro-compat.
+  //   - Sinon (au moins un inconnu) → on tente le match simple d'abord,
+  //     puis on retombe dans le fallback "personal" à la fin.
+  const locationSubTokens = locationTag
+    .split(/[\/\+]+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (locationSubTokens.length > 1) {
+    const matchedOrgs: Array<{ id: string; name: string }> = [];
+    let allMatched = true;
+    for (const sub of locationSubTokens) {
+      const o = findOrgByTag(sub, orgs);
+      if (!o) { allMatched = false; break; }
+      // Dédup (peu probable mais pourrait arriver si deux codes pointent
+      // vers la même org via aliases différents)
+      if (!matchedOrgs.some((m) => m.id === o.id)) {
+        matchedOrgs.push({ id: o.id, name: o.name });
+      }
+    }
+    if (allMatched && matchedOrgs.length > 0) {
+      return {
+        ok: true,
+        agents: matchedAgents,
+        organizationId: matchedOrgs[0].id,
+        organizationName: matchedOrgs[0].name,
+        organizations: matchedOrgs,
+        locationTag: locTag,
+        locationKind: "client",
+        ...(unknownTokens.length > 0 ? { unknownAgentTokens: unknownTokens } : {}),
+      };
+    }
+  }
+
   const org = findOrgByTag(locationTag, orgs);
   if (org) {
     return {
@@ -606,6 +651,7 @@ export function decodeLocationTitle(
       agents: matchedAgents,
       organizationId: org.id,
       organizationName: org.name,
+      organizations: [{ id: org.id, name: org.name }],
       locationTag: locTag,
       locationKind: "client",
       ...(unknownTokens.length > 0 ? { unknownAgentTokens: unknownTokens } : {}),

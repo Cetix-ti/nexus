@@ -14,6 +14,10 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { cn } from "@/lib/utils";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
+import { useLocaleStore } from "@/stores/locale-store";
+import { WidgetChart } from "@/components/widgets/widget-chart";
+import { remapBaseCategoryResults } from "@/lib/analytics/base-category-remap";
+import { PortalMonthlyReportsSection } from "@/components/reports/monthly/portal-monthly-reports-section";
 
 interface ReportData {
   tickets: { total: number; open: number; resolved: number; closed: number };
@@ -39,6 +43,8 @@ interface ReportData {
 
 export default function PortalReportsPage() {
   const { permissions, organizationName } = usePortalUser();
+  const t = useLocaleStore((s) => s.t);
+  const locale = useLocaleStore((s) => s.locale);
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,8 +77,8 @@ export default function PortalReportsPage() {
       .then((d) => {
         const tickets = d.data || [];
         const countMap = new Map<string, number>();
-        for (const t of tickets) {
-          const name = t.requesterName || t.requesterEmail || "Inconnu";
+        for (const ticket of tickets) {
+          const name = ticket.requesterName || ticket.requesterEmail || t("portal.reports.unknown");
           countMap.set(name, (countMap.get(name) || 0) + 1);
         }
         const sorted = Array.from(countMap.entries())
@@ -94,14 +100,14 @@ export default function PortalReportsPage() {
   if (!anyPermission) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-bold text-slate-900">Rapports</h1>
+        <h1 className="text-xl font-bold text-slate-900">{t("portal.reports.heading")}</h1>
         <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm">
           <Lock className="h-10 w-10 mx-auto mb-3 text-slate-300" strokeWidth={1.5} />
           <p className="text-[14px] text-slate-500">
-            Aucun rapport n&apos;est disponible pour votre compte.
+            {t("portal.reports.noAccess")}
           </p>
           <p className="text-[12px] text-slate-400 mt-1">
-            Contactez votre administrateur pour obtenir l&apos;accès.
+            {t("portal.reports.contactAdmin")}
           </p>
         </div>
       </div>
@@ -111,11 +117,13 @@ export default function PortalReportsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">Rapports</h1>
+        <h1 className="text-xl font-bold text-slate-900">{t("portal.reports.heading")}</h1>
         <p className="text-[13px] text-slate-500 mt-0.5">
-          Données de {organizationName}
+          {t("portal.reports.dataOf", { org: organizationName ?? "" })}
         </p>
       </div>
+
+      {canBilling ? <PortalMonthlyReportsSection /> : null}
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[12px] text-red-800">
@@ -128,17 +136,17 @@ export default function PortalReportsPage() {
           {/* Tickets */}
           {canReports && data.tickets && (
             <ReportCard
-              title="Billets"
+              title={t("portal.reports.tickets")}
               icon={<Ticket className="h-5 w-5 text-blue-600" />}
               bg="bg-blue-50"
             >
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
-                <Metric label="Ouverts" value={data.tickets.open} color="text-amber-600" />
-                <Metric label="Résolus" value={data.tickets.resolved} color="text-emerald-600" />
-                <Metric label="Fermés" value={data.tickets.closed} color="text-slate-500" />
+                <Metric label={t("portal.reports.open")} value={data.tickets.open} color="text-amber-600" />
+                <Metric label={t("portal.reports.resolved")} value={data.tickets.resolved} color="text-emerald-600" />
+                <Metric label={t("portal.reports.closed")} value={data.tickets.closed} color="text-slate-500" />
               </div>
               <div className="mt-3 pt-3 border-t border-slate-100 text-[12px] text-slate-500">
-                Total : <strong className="text-slate-800">{data.tickets.total}</strong> billets
+                {t("portal.reports.totalLabel")} : <strong className="text-slate-800">{data.tickets.total}</strong> {t("portal.reports.ticketsUnit")}
               </div>
             </ReportCard>
           )}
@@ -146,18 +154,18 @@ export default function PortalReportsPage() {
           {/* Projects */}
           {canReports && data.projects && (
             <ReportCard
-              title="Projets"
+              title={t("portal.reports.projects")}
               icon={<BarChart3 className="h-5 w-5 text-violet-600" />}
               bg="bg-violet-50"
             >
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
-                <Metric label="Actifs" value={data.projects.active} color="text-blue-600" />
-                <Metric label="À risque" value={data.projects.atRisk} color="text-red-600" />
-                <Metric label="Terminés" value={data.projects.completed} color="text-emerald-600" />
+                <Metric label={t("portal.reports.active")} value={data.projects.active} color="text-blue-600" />
+                <Metric label={t("portal.reports.atRisk")} value={data.projects.atRisk} color="text-red-600" />
+                <Metric label={t("portal.reports.completed")} value={data.projects.completed} color="text-emerald-600" />
               </div>
               <div className="mt-3 pt-3 border-t border-slate-100">
                 <div className="flex items-center justify-between text-[12px]">
-                  <span className="text-slate-500">Avancement moyen</span>
+                  <span className="text-slate-500">{t("portal.reports.avgProgress")}</span>
                   <span className="font-bold text-slate-800">{data.projects.averageProgress}%</span>
                 </div>
                 <div className="mt-1.5 h-2 rounded-full bg-slate-100 overflow-hidden">
@@ -173,14 +181,14 @@ export default function PortalReportsPage() {
           {/* Time */}
           {canTime && data.time && (
             <ReportCard
-              title="Heures consommées"
+              title={t("portal.reports.hoursConsumed")}
               icon={<Clock className="h-5 w-5 text-amber-600" />}
               bg="bg-amber-50"
             >
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
-                <Metric label="Total" value={`${data.time.totalHours.toFixed(1)}h`} color="text-slate-800" />
-                <Metric label="Facturables" value={`${data.time.billableHours.toFixed(1)}h`} color="text-amber-600" />
-                <Metric label="Incluses" value={`${data.time.includedHours.toFixed(1)}h`} color="text-emerald-600" />
+                <Metric label={t("portal.reports.totalLabel")} value={`${data.time.totalHours.toFixed(1)}h`} color="text-slate-800" />
+                <Metric label={t("portal.reports.hoursBillable")} value={`${data.time.billableHours.toFixed(1)}h`} color="text-amber-600" />
+                <Metric label={t("portal.reports.hoursIncluded")} value={`${data.time.includedHours.toFixed(1)}h`} color="text-emerald-600" />
               </div>
             </ReportCard>
           )}
@@ -188,7 +196,7 @@ export default function PortalReportsPage() {
           {/* Hour banks */}
           {canBank && data.hourBanks && data.hourBanks.length > 0 && (
             <ReportCard
-              title="Banques d'heures"
+              title={t("portal.reports.hourBanks")}
               icon={<Database className="h-5 w-5 text-emerald-600" />}
               bg="bg-emerald-50"
             >
@@ -202,7 +210,7 @@ export default function PortalReportsPage() {
                       <div className="flex items-center justify-between text-[12px] mb-1">
                         <span className="font-medium text-slate-700">{hb.contractName}</span>
                         <span className="text-slate-500">
-                          {hb.remainingHours.toFixed(1)}h restantes
+                          {t("portal.reports.hoursRemaining", { hours: hb.remainingHours.toFixed(1) })}
                         </span>
                       </div>
                       <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
@@ -227,25 +235,25 @@ export default function PortalReportsPage() {
           {/* Billing */}
           {canBilling && data.billing && (
             <ReportCard
-              title="Facturation"
+              title={t("portal.reports.billing")}
               icon={<DollarSign className="h-5 w-5 text-blue-600" />}
               bg="bg-blue-50"
               className="md:col-span-2"
             >
               <div className="grid grid-cols-2 gap-6 mt-4">
                 <div>
-                  <p className="text-[12px] text-slate-500 mb-1">En attente de facturation</p>
+                  <p className="text-[12px] text-slate-500 mb-1">{t("portal.reports.pendingBilling")}</p>
                   <p className="text-xl sm:text-2xl font-bold text-slate-900 tabular-nums">
-                    {data.billing.pendingAmount.toLocaleString("fr-CA", {
+                    {data.billing.pendingAmount.toLocaleString(locale === "fr" ? "fr-CA" : "en-CA", {
                       style: "currency",
                       currency: "CAD",
                     })}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[12px] text-slate-500 mb-1">Déjà facturé</p>
+                  <p className="text-[12px] text-slate-500 mb-1">{t("portal.reports.alreadyBilled")}</p>
                   <p className="text-xl sm:text-2xl font-bold text-emerald-700 tabular-nums">
-                    {data.billing.invoicedAmount.toLocaleString("fr-CA", {
+                    {data.billing.invoicedAmount.toLocaleString(locale === "fr" ? "fr-CA" : "en-CA", {
                       style: "currency",
                       currency: "CAD",
                     })}
@@ -264,7 +272,7 @@ export default function PortalReportsPage() {
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-blue-600" />
               <h3 className="text-[15px] font-semibold text-slate-900">
-                Billets par contact
+                {t("portal.reports.ticketsByContact")}
               </h3>
             </div>
             <select
@@ -272,10 +280,10 @@ export default function PortalReportsPage() {
               onChange={(e) => setChartRows(Number(e.target.value))}
               className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[12px] text-slate-600"
             >
-              <option value={5}>Top 5</option>
-              <option value={10}>Top 10</option>
-              <option value={20}>Top 20</option>
-              <option value={50}>Tous</option>
+              <option value={5}>{t("portal.reports.chart.top5")}</option>
+              <option value={10}>{t("portal.reports.chart.top10")}</option>
+              <option value={20}>{t("portal.reports.chart.top20")}</option>
+              <option value={50}>{t("portal.reports.chart.all")}</option>
             </select>
           </div>
           <div style={{ height: Math.max(200, Math.min(ticketsByContact.slice(0, chartRows).length * 36, 600)) }}>
@@ -296,7 +304,7 @@ export default function PortalReportsPage() {
                 />
                 <Tooltip
                   contentStyle={{ backgroundColor: "#fff", border: "1px solid #E2E8F0", borderRadius: "8px", fontSize: "13px" }}
-                  formatter={(value) => [`${value} billets`, ""]}
+                  formatter={(value) => [t("portal.reports.chart.tooltip", { count: value as number }), ""]}
                 />
                 <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={24}>
                   {ticketsByContact.slice(0, chartRows).map((_, i) => (
@@ -308,6 +316,11 @@ export default function PortalReportsPage() {
           </div>
         </div>
       )}
+
+      {/* Tableaux de bord publiés par l'agent pour cette organisation.
+          Rendus via le même WidgetChart que la page /analytics de l'agent.
+          Toutes les requêtes sont scoped au portail par le serveur. */}
+      {canReports && <PublishedDashboardsSection />}
     </div>
   );
 }
@@ -358,6 +371,185 @@ function Metric({
       <p className={cn("text-[18px] font-bold tabular-nums", color)}>
         {value}
       </p>
+    </div>
+  );
+}
+
+// ===========================================================================
+// PublishedDashboardsSection — rend les dashboards publiés par l'agent
+// pour cette organisation. Chaque widget est fetché via l'endpoint
+// /api/v1/portal/dashboard-widget-query qui force organizationId = celle
+// du contact (sécurité : le client ne peut pas voir d'autres orgs).
+// ===========================================================================
+interface PublishedDashboard {
+  id: string;
+  dashboardKey: string;
+  label: string;
+  description: string | null;
+  config: {
+    widgets: Array<{ id: string; name: string; chartType: string; color?: string; query?: any }>;
+    layout: Array<{ widgetId: string; x?: number; y?: number; w?: number; h?: number }>;
+  };
+  updatedAt: string;
+}
+
+function PublishedDashboardsSection() {
+  const [dashboards, setDashboards] = useState<PublishedDashboard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/v1/portal/published-dashboards")
+      .then((r) => r.ok ? r.json() : [])
+      .then((d) => {
+        const list = Array.isArray(d) ? d : [];
+        setDashboards(list);
+        if (list.length > 0) setActiveId(list[0].id);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex items-center gap-2 text-[13px] text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Chargement des tableaux de bord…
+        </div>
+      </div>
+    );
+  }
+  if (dashboards.length === 0) return null;
+
+  const active = dashboards.find((d) => d.id === activeId);
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+        <div>
+          <h2 className="text-[15px] font-semibold text-slate-900 flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-blue-600" />
+            Tableaux de bord personnalisés
+          </h2>
+          <p className="mt-0.5 text-[12px] text-slate-500">
+            Tableaux publiés par votre équipe IT.
+          </p>
+        </div>
+      </div>
+
+      {dashboards.length > 1 && (
+        <div className="px-5 py-2 border-b border-slate-200 flex flex-wrap gap-1.5 bg-slate-50/60">
+          {dashboards.map((d) => (
+            <button
+              key={d.id}
+              onClick={() => setActiveId(d.id)}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors",
+                activeId === d.id
+                  ? "bg-white text-blue-700 ring-1 ring-inset ring-blue-200"
+                  : "text-slate-600 hover:bg-white",
+              )}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {active && <PublishedDashboardContent dashboard={active} />}
+    </div>
+  );
+}
+
+function PublishedDashboardContent({ dashboard }: { dashboard: PublishedDashboard }) {
+  const widgets = dashboard.config.widgets ?? [];
+  const layout = dashboard.config.layout ?? [];
+  // Utilise l'ordre du layout si présent, sinon l'ordre des widgets.
+  const orderedIds = layout.length > 0
+    ? layout.map((l) => l.widgetId).filter((id) => widgets.some((w) => w.id === id))
+    : widgets.map((w) => w.id);
+
+  if (orderedIds.length === 0) {
+    return (
+      <div className="p-5 text-[13px] text-slate-400 text-center">
+        Aucun widget dans ce tableau de bord.
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+      {orderedIds.map((wid) => {
+        const widget = widgets.find((w) => w.id === wid);
+        if (!widget) return null;
+        return (
+          <PublishedWidgetCard
+            key={wid}
+            dashboardId={dashboard.id}
+            widget={widget}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function PublishedWidgetCard({
+  dashboardId, widget,
+}: {
+  dashboardId: string;
+  widget: PublishedDashboard["config"]["widgets"][number];
+}) {
+  const [results, setResults] = useState<Array<{ label: string; value: number; source?: string }> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/v1/portal/dashboard-widget-query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ publishedDashboardId: dashboardId, widgetId: widget.id }),
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.error ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      })
+      .then((d) => {
+        // Remap timeType raw → libellé catégorie de base (même logique
+        // que l'UI agent, pour cohérence d'affichage portail ↔ agent).
+        const remapped = remapBaseCategoryResults(widget.query?.groupBy, d.results ?? []);
+        setResults(remapped);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }, [dashboardId, widget.id]);
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <h3 className="text-[13px] font-semibold text-slate-900 mb-1">{widget.name}</h3>
+      {loading && (
+        <div className="py-8 flex items-center justify-center">
+          <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+        </div>
+      )}
+      {error && (
+        <p className="py-4 text-[12px] text-red-600 text-center">{error}</p>
+      )}
+      {results && results.length === 0 && !error && (
+        <p className="py-4 text-[12px] text-slate-400 text-center">Aucune donnée</p>
+      )}
+      {results && results.length > 0 && (
+        <WidgetChart
+          results={results}
+          chartType={widget.chartType as any}
+          color={widget.color ?? "#2563eb"}
+          name={widget.name}
+        />
+      )}
     </div>
   );
 }

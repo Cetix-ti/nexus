@@ -1505,6 +1505,10 @@ model TimeEntry {
   /// sur place. Utilisé par les widgets analytics pour compter les déplacements
   /// et par la détection de doublons même-jour même-client.
   hasTravelBilled Boolean   @default(false) @map("has_travel_billed")
+  /// Durée du trajet (aller-retour) en minutes quand hasTravelBilled=true.
+  /// Synchronisé avec le déplacement affiché dans l'onglet Déplacements du
+  /// ticket : une seule source de vérité pour le temps de trajet.
+  travelDurationMinutes Int? @map("travel_duration_minutes")
   coverageStatus  String    @default("pending") @map("coverage_status")
   coverageReason  String    @default("") @map("coverage_reason")
   hourlyRate      Float?    @map("hourly_rate")
@@ -2138,6 +2142,10 @@ model OrgMileageRate {
   kmRoundTrip    Float        @map("km_round_trip")
   billToClient   Boolean      @default(true) @map("bill_to_client")
   agentRatePerKm Float        @default(0.55) @map("agent_rate_per_km")
+  // Forfait fixe par déplacement (en $). Si défini, remplace le calcul
+  // km A/R × taux global pour la facturation au client. Null = mode
+  // kilométrique classique.
+  flatFee        Float?       @map("flat_fee")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 

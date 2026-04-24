@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { AdvancedRichEditor } from "@/components/ui/advanced-rich-editor";
+import { useLocaleStore } from "@/stores/locale-store";
 import {
   ArrowLeft,
   Upload,
@@ -16,15 +17,16 @@ import {
 } from "lucide-react";
 
 const priorities = [
-  { value: "low", label: "Faible", description: "Aucun impact immédiat" },
-  { value: "medium", label: "Moyenne", description: "Impact partiel sur votre travail" },
-  { value: "high", label: "Élevée", description: "Impact important sur votre travail" },
-  { value: "critical", label: "Critique", description: "Vous ne pouvez plus travailler" },
+  { value: "low",      labelKey: "portal.newTicket.priorityLow",      descKey: "portal.newTicket.priorityLowDesc" },
+  { value: "medium",   labelKey: "portal.newTicket.priorityMedium",   descKey: "portal.newTicket.priorityMediumDesc" },
+  { value: "high",     labelKey: "portal.newTicket.priorityHigh",     descKey: "portal.newTicket.priorityHighDesc" },
+  { value: "critical", labelKey: "portal.newTicket.priorityCritical", descKey: "portal.newTicket.priorityCriticalDesc" },
 ];
 
 export default function PortalNewTicketPage() {
   const router = useRouter();
   const { organizationName } = usePortalUser();
+  const t = useLocaleStore((s) => s.t);
   const [subject, setSubject] = useState("");
   const [category, setCategory] = useState("");
   const [priority, setPriority] = useState("medium");
@@ -73,10 +75,10 @@ export default function PortalNewTicketPage() {
         router.push("/portal/tickets");
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err.error || "Erreur lors de la création");
+        alert(err.error || t("portal.newTicket.creationError"));
       }
     } catch {
-      alert("Erreur réseau");
+      alert(t("portal.newTicket.networkError"));
     } finally {
       setSubmitting(false);
     }
@@ -113,16 +115,15 @@ export default function PortalNewTicketPage() {
         className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
-        Retour
+        {t("portal.newTicket.back")}
       </button>
 
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">
-          Soumettre un nouveau billet
+          {t("portal.newTicket.title")}
         </h1>
         <p className="mt-1.5 text-sm text-neutral-500">
-          Décrivez votre problème ou votre demande et notre équipe vous
-          répondra dans les meilleurs délais.
+          {t("portal.newTicket.subtitle")}
         </p>
       </div>
 
@@ -130,13 +131,13 @@ export default function PortalNewTicketPage() {
         <div className="p-6 sm:p-8 space-y-6">
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-              Sujet <span className="text-red-500">*</span>
+              {t("portal.newTicket.subject")} <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="Décrivez brièvement votre problème ou votre demande"
+              placeholder={t("portal.newTicket.subjectPlaceholder")}
               className="w-full rounded-lg border border-neutral-200 bg-[#F9FAFB] px-3.5 py-2.5 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
             />
           </div>
@@ -145,14 +146,14 @@ export default function PortalNewTicketPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                  Catégorie
+                  {t("portal.newTicket.category")}
                 </label>
                 <select
                   value={catLevel1}
                   onChange={(e) => { setCatLevel1(e.target.value); setCatLevel2(""); setCatLevel3(""); }}
                   className="w-full rounded-lg border border-neutral-200 bg-[#F9FAFB] px-3.5 py-2.5 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 appearance-none"
                 >
-                  <option value="">Sélectionner...</option>
+                  <option value="">{t("portal.newTicket.selectPlaceholder")}</option>
                   {rootCategories.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
@@ -161,14 +162,14 @@ export default function PortalNewTicketPage() {
               {subCategories1.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    Sous-catégorie
+                    {t("portal.newTicket.subcategory")}
                   </label>
                   <select
                     value={catLevel2}
                     onChange={(e) => { setCatLevel2(e.target.value); setCatLevel3(""); }}
                     className="w-full rounded-lg border border-neutral-200 bg-[#F9FAFB] px-3.5 py-2.5 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 appearance-none"
                   >
-                    <option value="">Sélectionner...</option>
+                    <option value="">{t("portal.newTicket.selectPlaceholder")}</option>
                     {subCategories1.map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
@@ -178,14 +179,14 @@ export default function PortalNewTicketPage() {
               {subCategories2.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    Sous-catégorie 2
+                    {t("portal.newTicket.subcategory2")}
                   </label>
                   <select
                     value={catLevel3}
                     onChange={(e) => setCatLevel3(e.target.value)}
                     className="w-full rounded-lg border border-neutral-200 bg-[#F9FAFB] px-3.5 py-2.5 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 appearance-none"
                   >
-                    <option value="">Sélectionner...</option>
+                    <option value="">{t("portal.newTicket.selectPlaceholder")}</option>
                     {subCategories2.map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
@@ -196,7 +197,7 @@ export default function PortalNewTicketPage() {
 
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                Priorité <span className="text-red-500">*</span>
+                {t("portal.newTicket.priority")} <span className="text-red-500">*</span>
               </label>
               <select
                 value={priority}
@@ -205,7 +206,7 @@ export default function PortalNewTicketPage() {
               >
                 {priorities.map((p) => (
                   <option key={p.value} value={p.value}>
-                    {p.label} — {p.description}
+                    {t(p.labelKey)} — {t(p.descKey)}
                   </option>
                 ))}
               </select>
@@ -214,19 +215,19 @@ export default function PortalNewTicketPage() {
 
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-              Description <span className="text-red-500">*</span>
+              {t("portal.newTicket.description")} <span className="text-red-500">*</span>
             </label>
             <AdvancedRichEditor
               value={description}
               onChange={setDescription}
-              placeholder="Donnez le plus de détails possible : messages d'erreur, étapes pour reproduire, ce que vous avez déjà essayé. Vous pouvez coller des images directement."
+              placeholder={t("portal.newTicket.descriptionPlaceholder")}
               minHeight="220px"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-              Pièces jointes
+              {t("portal.newTicket.attachments")}
             </label>
             <div
               onDragEnter={handleDrag}
@@ -248,12 +249,12 @@ export default function PortalNewTicketPage() {
               />
               <p className="text-sm text-neutral-600">
                 <span className="font-medium text-[#2563EB]">
-                  Cliquez pour téléverser
+                  {t("portal.newTicket.uploadClick")}
                 </span>{" "}
-                ou glissez-déposez
+                {t("portal.newTicket.uploadOrDrop")}
               </p>
               <p className="mt-1 text-xs text-neutral-400">
-                PNG, JPG, PDF, DOCX jusqu&apos;à 10 Mo
+                {t("portal.newTicket.fileTypes")}
               </p>
               <input
                 type="file"
@@ -298,10 +299,7 @@ export default function PortalNewTicketPage() {
           <div className="flex items-start gap-2.5 mb-4">
             <Info className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
             <p className="text-xs text-neutral-500">
-              Votre billet sera examiné par notre équipe de support et vous
-              recevrez une notification par courriel à chaque mise à jour. Le
-              temps de réponse moyen est de moins de 4 heures durant les heures
-              ouvrables.
+              {t("portal.newTicket.info")}
             </p>
           </div>
           <div className="flex items-center justify-end gap-3">
@@ -309,7 +307,7 @@ export default function PortalNewTicketPage() {
               onClick={() => router.back()}
               className="rounded-lg px-4 py-2.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 transition-colors"
             >
-              Annuler
+              {t("portal.newTicket.cancel")}
             </button>
             <button
               onClick={handleSubmit}
@@ -317,7 +315,7 @@ export default function PortalNewTicketPage() {
               className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
             >
               <Send className="h-4 w-4" />
-              {submitting ? "Envoi..." : "Soumettre le billet"}
+              {submitting ? t("portal.newTicket.submitting") : t("portal.newTicket.submit")}
             </button>
           </div>
         </div>

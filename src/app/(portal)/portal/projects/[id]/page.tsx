@@ -29,6 +29,7 @@ import {
   TASK_STATUS_COLORS,
 } from "@/lib/projects/types";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
+import { useLocaleStore } from "@/stores/locale-store";
 
 /** Shape returned by GET /api/v1/portal/projects/:id */
 interface PortalProjectDetail {
@@ -70,6 +71,8 @@ export default function PortalProjectDetailPage({
 }) {
   const { id } = use(params);
   const { permissions: portalPerms } = usePortalUser();
+  const t = useLocaleStore((s) => s.t);
+  const locale = useLocaleStore((s) => s.locale);
   const [tab, setTab] = useState<Tab>("overview");
   const [project, setProject] = useState<PortalProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,7 +87,7 @@ export default function PortalProjectDetailPage({
         setNotFound(true);
         return;
       }
-      if (!res.ok) throw new Error("Erreur serveur");
+      if (!res.ok) throw new Error(t("portal.projectDetail.serverError"));
       const json = await res.json();
       setProject(json.data ?? null);
       if (!json.data) setNotFound(true);
@@ -114,17 +117,17 @@ export default function PortalProjectDetailPage({
           href="/portal/projects"
           className="inline-flex items-center gap-2 text-sm font-medium text-[#2563EB] hover:text-blue-700"
         >
-          <ArrowLeft className="h-4 w-4" /> Retour aux projets
+          <ArrowLeft className="h-4 w-4" /> {t("portal.projectDetail.back")}
         </Link>
         <div className="mt-8 rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
             <Lock className="h-7 w-7" />
           </div>
           <h2 className="mt-4 text-lg font-semibold text-neutral-900">
-            Projet introuvable
+            {t("portal.projectDetail.notFound")}
           </h2>
           <p className="mt-1.5 text-sm text-neutral-500">
-            Ce projet n&apos;est pas disponible dans votre portail.
+            {t("portal.projectDetail.notFoundDesc")}
           </p>
         </div>
       </div>
@@ -138,18 +141,17 @@ export default function PortalProjectDetailPage({
           href="/portal/projects"
           className="inline-flex items-center gap-2 text-sm font-medium text-[#2563EB] hover:text-blue-700"
         >
-          <ArrowLeft className="h-4 w-4" /> Retour aux projets
+          <ArrowLeft className="h-4 w-4" /> {t("portal.projectDetail.back")}
         </Link>
         <div className="mt-8 rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
             <Lock className="h-7 w-7" />
           </div>
           <h2 className="mt-4 text-lg font-semibold text-neutral-900">
-            Accès limité
+            {t("portal.projectDetail.accessLimited")}
           </h2>
           <p className="mt-1.5 text-sm text-neutral-500">
-            Vous n&apos;avez pas les permissions pour voir le détail des
-            projets. Contactez votre administrateur.
+            {t("portal.projectDetail.accessLimitedDesc")}
           </p>
         </div>
       </div>
@@ -159,23 +161,23 @@ export default function PortalProjectDetailPage({
   const colors = PROJECT_STATUS_COLORS[project.status as keyof typeof PROJECT_STATUS_COLORS];
   const tasks = project.tasks ?? [];
 
-  const tabs: { key: Tab; label: string; icon: typeof Layers; show: boolean }[] = [
-    { key: "overview", label: "Vue d'ensemble", icon: Layers, show: true },
+  const tabs: { key: Tab; labelKey: string; icon: typeof Layers; show: boolean }[] = [
+    { key: "overview", labelKey: "portal.projectDetail.tab.overview", icon: Layers, show: true },
     {
       key: "tasks",
-      label: "Tâches",
+      labelKey: "portal.projectDetail.tab.tasks",
       icon: ListChecks,
       show: portalPerms.canSeeProjectTasks && tasks.length > 0,
     },
     {
       key: "kanban",
-      label: "Kanban",
+      labelKey: "portal.projectDetail.tab.kanban",
       icon: Layers,
       show: portalPerms.canSeeProjectLinkedTickets,
     },
     {
       key: "tickets",
-      label: "Tickets",
+      labelKey: "portal.projectDetail.tab.tickets",
       icon: TicketIcon,
       show: portalPerms.canSeeProjectLinkedTickets,
     },
@@ -187,7 +189,7 @@ export default function PortalProjectDetailPage({
         href="/portal/projects"
         className="inline-flex items-center gap-2 text-sm font-medium text-[#2563EB] hover:text-blue-700"
       >
-        <ArrowLeft className="h-4 w-4" /> Retour aux projets
+        <ArrowLeft className="h-4 w-4" /> {t("portal.projectDetail.back")}
       </Link>
 
       {/* Header card */}
@@ -209,7 +211,7 @@ export default function PortalProjectDetailPage({
           </span>
           {project.isAtRisk && (
             <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-200">
-              <AlertTriangle className="h-3 w-3" />À risque
+              <AlertTriangle className="h-3 w-3" />{t("portal.projectDetail.atRisk")}
             </span>
           )}
           <span className="ml-auto font-mono text-xs text-neutral-400">
@@ -225,23 +227,23 @@ export default function PortalProjectDetailPage({
 
         <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-3 text-sm text-neutral-500">
           <span className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-neutral-400" /> Début{" "}
+            <Calendar className="h-4 w-4 text-neutral-400" /> {t("portal.projectDetail.start")}{" "}
             <span className="font-medium text-neutral-800">
               {format(new Date(project.startDate), "d MMM yyyy", {
-                locale: fr,
+                locale: locale === "fr" ? fr : undefined,
               })}
             </span>
           </span>
           <span className="flex items-center gap-2">
-            <CalendarCheck className="h-4 w-4 text-neutral-400" /> Cible{" "}
+            <CalendarCheck className="h-4 w-4 text-neutral-400" /> {t("portal.projectDetail.target")}{" "}
             <span className="font-medium text-neutral-800">
               {format(new Date(project.targetEndDate), "d MMM yyyy", {
-                locale: fr,
+                locale: locale === "fr" ? fr : undefined,
               })}
             </span>
           </span>
           <span className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-neutral-400" /> Responsable{" "}
+            <Users className="h-4 w-4 text-neutral-400" /> {t("portal.projectDetail.manager")}{" "}
             <span className="font-medium text-neutral-800">
               {project.managerName}
             </span>
@@ -253,7 +255,7 @@ export default function PortalProjectDetailPage({
       <div className="rounded-2xl border border-neutral-200 bg-white p-7 shadow-sm">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm text-neutral-500">Avancement global</p>
+            <p className="text-sm text-neutral-500">{t("portal.projectDetail.progress")}</p>
             <div className="mt-1 flex items-end gap-2">
               <span className="text-5xl font-bold text-neutral-900">
                 {project.progressPercent}
@@ -263,8 +265,10 @@ export default function PortalProjectDetailPage({
               </span>
             </div>
             <p className="mt-1 text-sm text-neutral-500">
-              {project.completedTaskCount} / {project.taskCount} tâches
-              terminées
+              {t("portal.projectDetail.tasksCompleted", {
+                done: project.completedTaskCount,
+                total: project.taskCount,
+              })}
             </p>
           </div>
           <div className="flex-1 sm:max-w-md">
@@ -286,18 +290,18 @@ export default function PortalProjectDetailPage({
         <nav className="flex flex-wrap gap-1">
           {tabs
             .filter((t) => t.show)
-            .map((t) => (
+            .map((tabDef) => (
               <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
+                key={tabDef.key}
+                onClick={() => setTab(tabDef.key)}
                 className={cn(
                   "flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors -mb-px",
-                  tab === t.key
+                  tab === tabDef.key
                     ? "border-[#2563EB] text-[#2563EB]"
                     : "border-transparent text-neutral-500 hover:text-neutral-800"
                 )}
               >
-                <t.icon className="h-4 w-4" /> {t.label}
+                <tabDef.icon className="h-4 w-4" /> {t(tabDef.labelKey)}
               </button>
             ))}
         </nav>
@@ -308,23 +312,23 @@ export default function PortalProjectDetailPage({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
             <h3 className="text-sm font-semibold text-neutral-900">
-              Informations du projet
+              {t("portal.projectDetail.info")}
             </h3>
             <dl className="mt-4 space-y-3 text-sm">
               <div className="flex justify-between">
-                <dt className="text-neutral-500">Type</dt>
+                <dt className="text-neutral-500">{t("portal.projectDetail.infoType")}</dt>
                 <dd className="font-medium text-neutral-800">
                   {PROJECT_TYPE_LABELS[project.type as keyof typeof PROJECT_TYPE_LABELS]}
                 </dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-neutral-500">Statut</dt>
+                <dt className="text-neutral-500">{t("portal.projectDetail.infoStatus")}</dt>
                 <dd className="font-medium text-neutral-800">
                   {PROJECT_STATUS_LABELS[project.status as keyof typeof PROJECT_STATUS_LABELS]}
                 </dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-neutral-500">Tâches</dt>
+                <dt className="text-neutral-500">{t("portal.projectDetail.infoTasks")}</dt>
                 <dd className="font-medium text-neutral-800">
                   {project.completedTaskCount} / {project.taskCount}
                 </dd>
@@ -334,12 +338,12 @@ export default function PortalProjectDetailPage({
 
           <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
             <h3 className="text-sm font-semibold text-neutral-900">
-              Statistiques
+              {t("portal.projectDetail.stats")}
             </h3>
             <div className="mt-4">
               <div className="flex items-center gap-2 text-neutral-500">
                 <Clock className="h-4 w-4" />
-                <span className="text-sm">Heures consommées</span>
+                <span className="text-sm">{t("portal.projectDetail.hoursConsumed")}</span>
               </div>
               <p className="mt-2 text-3xl font-bold text-neutral-900">
                 {project.consumedHours.toFixed(1)}{" "}
@@ -349,7 +353,7 @@ export default function PortalProjectDetailPage({
               </p>
               {project.budgetHours && (
                 <p className="mt-1 text-xs text-neutral-500">
-                  sur {project.budgetHours} h budgétées
+                  {t("portal.projectDetail.hoursBudgeted", { hours: project.budgetHours })}
                 </p>
               )}
             </div>
@@ -357,7 +361,7 @@ export default function PortalProjectDetailPage({
 
           <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
             <h3 className="text-sm font-semibold text-neutral-900">
-              Responsable
+              {t("portal.projectDetail.manager")}
             </h3>
             <div className="mt-4 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-[#2563EB] font-semibold text-sm">
@@ -378,27 +382,27 @@ export default function PortalProjectDetailPage({
       {tab === "tasks" && (
         <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm">
           <ul className="divide-y divide-neutral-100">
-            {tasks.map((t) => {
-              const tc = TASK_STATUS_COLORS[t.status as keyof typeof TASK_STATUS_COLORS];
+            {tasks.map((task) => {
+              const tc = TASK_STATUS_COLORS[task.status as keyof typeof TASK_STATUS_COLORS];
               return (
                 <li
-                  key={t.id}
+                  key={task.id}
                   className="flex items-center gap-4 px-6 py-4"
                 >
-                  {t.status === "completed" ? (
+                  {task.status === "completed" ? (
                     <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
                   ) : (
                     <Circle className="h-5 w-5 text-neutral-300 shrink-0" />
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-neutral-800">
-                      {t.name}
+                      {task.name}
                     </p>
-                    {t.dueDate && (
+                    {task.dueDate && (
                       <p className="text-xs text-neutral-400">
-                        Échéance :{" "}
-                        {format(new Date(t.dueDate), "d MMM yyyy", {
-                          locale: fr,
+                        {t("portal.projectDetail.dueDate")} :{" "}
+                        {format(new Date(task.dueDate), "d MMM yyyy", {
+                          locale: locale === "fr" ? fr : undefined,
                         })}
                       </p>
                     )}
@@ -410,7 +414,7 @@ export default function PortalProjectDetailPage({
                       tc.text
                     )}
                   >
-                    {TASK_STATUS_LABELS[t.status as keyof typeof TASK_STATUS_LABELS]}
+                    {TASK_STATUS_LABELS[task.status as keyof typeof TASK_STATUS_LABELS]}
                   </span>
                 </li>
               );
@@ -431,10 +435,10 @@ export default function PortalProjectDetailPage({
             <TicketIcon className="h-7 w-7" />
           </div>
           <h3 className="mt-4 text-base font-semibold text-neutral-900">
-            Tickets liés
+            {t("portal.projectDetail.linkedTickets")}
           </h3>
           <p className="mt-1.5 text-sm text-neutral-500">
-            Les tickets liés à ce projet seront affichés ici prochainement.
+            {t("portal.projectDetail.linkedTicketsSoon")}
           </p>
         </div>
       )}

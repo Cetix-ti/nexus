@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { ROLES_HIERARCHY } from "@/lib/constants";
 import prisma from "@/lib/prisma";
+import { getRolePermissions, hasCachedRolePermission } from "@/lib/permissions/resolve";
 
 export type UserRole =
   | "SUPER_ADMIN"
@@ -17,11 +18,20 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   role: UserRole;
+  // Rôle custom optionnel assigné à l'utilisateur via Rôles & Permissions.
+  // Si présent, ses permissions s'ajoutent à celles du role système.
+  customRoleKey: string | null;
+  // Accès "override personnel" définis sur l'utilisateur directement
+  // (rétro-compat — ces tags continuent de fonctionner). À terme, les
+  // accès sont gérés par rôle dans Rôles & Permissions.
   capabilities: string[];
+  // Permissions accordées au rôle système de l'utilisateur + son rôle
+  // custom s'il en a un (union pré-résolue par getCurrentUser).
+  rolePermissions: string[];
 }
 
 // Cache active status checks for 60 seconds to avoid hitting DB on every API call
-const activeCache = new Map<string, { active: boolean; capabilities: string[]; checkedAt: number }>();
+const activeCache = new Map<string, { active: boolean; capabilities: string[]; customRoleKey: string | null; checkedAt: number }>();
 const CACHE_TTL = 60_000; // 60 seconds
 
 /**
@@ -36,26 +46,46 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   }
 
   const userId = session.user.id;
+  const roleStr = session.user.role as UserRole;
 
   // SECURITY: Verify user is still active in DB (cached for 60s)
   let capabilities: string[] = [];
+  let customRoleKey: string | null = null;
   const cached = activeCache.get(userId);
   if (cached && Date.now() - cached.checkedAt < CACHE_TTL) {
     if (!cached.active) return null;
     capabilities = cached.capabilities;
+    customRoleKey = cached.customRoleKey;
   } else {
     try {
       const dbUser = await prisma.user.findUnique({
         where: { id: userId },
-        select: { isActive: true, capabilities: true },
+        select: { isActive: true, capabilities: true, customRoleKey: true },
       });
       const isActive = dbUser?.isActive ?? false;
       capabilities = dbUser?.capabilities ?? [];
-      activeCache.set(userId, { active: isActive, capabilities, checkedAt: Date.now() });
+      customRoleKey = dbUser?.customRoleKey ?? null;
+      activeCache.set(userId, { active: isActive, capabilities, customRoleKey, checkedAt: Date.now() });
       if (!isActive) return null;
     } catch {
       // If DB is unreachable, allow access based on session (graceful degradation)
     }
+  }
+
+  // Résout les permissions accordées au rôle système + au rôle custom
+  // (si assigné). Union des deux → hasCapability est synchrone partout.
+  let rolePermissions: string[] = [];
+  try {
+    const systemPerms = await getRolePermissions(roleStr);
+    const merged = new Set(systemPerms);
+    if (customRoleKey) {
+      const customPerms = await getRolePermissions(customRoleKey);
+      for (const p of customPerms) merged.add(p);
+    }
+    rolePermissions = Array.from(merged);
+  } catch {
+    // DB down → les grants de rôle ne s'appliquent pas, mais les
+    // user.capabilities individuels continuent de fonctionner.
   }
 
   return {
@@ -63,19 +93,40 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     email: session.user.email,
     firstName: session.user.firstName,
     lastName: session.user.lastName,
-    role: session.user.role as UserRole,
+    role: roleStr,
+    customRoleKey,
     capabilities,
+    rolePermissions,
   };
 }
 
 /**
- * Vérifie si un user a une capacité donnée. Pas de bypass implicite —
- * même un SUPER_ADMIN doit avoir le tag pour accéder à la section.
- * Les tags sont des accès métier (facturation, finances, achats),
- * pas des permissions techniques.
+ * Vérifie si un user a une capacité / permission donnée.
+ * Union de deux sources :
+ *   1. user.capabilities — override personnel (legacy + cas granulaires)
+ *   2. rolePermissions — grant accordé au rôle via Rôles & Permissions
+ *
+ * Pas de bypass implicite pour SUPER_ADMIN : même un super-admin doit
+ * avoir l'accès accordé (soit personnellement, soit via son rôle).
+ * L'UI seedée accorde par défaut aucune des 3 capacités spéciales
+ * (finances/billing/purchasing) → l'admin les octroie explicitement.
  */
 export function hasCapability(user: AuthUser, cap: string): boolean {
-  return user.capabilities.includes(cap);
+  if (user.capabilities.includes(cap)) return true;
+  if (user.rolePermissions.includes(cap)) return true;
+  // Fallback cache lookup — au cas où rolePermissions n'a pas été
+  // pré-résolu (ex. un worker qui construit un AuthUser à la main).
+  return hasCachedRolePermission(user.role, cap);
+}
+
+/**
+ * Alias sémantique pour les permissions "techniques" (tickets.delete,
+ * settings.general, etc.). Pour l'instant, identique à hasCapability —
+ * mais garder des call sites distincts facilite la lecture et permet
+ * de divergencer plus tard si besoin (ex. permissions hiérarchiques).
+ */
+export function hasPermission(user: AuthUser, permissionKey: string): boolean {
+  return hasCapability(user, permissionKey);
 }
 
 /**

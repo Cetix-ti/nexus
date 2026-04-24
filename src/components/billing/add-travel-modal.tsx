@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { X, Car, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { mockBillingProfiles, mockContracts } from "@/lib/billing/mock-data";
 import type { TravelEntry, CoverageStatus } from "@/lib/billing/types";
 import { CoverageBadge } from "./coverage-badge";
@@ -33,11 +32,7 @@ export function AddTravelModal({
   onSave,
 }: AddTravelModalProps) {
   const [date, setDate] = useState(todayISODate());
-  const [fromLocation, setFrom] = useState("");
-  const [toLocation, setTo] = useState("");
-  const [distanceKm, setDistance] = useState(0);
-  const [durationMinutes, setDuration] = useState(0);
-  const [isRoundTrip, setRoundTrip] = useState(true);
+  const [durationMinutes, setDuration] = useState<number | "">("");
   const [notes, setNotes] = useState("");
   const [currentUserName, setCurrentUserName] = useState("—");
   useEffect(() => {
@@ -52,11 +47,14 @@ export function AddTravelModal({
     [organizationId]
   );
 
-  const { coverageStatus, coverageReason, amount } = useMemo(() => {
-    const multiplier = isRoundTrip ? 2 : 1;
-    const amt = profile.ratePerKm * distanceKm * multiplier + profile.travelFlatFee;
+  // Le taux facturé est unique par client (OrgMileageRate.kmRoundTrip
+  // × taux $/km global) — pas dépendant du site visité. On affiche
+  // juste la couverture contractuelle ; le montant réel apparaît dans
+  // "Mes dépenses" via /api/v1/my-space/mileage une fois la saisie
+  // onsite enregistrée.
+  const { coverageStatus, coverageReason } = useMemo(() => {
     let status: CoverageStatus = "travel_billable";
-    let reason = "Déplacement facturable au taux standard";
+    let reason = "Déplacement facturable selon la configuration du client";
     if (contract?.type === "msp_monthly" && contract.mspPlan?.includesTravel) {
       status = "included_in_contract";
       reason = "Déplacement inclus dans le forfait MSP";
@@ -66,18 +64,14 @@ export function AddTravelModal({
     } else if (contract?.type === "msp_monthly") {
       reason = "Déplacement non inclus dans le forfait MSP — facturable";
     }
-    return { coverageStatus: status, coverageReason: reason, amount: Math.round(amt * 100) / 100 };
-  }, [contract, distanceKm, isRoundTrip, profile]);
+    return { coverageStatus: status, coverageReason: reason };
+  }, [contract]);
 
   if (!open) return null;
 
   function reset() {
     setDate(todayISODate());
-    setFrom("");
-    setTo("");
-    setDistance(0);
-    setDuration(0);
-    setRoundTrip(true);
+    setDuration("");
     setNotes("");
   }
 
@@ -92,16 +86,11 @@ export function AddTravelModal({
       agentId: "usr_current",
       agentName: currentUserName,
       date: new Date(`${date}T00:00:00`).toISOString(),
-      fromLocation,
-      toLocation,
-      distanceKm,
-      durationMinutes,
-      isRoundTrip,
+      durationMinutes: typeof durationMinutes === "number" && durationMinutes > 0 ? durationMinutes : undefined,
       coverageStatus,
       coverageReason,
       ratePerKm: profile.ratePerKm,
       flatFee: profile.travelFlatFee,
-      amount: coverageStatus === "included_in_contract" ? undefined : amount,
       notes,
       approvalStatus: "draft",
       createdAt: new Date().toISOString(),
@@ -137,6 +126,14 @@ export function AddTravelModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <div className="rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2.5 text-[11.5px] text-blue-900 leading-relaxed">
+            Le taux de kilométrage est configuré une seule fois par client
+            (Paramètres → Allocations &amp; kilométrage). Tu n&apos;as pas besoin
+            de saisir l&apos;origine, la destination ni la distance ici —
+            le montant facturable au client et remboursé à l&apos;agent sera
+            calculé automatiquement.
+          </div>
+
           <div>
             <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Date</label>
             <input
@@ -147,33 +144,25 @@ export function AddTravelModal({
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input label="De" value={fromLocation} onChange={(e) => setFrom(e.target.value)} placeholder="Bureau Cetix..." required />
-            <Input label="Vers" value={toLocation} onChange={(e) => setTo(e.target.value)} placeholder="Adresse du client..." required />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
             <Input
-              label="Distance (km)"
+              label="Durée de trajet (minutes) — facultatif"
               type="number"
               min={0}
-              step={0.1}
-              value={distanceKm || ""}
-              onChange={(e) => setDistance(Number(e.target.value) || 0)}
+              value={durationMinutes === "" ? "" : durationMinutes}
+              onChange={(e) => {
+                const v = e.target.value;
+                setDuration(v === "" ? "" : Math.max(0, Number(v) || 0));
+              }}
+              placeholder="Ex : 45"
             />
-            <Input
-              label="Durée (minutes)"
-              type="number"
-              min={0}
-              value={durationMinutes || ""}
-              onChange={(e) => setDuration(Number(e.target.value) || 0)}
-            />
+            <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
+              À remplir uniquement si le temps de trajet est <strong>payé
+              à l&apos;agent</strong> selon son contrat. Cette donnée n&apos;affecte
+              pas la facturation client — elle est utilisée dans les rapports
+              pour calculer la paie de l&apos;agent.
+            </p>
           </div>
-
-          <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-slate-50/50 px-4 py-3">
-            <span className="text-[13px] text-slate-700">Aller-retour</span>
-            <Switch checked={isRoundTrip} onCheckedChange={setRoundTrip} />
-          </label>
 
           <div>
             <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Notes</label>
@@ -188,34 +177,18 @@ export function AddTravelModal({
           <div className="rounded-xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-[12px] font-semibold uppercase tracking-wider text-slate-500">
-                Aperçu de facturation
+                Couverture contractuelle
               </h3>
               <CoverageBadge status={coverageStatus} reason={coverageReason} />
             </div>
             <p className="text-[12.5px] text-slate-600 leading-relaxed">{coverageReason}</p>
-            <div className="mt-3 flex items-center gap-4 text-[12px] text-slate-500">
-              <span>
-                Distance totale :{" "}
-                <span className="font-semibold text-slate-900">
-                  {(distanceKm * (isRoundTrip ? 2 : 1)).toFixed(1)} km
-                </span>
-              </span>
-              <span>
-                Taux : <span className="font-semibold text-slate-900">{profile.ratePerKm.toFixed(2)} $/km</span>
-              </span>
-              {coverageStatus !== "included_in_contract" && (
-                <span>
-                  Montant : <span className="font-semibold text-emerald-600">{amount.toFixed(2)} $</span>
-                </span>
-              )}
-            </div>
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
             <Button type="button" variant="outline" onClick={onClose}>
               Annuler
             </Button>
-            <Button type="submit" variant="primary" disabled={!fromLocation || !toLocation || distanceKm <= 0}>
+            <Button type="submit" variant="primary">
               <Save className="h-4 w-4" strokeWidth={2.5} />
               Enregistrer
             </Button>

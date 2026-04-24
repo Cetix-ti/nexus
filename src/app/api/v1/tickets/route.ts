@@ -207,6 +207,7 @@ export async function POST(req: Request) {
       queueId,
       isInternal: effectiveIsInternal,
       meetingId: body.meetingId ?? null,
+      projectId: body.projectId ?? null,
     });
 
     // Handle approval workflow if requested

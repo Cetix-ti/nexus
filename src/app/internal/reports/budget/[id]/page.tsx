@@ -78,7 +78,7 @@ export default async function Page({
     <html lang="fr">
       <head>
         <meta charSet="utf-8" />
-        <title>Budget IT {budget.fiscalYear} — {budget.organization.name}</title>
+        <title>Budget TI {budget.fiscalYear} — {budget.organization.name}</title>
         <style>{`
           * { box-sizing: border-box; }
           body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -110,7 +110,7 @@ export default async function Page({
       <body>
         <div className="cover">
           <div className="brand">Cetix · Services informatiques</div>
-          <h1>Budget IT {budget.fiscalYear}</h1>
+          <h1>Budget TI {budget.fiscalYear}</h1>
           <div className="client">{budget.organization.name}</div>
           {budget.summary && <p className="muted" style={{ marginTop: 12, fontSize: 12 }}>{budget.summary}</p>}
           <div className="year">

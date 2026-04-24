@@ -97,6 +97,11 @@ export const DATASETS: Record<string, DatasetDef> = {
       { name: "requesterId", label: "Demandeur", type: "relation", groupable: true, aggregable: false },
       { name: "categoryId", label: "Catégorie", type: "relation", groupable: true, aggregable: false },
       { name: "categoryBaseId", label: "Catégorie de base", type: "relation", groupable: true, aggregable: false, virtual: true },
+      // Virtuel : type de travail dérivé des saisies de temps liées au ticket.
+      // Un ticket avec des entrées de plusieurs types apparaît dans chaque bucket.
+      // Un ticket sans aucune saisie de temps tombe dans « — Sans saisie —».
+      { name: "timeType", label: "Type de travail (saisies de temps)", type: "enum", groupable: true, aggregable: false, virtual: true,
+        values: ["remote_work", "onsite_work", "travel", "preparation", "administration", "waiting", "follow_up", "internal", "other"] },
       { name: "queueId", label: "File d'attente", type: "relation", groupable: true, aggregable: false },
       { name: "projectId", label: "Projet lié", type: "relation", groupable: true, aggregable: false },
       { name: "slaBreached", label: "SLA dépassé", type: "boolean", groupable: true, aggregable: false },
@@ -125,7 +130,7 @@ export const DATASETS: Record<string, DatasetDef> = {
     fields: [
       { name: "coverageStatus", label: "Couverture", type: "enum", groupable: true, aggregable: false,
         values: ["billable", "non_billable", "included_in_contract", "deducted_from_hour_bank", "hour_bank_overage", "excluded_from_billing", "internal_time", "travel_billable", "travel_non_billable", "msp_overage"] },
-      { name: "timeType", label: "Catégorie de base", type: "enum", groupable: true, aggregable: false,
+      { name: "timeType", label: "Type de travail", type: "enum", groupable: true, aggregable: false,
         values: ["remote_work", "onsite_work", "travel", "preparation", "administration", "waiting", "follow_up", "internal", "other"] },
       { name: "approvalStatus", label: "Statut approbation", type: "enum", groupable: true, aggregable: false,
         values: ["draft", "submitted", "approved", "rejected"] },
@@ -922,6 +927,51 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
 
   if (groupBy) {
     const fieldDef = def.fields.find((f) => f.name === groupBy);
+
+    // Virtual field : type de travail (dérivé des saisies de temps liées
+    // au ticket). Un ticket avec entrées de plusieurs types apparaît dans
+    // chaque bucket ; un ticket sans saisie tombe dans « — Sans saisie —».
+    if (fieldDef?.virtual && groupBy === "timeType" && dataset === "tickets") {
+      const rows = await model.findMany({ where, take: 5000 });
+      const totalRows = rows.length;
+      const ticketIds = rows.map((r: { id: string }) => r.id);
+      const entries = ticketIds.length > 0
+        ? await prisma.timeEntry.findMany({
+            where: { ticketId: { in: ticketIds } },
+            select: { ticketId: true, timeType: true },
+          })
+        : [];
+      const typesByTicket = new Map<string, Set<string>>();
+      for (const e of entries) {
+        const set = typesByTicket.get(e.ticketId) ?? new Set<string>();
+        set.add(e.timeType);
+        typesByTicket.set(e.ticketId, set);
+      }
+      const groups = new Map<string, { label: string; count: number; values: number[] }>();
+      for (const row of rows as Array<Record<string, unknown>>) {
+        const types = typesByTicket.get(String(row.id)) ?? new Set<string>();
+        if (types.size === 0) {
+          const key = "— Sans saisie —";
+          const g = groups.get(key) ?? { label: key, count: 0, values: [] };
+          g.count += 1;
+          if (aggregateField && row[aggregateField] != null) g.values.push(Number(row[aggregateField]));
+          groups.set(key, g);
+          continue;
+        }
+        for (const t of types) {
+          const g = groups.get(t) ?? { label: t, count: 0, values: [] };
+          g.count += 1;
+          if (aggregateField && row[aggregateField] != null) g.values.push(Number(row[aggregateField]));
+          groups.set(t, g);
+        }
+      }
+      let results = Array.from(groups.values()).map((g) => ({
+        label: g.label, value: applyDivide(computeAggregate(aggregate, g.values, g.count, totalRows)),
+      }));
+      sortResults(results, sortBy, sortDir);
+      results = results.slice(0, limit);
+      return { results, total: totalRows, groupedBy: groupBy, aggregate };
+    }
 
     // Virtual field : catégorie de base (racine de l'arbre Category).
     if (fieldDef?.virtual && groupBy === "categoryBaseId" && dataset === "tickets") {

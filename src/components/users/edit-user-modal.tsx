@@ -18,6 +18,8 @@ export interface EditUserModalUser {
   email: string;
   /** Canonical UserRole enum value (e.g. TECHNICIAN). */
   role: string;
+  /** Clé d'un rôle custom si l'utilisateur en a un — remplace `role` dans le dropdown. */
+  customRoleKey?: string | null;
   /** "Actif" | "Inactif" — UI label. */
   status: string;
   phone?: string;
@@ -26,12 +28,6 @@ export interface EditUserModalUser {
   capabilities?: string[];
 }
 
-const CAPABILITY_OPTIONS: Array<{ value: string; label: string; description: string }> = [
-  { value: "billing", label: "Facturation", description: "Accès au verrouillage de facturation" },
-  { value: "finances", label: "Finances", description: "Accès à la section Finances" },
-  { value: "purchasing", label: "Achats", description: "Notifié des demandes d'achat + badge sur Bons de commande" },
-];
-
 interface EditUserModalProps {
   open: boolean;
   onClose: () => void;
@@ -39,7 +35,9 @@ interface EditUserModalProps {
   onSaved?: () => void;
 }
 
-const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
+// Rôles SYSTÈME — toujours disponibles. Les rôles CUSTOM sont chargés
+// dynamiquement via /api/v1/roles et concaténés au dropdown.
+const SYSTEM_ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "SUPER_ADMIN", label: "Super admin" },
   { value: "MSP_ADMIN", label: "Admin MSP" },
   { value: "SUPERVISOR", label: "Superviseur" },
@@ -82,13 +80,36 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
   const [lastName, setLastName] = useState(initial.last);
   const [email, setEmail] = useState(safeUser.email || "");
   const [phone, setPhone] = useState(safeUser.phone || "");
-  const [role, setRole] = useState(safeUser.role || "TECHNICIAN");
+  // Si l'utilisateur a un rôle custom, on l'affiche comme rôle "effectif"
+  // dans le dropdown. Sinon, rôle système. Le backend dispatche au save.
+  const [role, setRole] = useState(safeUser.customRoleKey || safeUser.role || "TECHNICIAN");
+  // Rôles custom chargés dynamiquement depuis l'API (concaténés aux
+  // rôles système dans le dropdown). Tableau vide si non chargé ou si
+  // l'utilisateur courant n'est pas SUPER_ADMIN (API 403).
+  const [customRoles, setCustomRoles] = useState<Array<{ key: string; label: string; color: string }>>([]);
+  useEffect(() => {
+    fetch("/api/v1/roles")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
+        if (!d?.roles) return;
+        setCustomRoles(
+          d.roles
+            .filter((r: any) => !r.isSystem)
+            .map((r: any) => ({ key: r.key, label: r.label, color: r.color ?? "#64748B" })),
+        );
+      })
+      .catch(() => {});
+  }, []);
   const [status, setStatus] = useState<"Actif" | "Inactif">(
     safeUser.status === "Inactif" ? "Inactif" : "Actif"
   );
-  const [capabilities, setCapabilities] = useState<string[]>(
-    safeUser.capabilities ?? [],
-  );
+  // Allocation km : si false, l'agent ne reçoit aucun remboursement
+  // kilométrique (véhicule d'entreprise / paie en temps). Le champ est
+  // lu depuis la liste /api/v1/users (background fetch plus bas) pour
+  // couvrir le cas où le parent ne le fournit pas.
+  const [mileageAllocationEnabled, setMileageAllocationEnabled] = useState<boolean>(true);
+  // `capabilities` lu depuis le user pour compat (certains appels lisent
+  // encore ce champ), mais plus d'UI pour le modifier — voir Rôles & Permissions.
   // Avatar : optionnel sur le props (l'UI parente peut ne pas l'avoir
   // chargé). On part de l'initial et on fetch l'avatar existant en
   // background — l'endpoint de liste exclut le champ par défaut pour
@@ -100,16 +121,23 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (safeUser.avatar !== undefined) return; // déjà fourni par le parent
     let cancelled = false;
+    // Fetch avatar (si non fourni) + mileageAllocationEnabled dans un même
+    // call. Le flag km n'est pas renvoyé par la liste par défaut — on
+    // attrape un 404/absence gracieusement.
     fetch(
       `/api/v1/users?includeAvatar=true&role=${encodeURIComponent(safeUser.role)}`,
     )
       .then((r) => (r.ok ? r.json() : []))
-      .then((arr: Array<{ id: string; avatar: string | null }>) => {
+      .then((arr: Array<{ id: string; avatar: string | null; mileageAllocationEnabled?: boolean }>) => {
         if (cancelled) return;
         const hit = Array.isArray(arr) ? arr.find((u) => u.id === safeUser.id) : null;
-        if (hit && hit.avatar) setAvatar(hit.avatar);
+        if (hit) {
+          if (hit.avatar && safeUser.avatar === undefined) setAvatar(hit.avatar);
+          if (typeof hit.mileageAllocationEnabled === "boolean") {
+            setMileageAllocationEnabled(hit.mileageAllocationEnabled);
+          }
+        }
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -198,7 +226,12 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
           phone: phone.trim() || null,
           role,
           isActive: status === "Actif",
-          capabilities,
+          mileageAllocationEnabled,
+          // `capabilities` n'est plus géré via l'UI utilisateur — les
+          // accès passent maintenant par Rôles & Permissions. On ne
+          // transmet PAS le champ, le backend laisse les valeurs
+          // existantes intactes (les overrides personnels legacy
+          // continuent de fonctionner s'il y en avait).
           // On n'envoie avatar que s'il a été modifié — évite de renvoyer
           // inutilement un gros data-URL à chaque submit.
           ...(avatarDirty ? { avatar } : {}),
@@ -347,9 +380,25 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
                   <SelectValue placeholder="Sélectionner..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLE_OPTIONS.map((r) => (
+                  {SYSTEM_ROLE_OPTIONS.map((r) => (
                     <SelectItem key={r.value} value={r.value}>
                       {r.label}
+                    </SelectItem>
+                  ))}
+                  {customRoles.length > 0 && (
+                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 border-t border-slate-100 mt-1 pt-2">
+                      Rôles personnalisés
+                    </div>
+                  )}
+                  {customRoles.map((r) => (
+                    <SelectItem key={r.key} value={r.key}>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: r.color }}
+                        />
+                        {r.label}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -374,47 +423,36 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
             </div>
           </div>
 
-          {/* Capabilities — tags de capacité spéciale */}
-          <div>
-            <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-              Accès spéciaux
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {CAPABILITY_OPTIONS.map((cap) => {
-                const checked = capabilities.includes(cap.value);
-                return (
-                  <label
-                    key={cap.value}
-                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
-                      checked
-                        ? "border-blue-500 bg-blue-50/50 text-blue-900"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        setCapabilities((prev) =>
-                          e.target.checked
-                            ? [...prev, cap.value]
-                            : prev.filter((c) => c !== cap.value),
-                        );
-                      }}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <div>
-                      <span className="text-[12.5px] font-semibold">{cap.label}</span>
-                      <p className="text-[10.5px] text-slate-500">{cap.description}</p>
-                    </div>
-                  </label>
-                );
-              })}
+          {/* Allocation kilométrique — désactiver pour les agents qui
+              ont un véhicule d'entreprise ou qui sont compensés en
+              temps plutôt qu'en argent pour leurs déplacements. */}
+          <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+            <button
+              type="button"
+              onClick={() => setMileageAllocationEnabled((v) => !v)}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors ${mileageAllocationEnabled ? "bg-blue-600" : "bg-slate-300"}`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow translate-y-0.5 ${mileageAllocationEnabled ? "translate-x-[18px]" : "translate-x-0.5"}`}
+              />
+            </button>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-medium text-slate-900">
+                Allocation kilométrique activée
+              </p>
+              <p className="mt-0.5 text-[11.5px] text-slate-600 leading-relaxed">
+                {mileageAllocationEnabled
+                  ? "L'agent reçoit un remboursement monétaire par km selon le barème du client."
+                  : "Aucun remboursement monétaire (véhicule d'entreprise ou paie en temps). L'agent reste tenu de logger ses saisies onsite pour la facturation client."}
+              </p>
             </div>
-            <p className="mt-1.5 text-[10.5px] text-slate-500">
-              Les super-admins ont accès à tout, peu importe les tags.
-            </p>
           </div>
+
+          {/* Les accès métier (Finances / Facturation / Achats / etc.)
+              sont gérés uniquement dans Paramètres → Rôles & Permissions.
+              L'UI d'override par utilisateur a été retirée ; pour
+              accorder un accès à un seul agent, crée un rôle custom
+              dédié et assigne-le-lui via le champ Rôle ci-dessus. */}
 
           {/* Password reset */}
           <PasswordResetSection userId={user?.id || ""} />

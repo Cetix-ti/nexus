@@ -109,6 +109,8 @@ export function TicketBillingSection({
             isWeekend: Boolean(r.isWeekend),
             isUrgent: Boolean(r.isUrgent),
             isOnsite: Boolean(r.isOnsite),
+            hasTravelBilled: Boolean(r.hasTravelBilled),
+            travelDurationMinutes: (r.travelDurationMinutes as number | null | undefined) ?? null,
             coverageStatus: r.coverageStatus as TimeEntry["coverageStatus"],
             coverageReason: String(r.coverageReason ?? ""),
             hourlyRate: (r.hourlyRate as number | null) ?? undefined,
@@ -173,7 +175,7 @@ export function TicketBillingSection({
       <div className="flex items-center gap-1 border-b border-slate-200/80 px-3 sm:px-5 pt-3 overflow-x-auto">
         {[
           { id: "time" as Tab, label: "Temps", icon: Clock, count: timeEntries.length },
-          { id: "travel" as Tab, label: "Déplacements", icon: Car, count: travelEntries.length },
+          { id: "travel" as Tab, label: "Déplacements", icon: Car, count: timeEntries.filter((e) => e.hasTravelBilled).length + travelEntries.length },
           { id: "expense" as Tab, label: "Dépenses", icon: Receipt, count: expenseEntries.length },
         ].map((t) => {
           const Icon = t.icon;
@@ -253,26 +255,83 @@ export function TicketBillingSection({
               );
               if (res.ok) setReloadTime((k) => k + 1);
             }}
+            hideDescription
           />
         )}
-        {tab === "travel" && (
-          <EntryList
-            empty="Aucun déplacement pour ce ticket"
-            rows={travelEntries.map((e) => ({
+        {tab === "travel" && (() => {
+          // Dérive les déplacements depuis les saisies de temps avec
+          // hasTravelBilled=true. C'est la source de vérité unique : les
+          // deux onglets (Temps + Déplacements) montrent la même donnée.
+          const derivedRows = timeEntries
+            .filter((e) => e.hasTravelBilled)
+            .map((e) => {
+              const minutes = e.travelDurationMinutes ?? null;
+              return {
+                id: `te-travel-${e.id}`,
+                date: e.startedAt,
+                icon: "🚗",
+                label: "Déplacement",
+                description: e.description || "Déplacement facturé",
+                agent: e.agentName,
+                metric: minutes != null ? `${minutes} min` : "Durée non saisie",
+                amount: undefined as number | undefined,
+                coverageStatus: "travel_billable" as const,
+                coverageReason:
+                  minutes != null
+                    ? "Temps de trajet aller-retour saisi sur la saisie de temps."
+                    : "Déplacement facturé — aucune durée de trajet saisie.",
+                _sourceTimeEntryId: e.id,
+              };
+            });
+          const manualRows = travelEntries.map((e) => {
+            const route = e.fromLocation && e.toLocation ? `${e.fromLocation} → ${e.toLocation}` : "Déplacement";
+            const km = typeof e.distanceKm === "number" ? e.distanceKm * (e.isRoundTrip ? 2 : 1) : null;
+            return {
               id: e.id,
               date: e.date,
               icon: "🚗",
-              label: `${e.fromLocation} → ${e.toLocation}`,
-              description: e.notes || (e.isRoundTrip ? "Aller-retour" : "Aller simple"),
+              label: route,
+              description: e.notes || (e.durationMinutes ? `${e.durationMinutes} min de trajet` : ""),
               agent: e.agentName,
-              metric: `${e.distanceKm * (e.isRoundTrip ? 2 : 1)} km`,
+              metric: km !== null ? `${km} km` : (e.durationMinutes ? `${e.durationMinutes} min` : ""),
               amount: e.amount,
               coverageStatus: e.coverageStatus,
               coverageReason: e.coverageReason,
-            }))}
-            onDelete={(id) => setTravelEntries((prev) => prev.filter((e) => e.id !== id))}
-          />
-        )}
+              _sourceTimeEntryId: undefined as string | undefined,
+            };
+          });
+          const rows = [...derivedRows, ...manualRows];
+          return (
+            <EntryList
+              empty="Aucun déplacement pour ce ticket"
+              rows={rows}
+              onEdit={(id) => {
+                const r = rows.find((x) => x.id === id);
+                if (r?._sourceTimeEntryId) {
+                  // Renvoie à l'édition de la saisie de temps source.
+                  setEditingTimeEntryId(r._sourceTimeEntryId);
+                  setShowTimeModal(true);
+                }
+              }}
+              onDelete={(id) => {
+                const r = rows.find((x) => x.id === id);
+                if (r?._sourceTimeEntryId) {
+                  // Supprimer depuis un déplacement synchro = décocher la
+                  // case sur la saisie de temps source.
+                  if (!confirm("Retirer le déplacement facturé de cette saisie de temps ?")) return;
+                  fetch("/api/v1/time-entries", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: r._sourceTimeEntryId, hasTravelBilled: false, travelDurationMinutes: null }),
+                  }).then((res) => { if (res.ok) setReloadTime((k) => k + 1); });
+                } else {
+                  setTravelEntries((prev) => prev.filter((e) => e.id !== id));
+                }
+              }}
+              hideDescription
+            />
+          );
+        })()}
         {tab === "expense" && (
           <EntryList
             empty="Aucune dépense pour ce ticket"
@@ -300,6 +359,7 @@ export function TicketBillingSection({
         ticketNumber={ticketNumber}
         organizationId={organizationId}
         organizationName={organizationName}
+        editingEntry={editingTimeEntryId ? timeEntries.find((e) => e.id === editingTimeEntryId) ?? null : null}
         onSave={async (entry) => {
           try {
             const payload = {
@@ -314,10 +374,18 @@ export function TicketBillingSection({
               isWeekend: entry.isWeekend,
               isUrgent: entry.isUrgent,
               isOnsite: entry.isOnsite,
+              hasTravelBilled: entry.hasTravelBilled ?? false,
+              travelDurationMinutes: entry.hasTravelBilled ? (entry.travelDurationMinutes ?? null) : null,
+              // Le serveur IGNORE ces 4 champs et recalcule via
+              // resolveDecisionForEntry(). On les envoie pour préserver
+              // le contrat d'API mais ils ne sont jamais stockés tels quels.
               coverageStatus: entry.coverageStatus,
               coverageReason: entry.coverageReason,
               hourlyRate: entry.hourlyRate ?? null,
               amount: entry.amount ?? null,
+              // Le flag "forcer non facturable" est le seul signal manuel
+              // qui reste honoré par le serveur.
+              forceNonBillable: (entry as { forceNonBillable?: boolean }).forceNonBillable ?? false,
             };
             let res: Response;
             if (editingTimeEntryId) {
@@ -378,6 +446,12 @@ interface EntryRow {
   amount?: number;
   coverageStatus: import("@/lib/billing/types").CoverageStatus;
   coverageReason: string;
+  /**
+   * Si défini, la ligne est dérivée d'une saisie de temps (déplacement
+   * synchronisé). Les actions Modifier/Supprimer reviennent à éditer
+   * la saisie source.
+   */
+  _sourceTimeEntryId?: string;
 }
 
 function EntryList({
@@ -385,11 +459,14 @@ function EntryList({
   empty,
   onEdit,
   onDelete,
+  hideDescription,
 }: {
   rows: EntryRow[];
   empty: string;
   onEdit?: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Masque la colonne/section Description (vue bureau et mobile). */
+  hideDescription?: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -413,7 +490,7 @@ function EntryList({
               {format(new Date(r.date), "dd MMM")}
             </span>
           </div>
-          {r.description && (
+          {!hideDescription && r.description && (
             <p className="text-[12px] text-slate-600 mb-1.5 break-words">{r.description}</p>
           )}
           <div className="flex items-center justify-between flex-wrap gap-1.5">
@@ -447,9 +524,9 @@ function EntryList({
           <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             <th className="px-3 py-2.5">Date</th>
             <th className="px-3 py-2.5">Type</th>
-            <th className="px-3 py-2.5">Description</th>
+            {!hideDescription && <th className="px-3 py-2.5">Description</th>}
             <th className="px-3 py-2.5">Agent</th>
-            <th className="px-3 py-2.5 text-right">Quantité</th>
+            <th className="px-3 py-2.5 text-right">Temps</th>
             <th className="px-3 py-2.5">Couverture</th>
             <th className="px-3 py-2.5"></th>
           </tr>
@@ -466,9 +543,11 @@ function EntryList({
                   <span className="text-slate-700">{r.label}</span>
                 </div>
               </td>
-              <td className="px-3 py-3 text-slate-600 max-w-xs truncate" title={r.description}>
-                {r.description}
-              </td>
+              {!hideDescription && (
+                <td className="px-3 py-3 text-slate-600 max-w-xs truncate" title={r.description}>
+                  {r.description}
+                </td>
+              )}
               <td className="px-3 py-3">
                 <div className="flex items-center gap-1.5">
                   <Avatar className="h-5 w-5">

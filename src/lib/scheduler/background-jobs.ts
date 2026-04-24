@@ -129,15 +129,88 @@ export function startBackgroundJobs() {
   if (started) return;
   started = true;
 
-  if (process.env.DISABLE_BACKGROUND_JOBS === "1") {
-    console.log("[background-jobs] désactivés (DISABLE_BACKGROUND_JOBS=1)");
-    return;
-  }
   // Ne démarre pas pendant les builds / phases build-time de Next.js.
   if (process.env.NEXT_PHASE === "phase-production-build") {
     return;
   }
 
+  // Mode « calendrier seul » : même si DISABLE_BACKGROUND_JOBS=1 (pour
+  // isoler un job qui sature le CPU), on laisse tourner la synchro
+  // Outlook → Nexus pour que "Agenda général" reste à jour. Utile pendant
+  // qu'on chasse le job fautif sans avoir à tout rallumer.
+  const allDisabled = process.env.DISABLE_BACKGROUND_JOBS === "1";
+  const calendarEnabled = !allDisabled || process.env.ENABLE_CALENDAR_AUTOSYNC === "1";
+  const ateraEnabled = !allDisabled || process.env.ENABLE_ATERA_AUTOSYNC === "1";
+  if (allDisabled && !calendarEnabled && !ateraEnabled) {
+    console.log("[background-jobs] désactivés (DISABLE_BACKGROUND_JOBS=1)");
+    return;
+  }
+  if (allDisabled) {
+    const enabledList = [
+      calendarEnabled && "calendrier",
+      ateraEnabled && "atera-assets",
+    ].filter(Boolean).join(" + ");
+    console.log(`[background-jobs] mode partiel (${enabledList})`);
+    if (calendarEnabled) {
+      scheduleJob({
+        name: "location-sync",
+        intervalMs: Number(process.env.LOCATION_SYNC_INTERVAL_MS) || 120_000,
+        isRunning: false,
+        lastRun: null,
+        lastError: null,
+        consecutiveErrors: 0,
+        run: async () => {
+          const { pullOutlookLocations } = await import("@/lib/calendar/location-sync");
+          const result = await pullOutlookLocations();
+          if (result.created > 0 || result.updated > 0 || result.deleted > 0 || result.undecoded > 0) {
+            console.log(
+              `[location-sync] +${result.created} / ~${result.updated} / -${result.deleted} / ?${result.undecoded} (${result.fetched} Outlook events vus)`,
+            );
+          }
+          if (result.errors.length > 0) {
+            console.warn(`[location-sync] erreurs:`, result.errors.slice(0, 5));
+          }
+        },
+      });
+    }
+    if (ateraEnabled) {
+      scheduleJob({
+        name: "atera-assets-sync",
+        // 15 min par défaut — équilibre entre fraîcheur et quota API Atera.
+        intervalMs: Number(process.env.ATERA_SYNC_INTERVAL_MS) || 900_000,
+        isRunning: false,
+        lastRun: null,
+        lastError: null,
+        consecutiveErrors: 0,
+        run: async () => {
+          const { syncAllMappedOrgs, autoMapOrganizations } = await import(
+            "@/lib/integrations/atera-sync"
+          );
+          // 1. Auto-mapping des orgs dont le nom matche un client Atera
+          //    existant sans mapping active. Silencieux sauf si création.
+          try {
+            const autoMap = await autoMapOrganizations();
+            if (autoMap.created > 0) {
+              console.log(
+                `[atera-assets-sync] auto-map : +${autoMap.created} mappings créées (${autoMap.ambiguous.length} ambigües, ${autoMap.noMatch.length} sans match)`,
+              );
+            }
+          } catch (err) {
+            console.warn(`[atera-assets-sync] auto-map erreur:`, err instanceof Error ? err.message : err);
+          }
+          // 2. Sync assets pour toutes les mappings actives.
+          const result = await syncAllMappedOrgs();
+          if (result.totalCreated > 0 || result.totalUpdated > 0 || result.orgsWithErrors > 0) {
+            console.log(
+              `[atera-assets-sync] ${result.orgsProcessed} orgs · +${result.totalCreated} / ~${result.totalUpdated}` +
+                (result.orgsWithErrors > 0 ? ` · ${result.orgsWithErrors} en erreur` : ""),
+            );
+          }
+        },
+      });
+    }
+    return;
+  }
   scheduleJob({
     name: "email-to-ticket",
     // 30s par défaut — proche temps réel pour l'ingestion des tickets
@@ -293,6 +366,41 @@ export function startBackgroundJobs() {
       }
       if (result.errors.length > 0) {
         console.warn(`[location-sync] erreurs:`, result.errors.slice(0, 5));
+      }
+    },
+  });
+
+  scheduleJob({
+    name: "atera-assets-sync",
+    // 15 min — pull des actifs Atera pour toutes les orgs mappées. Inclut
+    // une étape d'auto-mapping (Nexus org ↔ Atera customer via nom
+    // normalisé) pour établir de nouvelles correspondances sans
+    // intervention admin. Override via ATERA_SYNC_INTERVAL_MS.
+    intervalMs: Number(process.env.ATERA_SYNC_INTERVAL_MS) || 900_000,
+    isRunning: false,
+    lastRun: null,
+    lastError: null,
+    consecutiveErrors: 0,
+    run: async () => {
+      const { syncAllMappedOrgs, autoMapOrganizations } = await import(
+        "@/lib/integrations/atera-sync"
+      );
+      try {
+        const autoMap = await autoMapOrganizations();
+        if (autoMap.created > 0) {
+          console.log(
+            `[atera-assets-sync] auto-map : +${autoMap.created} mappings créées (${autoMap.ambiguous.length} ambigües, ${autoMap.noMatch.length} sans match)`,
+          );
+        }
+      } catch (err) {
+        console.warn(`[atera-assets-sync] auto-map erreur:`, err instanceof Error ? err.message : err);
+      }
+      const result = await syncAllMappedOrgs();
+      if (result.totalCreated > 0 || result.totalUpdated > 0 || result.orgsWithErrors > 0) {
+        console.log(
+          `[atera-assets-sync] ${result.orgsProcessed} orgs · +${result.totalCreated} / ~${result.totalUpdated}` +
+            (result.orgsWithErrors > 0 ? ` · ${result.orgsWithErrors} en erreur` : ""),
+        );
       }
     },
   });

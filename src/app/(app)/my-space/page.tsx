@@ -7,7 +7,7 @@ import {
   Clock, DollarSign, TrendingUp, PieChart, MapPin, Moon, Ticket, Loader2,
   BarChart3, Building2, Receipt, FileText, Wallet, ShoppingCart, Package,
   CheckCircle2, AlertTriangle, Briefcase, CreditCard, Plus, XCircle,
-  ArrowRight, Calendar, Truck,
+  ArrowRight, Calendar, Truck, Paperclip, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { TimeEntryCalendar } from "@/components/billing/time-entry-calendar";
+import { QuickAddOnsiteTimeModal } from "@/components/my-space/quick-add-onsite-time-modal";
 
 // ===========================================================================
 // Types
@@ -125,7 +126,69 @@ export default function MySpacePage() {
   const [showExpForm, setShowExpForm] = useState(false);
   const [expSubmitting, setExpSubmitting] = useState(false);
   const [expForm, setExpForm] = useState({ title: "", periodStart: "", periodEnd: "", notes: "" });
-  const [expEntries, setExpEntries] = useState([{ date: new Date().toISOString().split("T")[0], category: "Déplacement", description: "", amount: 0, vendor: "", isBillable: false }]);
+  const [expEntries, setExpEntries] = useState<Array<{
+    date: string; category: string; description: string; amount: number;
+    vendor: string; isBillable: boolean; receiptUrl?: string | null;
+    receiptName?: string; receiptUploading?: boolean;
+  }>>([{ date: new Date().toISOString().split("T")[0], category: "Déplacement", description: "", amount: 0, vendor: "", isBillable: false }]);
+  // Allocations de l'agent connecté (cellulaire, internet…) — lecture seule
+  // dans Mes dépenses. Un admin configure côté settings.
+  const [myAllowances, setMyAllowances] = useState<Array<{
+    id: string; label: string; amountMonthly: number; active: boolean;
+  }>>([]);
+  // Kilométrage du mois en cours — calculé côté serveur à partir des time
+  // entries onsite + OrgMileageRate. Inclut la liste détaillée des
+  // trips pour les injecter comme lignes virtuelles dans la table
+  // "Toutes mes dépenses" (l'agent est remboursé même si billToClient=false).
+  interface MileageTrip {
+    organizationId: string;
+    organizationName: string;
+    date: string;               // YYYY-MM-DD
+    kmRoundTrip: number | null;
+    amount: number | null;
+    configured: boolean;
+    /** true = facturé au client · false = absorbé par Cetix (agent reste remboursé). */
+    billToClient: boolean;
+  }
+  const [mileage, setMileage] = useState<{
+    tripCount: number; totalKm: number; totalAmount: number;
+    unconfiguredCount: number; monthLabel: string;
+    trips: MileageTrip[];
+  } | null>(null);
+  // Déplacements détectés cette semaine mais non facturés par AUCUN agent
+  // pour ce client — suggestion au tech de les ajouter à un ticket.
+  const [missingTravels, setMissingTravels] = useState<Array<{
+    eventId: string; startsAt: string; organizationName: string; organizationId: string;
+    // true = facturable au client · l'ajout passe par le modal avec ticket.
+    // false = non facturable · ajout direct en un clic en tant que dépense.
+    billToClient: boolean;
+  }>>([]);
+  const [quickTripBusy, setQuickTripBusy] = useState<string | null>(null);
+  const [quickAddTravel, setQuickAddTravel] = useState<{
+    startsAt: string; organizationId: string; organizationName: string;
+  } | null>(null);
+  // Filtre mois pour "Toutes mes dépenses" + kilométrage. Format YYYY-MM.
+  // Défaut = mois courant. Utilisé pour les deux endpoints.
+  const [expensesMonth, setExpensesMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  // Liste PLATE de toutes les dépenses individuelles de l'agent — à
+  // travers tous ses rapports. Affichée en tableau dans l'onglet
+  // "Mes dépenses", en complément du tableau des rapports groupés.
+  interface ExpenseEntryRow {
+    id: string;
+    date: string;
+    category: string;
+    description: string;
+    amount: number;
+    vendor: string | null;
+    receiptUrl: string | null;
+    isBillable: boolean;
+    organizationName: string | null;
+    report: { id: string; title: string; status: string; periodStart: string | null; periodEnd: string | null };
+  }
+  const [expenseEntries, setExpenseEntries] = useState<ExpenseEntryRow[]>([]);
 
   // PO form
   const [showPoForm, setShowPoForm] = useState(false);
@@ -172,6 +235,110 @@ export default function MySpacePage() {
       fetch("/api/v1/organizations").then((r) => r.ok ? r.json() : []).then((d) => setOrgs(Array.isArray(d) ? d : [])).catch(() => {});
     }
   }, [showPoForm]);
+
+  // Allocations récurrentes (cellulaire, internet, etc.) + kilométrage du
+  // mois — affichés en bandeaux au-dessus de la liste des dépenses quand
+  // on est sur l'onglet. Exposé en callback pour re-fetcher manuellement
+  // (bouton Actualiser) et au retour sur la fenêtre — évite que l'user
+  // voie des valeurs périmées après avoir configuré kilométrage en
+  // Paramètres dans un autre onglet.
+  const [mileageRefreshing, setMileageRefreshing] = useState(false);
+  const loadExpensesTab = useCallback(async () => {
+    setMileageRefreshing(true);
+    try {
+      // Allocations (déclenche un chaîne fetch-me → fetch-allowances)
+      const mePromise = fetch("/api/v1/me")
+        .then((r) => (r.ok ? r.json() : null))
+        .then(async (me) => {
+          if (!me?.id) return;
+          const r = await fetch(`/api/v1/users/${me.id}/allowances`);
+          const d = r.ok ? await r.json() : { data: [] };
+          setMyAllowances(d.data ?? []);
+        })
+        .catch(() => {});
+      // Kilométrage — cache-bust via timestamp pour forcer une lecture
+      // fraîche de TenantSetting + OrgMileageRate (sinon le navigateur
+      // peut resservir une réponse HTTP déjà vue).
+      const mileagePromise = fetch(`/api/v1/my-space/mileage?month=${expensesMonth}&_=${Date.now()}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d) return;
+          setMileage({
+            tripCount: d.tripCount,
+            totalKm: d.totalKm,
+            totalAmount: d.totalAmount,
+            unconfiguredCount: d.unconfiguredCount,
+            monthLabel: d.month?.label ?? "",
+            trips: Array.isArray(d.trips) ? d.trips : [],
+          });
+        })
+        .catch(() => {});
+      const travelPromise = fetch(`/api/v1/my-space/travel-audit?month=${expensesMonth}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => setMissingTravels(d?.missing ?? []))
+        .catch(() => {});
+      // Liste plate des dépenses individuelles (toutes, tous rapports).
+      const entriesPromise = fetch(`/api/v1/my-space/expense-entries?month=${expensesMonth}&_=${Date.now()}`)
+        .then((r) => (r.ok ? r.json() : { entries: [] }))
+        .then((d) => setExpenseEntries(d.entries ?? []))
+        .catch(() => setExpenseEntries([]));
+      await Promise.all([mePromise, mileagePromise, travelPromise, entriesPromise]);
+    } finally {
+      setMileageRefreshing(false);
+    }
+  }, [expensesMonth]);
+
+  useEffect(() => {
+    if (tab !== "expenses") return;
+    loadExpensesTab();
+  }, [tab, loadExpensesTab]);
+
+  // Refetch quand la fenêtre redevient visible (retour depuis Paramètres
+  // dans un autre onglet / reveil d'un ordinateur portable). Critique :
+  // après avoir configuré un taux $/km ou km A/R par client ailleurs,
+  // l'user veut voir les nouvelles valeurs sans devoir recharger la page.
+  useEffect(() => {
+    if (tab !== "expenses") return;
+    function onVisibility() {
+      if (document.visibilityState === "visible") loadExpensesTab();
+    }
+    window.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onVisibility);
+    return () => {
+      window.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onVisibility);
+    };
+  }, [tab, loadExpensesTab]);
+
+  // Upload d'une facture/reçu pour une entrée de dépense. Fire-and-forget,
+  // on enregistre l'URL MinIO retournée dans le state local.
+  async function uploadReceipt(idx: number, file: File) {
+    setExpEntries((p) => {
+      const v = [...p];
+      v[idx] = { ...v[idx], receiptUploading: true };
+      return v;
+    });
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("prefix", "expense-receipts");
+      const res = await fetch("/api/v1/uploads", { method: "POST", body: form });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const d = await res.json();
+      setExpEntries((p) => {
+        const v = [...p];
+        v[idx] = { ...v[idx], receiptUrl: d.url, receiptName: d.name, receiptUploading: false };
+        return v;
+      });
+    } catch {
+      setExpEntries((p) => {
+        const v = [...p];
+        v[idx] = { ...v[idx], receiptUploading: false };
+        return v;
+      });
+      alert("Échec du téléversement de la facture.");
+    }
+  }
 
   // Expense report submit
   async function submitExpense() {
@@ -557,20 +724,158 @@ export default function MySpacePage() {
             <KpiCard label="Facturable" value={fmtMoney((data?.expenseReports ?? []).reduce((s, r) => s + r.billableAmount, 0))} icon={<CreditCard className="h-4 w-4 text-violet-600" />} bg="bg-violet-50" />
           </div>
 
-          <Button variant="primary" size="sm" onClick={() => setShowExpForm(!showExpForm)}><Plus className="h-3.5 w-3.5" /> Nouveau rapport de dépenses</Button>
+          {/* Alerte : déplacements détectés mais aucun agent n'a encore
+              facturé onsite pour ce client ce jour-là. Le tech peut
+              facturer un déplacement sur un ticket du client concerné. */}
+          {missingTravels.length > 0 && (
+            <Card className="border-amber-200 bg-amber-50/40">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="h-5 w-5 text-amber-700" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-semibold text-amber-900">
+                      {missingTravels.length} déplacement{missingTravels.length > 1 ? "s" : ""} potentiellement non facturé{missingTravels.length > 1 ? "s" : ""} · {mileage?.monthLabel || "ce mois"}
+                    </p>
+                    <p className="text-[11.5px] text-amber-800/80 mt-0.5">
+                      Ces déplacements sont dans ton calendrier mais aucun tech n&apos;a encore enregistré de temps onsite pour ce client ce jour-là.
+                    </p>
+                    <ul className="mt-2 space-y-1">
+                      {missingTravels.slice(0, 5).map((m) => (
+                        <li
+                          key={m.eventId}
+                          className="text-[12px] text-amber-900 flex items-center gap-2"
+                        >
+                          <span className="tabular-nums text-amber-700 w-14 shrink-0">
+                            {new Date(m.startsAt).toLocaleDateString("fr-CA", { day: "2-digit", month: "short" })}
+                          </span>
+                          <span className="font-medium flex-1 min-w-0 truncate">
+                            {m.organizationName}
+                            {!m.billToClient && (
+                              <span className="ml-1.5 text-[10px] text-amber-600 font-normal">(non facturé)</span>
+                            )}
+                          </span>
+                          {m.billToClient ? (
+                            <button
+                              type="button"
+                              onClick={() => setQuickAddTravel({
+                                startsAt: m.startsAt,
+                                organizationId: m.organizationId,
+                                organizationName: m.organizationName,
+                              })}
+                              className="shrink-0 inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100 hover:border-amber-400 transition-colors"
+                            >
+                              <Plus className="h-3 w-3" />
+                              Lier à un ticket
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={quickTripBusy === m.eventId}
+                              onClick={async () => {
+                                setQuickTripBusy(m.eventId);
+                                try {
+                                  const dateStr = m.startsAt.slice(0, 10); // YYYY-MM-DD
+                                  const r = await fetch("/api/v1/my-space/quick-trip", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ organizationId: m.organizationId, date: dateStr }),
+                                  });
+                                  if (!r.ok) {
+                                    const d = await r.json().catch(() => ({}));
+                                    alert(d.error ?? `Erreur HTTP ${r.status}`);
+                                    return;
+                                  }
+                                  await loadExpensesTab();
+                                } finally {
+                                  setQuickTripBusy(null);
+                                }
+                              }}
+                              className="shrink-0 inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100 hover:border-emerald-400 transition-colors disabled:opacity-50"
+                            >
+                              {quickTripBusy === m.eventId ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Plus className="h-3 w-3" />
+                              )}
+                              Ajouter à mes dépenses
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                      {missingTravels.length > 5 && (
+                        <li className="text-[11.5px] text-amber-700 italic">
+                          + {missingTravels.length - 5} autre{missingTravels.length - 5 > 1 ? "s" : ""}…
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Allocations récurrentes (cellulaire, internet) — versées par
+              Cetix en plus des dépenses réelles. Visible en lecture seule ;
+              un admin les configure. */}
+          {myAllowances.filter((a) => a.active).length > 0 && (
+            <Card className="border-emerald-200 bg-emerald-50/30">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="text-[12.5px] font-semibold text-emerald-800 uppercase tracking-wider">
+                      Allocations mensuelles
+                    </p>
+                    <p className="text-[12px] text-emerald-700/80 mt-0.5">
+                      Montants versés automatiquement chaque mois. Se somment à tes dépenses.
+                    </p>
+                  </div>
+                  <p className="text-[18px] font-bold text-emerald-700 tabular-nums">
+                    {fmtMoney(
+                      myAllowances.filter((a) => a.active).reduce((s, a) => s + a.amountMonthly, 0),
+                    )}{" "}
+                    <span className="text-[11px] font-normal text-emerald-600">/ mois</span>
+                  </p>
+                </div>
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  {myAllowances.filter((a) => a.active).map((a) => (
+                    <li
+                      key={a.id}
+                      className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-[12px] text-emerald-800 ring-1 ring-emerald-200"
+                    >
+                      <span className="font-medium">{a.label}</span>
+                      <span className="tabular-nums font-semibold">{fmtMoney(a.amountMonthly)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
+          <Button variant="primary" size="sm" onClick={() => setShowExpForm(!showExpForm)}><Plus className="h-3.5 w-3.5" /> Ajouter une dépense</Button>
 
           {/* Create form */}
           {showExpForm && (
             <Card className="border-blue-200 bg-blue-50/20">
               <CardContent className="p-5 space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-[15px] font-semibold text-slate-900">Nouveau rapport de dépenses</h3>
+                  <h3 className="text-[15px] font-semibold text-slate-900">Ajouter une dépense</h3>
                   <button onClick={() => setShowExpForm(false)} className="text-slate-400 hover:text-slate-600"><XCircle className="h-5 w-5" /></button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <Input label="Titre *" placeholder="Ex: Déplacements avril 2026" value={expForm.title} onChange={(e) => setExpForm((p) => ({ ...p, title: e.target.value }))} />
-                  <Input label="Début de période" type="date" value={expForm.periodStart} onChange={(e) => setExpForm((p) => ({ ...p, periodStart: e.target.value }))} />
-                  <Input label="Fin de période" type="date" value={expForm.periodEnd} onChange={(e) => setExpForm((p) => ({ ...p, periodEnd: e.target.value }))} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <Input label="Titre *" placeholder="Ex: Déplacement Louiseville" value={expForm.title} onChange={(e) => setExpForm((p) => ({ ...p, title: e.target.value }))} />
+                  <Input
+                    label="Date"
+                    type="date"
+                    value={expForm.periodStart}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      // Une seule date : on la stocke dans periodStart ET
+                      // periodEnd pour garder la compat backend.
+                      setExpForm((p) => ({ ...p, periodStart: v, periodEnd: v }));
+                    }}
+                  />
                   <Input label="Notes" placeholder="Optionnel" value={expForm.notes} onChange={(e) => setExpForm((p) => ({ ...p, notes: e.target.value }))} />
                 </div>
                 <div className="flex items-center justify-between">
@@ -606,6 +911,34 @@ export default function MySpacePage() {
                         <input type="checkbox" className="rounded border-slate-300" checked={entry.isBillable} onChange={(e) => { const v = [...expEntries]; v[idx] = { ...v[idx], isBillable: e.target.checked }; setExpEntries(v); }} />
                         <span className="text-[11px] text-slate-600">Fact.</span>
                       </label>
+                      {/* Bouton facture/reçu — upload vers MinIO et stocke
+                          l'URL dans entry.receiptUrl (envoyée au submit). */}
+                      <label className="pb-1.5 cursor-pointer" title={entry.receiptUrl ? "Facture jointe" : "Joindre la facture"}>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept="image/*,application/pdf"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) uploadReceipt(idx, f);
+                            e.target.value = "";
+                          }}
+                        />
+                        <span className={cn(
+                          "inline-flex items-center justify-center h-7 w-7 rounded-md ring-1 transition-colors",
+                          entry.receiptUploading
+                            ? "bg-slate-100 text-slate-400 ring-slate-200"
+                            : entry.receiptUrl
+                              ? "bg-emerald-50 text-emerald-600 ring-emerald-200 hover:bg-emerald-100"
+                              : "bg-white text-slate-400 ring-slate-200 hover:text-blue-600 hover:ring-blue-300",
+                        )}>
+                          {entry.receiptUploading ? (
+                            <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-500 animate-spin" />
+                          ) : (
+                            <Paperclip className="h-3.5 w-3.5" />
+                          )}
+                        </span>
+                      </label>
                       {expEntries.length > 1 && <button onClick={() => setExpEntries((p) => p.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 pb-1.5"><XCircle className="h-4 w-4" /></button>}
                     </div>
                   ))}
@@ -623,10 +956,31 @@ export default function MySpacePage() {
             </Card>
           )}
 
-          {/* List */}
+          {/* Toutes les dépenses à plat — table triée par date desc.
+              Permet de voir l'historique complet d'un coup d'œil sans
+              ouvrir chaque rapport. Inclut aussi les trips de kilométrage
+              (lignes virtuelles) car l'agent est remboursé indépendamment
+              de billToClient — le kilométrage EST une dépense pour l'agent. */}
+          <AllExpensesTable
+            entries={expenseEntries}
+            mileageTrips={mileage?.trips ?? []}
+            month={expensesMonth}
+            onMonthChange={setExpensesMonth}
+            onDeleteEntry={async (entryId) => {
+              const r = await fetch(`/api/v1/my-space/expense-entries/${entryId}`, { method: "DELETE" });
+              if (!r.ok) {
+                const d = await r.json().catch(() => ({}));
+                alert(d.error ?? `Erreur HTTP ${r.status}`);
+                return;
+              }
+              await loadExpensesTab();
+            }}
+          />
+
+          {/* Rapports groupés par période (ce qui était là avant). */}
           <Card className="overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-200">
-              <h3 className="text-[15px] font-semibold text-slate-900 flex items-center gap-2"><Briefcase className="h-4 w-4 text-slate-500" /> Mes rapports de dépenses</h3>
+              <h3 className="text-[15px] font-semibold text-slate-900 flex items-center gap-2"><Briefcase className="h-4 w-4 text-slate-500" /> Mes rapports de dépenses (par période)</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -654,7 +1008,7 @@ export default function MySpacePage() {
                   {(data?.expenseReports?.length ?? 0) === 0 && (
                     <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400 text-[13px]">
                       <Briefcase className="h-6 w-6 mx-auto mb-2 text-slate-300" />
-                      Aucun rapport — cliquez sur « Nouveau rapport de dépenses » pour en créer un.
+                      Aucune dépense — cliquez sur « Ajouter une dépense » pour en saisir une.
                     </td></tr>
                   )}
                 </tbody>
@@ -783,6 +1137,17 @@ export default function MySpacePage() {
           </Card>
         </div>
       )}
+
+      {quickAddTravel && (
+        <QuickAddOnsiteTimeModal
+          open
+          onClose={() => setQuickAddTravel(null)}
+          eventDate={quickAddTravel.startsAt}
+          organizationId={quickAddTravel.organizationId}
+          organizationName={quickAddTravel.organizationName}
+          onCreated={() => { setQuickAddTravel(null); loadExpensesTab(); }}
+        />
+      )}
     </div>
   );
 }
@@ -817,4 +1182,326 @@ function QuickLink({ label, href, icon, onClick }: { label: string; href?: strin
   );
   if (href) return <Link href={href} className={cls}>{inner}</Link>;
   return <button className={cls} onClick={onClick}>{inner}</button>;
+}
+
+// ===========================================================================
+// AllExpensesTable — tableau plat de TOUTES les dépenses individuelles
+// soumises par l'agent, tous rapports confondus. Affiche date, catégorie,
+// description, fournisseur, organisation, montant, facturabilité, et
+// lien vers le rapport parent (statut visible).
+//
+// Tri par défaut : date décroissante (plus récent en premier). Inclut
+// un totalizer au bas (somme des montants affichés) pour un aperçu rapide.
+// ===========================================================================
+interface UnifiedExpenseRow {
+  id: string;
+  kind: "entry" | "mileage";       // source — détermine le rendu lié
+  date: string;                     // ISO ou YYYY-MM-DD
+  category: string;
+  description: string;
+  amount: number;
+  vendor: string | null;
+  receiptUrl: string | null;
+  isBillable: boolean;              // pour entries : choix agent · pour mileage : toujours true (agent remboursé)
+  organizationName: string | null;
+  reportId: string | null;          // null pour les trips mileage
+  reportTitle: string | null;
+  reportStatus: string | null;
+  mileageInfo: { km: number; configured: boolean; billToClient: boolean } | null;
+}
+
+function AllExpensesTable({ entries, mileageTrips, month, onMonthChange, onDeleteEntry }: {
+  entries: Array<{
+    id: string; date: string; category: string; description: string;
+    amount: number; vendor: string | null; receiptUrl: string | null;
+    isBillable: boolean; organizationName: string | null;
+    report: { id: string; title: string; status: string; periodStart: string | null; periodEnd: string | null };
+  }>;
+  mileageTrips: Array<{
+    organizationId: string; organizationName: string; date: string;
+    kmRoundTrip: number | null; amount: number | null; configured: boolean;
+    billToClient: boolean;
+  }>;
+  month: string;                 // YYYY-MM
+  onMonthChange: (m: string) => void;
+  onDeleteEntry: (entryId: string) => void | Promise<void>;
+}) {
+  const [filter, setFilter] = useState("");
+
+  // Unification : on convertit entries réelles + trips kilométrage en
+  // une seule liste de `UnifiedExpenseRow`. Les trips non configurés
+  // (pas de OrgMileageRate) sont AFFICHÉS quand même avec montant 0$
+  // et un badge "barème à configurer" — utile pour voir qu'une sortie
+  // n'est pas encore remboursable.
+  const unified: UnifiedExpenseRow[] = [
+    ...entries.map((e) => ({
+      id: `entry_${e.id}`,
+      kind: "entry" as const,
+      date: e.date,
+      category: e.category,
+      description: e.description,
+      amount: e.amount,
+      vendor: e.vendor,
+      receiptUrl: e.receiptUrl,
+      isBillable: e.isBillable,
+      organizationName: e.organizationName,
+      reportId: e.report.id,
+      reportTitle: e.report.title,
+      reportStatus: e.report.status,
+      mileageInfo: null,
+    })),
+    ...mileageTrips.map((t) => ({
+      id: `mileage_${t.organizationId}_${t.date}`,
+      kind: "mileage" as const,
+      date: t.date,
+      category: "Kilométrage",
+      description: t.billToClient
+        ? `Déplacement — ${t.organizationName}`
+        : `Déplacement (non facturé) — ${t.organizationName}`,
+      amount: t.amount ?? 0,
+      vendor: null,
+      receiptUrl: null,
+      // Reflète billToClient : ✓ si client facturé, — si Cetix absorbe.
+      // Dans les deux cas l'agent est remboursé (ligne présente dans Mes dépenses).
+      isBillable: t.billToClient,
+      organizationName: t.organizationName,
+      reportId: null,
+      reportTitle: null,
+      reportStatus: null,
+      mileageInfo: { km: t.kmRoundTrip ?? 0, configured: t.configured, billToClient: t.billToClient },
+    })),
+  ].sort((a, b) => {
+    // Tri chronologique ascendant (du plus ancien au plus récent).
+    // Normalise sur `YYYY-MM-DD` car les entries réelles ont un ISO
+    // complet ("2026-04-09T16:00:00.000Z") alors que les trips virtuels
+    // utilisent un format date seulement ("2026-04-09") — sans trim,
+    // localeCompare peut inverser l'ordre au sein d'une même journée.
+    const ka = a.date.slice(0, 10);
+    const kb = b.date.slice(0, 10);
+    if (ka !== kb) return ka.localeCompare(kb);
+    return a.date.localeCompare(b.date);
+  });
+
+  const filtered = unified.filter((e) => {
+    if (!filter.trim()) return true;
+    const q = filter.toLowerCase();
+    return (
+      e.description.toLowerCase().includes(q) ||
+      e.category.toLowerCase().includes(q) ||
+      (e.vendor ?? "").toLowerCase().includes(q) ||
+      (e.organizationName ?? "").toLowerCase().includes(q) ||
+      (e.reportTitle ?? "").toLowerCase().includes(q)
+    );
+  });
+  const total = filtered.reduce((s, e) => s + e.amount, 0);
+  const totalBillable = filtered.filter((e) => e.isBillable).reduce((s, e) => s + e.amount, 0);
+
+  // Options mois : 18 mois glissants (15 passés + courant + 2 à venir
+  // pour pré-saisies). Génère YYYY-MM + label "mois yyyy" localisé fr-CA.
+  const monthOptions: { value: string; label: string }[] = (() => {
+    const opts: { value: string; label: string }[] = [];
+    const now = new Date();
+    for (let i = -2; i <= 15; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("fr-CA", { month: "long", year: "numeric" });
+      opts.push({ value, label: label.charAt(0).toUpperCase() + label.slice(1) });
+    }
+    return opts;
+  })();
+
+  const header = (
+    <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center gap-3 justify-between">
+      <div>
+        <h3 className="text-[15px] font-semibold text-slate-900 flex items-center gap-2">
+          <Receipt className="h-4 w-4 text-slate-500" /> Toutes mes dépenses
+        </h3>
+        {unified.length > 0 && (
+          <p className="text-[11.5px] text-slate-500 mt-0.5">
+            {filtered.length} entrée{filtered.length > 1 ? "s" : ""} · {fmtMoney(total)}
+            {totalBillable > 0 && <span className="text-emerald-600"> · {fmtMoney(totalBillable)} refacturables</span>}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <select
+          value={month}
+          onChange={(e) => onMonthChange(e.target.value)}
+          className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          aria-label="Mois"
+        >
+          {monthOptions.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <div className="w-56">
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filtrer…"
+            className="w-full rounded-md border border-slate-200 px-3 py-1.5 text-[12px] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  if (unified.length === 0) {
+    return (
+      <Card className="overflow-hidden">
+        {header}
+        <div className="p-10 text-center text-[13px] text-slate-400">
+          <Receipt className="h-7 w-7 mx-auto mb-2 text-slate-300" />
+          Aucune dépense pour ce mois.
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      {header}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50/60 text-left">
+              <th className="px-4 py-2.5 font-medium text-slate-500 whitespace-nowrap">Date</th>
+              <th className="px-4 py-2.5 font-medium text-slate-500">Catégorie</th>
+              <th className="px-4 py-2.5 font-medium text-slate-500">Description</th>
+              <th className="px-4 py-2.5 font-medium text-slate-500">Fournisseur</th>
+              <th className="px-4 py-2.5 font-medium text-slate-500">Client / Rapport</th>
+              <th className="px-4 py-2.5 font-medium text-slate-500 text-right whitespace-nowrap">Montant</th>
+              <th className="px-4 py-2.5 font-medium text-slate-500 text-center">Refact.</th>
+              <th className="px-4 py-2.5 font-medium text-slate-500"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {filtered.map((e) => {
+              const isMileage = e.kind === "mileage";
+              return (
+              <tr key={e.id} className={cn(
+                "transition-colors",
+                isMileage ? "bg-blue-50/20 hover:bg-blue-50/40" : "hover:bg-slate-50/50",
+              )}>
+                <td className="px-4 py-2.5 tabular-nums text-[12px] text-slate-600 whitespace-nowrap">
+                  {fmtDate(e.date)}
+                </td>
+                <td className="px-4 py-2.5">
+                  <Badge
+                    variant={isMileage ? "primary" : "default"}
+                    className="text-[10px]"
+                  >
+                    {isMileage && <Truck className="h-2.5 w-2.5 mr-0.5 inline" />}
+                    {e.category}
+                  </Badge>
+                </td>
+                <td className="px-4 py-2.5 text-slate-800 max-w-xs truncate" title={e.description}>
+                  {e.description || <span className="text-slate-400 italic">—</span>}
+                  {isMileage && e.mileageInfo && (
+                    <span className="ml-1 text-[10.5px] text-blue-700 tabular-nums">
+                      ({e.mileageInfo.km} km A/R)
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-[12.5px] text-slate-600">
+                  {e.vendor ?? <span className="text-slate-400">—</span>}
+                </td>
+                <td className="px-4 py-2.5 text-[12px]">
+                  {e.organizationName && (
+                    <span className="inline-block text-slate-700 font-medium mr-1">{e.organizationName}</span>
+                  )}
+                  {isMileage ? (
+                    <span className="text-[10.5px] text-slate-400 italic">
+                      Calcul automatique
+                    </span>
+                  ) : e.reportId ? (
+                    <>
+                      <Link
+                        href={`/my-space/expense/${e.reportId}`}
+                        className="text-blue-600 hover:underline text-[11.5px]"
+                      >
+                        {e.reportTitle}
+                      </Link>
+                      {e.reportStatus && (
+                        <Badge variant={(EXP_STATUS[e.reportStatus]?.variant ?? "default") as any} className="text-[9px] ml-1">
+                          {EXP_STATUS[e.reportStatus]?.label ?? e.reportStatus}
+                        </Badge>
+                      )}
+                    </>
+                  ) : null}
+                </td>
+                <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-800 whitespace-nowrap">
+                  {isMileage && e.mileageInfo && !e.mileageInfo.configured ? (
+                    <span className="text-amber-600 text-[11px]" title="Barème kilométrage non configuré pour ce client">
+                      Barème à configurer
+                    </span>
+                  ) : (
+                    fmtMoney(e.amount)
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-center">
+                  {e.isBillable ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500 inline-block" />
+                  ) : (
+                    <span className="text-slate-300">—</span>
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-right">
+                  <div className="inline-flex items-center gap-2">
+                    {e.receiptUrl && (
+                      <a
+                        href={e.receiptUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Voir le reçu"
+                        className="text-slate-400 hover:text-blue-600"
+                      >
+                        <Paperclip className="h-4 w-4 inline-block" />
+                      </a>
+                    )}
+                    {/* Suppression : uniquement pour les entrées réelles
+                        (pas pour les trips virtuels dérivés du TimeEntry)
+                        et tant que le rapport est encore en DRAFT. */}
+                    {e.kind === "entry" && e.reportStatus === "DRAFT" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!confirm("Supprimer cette dépense ?")) return;
+                          onDeleteEntry(e.id.replace(/^entry_/, ""));
+                        }}
+                        title="Supprimer cette dépense"
+                        className="text-slate-400 hover:text-red-600"
+                      >
+                        <XCircle className="h-4 w-4 inline-block" />
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-[12px] text-slate-400">
+                Aucune dépense ne correspond à « {filter} ».
+              </td></tr>
+            )}
+          </tbody>
+          {filtered.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 bg-slate-50/80">
+                <td colSpan={5} className="px-4 py-2.5 text-[12px] font-semibold text-slate-600">
+                  Total ({filtered.length} entrée{filtered.length > 1 ? "s" : ""})
+                </td>
+                <td className="px-4 py-2.5 text-right tabular-nums font-bold text-slate-900">
+                  {fmtMoney(total)}
+                </td>
+                <td colSpan={2}></td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </Card>
+  );
 }

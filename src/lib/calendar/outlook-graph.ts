@@ -157,8 +157,14 @@ export async function listCalendarEvents(args: {
   let url: string | null =
     `/users/${encodeURIComponent(mailbox)}/calendars/${calendarId}/calendarView?${qs.toString()}`;
   while (url) {
+    // Prefer: outlook.timezone="UTC" force Graph à renvoyer start/end
+    // en UTC plutôt que dans le TZ par défaut de la boîte. Ça élimine
+    // l'ambiguïté côté parsing (dateTime sans Z) et rend le sync
+    // indépendant de la config TZ de la mailbox.
     const page: { value: OutlookEvent[]; "@odata.nextLink"?: string } =
-      await graphFetch(url);
+      await graphFetch(url, {
+        headers: { Prefer: 'outlook.timezone="UTC"' },
+      });
     out.push(...page.value);
     url = page["@odata.nextLink"]
       ? page["@odata.nextLink"].replace("https://graph.microsoft.com/v1.0", "")

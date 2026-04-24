@@ -17,6 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
+import { useLocaleStore } from "@/stores/locale-store";
 
 interface AssetDetail {
   id: string;
@@ -54,6 +55,8 @@ export default function PortalAssetDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { permissions } = usePortalUser();
+  const t = useLocaleStore((s) => s.t);
+  const locale = useLocaleStore((s) => s.locale);
   const assetId = params.id as string;
   const [asset, setAsset] = useState<AssetDetail | null>(null);
   const [notes, setNotes] = useState<AssetNote[]>([]);
@@ -109,7 +112,7 @@ export default function PortalAssetDetailPage() {
           id: created.id,
           body: created.body,
           isPrivate: false,
-          authorName: "Moi",
+          authorName: t("portal.assetDetail.me"),
           createdAt: created.createdAt,
         },
         ...prev,
@@ -129,7 +132,7 @@ export default function PortalAssetDetailPage() {
 
   if (!asset) {
     return (
-      <div className="text-center py-20 text-slate-400">Actif introuvable.</div>
+      <div className="text-center py-20 text-slate-400">{t("portal.assetDetail.notFound")}</div>
     );
   }
 
@@ -142,7 +145,7 @@ export default function PortalAssetDetailPage() {
         className="inline-flex items-center gap-1.5 text-[13px] text-slate-500 hover:text-slate-700"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
-        Retour aux actifs
+        {t("portal.assetDetail.backToAssets")}
       </button>
 
       <Card>
@@ -164,27 +167,27 @@ export default function PortalAssetDetailPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-[13px]">
             <div>
-              <p className="text-slate-400 text-[11px]">Type</p>
+              <p className="text-slate-400 text-[11px]">{t("portal.assetDetail.type")}</p>
               <p className="text-slate-700">{asset.type}</p>
             </div>
             <div>
-              <p className="text-slate-400 text-[11px]">N° de série</p>
+              <p className="text-slate-400 text-[11px]">{t("portal.assetDetail.serialNumber")}</p>
               <p className="text-slate-700 font-mono">
                 {asset.serialNumber ?? "—"}
               </p>
             </div>
             <div>
-              <p className="text-slate-400 text-[11px]">Adresse IP</p>
+              <p className="text-slate-400 text-[11px]">{t("portal.assetDetail.ipAddress")}</p>
               <p className="text-slate-700 font-mono">
                 {asset.ipAddress ?? "—"}
               </p>
             </div>
             <div>
-              <p className="text-slate-400 text-[11px]">Site</p>
+              <p className="text-slate-400 text-[11px]">{t("portal.assetDetail.site")}</p>
               <p className="text-slate-700">{asset.site?.name ?? "—"}</p>
             </div>
             <div>
-              <p className="text-slate-400 text-[11px]">Assigné à</p>
+              <p className="text-slate-400 text-[11px]">{t("portal.assetDetail.assignedTo")}</p>
               <p className="text-slate-700">
                 {asset.assignedContact
                   ? `${asset.assignedContact.firstName} ${asset.assignedContact.lastName}`
@@ -193,7 +196,7 @@ export default function PortalAssetDetailPage() {
             </div>
             {asset.externalSource && (
               <div>
-                <p className="text-slate-400 text-[11px]">Source</p>
+                <p className="text-slate-400 text-[11px]">{t("portal.assetDetail.source")}</p>
                 <p className="text-slate-700">{asset.externalSource}</p>
               </div>
             )}
@@ -206,7 +209,7 @@ export default function PortalAssetDetailPage() {
         <CardContent className="p-6">
           <h2 className="text-[15px] font-semibold text-slate-900 mb-4 flex items-center gap-2">
             <MessageSquare className="h-4 w-4 text-slate-500" />
-            Notes
+            {t("portal.assetDetail.notes")}
           </h2>
 
           {canManage && (
@@ -214,7 +217,7 @@ export default function PortalAssetDetailPage() {
               <textarea
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
-                placeholder="Ajouter une note..."
+                placeholder={t("portal.assetDetail.addNote")}
                 rows={2}
                 className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
               />
@@ -236,7 +239,7 @@ export default function PortalAssetDetailPage() {
 
           {notes.length === 0 ? (
             <p className="text-[13px] text-slate-400 text-center py-8">
-              Aucune note pour cet actif.
+              {t("portal.assetDetail.noNotes")}
             </p>
           ) : (
             <div className="space-y-3">
@@ -251,7 +254,7 @@ export default function PortalAssetDetailPage() {
                       {n.authorName}
                     </span>
                     <span className="text-[11px] text-slate-400">
-                      {new Date(n.createdAt).toLocaleString("fr-CA")}
+                      {new Date(n.createdAt).toLocaleString(locale === "fr" ? "fr-CA" : "en-CA")}
                     </span>
                   </div>
                   <p className="text-[13px] text-slate-600 whitespace-pre-line">
@@ -269,7 +272,7 @@ export default function PortalAssetDetailPage() {
         <CardContent className="p-6">
           <h2 className="text-[15px] font-semibold text-slate-900 mb-4 flex items-center gap-2">
             <Package className="h-4 w-4 text-slate-500" />
-            Logiciels installés
+            {t("portal.assetDetail.installedSoftware")}
             {!softwareLoading && software.length > 0 && (
               <span className="text-[12px] font-normal text-slate-400">
                 ({software.length})
@@ -284,27 +287,27 @@ export default function PortalAssetDetailPage() {
                 <div className="absolute inset-0 h-10 w-10 rounded-full border-[3px] border-blue-500 border-t-transparent animate-spin" />
               </div>
               <p className="text-[13px] text-slate-500">
-                Chargement de l&apos;inventaire logiciel...
+                {t("portal.assetDetail.loadingSoftware")}
               </p>
             </div>
           ) : agentFound === false ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-4 text-center">
               <p className="text-[13px] font-medium text-amber-800">
-                Agent Wazuh non trouvé pour cet actif
+                {t("portal.assetDetail.agentNotFound")}
               </p>
               <p className="text-[12px] text-amber-700 mt-1">
-                L&apos;agent Wazuh doit être déployé sur ce poste pour collecter l&apos;inventaire logiciel.
+                {t("portal.assetDetail.agentRequired")}
               </p>
             </div>
           ) : software.length === 0 ? (
             <p className="text-[13px] text-slate-400 text-center py-6">
-              Aucun logiciel trouvé pour cet actif.
+              {t("portal.assetDetail.noSoftware")}
             </p>
           ) : (
             <>
               {software.length > 10 && (
                 <Input
-                  placeholder="Rechercher un logiciel..."
+                  placeholder={t("portal.assetDetail.searchSoftware")}
                   value={softwareSearch}
                   onChange={(e) => setSoftwareSearch(e.target.value)}
                   iconLeft={<Search className="h-4 w-4" />}
@@ -315,9 +318,9 @@ export default function PortalAssetDetailPage() {
                 <table className="w-full text-[13px]">
                   <thead>
                     <tr className="bg-slate-50 text-left text-[11px] font-medium uppercase text-slate-400">
-                      <th className="px-4 py-2">Nom</th>
-                      <th className="px-4 py-2 hidden sm:table-cell">Version</th>
-                      <th className="px-4 py-2 hidden md:table-cell">Éditeur</th>
+                      <th className="px-4 py-2">{t("portal.assetDetail.name")}</th>
+                      <th className="px-4 py-2 hidden sm:table-cell">{t("portal.assetDetail.version")}</th>
+                      <th className="px-4 py-2 hidden md:table-cell">{t("portal.assetDetail.vendor")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">

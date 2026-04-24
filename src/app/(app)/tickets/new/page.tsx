@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -37,6 +37,14 @@ type TicketFormData = z.infer<typeof ticketSchema>;
 
 export default function NewTicketPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Préremplissage depuis l'URL : ?projectId=...&organizationName=...&status=...
+  // Utilisé quand on clique "+" dans le Kanban d'un projet pour rattacher
+  // directement le ticket au projet, sans faire saisir l'org au tech.
+  const prefilledProjectId = searchParams.get("projectId");
+  const prefilledProjectName = searchParams.get("projectName");
+  const prefilledOrg = searchParams.get("organizationName");
+  const prefilledStatus = searchParams.get("status");
 
   const [organizations, setOrganizations] = useState<string[]>([]);
   const [orgsLoading, setOrgsLoading] = useState(true);
@@ -125,7 +133,7 @@ export default function NewTicketPage() {
       impact: "low",
       category: "",
       queue: "",
-      organizationName: "",
+      organizationName: prefilledOrg ?? "",
       requesterName: "",
       assigneeName: "",
       tags: "",
@@ -196,10 +204,21 @@ export default function NewTicketPage() {
           queue: data.queue,
           assigneeName: data.assigneeName,
           tags: data.tags,
+          // Propagation quand on vient du Kanban d'un projet : le ticket
+          // est rattaché au projet et apparaît directement dans la bonne
+          // colonne (statut).
+          projectId: prefilledProjectId ?? undefined,
+          status: prefilledStatus ?? undefined,
         }),
       });
       if (res.ok) {
-        router.push("/tickets");
+        // Si on venait du Kanban d'un projet, retour direct sur le projet ;
+        // sinon sur la liste globale tickets.
+        if (prefilledProjectId) {
+          router.push(`/projects/${prefilledProjectId}`);
+        } else {
+          router.push("/tickets");
+        }
       } else {
         const err = await res.json().catch(() => ({}));
         alert(err.error || "Erreur lors de la création");
@@ -225,6 +244,19 @@ export default function NewTicketPage() {
         </button>
         <ChevronRight className="h-3.5 w-3.5 text-gray-300" />
         <span className="text-sm text-gray-500">Nouveau ticket</span>
+        {prefilledProjectId && (
+          <>
+            <ChevronRight className="h-3.5 w-3.5 text-gray-300" />
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-[12px] font-medium text-blue-700 ring-1 ring-blue-200">
+              Projet{prefilledProjectName ? ` : ${prefilledProjectName}` : ""}
+            </span>
+            {prefilledStatus && (
+              <span className="text-[12px] text-slate-500">
+                · statut initial : {prefilledStatus}
+              </span>
+            )}
+          </>
+        )}
       </div>
 
       <div className="mx-auto w-full max-w-4xl p-6">

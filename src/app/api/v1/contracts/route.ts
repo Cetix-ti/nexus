@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { toEngineContract } from "@/lib/billing/contract-mapper";
 
 export async function GET(req: Request) {
   const me = await getCurrentUser();
@@ -13,10 +14,18 @@ export async function GET(req: Request) {
   }
   const url = new URL(req.url);
   const orgId = url.searchParams.get("organizationId") || undefined;
+  // `shape=engine` : format consommable directement par decideBilling() —
+  // enum lowercase + hourBank/mspPlan expandés depuis `settings` JSON. La
+  // modale de saisie de temps et les re-validations serveur l'utilisent.
+  const shape = url.searchParams.get("shape");
   const rows = await prisma.contract.findMany({
     where: orgId ? { organizationId: orgId } : undefined,
+    include: { organization: { select: { name: true } } },
     orderBy: { startDate: "desc" },
   });
+  if (shape === "engine") {
+    return NextResponse.json(rows.map((c) => toEngineContract(c, c.organization?.name)));
+  }
   return NextResponse.json(
     rows.map((c) => ({
       id: c.id,
@@ -28,6 +37,7 @@ export async function GET(req: Request) {
       monthlyHours: c.monthlyHours,
       hourlyRate: c.hourlyRate,
       notes: c.notes,
+      settings: c.settings ?? null,
     }))
   );
 }
@@ -54,6 +64,7 @@ export async function POST(req: Request) {
       monthlyHours: body.monthlyHours,
       hourlyRate: body.hourlyRate,
       notes: body.notes,
+      settings: body.settings ?? undefined,
     },
   });
   return NextResponse.json(created, { status: 201 });

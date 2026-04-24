@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AnalyticsSectionTabs } from "@/components/analytics/section-tabs";
 
 // ===========================================================================
 // Types
@@ -221,12 +222,10 @@ export default function DataPage() {
 
   return (
     <div className="space-y-5">
+      <AnalyticsSectionTabs section="data" />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2 text-[13px] mb-1">
-            <Link href="/analytics/dashboards" className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> Analytique</Link>
-          </div>
           <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">Sources de données & Variables</h1>
           <p className="mt-0.5 text-[13px] text-slate-500">{datasets.length} datasets · {BUILTIN_VARS.length} variables intégrées · {customVars.length} personnalisées</p>
         </div>

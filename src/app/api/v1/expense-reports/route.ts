@@ -65,6 +65,7 @@ export async function POST(req: Request) {
           isBillable: e.isBillable ?? false,
           organizationId: e.organizationId,
           ticketId: e.ticketId,
+          receiptUrl: e.receiptUrl ?? null,
         })),
       } : undefined,
     },

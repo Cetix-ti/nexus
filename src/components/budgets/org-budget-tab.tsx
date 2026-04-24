@@ -81,7 +81,7 @@ export function OrgBudgetTab({ organizationId }: { organizationId: string; organ
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-slate-900">Budgets IT</h2>
+          <h2 className="text-base font-semibold text-slate-900">Budgets TI</h2>
           <p className="text-[12.5px] text-slate-500">
             Budget annuel construit par Cetix, approuvé par le client, suivi prévu vs réel en continu.
           </p>

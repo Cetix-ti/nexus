@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
+import { useLocaleStore } from "@/stores/locale-store";
 
 interface PortalContact {
   id: string;
@@ -39,12 +40,12 @@ interface PortalContact {
   assignedAssets: { id: string; name: string; type: string }[];
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  active: "Actif",
-  inactive: "Inactif",
-  permanent_departure: "Départ permanent",
-  partial_departure: "Départ partiel",
-  temporary_departure: "Départ temporaire",
+const STATUS_KEY: Record<string, string> = {
+  active: "portal.contacts.status.active",
+  inactive: "portal.contacts.status.inactive",
+  permanent_departure: "portal.contacts.status.permanent_departure",
+  partial_departure: "portal.contacts.status.partial_departure",
+  temporary_departure: "portal.contacts.status.temporary_departure",
 };
 
 const STATUS_VARIANTS: Record<string, "success" | "default" | "danger" | "warning"> = {
@@ -57,6 +58,7 @@ const STATUS_VARIANTS: Record<string, "success" | "default" | "danger" | "warnin
 
 export default function PortalContactsPage() {
   const { permissions } = usePortalUser();
+  const t = useLocaleStore((s) => s.t);
   const [contacts, setContacts] = useState<PortalContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -81,7 +83,7 @@ export default function PortalContactsPage() {
   if (permissions.portalRole !== "admin" && !permissions.canManageContacts) {
     return (
       <div className="text-center py-20 text-slate-400 text-[13px]">
-        Vous n&apos;avez pas la permission de gérer les contacts.
+        {t("portal.contacts.noAccess")}
       </div>
     );
   }
@@ -97,14 +99,14 @@ export default function PortalContactsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Contacts</h1>
+        <h1 className="text-xl font-semibold text-slate-900">{t("portal.contacts.heading")}</h1>
         <p className="text-[13px] text-slate-500 mt-1">
-          Gérez les utilisateurs de votre organisation
+          {t("portal.contacts.subtitle")}
         </p>
       </div>
 
       <Input
-        placeholder="Rechercher un contact..."
+        placeholder={t("portal.contacts.searchPlaceholder")}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         iconLeft={<Search className="h-4 w-4" />}
@@ -114,13 +116,13 @@ export default function PortalContactsPage() {
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/60 text-left">
-              <SortableHeader label="Nom" sortKey="lastName" sort={contactSort} onToggle={toggleContactSort} />
-              <SortableHeader label="Courriel" sortKey="email" sort={contactSort} onToggle={toggleContactSort} />
-              <SortableHeader label="Poste" sortKey="jobTitle" sort={contactSort} onToggle={toggleContactSort} />
-              <SortableHeader label="Statut" sortKey="portalStatus" sort={contactSort} onToggle={toggleContactSort} />
-              <th className="px-4 py-3 font-medium text-slate-500">Actifs</th>
+              <SortableHeader label={t("portal.contacts.col.name")} sortKey="lastName" sort={contactSort} onToggle={toggleContactSort} />
+              <SortableHeader label={t("portal.contacts.col.email")} sortKey="email" sort={contactSort} onToggle={toggleContactSort} />
+              <SortableHeader label={t("portal.contacts.col.jobTitle")} sortKey="jobTitle" sort={contactSort} onToggle={toggleContactSort} />
+              <SortableHeader label={t("portal.contacts.col.status")} sortKey="portalStatus" sort={contactSort} onToggle={toggleContactSort} />
+              <th className="px-4 py-3 font-medium text-slate-500">{t("portal.contacts.col.assets")}</th>
               <th className="px-4 py-3 text-right font-medium text-slate-500">
-                Actions
+                {t("portal.contacts.col.actions")}
               </th>
             </tr>
           </thead>
@@ -144,7 +146,7 @@ export default function PortalContactsPage() {
                     variant={STATUS_VARIANTS[c.portalStatus] ?? "default"}
                     className="text-[10.5px]"
                   >
-                    {STATUS_LABELS[c.portalStatus] ?? c.portalStatus}
+                    {STATUS_KEY[c.portalStatus] ? t(STATUS_KEY[c.portalStatus]) : c.portalStatus}
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
@@ -173,7 +175,7 @@ export default function PortalContactsPage() {
                   colSpan={6}
                   className="px-4 py-12 text-center text-[13px] text-slate-400"
                 >
-                  Aucun contact trouvé.
+                  {t("portal.contacts.noContacts")}
                 </td>
               </tr>
             )}
@@ -183,6 +185,7 @@ export default function PortalContactsPage() {
 
       {editing && (
         <EditContactModal
+          t={t}
           contact={editing}
           onClose={() => setEditing(null)}
           onSaved={(updated) => {
@@ -200,10 +203,12 @@ export default function PortalContactsPage() {
 }
 
 function EditContactModal({
+  t,
   contact,
   onClose,
   onSaved,
 }: {
+  t: (key: string, params?: Record<string, string | number>) => string;
   contact: PortalContact;
   onClose: () => void;
   onSaved: (c: any) => void;
@@ -248,7 +253,7 @@ function EditContactModal({
       <div className="relative w-full max-w-lg my-8 rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <h2 className="text-[16px] font-semibold text-slate-900">
-            Modifier le contact
+            {t("portal.contacts.edit.title")}
           </h2>
           <button
             onClick={onClose}
@@ -260,50 +265,50 @@ function EditContactModal({
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="Prénom"
+              label={t("portal.contacts.edit.firstName")}
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
             />
             <Input
-              label="Nom"
+              label={t("portal.contacts.edit.lastName")}
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
             />
           </div>
           <Input
-            label="Téléphone"
+            label={t("portal.contacts.edit.phone")}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
           />
           <Input
-            label="Poste / Titre"
+            label={t("portal.contacts.edit.jobTitle")}
             value={jobTitle}
             onChange={(e) => setJobTitle(e.target.value)}
           />
           <div>
             <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-              Statut
+              {t("portal.contacts.edit.status")}
             </label>
             <Select value={status} onValueChange={setStatus}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="active">Actif</SelectItem>
-                <SelectItem value="inactive">Inactif</SelectItem>
-                <SelectItem value="temporary_departure">Départ temporaire</SelectItem>
-                <SelectItem value="partial_departure">Départ partiel</SelectItem>
-                <SelectItem value="permanent_departure">Départ permanent</SelectItem>
+                <SelectItem value="active">{t("portal.contacts.status.active")}</SelectItem>
+                <SelectItem value="inactive">{t("portal.contacts.status.inactive")}</SelectItem>
+                <SelectItem value="temporary_departure">{t("portal.contacts.status.temporary_departure")}</SelectItem>
+                <SelectItem value="partial_departure">{t("portal.contacts.status.partial_departure")}</SelectItem>
+                <SelectItem value="permanent_departure">{t("portal.contacts.status.permanent_departure")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="flex justify-end gap-3 pt-2 border-t border-slate-200">
             <Button variant="outline" size="sm" onClick={onClose}>
-              Annuler
+              {t("portal.contacts.edit.cancel")}
             </Button>
             <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-              Enregistrer
+              {t("portal.contacts.edit.save")}
             </Button>
           </div>
         </div>

@@ -34,6 +34,11 @@ interface AddTimeModalProps {
   organizationId: string;
   organizationName: string;
   onSave: (entry: TimeEntry) => void | Promise<void>;
+  /**
+   * Saisie à éditer. Quand défini, la modale pré-remplit tous ses champs
+   * depuis cette entrée au lieu d'utiliser les valeurs par défaut.
+   */
+  editingEntry?: TimeEntry | null;
 }
 
 const QUICK_DURATIONS = [15, 30, 45, 60, 90, 120];
@@ -59,7 +64,9 @@ export function AddTimeModal({
   organizationId,
   organizationName,
   onSave,
+  editingEntry,
 }: AddTimeModalProps) {
+  const isEditing = !!editingEntry;
   // Types de travail filtrés pour cette organisation (configurés dans
   // Organisations → Facturation → "Types de travail"). Fallback au
   // catalogue complet si aucun n'est configuré.
@@ -77,10 +84,17 @@ export function AddTimeModal({
     if (!open) return;
     const list = loadWorkTypes(organizationId);
     setWorkTypesState(list);
-    // Garde une sélection valide si le type courant a été retiré côté
-    // facturation entre-temps.
-    setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
-  }, [open, organizationId]);
+    // En édition, on restaure le type de travail de la saisie. Sinon on
+    // garde la sélection courante si elle est encore valide, sinon on
+    // prend le premier type disponible.
+    if (editingEntry) {
+      const match = list.find((w) => w.timeType === editingEntry.timeType);
+      if (match) setWorkTypeId(match.id);
+      else setWorkTypeId(list[0]?.id ?? "");
+    } else {
+      setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
+    }
+  }, [open, organizationId, editingEntry]);
   // Cross-tab : si l'utilisateur modifie la liste dans un autre onglet,
   // reflète le changement dès que le storage émet l'event.
   useEffect(() => {
@@ -110,7 +124,58 @@ export function AddTimeModal({
   const [isWeekend, setIsWeekend] = useState(false);
   const [forceNonBillable, setForceNonBillable] = useState(false);
   const [hasTravelBilled, setHasTravelBilled] = useState(false);
+  // Temps de trajet (minutes) quand un déplacement est facturé. Synchronisé
+  // avec l'onglet Déplacements du ticket (même donnée en source unique).
+  const [travelDurationMinutes, setTravelDurationMinutes] = useState<number | "">("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Pré-remplissage des champs depuis l'entrée à éditer. Déclenché quand
+  // la modale s'ouvre en mode édition OU quand l'entrée passée change
+  // (ex. l'utilisateur clique sur une autre ligne sans fermer).
+  useEffect(() => {
+    if (!open) return;
+    if (!editingEntry) {
+      // Création : réinitialise aux valeurs par défaut pour ne pas
+      // conserver celles d'une précédente édition.
+      setDate(todayISODate());
+      setStartTime("09:00");
+      setEndTime("10:00");
+      setManualMode(true);
+      setManualMinutes(60);
+      setDescription("");
+      setIsAfterHours(false);
+      setIsWeekend(false);
+      setForceNonBillable(false);
+      setHasTravelBilled(false);
+      setTravelDurationMinutes("");
+      return;
+    }
+    // Édition : on reconstitue date/heure depuis startedAt/endedAt.
+    const start = new Date(editingEntry.startedAt);
+    const end = editingEntry.endedAt ? new Date(editingEntry.endedAt) : null;
+    const yyyy = start.getFullYear();
+    const mm = String(start.getMonth() + 1).padStart(2, "0");
+    const dd = String(start.getDate()).padStart(2, "0");
+    setDate(`${yyyy}-${mm}-${dd}`);
+    setStartTime(`${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`);
+    if (end) {
+      setEndTime(`${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`);
+      setManualMode(false);
+    } else {
+      setManualMode(true);
+    }
+    setManualMinutes(editingEntry.durationMinutes);
+    setDescription(editingEntry.description ?? "");
+    setIsAfterHours(!!editingEntry.isAfterHours);
+    setIsWeekend(!!editingEntry.isWeekend);
+    setHasTravelBilled(!!editingEntry.hasTravelBilled);
+    setTravelDurationMinutes(
+      editingEntry.travelDurationMinutes != null ? editingEntry.travelDurationMinutes : "",
+    );
+    // "Forcer non facturable" n'est pas stocké — on le dérive du statut
+    // de couverture (non_billable) pour préserver le choix de l'utilisateur.
+    setForceNonBillable(editingEntry.coverageStatus === "non_billable");
+  }, [open, editingEntry]);
 
   // Détection de déplacements déjà facturés ce même jour pour cette org.
   // Rechargé quand la date ou l'org change. Non-bloquant : si l'API échoue
@@ -216,6 +281,7 @@ export function AddTimeModal({
     setIsWeekend(false);
     setForceNonBillable(false);
     setHasTravelBilled(false);
+    setTravelDurationMinutes("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -251,6 +317,9 @@ export function AddTimeModal({
         isUrgent: false,
         isOnsite,
         hasTravelBilled,
+        travelDurationMinutes: hasTravelBilled && typeof travelDurationMinutes === "number" && travelDurationMinutes > 0
+          ? travelDurationMinutes
+          : null,
         // Preview seulement — le serveur recalcule autoritairement via
         // resolveDecisionForEntry(). On l'envoie pour compat mais le POST
         // remplace ces 4 champs par la décision serveur.
@@ -287,7 +356,7 @@ export function AddTimeModal({
             </div>
             <div>
               <h2 className="text-[17px] font-semibold tracking-tight text-slate-900">
-                Ajouter du temps
+                {isEditing ? "Modifier la saisie de temps" : "Ajouter du temps"}
               </h2>
               <p className="text-[12.5px] text-slate-500">
                 Ticket {ticketNumber} — {organizationName}
@@ -422,14 +491,19 @@ export function AddTimeModal({
 
           <div>
             <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-              Description du travail
+              Description du travail <span className="text-red-500">*</span>
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               placeholder="Décrivez le travail effectué..."
-              className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[13px] text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+              className={cn(
+                "w-full rounded-lg border bg-white px-3.5 py-2.5 text-[13px] text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 resize-none",
+                description.trim()
+                  ? "border-slate-200 focus:border-blue-500 focus:ring-blue-500/20"
+                  : "border-amber-300 focus:border-amber-500 focus:ring-amber-500/20",
+              )}
               required
             />
           </div>
@@ -460,8 +534,41 @@ export function AddTimeModal({
             <div className="mt-2 border-t border-slate-200 pt-2 space-y-1">
               <label className="flex items-center justify-between gap-3 px-2 py-1.5">
                 <span className="text-[13px] text-slate-700">Facturer un déplacement</span>
-                <Switch checked={hasTravelBilled} onCheckedChange={setHasTravelBilled} />
+                <Switch
+                  checked={hasTravelBilled}
+                  onCheckedChange={(v) => {
+                    setHasTravelBilled(v);
+                    // Si on désactive, efface la durée de trajet.
+                    if (!v) setTravelDurationMinutes("");
+                  }}
+                />
               </label>
+              {hasTravelBilled && (
+                <div className="px-2 py-1.5">
+                  <label className="flex items-center justify-between gap-3">
+                    <span className="text-[12.5px] text-slate-700">
+                      Temps de trajet (A/R) — minutes
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={24 * 60}
+                      step={5}
+                      value={travelDurationMinutes === "" ? "" : travelDurationMinutes}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setTravelDurationMinutes(v === "" ? "" : Math.max(0, Number(v) || 0));
+                      }}
+                      placeholder="Ex : 45"
+                      className="w-24 rounded-md border border-slate-300 bg-white px-2 py-1 text-[13px] text-slate-900 text-right focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </label>
+                  <p className="mt-1 text-[10.5px] text-slate-500 leading-relaxed">
+                    Synchronisé avec l&apos;onglet <strong>Déplacements</strong> du ticket —
+                    une seule saisie, visible des deux côtés.
+                  </p>
+                </div>
+              )}
               <label className="flex items-center justify-between gap-3 px-2 py-1.5">
                 <span className="text-[13px] text-slate-700">Forcer non-facturable</span>
                 <Switch checked={forceNonBillable} onCheckedChange={setForceNonBillable} />
@@ -528,19 +635,38 @@ export function AddTimeModal({
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Annuler
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              loading={submitting}
-              disabled={submitting || durationMinutes <= 0 || !description.trim()}
-            >
-              <Save className="h-4 w-4" strokeWidth={2.5} />
-              Enregistrer
-            </Button>
+          <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200 flex-wrap">
+            <div className="text-[11.5px] text-slate-500 min-w-0">
+              {durationMinutes <= 0 && (
+                <span className="text-amber-700">
+                  La durée doit être supérieure à 0 {manualMode ? "minute" : "— vérifie l'heure de début/fin"}.
+                </span>
+              )}
+              {durationMinutes > 0 && !description.trim() && (
+                <span className="text-amber-700">
+                  Ajoute une description pour pouvoir enregistrer.
+                </span>
+              )}
+              {durationMinutes > 0 && description.trim() && !decision && (
+                <span className="text-amber-700">
+                  Impossible de calculer la couverture pour cette saisie.
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <Button type="button" variant="outline" onClick={onClose}>
+                Annuler
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                loading={submitting}
+                disabled={submitting || durationMinutes <= 0 || !description.trim() || !decision}
+              >
+                <Save className="h-4 w-4" strokeWidth={2.5} />
+                {isEditing ? "Enregistrer les modifications" : "Enregistrer"}
+              </Button>
+            </div>
           </div>
         </form>
       </div>

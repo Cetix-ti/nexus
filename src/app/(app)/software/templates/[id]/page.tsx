@@ -175,18 +175,23 @@ export default function SoftwareTemplateDetailPage() {
             <div className="p-4 sm:p-5 space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <h3 className="text-[14px] font-semibold text-slate-900">Installeurs globaux</h3>
-                <Button size="sm" variant="outline" onClick={() => fileInput.current?.click()} className="gap-1.5">
+                <Button type="button" size="sm" variant="outline" onClick={() => fileInput.current?.click()} className="gap-1.5">
                   <Upload className="h-4 w-4" /> Téléverser
                 </Button>
-                <input ref={fileInput} type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFilePicked(f); e.target.value = ""; }} />
+                <input
+                  ref={fileInput}
+                  type="file"
+                  style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) onFilePicked(f); e.target.value = ""; }}
+                />
               </div>
               {pendingFile && (
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
                   <p className="text-[11.5px] text-slate-600">Fichier : <strong>{pendingFile.name}</strong> ({(pendingFile.size / 1048576).toFixed(1)} Mo)</p>
                   <Input value={pendingTitle} onChange={(e) => setPendingTitle(e.target.value)} placeholder="Titre de l'installeur" />
                   <div className="flex justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => { setPendingFile(null); setPendingTitle(""); }}>Annuler</Button>
-                    <Button size="sm" disabled={!pendingTitle.trim() || uploading} onClick={confirmUpload}>{uploading ? "Téléversement…" : "Téléverser"}</Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => { setPendingFile(null); setPendingTitle(""); }}>Annuler</Button>
+                    <Button type="button" size="sm" disabled={!pendingTitle.trim() || uploading} onClick={confirmUpload}>{uploading ? "Téléversement…" : "Téléverser"}</Button>
                   </div>
                 </div>
               )}

@@ -435,6 +435,7 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
                 largeur — l'icône + l'état disabled suffisent. */}
             <span className="hidden sm:inline">Actualiser</span>
           </Button>
+          <OutlookResyncButton onDone={reloadEvents} />
           <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
             <Plus className="h-3.5 w-3.5" />
             {/* Sur mobile on ne garde que "Nouveau" pour éviter le
@@ -2076,4 +2077,47 @@ function TimeGrid({
 // ---------------------------------------------------------------------------
 export default function CalendarPage() {
   return <CalendarBoard />;
+}
+
+// ---------------------------------------------------------------------------
+// OutlookResyncButton — déclenche manuellement un pull Outlook → Nexus
+// via POST /api/v1/calendar/resync. Utile quand l'auto-sync est
+// désactivée OU pour forcer une synchro immédiate.
+// ---------------------------------------------------------------------------
+function OutlookResyncButton({ onDone }: { onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  async function run() {
+    if (busy) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await fetch("/api/v1/calendar/resync", { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setResult(`Erreur : ${d.error ?? r.status}`);
+        return;
+      }
+      setResult(
+        `+${d.created ?? 0} · ~${d.updated ?? 0} · -${d.deleted ?? 0}${d.undecoded ? ` · ?${d.undecoded}` : ""}`,
+      );
+      onDone();
+    } catch (err) {
+      setResult(err instanceof Error ? err.message : "Erreur réseau");
+    } finally {
+      setBusy(false);
+      setTimeout(() => setResult(null), 4000);
+    }
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <Button variant="outline" size="sm" onClick={run} disabled={busy} title="Forcer un pull Outlook → Nexus">
+        <RefreshCcw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
+        <span className="hidden sm:inline">Resync Outlook</span>
+      </Button>
+      {result && (
+        <span className="text-[11px] text-slate-500 tabular-nums">{result}</span>
+      )}
+    </div>
+  );
 }

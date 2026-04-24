@@ -37,7 +37,6 @@ import {
   CheckCircle2,
   Clock,
   Building2,
-  ChevronRight,
   ThumbsDown,
   ThumbsUp,
   Undo2,
@@ -119,7 +118,28 @@ export function SimilarTicketsWidget({
         const err = await simRes.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${simRes.status}`);
       }
-      setData(await simRes.json());
+      // Seuil de pertinence : on masque les tickets dont la similarité
+      // sémantique est trop basse (bruit). Un ticket reste affiché s'il
+      // est matché par bigramme/token fort (tokens rares, boosts appris)
+      // même sans cosine élevé → on garde ceux qui ont >= 2 matchedTokens
+      // ou >= 1 matchedBigram, sinon on exige semanticSim >= 0.55.
+      const MIN_SEMANTIC = 0.55;
+      function keep(t: SimilarTicket): boolean {
+        const tokens = t.matchedTokens?.length ?? 0;
+        const bigrams = t.matchedBigrams?.length ?? 0;
+        if (bigrams >= 1) return true;
+        if (tokens >= 2) return true;
+        if ((t.semanticSim ?? 0) >= MIN_SEMANTIC) return true;
+        return false;
+      }
+      const raw = (await simRes.json()) as SimilarPayload;
+      setData({
+        ticketId: raw.ticketId,
+        sameRequester: raw.sameRequester?.filter(keep) ?? [],
+        sameClientOpen: (raw.sameClientOpen ?? []).filter(keep),
+        sameClientResolved: (raw.sameClientResolved ?? []).filter(keep),
+        otherClientsResolved: raw.otherClientsResolved ?? [], // plus affiché
+      });
       if (recRes.ok) {
         const r = await recRes.json();
         if (r && r.isRecurring) setRecurring(r);
@@ -167,22 +187,14 @@ export function SimilarTicketsWidget({
     );
   }
 
-  if (!data || total === 0) {
-    return (
-      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-        <p className="text-[12px] font-semibold text-slate-700 flex items-center gap-1.5">
-          <Link2 className="h-3.5 w-3.5 text-slate-500" />
-          Tickets similaires
-        </p>
-        <p className="mt-1 text-[11.5px] text-slate-500 italic">
-          Aucun ticket similaire trouvé.
-        </p>
-      </div>
-    );
-  }
+  // Aucun match pertinent après filtrage → on ne rend rien. Préférence
+  // produit : la sidebar ticket reste aérée quand il n'y a pas de
+  // suggestion utile, plutôt que d'afficher un bloc "Aucun ticket
+  // similaire trouvé" qui ajoute du bruit visuel.
+  if (!data || total === 0) return null;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-2">
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 space-y-2 overflow-hidden">
       <p className="text-[12px] font-semibold text-slate-700 flex items-center gap-1.5">
         <Link2 className="h-3.5 w-3.5 text-slate-500" />
         Tickets similaires
@@ -327,22 +339,22 @@ function Section({
             <li
               key={t.id}
               className={cn(
-                "group/row relative flex items-start gap-1 rounded hover:bg-slate-50",
+                "group/row relative rounded border border-transparent hover:border-slate-200 hover:bg-slate-50/60 min-w-0 transition-colors",
                 currentFeedback === "bad" && "opacity-40",
               )}
             >
+              {/* Bloc principal cliquable — titre sur 2 lignes, pas de
+                  boutons d'action qui rognent la largeur. Les actions
+                  sont sur une rangée séparée en bas. */}
               <Link
                 href={`/tickets/${t.id}`}
                 target="_blank"
                 title={tooltip}
                 className={cn(
-                  "group flex flex-1 items-start gap-1.5 rounded px-1.5 py-1",
+                  "group block rounded px-2 py-1.5",
                   currentFeedback === "bad" && "pointer-events-none line-through",
                 )}
                 onClick={() => {
-                  // Feedback implicite : ping au clic pour alimenter
-                  // l'auto-apprentissage du ranking. keepalive assure que
-                  // la requête part même quand la page navigue.
                   try {
                     fetch(`/api/v1/tickets/${sourceTicketId}/similar/click`, {
                       method: "POST",
@@ -359,55 +371,52 @@ function Section({
                   } catch { /* ignore */ }
                 }}
               >
-                {t.status === "RESOLVED" || t.status === "CLOSED" ? (
-                  <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />
-                ) : (
-                  <Clock className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11.5px] text-slate-700 group-hover:text-slate-900 truncate leading-tight">
-                    <span className="font-mono text-[10.5px] text-slate-500 mr-1">
-                      #{t.number}
-                    </span>
-                    {t.subject}
-                  </p>
-                  {showOrg && t.organization && (
-                    <p className="text-[10px] text-slate-500 flex items-center gap-0.5 mt-0.5 truncate">
-                      <Building2 className="h-2.5 w-2.5 shrink-0" />
-                      {t.organization.name}
+                <div className="flex items-start gap-1.5">
+                  {t.status === "RESOLVED" || t.status === "CLOSED" ? (
+                    <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0 mt-[3px]" />
+                  ) : (
+                    <Clock className="h-3 w-3 text-amber-500 shrink-0 mt-[3px]" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    {/* Titre — line-clamp 2 lignes, peut respirer sur
+                        toute la largeur de la sidebar. */}
+                    <p className="text-[12px] text-slate-700 group-hover:text-slate-900 leading-snug line-clamp-2 break-words">
+                      <span className="font-mono text-[10.5px] text-slate-500 mr-1">
+                        #{t.number}
+                      </span>
+                      {t.subject}
                     </p>
-                  )}
-                  {/* Chips mini des matches les plus forts — ne montre que
-                      2 max pour ne pas surcharger la ligne. */}
-                  {matchLabels.length > 0 && (
-                    <div className="flex items-center gap-0.5 flex-wrap mt-0.5">
-                      {matchLabels.slice(0, 2).map((label) => (
-                        <span
-                          key={label}
-                          className="inline-flex items-center rounded bg-blue-50 text-blue-700 px-1 py-0 text-[9px] font-medium"
-                        >
-                          {label}
-                        </span>
-                      ))}
-                      {matchLabels.length > 2 && (
-                        <span className="text-[9px] text-slate-400">
-                          +{matchLabels.length - 2}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                    {showOrg && t.organization && (
+                      <p className="text-[10.5px] text-slate-500 flex items-center gap-0.5 mt-0.5 truncate">
+                        <Building2 className="h-2.5 w-2.5 shrink-0" />
+                        {t.organization.name}
+                      </p>
+                    )}
+                    {matchLabels.length > 0 && (
+                      <div className="flex items-center gap-0.5 flex-wrap mt-1">
+                        {matchLabels.slice(0, 3).map((label) => (
+                          <span
+                            key={label}
+                            className="inline-flex items-center rounded bg-blue-50 text-blue-700 px-1 py-0 text-[9px] font-medium"
+                          >
+                            {label}
+                          </span>
+                        ))}
+                        {matchLabels.length > 3 && (
+                          <span className="text-[9px] text-slate-400">
+                            +{matchLabels.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-slate-500 shrink-0 mt-0.5" />
               </Link>
 
-              {/* Review : feedback explicite du tech. Thumbs down = la
-                  suggestion n'a pas de rapport (filtrée au prochain appel).
-                  Thumbs up = pertinente (boostée). Undo pour annuler.
-                  Toujours visible (anciennement opacity-0 + hover) pour
-                  éviter la découverte accidentelle sur touch devices et
-                  encourager le feedback explicite. */}
-              <div className="flex items-center gap-0.5 pr-1 pt-0.5">
-                {/* Bouton (i) — popover explique le score */}
+              {/* Actions — rangée séparée, visible au hover pour ne pas
+                  voler de place au titre. Compact sur mobile (touch :
+                  apparaît au tap sur la ligne via group/row). */}
+              <div className="flex items-center justify-end gap-0.5 px-2 pb-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -415,7 +424,7 @@ function Section({
                     e.stopPropagation();
                     setExplainOpen((cur) => (cur === t.id ? null : t.id));
                   }}
-                  className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+                  className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                   title="Pourquoi ce match ?"
                 >
                   <Info className="h-3 w-3" />
@@ -431,11 +440,6 @@ function Section({
                         delete next[t.id];
                         return next;
                       });
-                      // Pour un "undo" propre on repush un verdict neutre :
-                      // on réinsère "good" léger si l'utilisateur retire un
-                      // bad → remet simplement à zéro côté serveur via bad→good.
-                      // Plus simple : laisse l'UI le cacher, le backend garde
-                      // le dernier verdict pour apprentissage.
                     }}
                     className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                     title="Annuler"
@@ -472,7 +476,6 @@ function Section({
                 )}
               </div>
 
-              {/* Popover explainability — ouvert quand on clique (i) */}
               {explainOpen === t.id && (
                 <ExplainPopover ticket={t} onClose={() => setExplainOpen(null)} />
               )}

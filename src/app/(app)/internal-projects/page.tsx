@@ -121,6 +121,8 @@ function QuickInternalProjectModal({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [budgetHours, setBudgetHours] = useState("");
+  const [budgetAmount, setBudgetAmount] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [internalOrgId, setInternalOrgId] = useState<string | null>(null);
@@ -156,6 +158,8 @@ function QuickInternalProjectModal({
           status: "planning",
           startDate: new Date().toISOString().split("T")[0],
           isInternal: true,
+          budgetHours: budgetHours ? Number(budgetHours) : undefined,
+          budgetAmount: budgetAmount ? Number(budgetAmount) : undefined,
         }),
       });
       if (!res.ok) {
@@ -197,6 +201,22 @@ function QuickInternalProjectModal({
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
               className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Budget heures (opt.)"
+              type="number"
+              placeholder="40"
+              value={budgetHours}
+              onChange={(e) => setBudgetHours(e.target.value)}
+            />
+            <Input
+              label="Budget $ (opt.)"
+              type="number"
+              placeholder="5000"
+              value={budgetAmount}
+              onChange={(e) => setBudgetAmount(e.target.value)}
             />
           </div>
           {error && <p className="text-[12px] text-red-600">{error}</p>}

@@ -37,6 +37,18 @@ function getInitials(firstName: string, lastName: string): string {
   return `${(firstName || "")[0] ?? ""}${(lastName || "")[0] ?? ""}`.toUpperCase();
 }
 
+// Palette déterministe : même contact → même couleur d'avatar d'un rendu à l'autre.
+const AVATAR_PALETTE = [
+  "bg-blue-500", "bg-indigo-500", "bg-violet-500", "bg-fuchsia-500",
+  "bg-pink-500", "bg-rose-500", "bg-orange-500", "bg-amber-500",
+  "bg-emerald-500", "bg-teal-500", "bg-cyan-500", "bg-sky-500",
+];
+function avatarColor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return AVATAR_PALETTE[Math.abs(h) % AVATAR_PALETTE.length];
+}
+
 function portalRoleBadgeVariant(role?: ClientPortalPermissions["portalRole"]): "danger" | "warning" | "primary" | "default" {
   if (role === "admin") return "danger";
   if (role === "manager") return "warning";
@@ -255,7 +267,7 @@ export default function ContactsPage() {
                 <div
                   className={cn(
                     "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white",
-                    contact.color,
+                    contact.color || avatarColor(contact.id || `${contact.firstName}${contact.lastName}`),
                   )}
                 >
                   {getInitials(contact.firstName, contact.lastName)}
@@ -360,10 +372,10 @@ export default function ContactsPage() {
                       <div
                         className={cn(
                           "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white",
-                          contact.color
+                          contact.color || avatarColor(contact.id || `${contact.firstName}${contact.lastName}`)
                         )}
                       >
-                        {contact.firstName.charAt(0)}{contact.lastName.charAt(0)}
+                        {getInitials(contact.firstName, contact.lastName)}
                       </div>
                       <span className="font-medium text-gray-900">
                         {contact.firstName} {contact.lastName}

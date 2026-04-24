@@ -1,8 +1,10 @@
 // ============================================================================
-// Provider Ollama — appelle un serveur Ollama local (défaut :
-// http://localhost:11434). Installé sur le serveur Nexus via GPU P6000
-// pour les tâches sensibles ou à fort volume où on ne veut pas payer
-// l'OpenAI ni exposer de données au cloud.
+// Provider Ollama — appelle un serveur Ollama dédié sur le réseau
+// interne (OLLAMA_URL, ex: http://192.168.203.11:11434). Hébergé sur une
+// VM dédiée avec passthrough GPU P6000 pour que Nexus reste snapshottable
+// par Veeam (le passthrough PCI bloque les snapshots VM).
+// Utilisé pour les tâches sensibles ou à fort volume où on ne veut pas
+// payer l'OpenAI ni exposer de données au cloud.
 //
 // Le modèle par défaut (OLLAMA_MODEL env, ou "llama3.1:8b") doit avoir été
 // téléchargé au préalable via `ollama pull llama3.1:8b`. L'orchestrateur

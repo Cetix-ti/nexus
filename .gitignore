@@ -45,3 +45,9 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# Binary junk
+wget-log
+*.deb
+*.rpm
+.next-broken-*

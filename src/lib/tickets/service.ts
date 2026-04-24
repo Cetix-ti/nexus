@@ -380,6 +380,8 @@ export async function createTicket(input: {
   tags?: string[];
   isInternal?: boolean;
   meetingId?: string | null;
+  /** Rattache le ticket à un projet dès la création (Kanban projet). */
+  projectId?: string | null;
 }): Promise<UiTicket> {
   // Priorité : par défaut LOW. Si le créateur a fourni une valeur
   // EXPLICITE (medium/high/critical/low), on la garde telle quelle et on
@@ -413,6 +415,7 @@ export async function createTicket(input: {
       creatorId: input.creatorId,
       isInternal: input.isInternal ?? false,
       meetingId: input.meetingId ?? null,
+      projectId: input.projectId ?? null,
     },
     include: detailIncludes,
   });
