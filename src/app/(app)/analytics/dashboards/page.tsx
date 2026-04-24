@@ -71,6 +71,18 @@ import { buildDrillDownUrl } from "@/lib/analytics/drill-down";
 import { ExportDashboardButton } from "@/components/analytics/export-dashboard-button";
 import { AnalyticsSectionTabs } from "@/components/analytics/section-tabs";
 import { DashboardItemAppearance } from "@/components/analytics/dashboard-item-appearance";
+import {
+  WidgetCatalogPicker,
+  renderAddAction,
+  renderToggleAction,
+  type UnifiedWidget,
+} from "@/components/analytics/widget-catalog-picker";
+import {
+  loadWidgetMeta,
+  saveWidgetMeta,
+  updateWidgetMeta,
+  type WidgetMetaStore,
+} from "@/lib/analytics/widget-meta";
 
 const PIE_PALETTE = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
@@ -507,15 +519,27 @@ export default function ReportsPage() {
   const [configureItemId, setConfigureItemId] = useState<string | null>(null);
   // Ferme le popover d'apparence dès qu'on quitte le mode édition.
   useEffect(() => { if (!editMode) setConfigureItemId(null); }, [editMode]);
+  // Catalogue unifié (built-in + custom) et métadonnées widget-niveau.
+  // Remonte queryWidgets au niveau page pour partager avec la modale de
+  // création et le drawer d'ajout.
+  const [queryWidgets] = useState<QueryWidget[]>(() => loadQueryWidgets());
+  const [widgetMeta, setWidgetMeta] = useState<WidgetMetaStore>(() => loadWidgetMeta());
+  const [createReportSearch, setCreateReportSearch] = useState("");
+  const [widgetAttributeTargetId, setWidgetAttributeTargetId] = useState<string | null>(null);
+  const [widgetTagTargetId, setWidgetTagTargetId] = useState<string | null>(null);
   const tagDefById = useMemo(() => {
     const map: Record<string, TagDef> = {};
     for (const t of tagDefs) map[t.id] = t;
     return map;
   }, [tagDefs]);
 
-  // Charge les noms des orgs référencées par les rapports taggés (une fois).
+  // Charge les noms des orgs référencées par les rapports ET widgets
+  // taggés (une fois). Inclut les IDs provenant de widgetMeta en plus
+  // des customReports — même objectif d'affichage des badges "Pour [org]".
   useEffect(() => {
-    const ids = Array.from(new Set(customReports.flatMap((r) => getReportOrgs(r))));
+    const reportOrgIds = customReports.flatMap((r) => getReportOrgs(r));
+    const widgetOrgIds = Object.values(widgetMeta).flatMap((m) => m.organizationIds ?? []);
+    const ids = Array.from(new Set([...reportOrgIds, ...widgetOrgIds]));
     if (ids.length === 0) return;
     if (ids.every((id) => orgNameById[id])) return;
     fetch("/api/v1/organizations")
@@ -529,7 +553,7 @@ export default function ReportsPage() {
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customReports]);
+  }, [customReports, widgetMeta]);
 
   // Merged catalog: built-in + custom
   // On filtre les built-ins masqués, sauf quand l'user a activé
@@ -955,6 +979,51 @@ export default function ReportsPage() {
     const next = [...tagDefs, tag];
     setTagDefs(next);
     saveTagDefinitions(next);
+  }
+
+  /** Attribue un widget (built-in ou custom) à des organisations. */
+  function setWidgetOrganizations(widgetId: string, orgIds: string[]) {
+    const next = updateWidgetMeta(widgetMeta, widgetId, { organizationIds: orgIds });
+    setWidgetMeta(next);
+    saveWidgetMeta(next);
+  }
+
+  /** Attache des balises (tag IDs) à un widget (built-in ou custom). */
+  function assignTagsToWidget(widgetId: string, tagIds: string[]) {
+    const next = updateWidgetMeta(widgetMeta, widgetId, { tags: tagIds });
+    setWidgetMeta(next);
+    saveWidgetMeta(next);
+  }
+
+  /**
+   * Construit la liste unifiée des widgets disponibles pour les pickers
+   * (modale création + drawer d'ajout). Built-in + custom, dans cet ordre.
+   */
+  const unifiedWidgets: UnifiedWidget[] = [
+    ...WIDGETS.map((w) => ({
+      id: w.id as string,
+      label: w.label,
+      description: w.description,
+      icon: w.icon,
+      kind: "builtin" as const,
+    })),
+    ...queryWidgets.map((w) => ({
+      id: w.id,
+      label: w.name,
+      description: w.description,
+      icon: <BarChart3 className="h-4 w-4" />,
+      kind: "custom" as const,
+      color: w.color,
+    })),
+  ];
+
+  /** Maps utilitaires pour afficher les badges dans le picker. */
+  const widgetOrgIdsMap: Record<string, string[]> = {};
+  const widgetTagIdsMap: Record<string, string[]> = {};
+  for (const id of Object.keys(widgetMeta)) {
+    const meta = widgetMeta[id];
+    if (meta.organizationIds?.length) widgetOrgIdsMap[id] = meta.organizationIds;
+    if (meta.tags?.length) widgetTagIdsMap[id] = meta.tags;
   }
 
   function deleteReport(id: string) {
@@ -1785,19 +1854,27 @@ export default function ReportsPage() {
             ) : (
               <div>
                 <label className="block text-[12px] font-medium text-slate-700 mb-2">Widgets à inclure</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
-                  {WIDGETS.map((w) => {
-                    const selected = newReportWidgets.includes(w.id);
-                    return (
-                      <button key={w.id} onClick={() => setNewReportWidgets((prev) => selected ? prev.filter((id) => id !== w.id) : [...prev, w.id])}
-                        className={cn("flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-all ring-1 ring-inset text-[11px]",
-                          selected ? "bg-blue-50 ring-blue-200 text-blue-700 font-medium" : "bg-white ring-slate-200 text-slate-600 hover:ring-blue-200"
-                        )}>
-                        {w.icon}
-                        <span className="truncate">{w.label}</span>
-                      </button>
-                    );
-                  })}
+                <div className="max-h-[360px] overflow-y-auto pr-1">
+                  <WidgetCatalogPicker
+                    widgets={unifiedWidgets}
+                    search={createReportSearch}
+                    onSearchChange={setCreateReportSearch}
+                    renderAction={(w) => renderToggleAction(
+                      w,
+                      newReportWidgets.includes(w.id as WidgetId),
+                      (id) => setNewReportWidgets((prev) =>
+                        prev.includes(id as WidgetId)
+                          ? prev.filter((x) => x !== id)
+                          : [...prev, id as WidgetId],
+                      ),
+                    )}
+                    onAttribute={(w) => setWidgetAttributeTargetId(w.id)}
+                    onTag={(w) => setWidgetTagTargetId(w.id)}
+                    orgIdsByWidgetId={widgetOrgIdsMap}
+                    tagIdsByWidgetId={widgetTagIdsMap}
+                    orgNameById={orgNameById}
+                    tagDefById={tagDefById}
+                  />
                 </div>
                 <p className="mt-2 text-[11px] text-slate-400">{newReportWidgets.length} widgets sélectionnés — vous pourrez les modifier après la création</p>
               </div>
@@ -2406,6 +2483,14 @@ export default function ReportsPage() {
           dashItems={dashItems}
           onAdd={handleGridAdd}
           onClose={() => setShowWidgetSidebar(false)}
+          widgets={unifiedWidgets}
+          onAttribute={(widgetId) => setWidgetAttributeTargetId(widgetId)}
+          onTag={(widgetId) => setWidgetTagTargetId(widgetId)}
+          widgetOrgIdsMap={widgetOrgIdsMap}
+          widgetTagIdsMap={widgetTagIdsMap}
+          orgNameById={orgNameById}
+          tagDefById={tagDefById}
+          hasCustomWidgets={queryWidgets.length > 0}
         />
       )}
 
@@ -2469,6 +2554,37 @@ export default function ReportsPage() {
             supportsStyleOverride={supportsStyleOverride}
             onChange={(patch) => handleGridItemUpdate(target.id, patch)}
             onClose={() => setConfigureItemId(null)}
+          />
+        );
+      })()}
+
+      {widgetAttributeTargetId && (() => {
+        const w = unifiedWidgets.find((x) => x.id === widgetAttributeTargetId);
+        const meta = widgetMeta[widgetAttributeTargetId] ?? {};
+        return (
+          <TagOrganizationModal
+            open
+            onClose={() => setWidgetAttributeTargetId(null)}
+            itemLabel="Widget"
+            itemName={w?.label}
+            currentOrgIds={meta.organizationIds ?? []}
+            onSave={(orgIds) => setWidgetOrganizations(widgetAttributeTargetId, orgIds)}
+          />
+        );
+      })()}
+
+      {widgetTagTargetId && (() => {
+        const w = unifiedWidgets.find((x) => x.id === widgetTagTargetId);
+        const meta = widgetMeta[widgetTagTargetId] ?? {};
+        return (
+          <AssignTagsModal
+            open
+            onClose={() => setWidgetTagTargetId(null)}
+            itemName={w?.label}
+            currentTagIds={meta.tags ?? []}
+            allTags={tagDefs}
+            onCreateTag={(tag) => addTagDefinition(tag)}
+            onSaveAssignment={(ids) => assignTagsToWidget(widgetTagTargetId, ids)}
           />
         );
       })()}
@@ -2999,12 +3115,24 @@ function loadQueryWidgets(): QueryWidget[] {
   return [];
 }
 
-function WidgetAddPanel({ dashItems, onAdd, onClose }: {
+function WidgetAddPanel({
+  dashItems, onAdd, onClose, widgets,
+  onAttribute, onTag, widgetOrgIdsMap, widgetTagIdsMap,
+  orgNameById, tagDefById, hasCustomWidgets,
+}: {
   dashItems: DashboardItem[];
   onAdd: (widgetId: string) => void;
   onClose: () => void;
+  widgets: UnifiedWidget[];
+  onAttribute: (widgetId: string) => void;
+  onTag: (widgetId: string) => void;
+  widgetOrgIdsMap: Record<string, string[]>;
+  widgetTagIdsMap: Record<string, string[]>;
+  orgNameById: Record<string, string>;
+  tagDefById: Record<string, TagDef>;
+  hasCustomWidgets: boolean;
 }) {
-  const [queryWidgets] = useState<QueryWidget[]>(() => loadQueryWidgets());
+  const [search, setSearch] = useState("");
 
   // Cache les FABs flottants (AI chat, Bug report) pendant que ce panneau
   // est ouvert — sinon le dernier widget de la liste est caché derrière eux.
@@ -3016,7 +3144,7 @@ function WidgetAddPanel({ dashItems, onAdd, onClose }: {
   return (
     <div className="fixed inset-y-0 right-0 z-50 flex print:hidden">
       <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative ml-auto w-[380px] max-w-[90vw] h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col">
+      <div className="relative ml-auto w-[420px] max-w-[90vw] h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-2">
             <div className="h-9 w-9 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
@@ -3024,7 +3152,17 @@ function WidgetAddPanel({ dashItems, onAdd, onClose }: {
             </div>
             <div>
               <h2 className="text-[15px] font-semibold text-slate-900">Ajouter des widgets</h2>
-              <p className="text-[11px] text-slate-500">{dashItems.length} widgets actuellement</p>
+              <p className="text-[11px] text-slate-500">
+                {dashItems.length} widget{dashItems.length > 1 ? "s" : ""} actuellement
+                {!hasCustomWidgets && (
+                  <>
+                    {" · "}
+                    <Link href="/analytics/widgets" className="text-blue-600 hover:text-blue-700">
+                      Créer un widget perso
+                    </Link>
+                  </>
+                )}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
@@ -3032,90 +3170,23 @@ function WidgetAddPanel({ dashItems, onAdd, onClose }: {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-          {/* Built-in widgets */}
-          <div>
-            <p className="px-1 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Widgets prédéfinis</p>
-            <div className="space-y-1.5">
-              {WIDGETS.map((w) => {
-                const alreadyUsed = dashItems.some((di) => di.widgetId === w.id);
-                return (
-                  <div key={w.id} className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all ring-1 ring-inset",
-                    alreadyUsed ? "bg-emerald-50/30 ring-emerald-200/60" : "bg-white ring-slate-200/60 hover:ring-blue-200 hover:bg-blue-50/20"
-                  )}>
-                    <div className={cn(
-                      "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
-                      alreadyUsed ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-400"
-                    )}>
-                      {w.icon}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12px] font-medium text-slate-800 truncate">{w.label}</p>
-                      <p className="text-[10px] text-slate-500 truncate">{w.description}</p>
-                    </div>
-                    {alreadyUsed ? (
-                      <span className="text-[10px] text-emerald-600 font-medium shrink-0">Actif</span>
-                    ) : (
-                      <button onClick={() => onAdd(w.id)}
-                        className="shrink-0 h-7 w-7 rounded-md bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition-colors">
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* User query-builder widgets */}
-          {queryWidgets.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between px-1 mb-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mes widgets ({queryWidgets.length})</p>
-                <Link href="/analytics/widgets" className="text-[11px] text-blue-600 hover:text-blue-700 font-medium">
-                  Gérer
-                </Link>
-              </div>
-              <div className="space-y-1.5">
-                {queryWidgets.map((w) => {
-                  const alreadyUsed = dashItems.some((di) => di.widgetId === w.id);
-                  return (
-                    <div key={w.id} className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all ring-1 ring-inset",
-                      alreadyUsed ? "bg-emerald-50/30 ring-emerald-200/60" : "bg-white ring-slate-200/60 hover:ring-blue-200 hover:bg-blue-50/20"
-                    )}>
-                      <div className={cn(
-                        "h-8 w-8 rounded-lg flex items-center justify-center shrink-0"
-                      )} style={{ backgroundColor: (alreadyUsed ? "#05966920" : w.color + "20") }}>
-                        <BarChart3 className="h-4 w-4" style={{ color: alreadyUsed ? "#059669" : w.color }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[12px] font-medium text-slate-800 truncate">{w.name}</p>
-                        <p className="text-[10px] text-slate-500 truncate">{w.description}</p>
-                      </div>
-                      {alreadyUsed ? (
-                        <span className="text-[10px] text-emerald-600 font-medium shrink-0">Actif</span>
-                      ) : (
-                        <button onClick={() => onAdd(w.id)}
-                          className="shrink-0 h-7 w-7 rounded-md bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition-colors">
-                          <Plus className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          {queryWidgets.length === 0 && (
-            <div className="text-center py-4">
-              <p className="text-[12px] text-slate-400 mb-2">Aucun widget personnalisé</p>
-              <Link href="/analytics/widgets" className="text-[11px] text-blue-600 hover:text-blue-700 font-medium">
-                Créer dans l&apos;éditeur de widgets
-              </Link>
-            </div>
-          )}
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          <WidgetCatalogPicker
+            widgets={widgets}
+            search={search}
+            onSearchChange={setSearch}
+            renderAction={(w) => renderAddAction(
+              w,
+              dashItems.some((di) => di.widgetId === w.id),
+              onAdd,
+            )}
+            onAttribute={(w) => onAttribute(w.id)}
+            onTag={(w) => onTag(w.id)}
+            orgIdsByWidgetId={widgetOrgIdsMap}
+            tagIdsByWidgetId={widgetTagIdsMap}
+            orgNameById={orgNameById}
+            tagDefById={tagDefById}
+          />
         </div>
       </div>
     </div>
