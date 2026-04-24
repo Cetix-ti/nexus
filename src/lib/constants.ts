@@ -190,6 +190,22 @@ export const TICKET_TYPE_CONFIG = {
 } as const;
 
 // ============================================================================
+// ISP Providers — list displayed in the organisation network form.
+// Edit this array to add/remove providers; existing records keep their value.
+// ============================================================================
+
+export const ISP_PROVIDERS = [
+  "Vidéotron",
+  "Bell",
+  "Cogeco",
+  "TELUS",
+  "Rogers",
+  "Shaw",
+  "Distributel",
+  "TekSavvy",
+] as const;
+
+// ============================================================================
 // Ticket Source Configuration
 // ============================================================================
 

@@ -24,6 +24,7 @@ import { Card } from "@/components/ui/card";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { ISP_PROVIDERS } from "@/lib/constants";
 
 interface SiteLite { id: string; name: string }
 
@@ -202,7 +203,14 @@ function LinkFormRow({
   onCancel: () => void;
   onSaved: (l: InternetLink) => void;
 }) {
-  const [isp, setIsp] = useState(link?.isp ?? "");
+  const knownIsps: readonly string[] = ISP_PROVIDERS;
+  const initIspSelect = link?.isp
+    ? (knownIsps.includes(link.isp) ? link.isp : "__custom__")
+    : "";
+  const [isp, setIsp] = useState(initIspSelect);
+  const [ispCustom, setIspCustom] = useState(
+    link?.isp && !knownIsps.includes(link.isp) ? link.isp : ""
+  );
   const [label, setLabel] = useState(link?.label ?? "");
   const [siteId, setSiteId] = useState<string>(link?.siteId ?? "__none__");
   const [downloadMbps, setDown] = useState(link?.downloadMbps?.toString() ?? "");
@@ -213,13 +221,15 @@ function LinkFormRow({
   const [notes, setNotes] = useState(link?.notes ?? "");
   const [saving, setSaving] = useState(false);
 
+  const effectiveIsp = isp === "__custom__" ? ispCustom.trim() : isp;
+
   async function save() {
-    if (!isp.trim() || saving) return;
+    if (!effectiveIsp || saving) return;
     setSaving(true);
     try {
       const payload = {
         siteId: siteId === "__none__" ? null : siteId,
-        isp: isp.trim(),
+        isp: effectiveIsp,
         label: label.trim() || null,
         downloadMbps: downloadMbps === "" ? null : Number(downloadMbps),
         uploadMbps: uploadMbps === "" ? null : Number(uploadMbps),
@@ -254,12 +264,28 @@ function LinkFormRow({
         {link ? "Modifier le lien" : "Nouveau lien Internet"}
       </h4>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Input
-          label="Fournisseur ISP *"
-          value={isp}
-          onChange={(e) => setIsp(e.target.value)}
-          placeholder="Bell, Vidéotron, TELUS, Cogeco…"
-        />
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Fournisseur ISP *</label>
+          <Select value={isp} onValueChange={setIsp}>
+            <SelectTrigger>
+              <SelectValue placeholder="Sélectionner un fournisseur…" />
+            </SelectTrigger>
+            <SelectContent>
+              {ISP_PROVIDERS.map((p) => (
+                <SelectItem key={p} value={p}>{p}</SelectItem>
+              ))}
+              <SelectItem value="__custom__">Autre…</SelectItem>
+            </SelectContent>
+          </Select>
+          {isp === "__custom__" && (
+            <Input
+              className="mt-2"
+              value={ispCustom}
+              onChange={(e) => setIspCustom(e.target.value)}
+              placeholder="Nom du fournisseur…"
+            />
+          )}
+        </div>
         <Input
           label="Étiquette (facultatif)"
           value={label}
@@ -327,7 +353,7 @@ function LinkFormRow({
       </div>
       <div className="flex items-center justify-end gap-2 pt-1">
         <Button variant="outline" size="sm" onClick={onCancel}>Annuler</Button>
-        <Button variant="primary" size="sm" onClick={save} disabled={!isp.trim() || saving}>
+        <Button variant="primary" size="sm" onClick={save} disabled={!effectiveIsp || saving}>
           <Save className="h-3.5 w-3.5" />
           {saving ? "Enregistrement…" : "Enregistrer"}
         </Button>
