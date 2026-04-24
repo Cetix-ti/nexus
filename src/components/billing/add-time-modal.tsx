@@ -480,14 +480,19 @@ export function AddTimeModal({
 
           <div>
             <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-              Description du travail
+              Description du travail <span className="text-red-500">*</span>
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               placeholder="Décrivez le travail effectué..."
-              className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[13px] text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+              className={cn(
+                "w-full rounded-lg border bg-white px-3.5 py-2.5 text-[13px] text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 resize-none",
+                description.trim()
+                  ? "border-slate-200 focus:border-blue-500 focus:ring-blue-500/20"
+                  : "border-amber-300 focus:border-amber-500 focus:ring-amber-500/20",
+              )}
               required
             />
           </div>
@@ -586,19 +591,38 @@ export function AddTimeModal({
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Annuler
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              loading={submitting}
-              disabled={submitting || durationMinutes <= 0 || !description.trim()}
-            >
-              <Save className="h-4 w-4" strokeWidth={2.5} />
-              Enregistrer
-            </Button>
+          <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200 flex-wrap">
+            <div className="text-[11.5px] text-slate-500 min-w-0">
+              {durationMinutes <= 0 && (
+                <span className="text-amber-700">
+                  La durée doit être supérieure à 0 {manualMode ? "minute" : "— vérifie l'heure de début/fin"}.
+                </span>
+              )}
+              {durationMinutes > 0 && !description.trim() && (
+                <span className="text-amber-700">
+                  Ajoute une description pour pouvoir enregistrer.
+                </span>
+              )}
+              {durationMinutes > 0 && description.trim() && !decision && (
+                <span className="text-amber-700">
+                  Impossible de calculer la couverture pour cette saisie.
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <Button type="button" variant="outline" onClick={onClose}>
+                Annuler
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                loading={submitting}
+                disabled={submitting || durationMinutes <= 0 || !description.trim() || !decision}
+              >
+                <Save className="h-4 w-4" strokeWidth={2.5} />
+                {isEditing ? "Enregistrer les modifications" : "Enregistrer"}
+              </Button>
+            </div>
           </div>
         </form>
       </div>
