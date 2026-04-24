@@ -795,7 +795,7 @@ function EndpointRollup({
                                 <span className="text-[11.5px] font-mono text-slate-500 shrink-0">
                                   {i.cveId ?? KIND_LABEL[i.kind] ?? i.kind}
                                 </span>
-                                <span className="text-[12.5px] text-slate-800 truncate flex-1">
+                                <span className="text-[12.5px] text-slate-800 truncate flex-1 min-w-0">
                                   {i.title}
                                 </span>
                                 {i.occurrenceCount > 1 && (

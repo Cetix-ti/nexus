@@ -110,7 +110,7 @@ export function OrgPoliciesTab({ organizationId, organizationName }: { organizat
               <Link key={s.id} href={`/policies/instances/scripts/${s.id}`} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 hover:border-slate-300">
                 <div className="flex items-center gap-2 min-w-0">
                   <FileCode2 className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="text-[12.5px] font-medium text-slate-900 truncate">{s.title}</span>
+                  <span className="text-[12.5px] font-medium text-slate-900 truncate flex-1 min-w-0">{s.title}</span>
                   <span className="text-[10px] uppercase tracking-wide text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">{s.language}</span>
                   <SyncBadge state={s.syncState} />
                 </div>
