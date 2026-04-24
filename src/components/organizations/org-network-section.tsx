@@ -189,6 +189,13 @@ function OrgInternetLinksCard({
   );
 }
 
+interface DraftBlock {
+  _key: string;
+  kind: IpBlockKind;
+  value: string;
+  label: string;
+}
+
 function LinkFormRow({
   organizationId,
   sites,
@@ -212,6 +219,22 @@ function LinkFormRow({
   const [dnsSecondary, setDns2] = useState(link?.dnsSecondary ?? "");
   const [notes, setNotes] = useState(link?.notes ?? "");
   const [saving, setSaving] = useState(false);
+
+  // Inline IP blocks (draft state — only for new link creation)
+  const [draftBlocks, setDraftBlocks] = useState<DraftBlock[]>([]);
+  const [ipKind, setIpKind] = useState<IpBlockKind>("SINGLE");
+  const [ipValue, setIpValue] = useState("");
+  const [ipLabel, setIpLabel] = useState("");
+
+  function addDraftBlock() {
+    if (!ipValue.trim()) return;
+    setDraftBlocks((prev) => [
+      ...prev,
+      { _key: String(Date.now() + Math.random()), kind: ipKind, value: ipValue.trim(), label: ipLabel.trim() },
+    ]);
+    setIpValue("");
+    setIpLabel("");
+  }
 
   async function save() {
     if (!isp.trim() || saving) return;
@@ -242,7 +265,29 @@ function LinkFormRow({
         return;
       }
       const d = await r.json();
-      onSaved(d.data);
+      const savedLink: InternetLink = d.data;
+
+      // For new links, persist any draft IP blocks sequentially
+      if (!link && draftBlocks.length > 0) {
+        const createdBlocks: IpBlock[] = [];
+        for (const block of draftBlocks) {
+          const br = await fetch(
+            `/api/v1/organizations/${organizationId}/internet-links/${savedLink.id}/ip-blocks`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kind: block.kind, value: block.value, label: block.label || null }),
+            },
+          );
+          if (br.ok) {
+            const bd = await br.json();
+            createdBlocks.push(bd.data);
+          }
+        }
+        onSaved({ ...savedLink, ipBlocks: createdBlocks });
+      } else {
+        onSaved(savedLink);
+      }
     } finally {
       setSaving(false);
     }
@@ -325,6 +370,67 @@ function LinkFormRow({
           placeholder="N° de compte, SLA, contact support ISP…"
         />
       </div>
+
+      {/* Inline IP blocks section — only for new link creation */}
+      {!link && (
+        <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <Network className="h-3.5 w-3.5 text-slate-500" />
+            <h5 className="text-[12.5px] font-semibold text-slate-700">IPs statiques / Blocs (facultatif)</h5>
+          </div>
+          {draftBlocks.length > 0 && (
+            <ul className="divide-y divide-slate-100">
+              {draftBlocks.map((b) => (
+                <li key={b._key} className="py-1.5 flex items-center gap-2 text-[12px]">
+                  <Badge variant="outline" className="text-[10px]">{IP_KIND_LABEL[b.kind]}</Badge>
+                  <span className="font-mono text-slate-800">{b.value}</span>
+                  {b.label && <span className="text-slate-500">· {b.label}</span>}
+                  <button
+                    type="button"
+                    onClick={() => setDraftBlocks((prev) => prev.filter((x) => x._key !== b._key))}
+                    className="ml-auto h-5 w-5 rounded text-slate-400 hover:bg-red-50 hover:text-red-600 inline-flex items-center justify-center"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end">
+            <div className="w-full sm:w-28">
+              <label className="block text-[11px] text-slate-500 mb-1">Type</label>
+              <Select value={ipKind} onValueChange={(v) => setIpKind(v as IpBlockKind)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SINGLE">IP unique</SelectItem>
+                  <SelectItem value="RANGE">Plage</SelectItem>
+                  <SelectItem value="SUBNET">Subnet</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Input
+              label="Valeur"
+              value={ipValue}
+              onChange={(e) => setIpValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDraftBlock(); } }}
+              placeholder={IP_KIND_PLACEHOLDER[ipKind]}
+              className="flex-1 font-mono"
+            />
+            <Input
+              label="Étiquette (fac.)"
+              value={ipLabel}
+              onChange={(e) => setIpLabel(e.target.value)}
+              placeholder="NAT firewall"
+              className="sm:w-40"
+            />
+            <Button type="button" variant="outline" size="sm" onClick={addDraftBlock} disabled={!ipValue.trim()}>
+              <Plus className="h-3.5 w-3.5" />
+              Ajouter
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-end gap-2 pt-1">
         <Button variant="outline" size="sm" onClick={onCancel}>Annuler</Button>
         <Button variant="primary" size="sm" onClick={save} disabled={!isp.trim() || saving}>
