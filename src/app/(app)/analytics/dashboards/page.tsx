@@ -659,16 +659,38 @@ export default function ReportsPage() {
     return allReports.filter((r) => r.parentId === reportId);
   }
 
-  // Dashboard items layout per report — persisted in localStorage
-  const layoutKey = `nexus:report-layout:${view}`;
+  // Dashboard items layout per report — persisted in localStorage.
+  //
+  // Héritage parent → enfant : un dashboard enfant (parentId défini) ne
+  // garde PAS son propre layout. Il lit et écrit directement dans le
+  // layout du parent-racine (en remontant la chaîne). Conséquence : toute
+  // modification du parent (ajout/retrait de widgets, réorganisation,
+  // apparence) se répercute immédiatement sur ses enfants. Seuls les
+  // filtres (org, agent, période) restent per-child.
+  function findLayoutRoot(reportId: string): string {
+    const report = allReports.find((r) => r.id === reportId);
+    if (!report) return reportId;
+    let cur = report;
+    const seen = new Set<string>();
+    while (cur.parentId && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      const parent = allReports.find((r) => r.id === cur.parentId);
+      if (!parent) break;
+      cur = parent;
+    }
+    return cur.id;
+  }
+  const layoutReportId = findLayoutRoot(view);
+  const layoutKey = `nexus:report-layout:${layoutReportId}`;
   const [dashItems, setDashItems] = useState<DashboardItem[]>([]);
 
-  // Build dashboard items from report widgets when view changes
+  // Build dashboard items from report widgets when view (or parent chain) changes.
   useEffect(() => {
     const report = allReports.find((r) => r.id === view);
     if (!report) return;
     const widgets = resolveWidgets(report);
-    // Try to load saved layout
+    // Try to load saved layout — pour un enfant, `layoutKey` pointe déjà
+    // vers le layout du parent-racine.
     try {
       const saved = localStorage.getItem(layoutKey);
       if (saved) {
@@ -685,7 +707,8 @@ export default function ReportsPage() {
       w: defaultW(wId),
       h: defaultH(wId),
     })));
-  }, [view, customReports]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, layoutReportId, customReports]);
 
   function persistDashLayout(items: DashboardItem[]) {
     try { localStorage.setItem(layoutKey, JSON.stringify(items)); } catch {}
@@ -1018,14 +1041,38 @@ export default function ReportsPage() {
   }
 
   function setReportParent(reportId: string, parentId: string | null) {
+    const before = customReports.find((r) => r.id === reportId) ?? null;
+    const wasChild = !!before?.parentId;
+    const oldParentId = before?.parentId ?? null;
+
     const updated = customReports.map((r) =>
       r.id === reportId ? { ...r, parentId } : r
     );
     setCustomReports(updated);
     saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
-    // Clear saved layout so it rebuilds from the new parent's widgets
+
     if (parentId) {
+      // Devient (ou reste) enfant : supprime son layout propre, il héritera
+      // maintenant de celui du parent (findLayoutRoot remonte la chaîne).
       try { localStorage.removeItem(`nexus:report-layout:${reportId}`); } catch {}
+    } else if (wasChild) {
+      // Devient indépendant : copie le layout qu'il héritait dans sa
+      // propre clé pour qu'il garde l'apparence actuelle.
+      try {
+        let rootId = oldParentId;
+        // Remonte la chaîne au cas où l'ancien parent était lui-même un enfant.
+        const seen = new Set<string>();
+        while (rootId && !seen.has(rootId)) {
+          seen.add(rootId);
+          const p = customReports.find((r) => r.id === rootId);
+          if (!p?.parentId) break;
+          rootId = p.parentId;
+        }
+        if (rootId) {
+          const inherited = localStorage.getItem(`nexus:report-layout:${rootId}`);
+          if (inherited) localStorage.setItem(`nexus:report-layout:${reportId}`, inherited);
+        }
+      } catch {}
     }
   }
 
@@ -1145,6 +1192,12 @@ export default function ReportsPage() {
     if (id.startsWith("custom_")) {
       // Custom : suppression réelle (retire de la liste + layout + favori).
       if (!confirm("Supprimer ce rapport personnalisé ?")) return;
+      // Avant suppression : capture le layout du parent pour le recopier
+      // sur chaque enfant orphelin (sinon ils perdent leur apparence
+      // héritée en même temps que leur parent).
+      let parentLayout: string | null = null;
+      try { parentLayout = localStorage.getItem(`nexus:report-layout:${id}`); } catch {}
+      const orphans = customReports.filter((r) => r.parentId === id);
       const updated = customReports
         .filter((r) => r.id !== id)
         .map((r) => r.parentId === id ? { ...r, parentId: null } : r);
@@ -1153,6 +1206,12 @@ export default function ReportsPage() {
       setFavorites((prev) => { const next = prev.filter((f) => f !== id); saveFavorites(next); return next; });
       if (view === id) setView(loadPrimary());
       try { localStorage.removeItem(`nexus:report-layout:${id}`); } catch {}
+      // Recopie le layout hérité sur chaque orphelin.
+      if (parentLayout) {
+        for (const o of orphans) {
+          try { localStorage.setItem(`nexus:report-layout:${o.id}`, parentLayout); } catch {}
+        }
+      }
       return;
     }
     // Built-in : masquage (ajout à un set localStorage). Restaurable
