@@ -4,14 +4,15 @@ import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ShieldCheck, Library, Building2, FileCode2, FileText, Upload, Plus, Search, KeyRound, Globe, Lock, Database,
+  ShieldCheck, Library, Building2, FileCode2, FileText, Upload, Plus, Search, KeyRound, Globe, Lock, Database, Users,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageLoader } from "@/components/ui/page-loader";
+import { NomenclatureSection } from "@/components/policies/nomenclature-section";
 
-type Tab = "gpo" | "scripts" | "documents";
+type Tab = "gpo" | "scripts" | "documents" | "ad_groups";
 
 interface GpoRow { id: string; nameStem: string; nameOverride: string | null; scope: "COMPUTER" | "USER" | "MIXED"; schemaVersion: number; updatedAt: string; category: { name: string; icon: string; color: string } | null; _count: { instances: number } }
 interface ScriptRow { id: string; title: string; language: string; schemaVersion: number; updatedAt: string; category: { name: string; icon: string; color: string } | null; _count: { instances: number; publications: number } }
@@ -79,6 +80,7 @@ function Content() {
           { k: "gpo" as const, label: "Stratégies de groupes (GPO)", icon: ShieldCheck, count: gpo?.length },
           { k: "scripts" as const, label: "Scripts & automatisation", icon: FileCode2, count: scripts?.length },
           { k: "documents" as const, label: "Autres politiques", icon: FileText, count: docs?.length },
+          { k: "ad_groups" as const, label: "Groupes Active Directory", icon: Users, count: undefined },
         ].map((t) => {
           const Icon = t.icon;
           return (
@@ -97,10 +99,16 @@ function Content() {
         })}
       </div>
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher…" className="pl-8" />
-      </div>
+      {tab !== "ad_groups" && (
+        <div className="relative max-w-md">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher…" className="pl-8" />
+        </div>
+      )}
+
+      {tab === "gpo" && <NomenclatureSection kind="gpo" />}
+      {tab === "scripts" && <NomenclatureSection kind="scripts" />}
+      {tab === "ad_groups" && <NomenclatureSection kind="ad_groups" defaultOpen />}
 
       {tab === "gpo" && (
         gpo === null ? <PageLoader />

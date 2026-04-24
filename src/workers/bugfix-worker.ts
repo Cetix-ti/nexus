@@ -245,6 +245,9 @@ async function processBug(bug: BugReport, opts: ProcessOptions): Promise<BugFixA
 
       // 2. Crée un worktree isolé depuis origin/<baseBranch>, avec la branche bugfix directement.
       //    Cela fonctionne même si le working tree principal est sale sur une autre branche.
+      //    Si une branche locale du même nom existe (run précédent failed), on la supprime
+      //    avant — sinon `worktree add -b` échoue avec "branch already exists".
+      await git(["branch", "-D", branch]); // best-effort : run() résout même si la branche n'existe pas (code != 0 mais pas d'exception)
       const wt = await git(["worktree", "add", "-b", branch, worktreeDir, `origin/${baseBranch}`]);
       if (wt.code !== 0) {
         log(`git worktree add failed : ${wt.stderr}`);

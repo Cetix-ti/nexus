@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, X, Wifi, Network, ChevronDown, ChevronRight, Save, Globe2 } from "lucide-react";
+import { IspProvidersManager } from "@/components/organizations/isp-providers-manager";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -220,6 +221,15 @@ function LinkFormRow({
   const [notes, setNotes] = useState(link?.notes ?? "");
   const [saving, setSaving] = useState(false);
 
+  // Liste des fournisseurs ISP suggérés (autocomplete) — chargée depuis le KV.
+  const [ispProviders, setIspProviders] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/v1/settings/isp-providers")
+      .then((r) => (r.ok ? r.json() : { providers: [] }))
+      .then((d) => setIspProviders(Array.isArray(d.providers) ? d.providers : []))
+      .catch(() => {});
+  }, []);
+
   // Inline IP blocks (draft state — only for new link creation)
   const [draftBlocks, setDraftBlocks] = useState<DraftBlock[]>([]);
   const [ipKind, setIpKind] = useState<IpBlockKind>("SINGLE");
@@ -299,12 +309,22 @@ function LinkFormRow({
         {link ? "Modifier le lien" : "Nouveau lien Internet"}
       </h4>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Input
-          label="Fournisseur ISP *"
-          value={isp}
-          onChange={(e) => setIsp(e.target.value)}
-          placeholder="Bell, Vidéotron, TELUS, Cogeco…"
-        />
+        <div>
+          <Input
+            label="Fournisseur ISP *"
+            value={isp}
+            onChange={(e) => setIsp(e.target.value)}
+            placeholder="Bell, Vidéotron, TELUS, Cogeco…"
+            list="isp-providers-list"
+            autoComplete="off"
+          />
+          <datalist id="isp-providers-list">
+            {ispProviders.map((p) => <option key={p} value={p} />)}
+          </datalist>
+          <div className="mt-1">
+            <IspProvidersManager onChange={setIspProviders} />
+          </div>
+        </div>
         <Input
           label="Étiquette (facultatif)"
           value={label}
