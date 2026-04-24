@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { DashboardGrid, type DashboardItem } from "@/components/widgets/dashboard-grid";
 import { WidgetSidebar } from "@/components/widgets/widget-sidebar";
+import { AnalyticsSectionTabs } from "@/components/analytics/section-tabs";
 
 // ===========================================================================
 // Types
@@ -306,11 +307,12 @@ export default function AnalyticsReportsPage() {
 
   return (
     <div className="space-y-5">
+      <AnalyticsSectionTabs section="reports" />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">Rapports</h1>
-          <p className="mt-0.5 text-[13px] text-slate-500">Rapports programmés et imprimables pour vos clients</p>
+          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">Rapports programmés</h1>
+          <p className="mt-0.5 text-[13px] text-slate-500">Rapports imprimables et planifiés pour vos clients</p>
         </div>
         <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
           <Plus className="h-3.5 w-3.5" /> Nouveau rapport programmé

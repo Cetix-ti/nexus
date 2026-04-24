@@ -45,7 +45,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
-  children?: { label: string; href: string }[];
+  children?: { label: string; href: string; matchPrefix?: string[] }[];
   minRole?: string;
   /** Capacité requise (en plus du rôle). SUPER_ADMIN bypass implicite. */
   requiredCapability?: string;
@@ -164,10 +164,16 @@ const NAV_SECTIONS: NavSection[] = [
         // tech voie les taux ou les revenus.
         requiredCapability: "finances",
         children: [
-          { label: "Dashboards", href: "/analytics/dashboards" },
-          { label: "Rapports", href: "/analytics/reports" },
-          { label: "Widgets", href: "/analytics/widgets" },
-          { label: "Sources & Variables", href: "/analytics/data" },
+          {
+            label: "Rapports",
+            href: "/analytics/dashboards",
+            matchPrefix: ["/analytics/dashboards", "/analytics/reports", "/analytics/monthly-reports"],
+          },
+          {
+            label: "Données",
+            href: "/analytics/widgets",
+            matchPrefix: ["/analytics/widgets", "/analytics/data", "/analytics/datasets", "/analytics/variables"],
+          },
         ],
       },
       { label: "Base de connaissances", href: "/knowledge", icon: BookOpen },
@@ -300,7 +306,9 @@ function NavItemComponent({
       {hasChildren && expanded && !collapsed && (
         <div className="mt-1 ml-[30px] space-y-0.5 border-l border-slate-800 pl-4 py-1">
           {item.children!.map((child) => {
-            const childActive = pathname === child.href;
+            const childActive = child.matchPrefix
+              ? child.matchPrefix.some((p) => pathname === p || pathname.startsWith(p + "/"))
+              : pathname === child.href;
             return (
               <Link
                 key={child.href}

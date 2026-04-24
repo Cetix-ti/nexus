@@ -41,6 +41,7 @@ import { remapBaseCategoryResults } from "@/lib/analytics/base-category-remap";
 import { FilterRow } from "@/components/analytics/filter-row";
 import { WidgetAppearance } from "@/components/analytics/widget-appearance";
 import { WidgetAiAssistant, type WidgetDraft } from "@/components/analytics/widget-ai-assistant";
+import { AnalyticsSectionTabs } from "@/components/analytics/section-tabs";
 import {
   type VisualStyle, DEFAULT_STYLE, mergeStyle,
   colorsForResults, colorForIndex, formatValue,
@@ -584,14 +585,10 @@ export default function WidgetEditorPage() {
   // ==========================================================================
   return (
     <div className="space-y-5">
+      <AnalyticsSectionTabs section="data" />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-[13px] mb-1 flex-wrap">
-            <Link href="/analytics/dashboards" className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
-              <ArrowLeft className="h-3.5 w-3.5" /> Analytique
-            </Link>
-          </div>
           <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">Éditeur de widgets</h1>
           <p className="mt-0.5 text-[13px] text-slate-500">{datasets.length} datasets · {widgets.length} widgets {orgContextId ? "visibles dans cet atelier" : "créés"}</p>
         </div>

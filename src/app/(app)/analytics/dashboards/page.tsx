@@ -69,6 +69,7 @@ import {
 import { WidgetChart, type ChartType } from "@/components/widgets/widget-chart";
 import { buildDrillDownUrl } from "@/lib/analytics/drill-down";
 import { ExportDashboardButton } from "@/components/analytics/export-dashboard-button";
+import { AnalyticsSectionTabs } from "@/components/analytics/section-tabs";
 
 const PIE_PALETTE = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
@@ -1020,6 +1021,7 @@ export default function ReportsPage() {
 
   return (
     <div className="flex flex-col gap-3 min-h-0">
+      <AnalyticsSectionTabs section="reports" />
       {orgContextId && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 flex items-start gap-2 flex-wrap">
           <svg className="h-4 w-4 text-blue-700 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
