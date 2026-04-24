@@ -190,7 +190,7 @@ export default function OrganizationsPage() {
         </div>
         <Button variant="primary" size="md" onClick={() => setCreatingOrg(true)}>
           <Plus className="h-4 w-4" strokeWidth={2.5} />
-          Ajouter une organisation
+          <span className="hidden sm:inline">Ajouter une organisation</span>
         </Button>
       </div>
 
@@ -202,20 +202,20 @@ export default function OrganizationsPage() {
           { label: "Sites totaux", value: totalSites, icon: MapPin, color: "text-violet-600 bg-violet-50" },
           { label: "Contacts totaux", value: totalContacts, icon: Users, color: "text-amber-600 bg-amber-50" },
         ].map((stat) => (
-          <Card key={stat.label} className="flex items-center gap-4 p-5">
-            <div className={cn("flex h-11 w-11 items-center justify-center rounded-lg", stat.color)}>
-              <stat.icon className="h-5 w-5" />
+          <Card key={stat.label} className="flex items-center gap-2 sm:gap-4 p-3 sm:p-5">
+            <div className={cn("flex h-9 w-9 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-lg", stat.color)}>
+              <stat.icon className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
-            <div>
-              <p className="text-sm text-gray-500">{stat.label}</p>
-              <p className="text-xl sm:text-2xl font-bold text-gray-900">{stat.value}</p>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-500 truncate">{stat.label}</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900">{stat.value}</p>
             </div>
           </Card>
         ))}
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="w-full sm:w-80">
           <Input
             placeholder="Rechercher une organisation..."
@@ -225,7 +225,7 @@ export default function OrganizationsPage() {
           />
         </div>
         <Select value={billingModeFilter} onValueChange={setBillingModeFilter}>
-          <SelectTrigger className="w-56">
+          <SelectTrigger className="w-full sm:w-56">
             <SelectValue placeholder="Mode de facturation" />
           </SelectTrigger>
           <SelectContent>
