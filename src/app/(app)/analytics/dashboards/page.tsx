@@ -67,6 +67,7 @@ import {
   XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import { WidgetChart, type ChartType } from "@/components/widgets/widget-chart";
+import { WorkOrdersListWidget } from "@/components/widgets/work-orders-list-widget";
 import { buildDrillDownUrl } from "@/lib/analytics/drill-down";
 import { ExportDashboardButton } from "@/components/analytics/export-dashboard-button";
 import { AnalyticsSectionTabs } from "@/components/analytics/section-tabs";
@@ -177,7 +178,8 @@ type WidgetId =
   | "revenue_by_org"
   | "contract_usage"
   | "top_tickets"
-  | "projection";
+  | "projection"
+  | "work_orders";
 
 interface WidgetDef {
   id: WidgetId;
@@ -201,6 +203,7 @@ const WIDGETS: WidgetDef[] = [
   { id: "revenue_by_org", label: "Revenus par client", description: "Top 15 organisations par revenus générés", icon: <Building2 className="h-4 w-4" />, category: "facturation" },
   { id: "contract_usage", label: "Utilisation contrats", description: "Heures utilisées vs allouées par contrat actif", icon: <FileText className="h-4 w-4" />, category: "contrats" },
   { id: "top_tickets", label: "Top tickets par temps", description: "Les 10 tickets avec le plus de temps investi", icon: <Clock className="h-4 w-4" />, category: "performance" },
+  { id: "work_orders", label: "Bons de travail", description: "Liste détaillée des saisies de temps (description, ticket, durée, montant) avec export CSV/PDF", icon: <FileText className="h-4 w-4" />, category: "facturation" },
 ];
 
 const DEFAULT_DASHBOARD: WidgetId[] = [
@@ -699,8 +702,12 @@ export default function ReportsPage() {
       }
     } catch {}
     // Default: build from report widget list with sensible grid sizes
-    const defaultW = (wId: string) => wId.includes("kpis") || wId.includes("trend") || wId.includes("org") || wId.includes("top_") || wId.includes("contract") || wId.includes("projection") ? 10 : 5;
-    const defaultH = (wId: string) => wId.includes("kpis") ? 2 : wId.includes("trend") ? 5 : wId.includes("top_") ? 4 : 3;
+    const defaultW = (wId: string) => wId === "work_orders"
+      ? 20
+      : (wId.includes("kpis") || wId.includes("trend") || wId.includes("org") || wId.includes("top_") || wId.includes("contract") || wId.includes("projection") ? 10 : 5);
+    const defaultH = (wId: string) => wId === "work_orders"
+      ? 8
+      : (wId.includes("kpis") ? 2 : wId.includes("trend") ? 5 : wId.includes("top_") ? 4 : 3);
     setDashItems(widgets.map((wId, i) => ({
       id: `di_${wId}_${i}`,
       widgetId: wId,
@@ -2312,6 +2319,13 @@ export default function ReportsPage() {
                     return fd ? <ContractUsageWidget data={fd} /> : null;
                   case "top_tickets":
                     return fd ? <TopTicketsWidget data={fd} /> : null;
+                  case "work_orders":
+                    return <WorkOrdersListWidget
+                      dashboardDays={days === "custom" ? 0 : (Number(days) || 30)}
+                      customFrom={days === "custom" ? customFrom : undefined}
+                      customTo={days === "custom" ? customTo : undefined}
+                      orgContextId={orgContextId ?? (filterOrg !== "all" ? filterOrg : null)}
+                    />;
                   default:
                     return <QueryWidgetRenderer
                       widgetId={widgetId}
