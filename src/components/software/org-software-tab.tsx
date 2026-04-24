@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SyncBadge } from "@/components/shared/sync-badge";
+import { AddSoftwareModal } from "@/components/software/add-software-modal";
 
 interface Row {
   id: string;
@@ -25,6 +26,7 @@ interface Row {
 export function OrgSoftwareTab({ organizationId, organizationName }: { organizationId: string; organizationName: string }) {
   const [items, setItems] = useState<Row[] | null>(null);
   const [search, setSearch] = useState("");
+  const [showAddModal, setShowAddModal] = useState(false);
 
   async function load() {
     const r = await fetch(`/api/v1/software/instances?orgId=${organizationId}`);
@@ -65,9 +67,9 @@ export function OrgSoftwareTab({ organizationId, organizationName }: { organizat
               {drifted} à réviser
             </span>
           )}
-          <Link href={`/software/new?orgId=${organizationId}`}>
-            <Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Ajouter</Button>
-          </Link>
+          <Button size="sm" className="gap-1.5" onClick={() => setShowAddModal(true)}>
+            <Plus className="h-4 w-4" /> Ajouter
+          </Button>
         </div>
       </div>
 
@@ -137,6 +139,13 @@ export function OrgSoftwareTab({ organizationId, organizationName }: { organizat
           ))}
         </div>
       )}
+
+      <AddSoftwareModal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        organizationId={organizationId}
+        onCreated={() => { void load(); }}
+      />
     </div>
   );
 }
