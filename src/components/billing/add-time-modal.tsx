@@ -34,6 +34,11 @@ interface AddTimeModalProps {
   organizationId: string;
   organizationName: string;
   onSave: (entry: TimeEntry) => void | Promise<void>;
+  /**
+   * Saisie à éditer. Quand défini, la modale pré-remplit tous ses champs
+   * depuis cette entrée au lieu d'utiliser les valeurs par défaut.
+   */
+  editingEntry?: TimeEntry | null;
 }
 
 const QUICK_DURATIONS = [15, 30, 45, 60, 90, 120];
@@ -59,7 +64,9 @@ export function AddTimeModal({
   organizationId,
   organizationName,
   onSave,
+  editingEntry,
 }: AddTimeModalProps) {
+  const isEditing = !!editingEntry;
   // Types de travail filtrés pour cette organisation (configurés dans
   // Organisations → Facturation → "Types de travail"). Fallback au
   // catalogue complet si aucun n'est configuré.
@@ -77,10 +84,17 @@ export function AddTimeModal({
     if (!open) return;
     const list = loadWorkTypes(organizationId);
     setWorkTypesState(list);
-    // Garde une sélection valide si le type courant a été retiré côté
-    // facturation entre-temps.
-    setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
-  }, [open, organizationId]);
+    // En édition, on restaure le type de travail de la saisie. Sinon on
+    // garde la sélection courante si elle est encore valide, sinon on
+    // prend le premier type disponible.
+    if (editingEntry) {
+      const match = list.find((w) => w.timeType === editingEntry.timeType);
+      if (match) setWorkTypeId(match.id);
+      else setWorkTypeId(list[0]?.id ?? "");
+    } else {
+      setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
+    }
+  }, [open, organizationId, editingEntry]);
   // Cross-tab : si l'utilisateur modifie la liste dans un autre onglet,
   // reflète le changement dès que le storage émet l'event.
   useEffect(() => {
@@ -111,6 +125,50 @@ export function AddTimeModal({
   const [forceNonBillable, setForceNonBillable] = useState(false);
   const [hasTravelBilled, setHasTravelBilled] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Pré-remplissage des champs depuis l'entrée à éditer. Déclenché quand
+  // la modale s'ouvre en mode édition OU quand l'entrée passée change
+  // (ex. l'utilisateur clique sur une autre ligne sans fermer).
+  useEffect(() => {
+    if (!open) return;
+    if (!editingEntry) {
+      // Création : réinitialise aux valeurs par défaut pour ne pas
+      // conserver celles d'une précédente édition.
+      setDate(todayISODate());
+      setStartTime("09:00");
+      setEndTime("10:00");
+      setManualMode(true);
+      setManualMinutes(60);
+      setDescription("");
+      setIsAfterHours(false);
+      setIsWeekend(false);
+      setForceNonBillable(false);
+      setHasTravelBilled(false);
+      return;
+    }
+    // Édition : on reconstitue date/heure depuis startedAt/endedAt.
+    const start = new Date(editingEntry.startedAt);
+    const end = editingEntry.endedAt ? new Date(editingEntry.endedAt) : null;
+    const yyyy = start.getFullYear();
+    const mm = String(start.getMonth() + 1).padStart(2, "0");
+    const dd = String(start.getDate()).padStart(2, "0");
+    setDate(`${yyyy}-${mm}-${dd}`);
+    setStartTime(`${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`);
+    if (end) {
+      setEndTime(`${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`);
+      setManualMode(false);
+    } else {
+      setManualMode(true);
+    }
+    setManualMinutes(editingEntry.durationMinutes);
+    setDescription(editingEntry.description ?? "");
+    setIsAfterHours(!!editingEntry.isAfterHours);
+    setIsWeekend(!!editingEntry.isWeekend);
+    setHasTravelBilled(!!editingEntry.hasTravelBilled);
+    // "Forcer non facturable" n'est pas stocké — on le dérive du statut
+    // de couverture (non_billable) pour préserver le choix de l'utilisateur.
+    setForceNonBillable(editingEntry.coverageStatus === "non_billable");
+  }, [open, editingEntry]);
 
   // Détection de déplacements déjà facturés ce même jour pour cette org.
   // Rechargé quand la date ou l'org change. Non-bloquant : si l'API échoue
@@ -287,7 +345,7 @@ export function AddTimeModal({
             </div>
             <div>
               <h2 className="text-[17px] font-semibold tracking-tight text-slate-900">
-                Ajouter du temps
+                {isEditing ? "Modifier la saisie de temps" : "Ajouter du temps"}
               </h2>
               <p className="text-[12.5px] text-slate-500">
                 Ticket {ticketNumber} — {organizationName}

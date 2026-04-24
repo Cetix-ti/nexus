@@ -100,6 +100,7 @@ export async function POST(req: Request) {
       isWeekend: d.isWeekend,
       isUrgent: d.isUrgent,
       isOnsite: d.isOnsite,
+      hasTravelBilled: d.hasTravelBilled,
       forceNonBillable: d.forceNonBillable,
     });
     return NextResponse.json(created, { status: 201 });

@@ -102,6 +102,12 @@ export interface TimeEntry {
   isWeekend: boolean;
   isUrgent: boolean;
   isOnsite: boolean;          // true for onsite_work, false for remote
+  /**
+   * Flag "déplacement facturé" — indique qu'un déplacement séparé a été
+   * créé pour cette saisie (évite de re-facturer le temps du trajet).
+   * Ignoré par le moteur de billing mais préservé tel quel en base.
+   */
+  hasTravelBilled?: boolean;
   // Coverage decision (computed by billing engine)
   coverageStatus: CoverageStatus;
   coverageReason: string;     // human-readable explanation
@@ -125,11 +131,17 @@ export interface TravelEntry {
   agentId: string;
   agentName: string;
   date: string;                // ISO date
-  fromLocation: string;
-  toLocation: string;
-  distanceKm: number;
-  durationMinutes: number;
-  isRoundTrip: boolean;
+  // Champs legacy — conservés pour rétro-compat des entrées existantes,
+  // plus saisis dans l'UI. Le taux facturé est unique par client
+  // (OrgMileageRate.kmRoundTrip × taux $/km global), indépendant du site.
+  fromLocation?: string;
+  toLocation?: string;
+  distanceKm?: number;
+  isRoundTrip?: boolean;
+  // Durée = temps de trajet payé à l'agent (facultatif — selon contrat
+  // agent). Récupérable dans les rapports même si non utilisé pour la
+  // facturation client.
+  durationMinutes?: number;
   // Calculated billing
   coverageStatus: CoverageStatus;
   coverageReason: string;
