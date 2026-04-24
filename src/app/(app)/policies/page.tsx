@@ -86,7 +86,7 @@ function Content() {
               key={t.k}
               onClick={() => setTab(t.k)}
               className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px inline-flex items-center gap-1.5 ${
-                tab === t.k ? "border-red-500 text-red-700" : "border-transparent text-slate-500 hover:text-slate-700"
+                tab === t.k ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
               }`}
             >
               <Icon className="h-3.5 w-3.5" />

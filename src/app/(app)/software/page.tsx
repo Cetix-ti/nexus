@@ -94,7 +94,7 @@ function Content() {
         <button
           onClick={() => setTab("templates")}
           className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px ${
-            tab === "templates" ? "border-violet-500 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-700"
+            tab === "templates" ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
           }`}
         >
           <Library className="inline h-3.5 w-3.5 mr-1" /> Catalogue global {templates && <span className="text-slate-400">({templates.length})</span>}
@@ -102,7 +102,7 @@ function Content() {
         <button
           onClick={() => setTab("instances")}
           className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px ${
-            tab === "instances" ? "border-violet-500 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-700"
+            tab === "instances" ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
           }`}
         >
           <Building2 className="inline h-3.5 w-3.5 mr-1" /> Parc client {instances && <span className="text-slate-400">({instances.length})</span>}
