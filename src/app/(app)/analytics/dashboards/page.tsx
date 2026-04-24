@@ -454,7 +454,42 @@ export default function ReportsPage() {
   // Page par défaut = galerie de dashboards (liste visuelle).
   // L'utilisateur peut ensuite pinner un dashboard en favori avec "défaut"
   // mais le landing reste la galerie pour plus de clarté.
-  const [view, setView] = useState<string>(GALLERY_VIEW);
+  //
+  // La vue est synchronisée avec l'URL (query param `?view=...`) pour que :
+  //   - Le bouton « Précédent » du navigateur revienne à la galerie, pas
+  //     à la page précédente avant /analytics/dashboards (ex : onglet
+  //     Rapports programmés).
+  //   - Un rechargement/partage d'URL conserve le dashboard ouvert.
+  const [view, setViewState] = useState<string>(() => {
+    if (typeof window === "undefined") return GALLERY_VIEW;
+    const v = new URLSearchParams(window.location.search).get("view");
+    return v || GALLERY_VIEW;
+  });
+  // Wrapper qui met à jour l'état ET pousse une entrée dans l'historique
+  // en préservant les autres query params (orgContext, orgName…).
+  const setView = useCallback((next: string) => {
+    setViewState(next);
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (next === GALLERY_VIEW) params.delete("view");
+    else params.set("view", next);
+    const qs = params.toString();
+    const url = `/analytics/dashboards${qs ? `?${qs}` : ""}`;
+    // Ne push que si l'URL change réellement — évite de polluer l'historique.
+    if (window.location.pathname + window.location.search !== url) {
+      window.history.pushState(null, "", url);
+    }
+  }, []);
+  // popstate : re-sync l'état interne quand l'user clique sur Précédent/
+  // Suivant. Lit le param depuis l'URL courante et met à jour `view`.
+  useEffect(() => {
+    function onPop() {
+      const v = new URLSearchParams(window.location.search).get("view");
+      setViewState(v || GALLERY_VIEW);
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const [showConfig, setShowConfig] = useState(false);
   const [showWidgetSidebar, setShowWidgetSidebar] = useState(false);
   const [visibleWidgets, setVisibleWidgets] = useState<WidgetId[]>(() => loadVisible());
