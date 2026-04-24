@@ -983,7 +983,7 @@ export default function MySpacePage() {
               <h3 className="text-[15px] font-semibold text-slate-900 flex items-center gap-2"><Briefcase className="h-4 w-4 text-slate-500" /> Mes rapports de dépenses (par période)</h3>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/60 text-left">
                     <th className="px-4 py-3 font-medium text-slate-500">Titre</th>
@@ -1363,7 +1363,7 @@ function AllExpensesTable({ entries, mileageTrips, month, onMonthChange, onDelet
     <Card className="overflow-hidden">
       {header}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[700px] text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/60 text-left">
               <th className="px-4 py-2.5 font-medium text-slate-500 whitespace-nowrap">Date</th>
