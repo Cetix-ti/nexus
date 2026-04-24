@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Wallet,
   Clock,
@@ -515,7 +515,53 @@ function RateField({
   );
 }
 
-export function ClientBillingOverridesSection({
+// Error boundary : empêche qu'une exception dans la section fasse échouer
+// silencieusement toute la page Facturation. Affiche un message avec les
+// détails pour qu'on puisse diagnostiquer les régressions sur certains
+// clients (données localStorage corrompues, mock absent, etc.).
+interface BillingBoundaryState { hasError: boolean; message?: string }
+class BillingErrorBoundary extends React.Component<
+  { children: React.ReactNode; organizationName: string },
+  BillingBoundaryState
+> {
+  state: BillingBoundaryState = { hasError: false };
+  static getDerivedStateFromError(err: Error): BillingBoundaryState {
+    return { hasError: true, message: err?.message ?? String(err) };
+  }
+  componentDidCatch(err: unknown, info: unknown) {
+    console.error("[ClientBillingOverridesSection]", err, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-[13px] text-amber-900">
+          <p className="font-semibold">Impossible d&apos;afficher la facturation de {this.props.organizationName}</p>
+          <p className="mt-1 text-[12px] text-amber-800">
+            Une erreur s&apos;est produite lors du rendu de cette section
+            pour cette organisation. Détail : <code>{this.state.message}</code>
+          </p>
+          <p className="mt-2 text-[11.5px] text-amber-800">
+            Astuce : tu peux essayer de recharger la page (Ctrl+Shift+R).
+            Si l&apos;erreur persiste sur un client précis, c&apos;est
+            souvent dû à des données de configuration locales
+            (<code>localStorage</code>) corrompues.
+          </p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export function ClientBillingOverridesSection(props: ClientBillingOverridesSectionProps) {
+  return (
+    <BillingErrorBoundary organizationName={props.organizationName}>
+      <ClientBillingOverridesSectionInner {...props} />
+    </BillingErrorBoundary>
+  );
+}
+
+function ClientBillingOverridesSectionInner({
   organizationId,
   organizationName,
 }: ClientBillingOverridesSectionProps) {
