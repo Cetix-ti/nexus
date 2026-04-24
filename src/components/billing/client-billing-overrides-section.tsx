@@ -583,6 +583,12 @@ function ClientBillingOverridesSectionInner({
   organizationId,
   organizationName,
 }: ClientBillingOverridesSectionProps) {
+  // Diagnostic : permet de confirmer rapidement dans la console que la
+  // section a bien monté pour une org donnée (et n'a pas été interceptée
+  // avant). Volontairement en log pour être visible sans devtools pro.
+  if (typeof window !== "undefined") {
+    console.log("[Facturation] section mounted", { organizationId, organizationName });
+  }
   // Find existing override
   const existingOverride = useMemo(
     () =>
