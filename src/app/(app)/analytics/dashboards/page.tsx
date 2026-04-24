@@ -1,9 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { TagOrganizationModal } from "@/components/analytics/tag-organization-modal";
+import { ManageTagsModal, AssignTagsModal } from "@/components/analytics/dashboard-tag-modals";
+import {
+  type TagDef,
+  loadTagDefinitions,
+  saveTagDefinitions,
+  tagStyle,
+} from "@/lib/analytics/dashboard-tags";
 import { DashboardGrid, type DashboardItem } from "@/components/widgets/dashboard-grid";
 import {
   TrendingUp,
@@ -48,6 +55,8 @@ import {
   Pencil,
   ChevronDown,
   MoreHorizontal,
+  Copy,
+  Tag as TagIcon,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -209,6 +218,12 @@ interface ReportDef {
    * automatiquement vers `organizationIds` au prochain save.
    */
   organizationId?: string;
+  /**
+   * Liste d'IDs de balises (TagDef) attachées au rapport. Les définitions
+   * des balises (nom, couleur) sont stockées séparément pour qu'elles
+   * puissent être éditées globalement sans toucher à chaque rapport.
+   */
+  tags?: string[];
 }
 
 /** Retourne la liste normalisée d'orgIds attribuées à un rapport. */
@@ -479,6 +494,16 @@ export default function ReportsPage() {
   const [taggingReportId, setTaggingReportId] = useState<string | null>(null);
   // Cache orgId → name pour afficher le badge "Pour [org]" sur les rapports.
   const [orgNameById, setOrgNameById] = useState<Record<string, string>>({});
+  // Balises (labels libres) : définitions globales + modal CRUD + modal
+  // d'attribution à un dashboard précis.
+  const [tagDefs, setTagDefs] = useState<TagDef[]>(() => loadTagDefinitions());
+  const [managingTags, setManagingTags] = useState(false);
+  const [assignTagsReportId, setAssignTagsReportId] = useState<string | null>(null);
+  const tagDefById = useMemo(() => {
+    const map: Record<string, TagDef> = {};
+    for (const t of tagDefs) map[t.id] = t;
+    return map;
+  }, [tagDefs]);
 
   // Charge les noms des orgs référencées par les rapports taggés (une fois).
   useEffect(() => {
@@ -854,6 +879,73 @@ export default function ReportsPage() {
     }
   }
 
+  /**
+   * Duplique un rapport (built-in ou custom) en tant que nouveau rapport
+   * custom éditable. Copie les widgets résolus (chaîne parent incluse) et
+   * la layout sauvegardée s'il y en a. Ouvre directement le clone.
+   */
+  function duplicateReport(sourceId: string) {
+    const source = allReports.find((r) => r.id === sourceId);
+    if (!source) return;
+    const id = `custom_${Date.now()}`;
+    const widgets = resolveWidgets(source);
+    const clone: ReportDef = {
+      id,
+      label: `${source.label} (copie)`,
+      description: source.description,
+      icon: <BarChart3 className="h-5 w-5 text-blue-600" />,
+      category: source.category,
+      widgets: [...widgets],
+      parentId: null,
+      organizationIds: source.organizationIds ? [...source.organizationIds] : undefined,
+      tags: source.tags ? [...source.tags] : undefined,
+    };
+    const updated = [...customReports, clone];
+    setCustomReports(updated);
+    saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
+    // Recopie la layout sauvegardée du source vers le clone, s'il y en a une.
+    try {
+      const srcLayout = localStorage.getItem(`nexus:report-layout:${sourceId}`);
+      if (srcLayout) localStorage.setItem(`nexus:report-layout:${id}`, srcLayout);
+    } catch {}
+    setView(id);
+  }
+
+  /** Attache/détache des balises (TagDef ids) à un rapport custom. */
+  function assignTagsToReport(reportId: string, tagIds: string[]) {
+    if (!reportId.startsWith("custom_")) return;
+    const updated = customReports.map((r) =>
+      r.id === reportId ? { ...r, tags: tagIds.length > 0 ? tagIds : undefined } : r,
+    );
+    setCustomReports(updated);
+    saveCustomReports(updated.map((r) => ({ ...r, icon: null })));
+  }
+
+  /** Persiste les définitions de balises (CRUD depuis ManageTagsModal). */
+  function updateTagDefinitions(next: TagDef[]) {
+    setTagDefs(next);
+    saveTagDefinitions(next);
+    // Nettoie les références aux balises supprimées sur tous les rapports.
+    const valid = new Set(next.map((t) => t.id));
+    const cleaned = customReports.map((r) =>
+      r.tags && r.tags.length > 0
+        ? { ...r, tags: r.tags.filter((id) => valid.has(id)) }
+        : r,
+    );
+    const hasChange = cleaned.some((r, i) => (r.tags ?? []).length !== (customReports[i].tags ?? []).length);
+    if (hasChange) {
+      setCustomReports(cleaned);
+      saveCustomReports(cleaned.map((r) => ({ ...r, icon: null })));
+    }
+  }
+
+  /** Ajoute une balise à la liste globale (inline depuis AssignTagsModal). */
+  function addTagDefinition(tag: TagDef) {
+    const next = [...tagDefs, tag];
+    setTagDefs(next);
+    saveTagDefinitions(next);
+  }
+
   function deleteReport(id: string) {
     if (id.startsWith("custom_")) {
       // Custom : suppression réelle (retire de la liste + layout + favori).
@@ -994,6 +1086,13 @@ export default function ReportsPage() {
             <div className="px-3 pt-3 pb-2 flex items-center justify-between">
               <h2 className="text-[13px] font-semibold text-slate-900">Dashboards</h2>
               <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setManagingTags(true)}
+                  className="h-6 w-6 rounded-md flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors"
+                  title="Gérer les balises"
+                >
+                  <TagIcon className="h-3.5 w-3.5" />
+                </button>
                 <button
                   onClick={addFolder}
                   className="h-6 w-6 rounded-md flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors"
@@ -1359,6 +1458,37 @@ export default function ReportsPage() {
                         </button>
                       );
                     })()}
+                    {(() => {
+                      const tagIds = activeReport.tags ?? [];
+                      const tagNames = tagIds.map((id) => tagDefById[id]?.name).filter(Boolean);
+                      const label = tagIds.length === 0
+                        ? "Balises"
+                        : tagIds.length === 1
+                        ? tagNames[0]
+                        : `${tagIds.length} balises`;
+                      return (
+                        <button
+                          onClick={() => setAssignTagsReportId(activeReport.id)}
+                          className={cn(
+                            "h-9 inline-flex items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium ring-1 ring-inset transition-all",
+                            tagIds.length > 0
+                              ? "bg-violet-50 text-violet-700 ring-violet-200 hover:bg-violet-100"
+                              : "bg-white text-slate-500 ring-slate-200 hover:text-violet-600 hover:ring-violet-200 hover:bg-violet-50"
+                          )}
+                          title={tagIds.length > 0 ? `Balises : ${tagNames.join(", ")}` : "Ajouter des balises"}
+                        >
+                          <TagIcon className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline max-w-[140px] truncate">{label}</span>
+                        </button>
+                      );
+                    })()}
+                    <button
+                      onClick={() => duplicateReport(activeReport.id)}
+                      className="h-9 w-9 rounded-lg flex items-center justify-center text-slate-400 ring-1 ring-inset ring-slate-200 bg-white hover:text-emerald-600 hover:ring-emerald-200 hover:bg-emerald-50 transition-all"
+                      title="Dupliquer ce dashboard"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
                     <button
                       onClick={() => {
                         setReportRenameDraft(activeReport.label);
@@ -1377,6 +1507,16 @@ export default function ReportsPage() {
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </>
+                )}
+                {activeReport && !activeReport.id.startsWith("custom_") && (
+                  <button
+                    onClick={() => duplicateReport(activeReport.id)}
+                    className="h-9 inline-flex items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200 bg-white hover:text-emerald-700 hover:ring-emerald-200 hover:bg-emerald-50 transition-all"
+                    title="Créer une copie éditable de ce dashboard"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Dupliquer</span>
+                  </button>
                 )}
               </div>
             )}
@@ -1771,121 +1911,93 @@ export default function ReportsPage() {
       {/* (Catalog removed — favorites bar + dropdown replaces it) */}
 
       {/* ============================================================ */}
-      {/* Galerie — page par défaut : grille visuelle des dashboards */}
+      {/* Galerie — page par défaut : dashboards regroupés par dossier */}
       {/* ============================================================ */}
-      {view === GALLERY_VIEW && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Bouton "Nouveau dashboard" en première case */}
-          <button
-            type="button"
-            onClick={() => setShowCreateReport(true)}
-            className="group flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white/60 hover:bg-blue-50/60 hover:border-blue-400 transition-all p-6 min-h-[160px]"
-          >
-            <div className="h-11 w-11 rounded-xl bg-slate-100 group-hover:bg-blue-100 flex items-center justify-center transition-colors">
-              <Plus className="h-5 w-5 text-slate-500 group-hover:text-blue-700" />
-            </div>
-            <p className="text-[13px] font-semibold text-slate-700 group-hover:text-blue-700">
-              Créer un dashboard
-            </p>
-            <p className="text-[11.5px] text-slate-500 text-center">
-              Assemble tes widgets favoris
-            </p>
-          </button>
+      {view === GALLERY_VIEW && (() => {
+        // Regroupe les dashboards par dossier. Un dashboard peut être
+        // dans 0, 1 ou plusieurs dossiers → on le duplique visuellement.
+        // "Sans dossier" en premier (cohérent avec l'habitude). Les
+        // dossiers sont ensuite affichés dans leur ordre de création.
+        const unfolderedReports = allReports.filter(
+          (r) => !folders.some((f) => f.dashboardIds.includes(r.id)),
+        );
+        const sections: Array<{ key: string; title: string; icon: React.ReactNode; reports: ReportDef[] }> = [];
+        if (unfolderedReports.length > 0) {
+          sections.push({
+            key: "__none__",
+            title: "Sans dossier",
+            icon: <LayoutDashboard className="h-4 w-4 text-slate-400" />,
+            reports: unfolderedReports,
+          });
+        }
+        for (const folder of folders) {
+          const reports = folder.dashboardIds
+            .map((id) => allReports.find((r) => r.id === id))
+            .filter((r): r is ReportDef => !!r);
+          if (reports.length > 0) {
+            sections.push({
+              key: folder.id,
+              title: folder.name,
+              icon: <Folder className="h-4 w-4 text-slate-500" />,
+              reports,
+            });
+          }
+        }
 
-          {allReports.map((r) => {
-            const isPrimary = r.id === primaryId;
-            const isFav = favorites.includes(r.id);
-            const widgetCount = resolveWidgets(r).length;
-            const childCount = getChildren(r.id).length;
-            const isCustom = r.id.startsWith("custom_");
-            const cardOrgIds = getReportOrgs(r);
-            const tagLabel = cardOrgIds.length === 0
-              ? "Attribuer"
-              : cardOrgIds.length === 1
-              ? (orgNameById[cardOrgIds[0]] ?? "…")
-              : `${cardOrgIds.length} orgs`;
-            const tagTitle = cardOrgIds.length === 0
-              ? "Attribuer à une ou plusieurs organisations"
-              : `Attribué à : ${cardOrgIds.map((id) => orgNameById[id] ?? "…").join(", ")}`;
-            return (
-              <div
-                key={r.id}
-                className="group relative flex flex-col rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-blue-300 hover:shadow-[0_8px_24px_-8px_rgba(37,99,235,0.18)] transition-all min-h-[160px]"
+        return (
+          <div className="space-y-8">
+            {/* Barre d'en-tête avec le bouton "Créer un dashboard" en première position */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+              <button
+                type="button"
+                onClick={() => setShowCreateReport(true)}
+                className="group flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white/60 hover:bg-blue-50/60 hover:border-blue-400 transition-all p-6 min-h-[160px]"
               >
-                {isCustom && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setTaggingReportId(r.id); }}
-                    className={cn(
-                      "absolute top-2 right-2 z-10 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium transition-all",
-                      cardOrgIds.length > 0
-                        ? "bg-blue-600 text-white hover:bg-blue-700"
-                        : "bg-white/90 text-slate-600 ring-1 ring-slate-200 opacity-0 group-hover:opacity-100 hover:bg-blue-50 hover:text-blue-700 hover:ring-blue-300"
-                    )}
-                    title={tagTitle}
-                  >
-                    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4" />
-                    </svg>
-                    <span className="max-w-[100px] truncate">{tagLabel}</span>
-                  </button>
-                )}
+                <div className="h-11 w-11 rounded-xl bg-slate-100 group-hover:bg-blue-100 flex items-center justify-center transition-colors">
+                  <Plus className="h-5 w-5 text-slate-500 group-hover:text-blue-700" />
+                </div>
+                <p className="text-[13px] font-semibold text-slate-700 group-hover:text-blue-700">
+                  Créer un dashboard
+                </p>
+                <p className="text-[11.5px] text-slate-500 text-center">
+                  Assemble tes widgets favoris
+                </p>
+              </button>
+            </div>
 
-                <button
-                  type="button"
-                  onClick={() => setView(r.id)}
-                  className="flex flex-col text-left p-5 flex-1"
-                >
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div className="h-10 w-10 rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      {r.icon}
-                    </div>
-                    <div className="flex items-center gap-1 pr-16">
-                      {isFav && (
-                        <span className="text-amber-500 text-[14px]" title="Favori">
-                          ★
-                        </span>
-                      )}
-                      {isPrimary && (
-                        <span className="text-[8.5px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
-                          Défaut
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <h3 className="text-[14px] font-semibold text-slate-900 leading-tight mb-1.5 group-hover:text-blue-700 transition-colors">
-                    {r.label}
-                  </h3>
-                  <p className="text-[11.5px] text-slate-500 leading-relaxed line-clamp-2 mb-3">
-                    {r.description}
-                  </p>
-                  <div className="mt-auto flex items-center gap-2 flex-wrap">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-medium text-slate-600">
-                      {widgetCount} widget{widgetCount > 1 ? "s" : ""}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[10.5px] font-medium text-slate-500 capitalize">
-                      {r.category}
-                    </span>
-                    {childCount > 0 && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10.5px] font-medium text-violet-700">
-                        {childCount} enfant{childCount > 1 ? "s" : ""}
-                      </span>
-                    )}
-                    {r.parentId && (
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10.5px] font-medium text-violet-700"
-                        title="Hérite d'un parent"
-                      >
-                        ↳
-                      </span>
-                    )}
-                  </div>
-                </button>
+            {sections.map((section) => (
+              <div key={section.key} className="space-y-3">
+                <div className="flex items-center gap-2 border-b border-slate-200 pb-1.5">
+                  {section.icon}
+                  <h3 className="text-[13px] font-semibold text-slate-800">{section.title}</h3>
+                  <span className="text-[11px] text-slate-400 tabular-nums">
+                    {section.reports.length}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+                  {section.reports.map((r) => (
+                    <GalleryCard
+                      key={`${section.key}:${r.id}`}
+                      report={r}
+                      isFav={favorites.includes(r.id)}
+                      isPrimary={r.id === primaryId}
+                      widgetCount={resolveWidgets(r).length}
+                      childCount={getChildren(r.id).length}
+                      tagDefs={r.tags?.map((id) => tagDefById[id]).filter(Boolean) as TagDef[] ?? []}
+                      orgIds={getReportOrgs(r)}
+                      orgNameById={orgNameById}
+                      onOpen={() => setView(r.id)}
+                      onTagOrg={() => setTaggingReportId(r.id)}
+                      onTagLabels={() => setAssignTagsReportId(r.id)}
+                      onDuplicate={() => duplicateReport(r.id)}
+                    />
+                  ))}
+                </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        );
+      })()}
 
       {/* ============================================================ */}
       {/* Galerie filtrée par section : favoris / récents / tous / dossier. */}
@@ -1958,7 +2070,7 @@ export default function ReportsPage() {
         }
 
         return (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
             {sectionReports.map((r) => {
               const isPrimary = r.id === primaryId;
               const isFav = favorites.includes(r.id);
@@ -1968,6 +2080,7 @@ export default function ReportsPage() {
               // Accent par catégorie — bande colorée verticale à gauche
               // + fond icône. Permet de scanner la galerie plus vite.
               const accent = CATEGORY_ACCENT[r.category] ?? CATEGORY_ACCENT.complet;
+              const reportTags = (r.tags ?? []).map((id) => tagDefById[id]).filter(Boolean) as TagDef[];
               return (
                 <div
                   key={r.id}
@@ -2002,6 +2115,14 @@ export default function ReportsPage() {
                         )}
                         <button
                           type="button"
+                          onClick={(e) => { e.stopPropagation(); duplicateReport(r.id); }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 rounded-lg bg-slate-100 hover:bg-emerald-600 text-slate-500 hover:text-white inline-flex items-center justify-center"
+                          title="Dupliquer"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             setPublishingDashboardId(r.id);
@@ -2016,9 +2137,25 @@ export default function ReportsPage() {
                     <h3 className="text-[15px] font-semibold text-slate-900 leading-tight mb-1.5 group-hover:text-blue-700 transition-colors">
                       {r.label}
                     </h3>
-                    <p className="text-[12px] text-slate-500 leading-relaxed line-clamp-2 mb-4">
+                    <p className="text-[12px] text-slate-500 leading-relaxed line-clamp-2 mb-3">
                       {r.description}
                     </p>
+                    {reportTags.length > 0 && (
+                      <div className="mb-3 flex flex-wrap gap-1">
+                        {reportTags.map((t) => {
+                          const st = tagStyle(t.color);
+                          return (
+                            <span
+                              key={t.id}
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${st.bg} ${st.fg} ${st.ring}`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
+                              {t.name}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                     <div className="mt-auto flex items-center gap-1.5 flex-wrap">
                       <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-700 tabular-nums">
                         {widgetCount} widget{widgetCount > 1 ? "s" : ""}
@@ -2218,8 +2355,167 @@ export default function ReportsPage() {
         );
       })()}
 
+      <ManageTagsModal
+        open={managingTags}
+        onClose={() => setManagingTags(false)}
+        tags={tagDefs}
+        onSave={(next) => updateTagDefinitions(next)}
+      />
+
+      {assignTagsReportId && (() => {
+        let rep = customReports.find((r) => r.id === assignTagsReportId);
+        // Si l'user clique "Balises" sur un built-in, duplique d'abord en
+        // custom pour rendre les balises modifiables puis réouvre la modal
+        // sur la copie — mais pour simplifier on exige un custom existant.
+        if (!rep) return null;
+        return (
+          <AssignTagsModal
+            open
+            onClose={() => setAssignTagsReportId(null)}
+            itemName={rep.label}
+            currentTagIds={rep.tags ?? []}
+            allTags={tagDefs}
+            onCreateTag={(tag) => addTagDefinition(tag)}
+            onSaveAssignment={(ids) => assignTagsToReport(assignTagsReportId, ids)}
+          />
+        );
+      })()}
+
       </div>
     </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// GalleryCard — carte d'un dashboard dans la galerie (vue par défaut et
+// vue par dossier). Affiche les infos de base + actions de survol
+// (dupliquer, attribution org, balises).
+// ===========================================================================
+function GalleryCard({
+  report, isFav, isPrimary, widgetCount, childCount, tagDefs,
+  orgIds, orgNameById, onOpen, onTagOrg, onTagLabels, onDuplicate,
+}: {
+  report: ReportDef;
+  isFav: boolean;
+  isPrimary: boolean;
+  widgetCount: number;
+  childCount: number;
+  tagDefs: TagDef[];
+  orgIds: string[];
+  orgNameById: Record<string, string>;
+  onOpen: () => void;
+  onTagOrg: () => void;
+  onTagLabels: () => void;
+  onDuplicate: () => void;
+}) {
+  const isCustom = report.id.startsWith("custom_");
+  const orgLabel = orgIds.length === 0 ? "" : orgIds.length === 1 ? (orgNameById[orgIds[0]] ?? "…") : `${orgIds.length} orgs`;
+  const orgTitle = orgIds.length === 0
+    ? "Attribuer à une ou plusieurs organisations"
+    : `Attribué à : ${orgIds.map((id) => orgNameById[id] ?? "…").join(", ")}`;
+  return (
+    <div
+      className="group relative flex flex-col rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-blue-300 hover:shadow-[0_8px_24px_-8px_rgba(37,99,235,0.18)] transition-all min-h-[160px]"
+    >
+      {/* Actions sur le coin supérieur droit — hover-only sauf l'attribution
+          org qui reste visible quand il y a déjà des orgs attribuées. */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+        {isCustom && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onTagOrg(); }}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium transition-all",
+              orgIds.length > 0
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-white/90 text-slate-600 ring-1 ring-slate-200 opacity-0 group-hover:opacity-100 hover:bg-blue-50 hover:text-blue-700 hover:ring-blue-300",
+            )}
+            title={orgTitle}
+          >
+            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4" />
+            </svg>
+            {orgLabel && <span className="max-w-[80px] truncate">{orgLabel}</span>}
+          </button>
+        )}
+        {isCustom && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onTagLabels(); }}
+            className="inline-flex items-center justify-center h-6 w-6 rounded-md bg-white/90 text-slate-500 ring-1 ring-slate-200 opacity-0 group-hover:opacity-100 hover:bg-violet-50 hover:text-violet-700 hover:ring-violet-300 transition-all"
+            title="Balises"
+          >
+            <TagIcon className="h-3 w-3" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+          className="inline-flex items-center justify-center h-6 w-6 rounded-md bg-white/90 text-slate-500 ring-1 ring-slate-200 opacity-0 group-hover:opacity-100 hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-300 transition-all"
+          title="Dupliquer"
+        >
+          <Copy className="h-3 w-3" />
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex flex-col text-left p-4 flex-1"
+      >
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="h-9 w-9 rounded-xl bg-slate-50 ring-1 ring-inset ring-slate-200 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+            {report.icon}
+          </div>
+          <div className="flex items-center gap-1 pr-24">
+            {isFav && <span className="text-amber-500 text-[13px]" title="Favori">★</span>}
+            {isPrimary && (
+              <span className="text-[8.5px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
+                Défaut
+              </span>
+            )}
+          </div>
+        </div>
+        <h3 className="text-[13.5px] font-semibold text-slate-900 leading-tight mb-1 group-hover:text-blue-700 transition-colors line-clamp-2">
+          {report.label}
+        </h3>
+        <p className="text-[11px] text-slate-500 leading-relaxed line-clamp-2 mb-2">
+          {report.description}
+        </p>
+        {tagDefs.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1">
+            {tagDefs.map((t) => {
+              const st = tagStyle(t.color);
+              return (
+                <span
+                  key={t.id}
+                  className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0 text-[9.5px] font-medium ring-1 ring-inset ${st.bg} ${st.fg} ${st.ring}`}
+                >
+                  <span className={`h-1 w-1 rounded-full ${st.dot}`} />
+                  {t.name}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="mt-auto flex items-center gap-1.5 flex-wrap">
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0 text-[10px] font-medium text-slate-600 tabular-nums">
+            {widgetCount}w
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-1.5 py-0 text-[10px] font-medium text-slate-500 capitalize">
+            {report.category}
+          </span>
+          {childCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-1.5 py-0 text-[10px] font-medium text-violet-700">
+              {childCount} enfant{childCount > 1 ? "s" : ""}
+            </span>
+          )}
+          {report.parentId && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-1.5 py-0 text-[10px] font-medium text-violet-700" title="Hérite d'un parent">↳</span>
+          )}
+        </div>
+      </button>
     </div>
   );
 }
