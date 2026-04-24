@@ -46,11 +46,19 @@ export async function GET(req: NextRequest) {
 
   // Cumul total de minutes par ticket (toutes saisies confondues) ce jour-là.
   const totalMinutesByTicket = new Map<string, number>();
+  // Cumul de mes propres minutes par ticket (saisies de l'agent connecté uniquement).
+  const myMinutesByTicket = new Map<string, number>();
   for (const e of entries) {
     totalMinutesByTicket.set(
       e.ticketId,
       (totalMinutesByTicket.get(e.ticketId) ?? 0) + (e.durationMinutes ?? 0),
     );
+    if (e.agentId === me.id) {
+      myMinutesByTicket.set(
+        e.ticketId,
+        (myMinutesByTicket.get(e.ticketId) ?? 0) + (e.durationMinutes ?? 0),
+      );
+    }
   }
 
   const mineTicketIds = new Set(
@@ -90,6 +98,7 @@ export async function GET(req: NextRequest) {
     subject: t.subject ?? "",
     status: t.status,
     totalMinutesToday: totalMinutesByTicket.get(t.id) ?? 0,
+    myMinutesToday: myMinutesByTicket.get(t.id) ?? 0,
   });
 
   return NextResponse.json({

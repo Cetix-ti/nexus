@@ -23,7 +23,7 @@ import { X, Clock, Loader2, Plus, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 
 interface TicketRow {
@@ -32,6 +32,7 @@ interface TicketRow {
   subject: string;
   status: string;
   totalMinutesToday?: number;
+  myMinutesToday?: number;
 }
 
 function fmtMin(min: number): string {
@@ -56,7 +57,9 @@ const QUICK_DURATIONS = [15, 30, 45, 60];
 export function QuickAddOnsiteTimeModal({
   open, onClose, eventDate, organizationId, organizationName, onCreated,
 }: Props) {
-  const [tickets, setTickets] = useState<TicketRow[]>([]);
+  const [mineTickets, setMineTickets] = useState<TicketRow[]>([]);
+  const [teamTickets, setTeamTickets] = useState<TicketRow[]>([]);
+  const [otherTickets, setOtherTickets] = useState<TicketRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [ticketId, setTicketId] = useState<string>("");
   const [duration, setDuration] = useState<number>(15);
@@ -75,54 +78,33 @@ export function QuickAddOnsiteTimeModal({
     agentName: string | null;
   }>>([]);
 
-  // Suggestions : tickets pertinents pour ce client/jour. `mine` =
-  // tickets où j'ai déjà du temps ce jour-là · `team` = tickets où un
-  // collègue a du temps pour ce client ce jour-là. On pré-sélectionne
-  // le premier candidat "mine" si disponible — sinon "team" — sinon
-  // premier ticket ouvert.
-  const [suggestedMineIds, setSuggestedMineIds] = useState<Set<string>>(new Set());
-  const [suggestedTeamIds, setSuggestedTeamIds] = useState<Set<string>>(new Set());
-
   useEffect(() => {
     if (!open) return;
     setLoading(true);
     setError(null);
     const dateStr = eventDate.slice(0, 10);
-    Promise.all([
-      fetch(`/api/v1/my-space/ticket-suggestions?organizationId=${organizationId}&date=${dateStr}`)
-        .then((r) => r.ok ? r.json() : { mine: [], team: [], recentOpen: [] })
-        .catch(() => ({ mine: [], team: [], recentOpen: [] })),
-    ])
-      .then(([sug]) => {
-        const mineRows: TicketRow[] = (sug.mine ?? []).map((t: any) => ({
+    fetch(`/api/v1/my-space/ticket-suggestions?organizationId=${organizationId}&date=${dateStr}`)
+      .then((r) => r.ok ? r.json() : { mine: [], team: [], recentOpen: [] })
+      .catch(() => ({ mine: [], team: [], recentOpen: [] }))
+      .then((sug) => {
+        const toRow = (t: any): TicketRow => ({
           id: t.id, number: t.number ?? 0, subject: t.subject ?? "", status: t.status ?? "",
           totalMinutesToday: t.totalMinutesToday ?? 0,
-        }));
-        const teamRows: TicketRow[] = (sug.team ?? []).map((t: any) => ({
-          id: t.id, number: t.number ?? 0, subject: t.subject ?? "", status: t.status ?? "",
-          totalMinutesToday: t.totalMinutesToday ?? 0,
-        }));
-        const openRows: TicketRow[] = (sug.recentOpen ?? []).map((t: any) => ({
-          id: t.id, number: t.number ?? 0, subject: t.subject ?? "", status: t.status ?? "",
-          totalMinutesToday: t.totalMinutesToday ?? 0,
-        }));
-        const mineSet = new Set(mineRows.map((t) => t.id));
-        const teamSet = new Set(teamRows.map((t) => t.id));
-        setSuggestedMineIds(mineSet);
-        setSuggestedTeamIds(teamSet);
-        // Ordre : mine → team → openRows (dédup)
-        const seen = new Set<string>();
-        const ordered: TicketRow[] = [];
-        for (const row of [...mineRows, ...teamRows, ...openRows]) {
-          if (seen.has(row.id)) continue;
-          seen.add(row.id);
-          ordered.push(row);
-        }
-        setTickets(ordered);
-        if (ordered.length > 0 && !ticketId) {
-          const firstMine = ordered.find((t) => mineSet.has(t.id));
-          const firstTeam = ordered.find((t) => teamSet.has(t.id));
-          setTicketId(firstMine?.id ?? firstTeam?.id ?? ordered[0].id);
+          myMinutesToday: t.myMinutesToday ?? 0,
+        });
+        const mineRows: TicketRow[] = (sug.mine ?? []).map(toRow);
+        const teamRows: TicketRow[] = (sug.team ?? []).map(toRow);
+        // Déduplique recentOpen : retire les tickets déjà présents dans mine/team.
+        const suggestedIds = new Set([...mineRows.map((t) => t.id), ...teamRows.map((t) => t.id)]);
+        const openRows: TicketRow[] = (sug.recentOpen ?? [])
+          .filter((t: any) => !suggestedIds.has(t.id))
+          .map(toRow);
+        setMineTickets(mineRows);
+        setTeamTickets(teamRows);
+        setOtherTickets(openRows);
+        if (!ticketId) {
+          const first = mineRows[0] ?? teamRows[0] ?? openRows[0];
+          if (first) setTicketId(first.id);
         }
       })
       .finally(() => setLoading(false));
@@ -219,7 +201,7 @@ export function QuickAddOnsiteTimeModal({
               <div className="py-3 flex items-center gap-2 text-[12px] text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin" /> Chargement des tickets…
               </div>
-            ) : tickets.length === 0 ? (
+            ) : mineTickets.length + teamTickets.length + otherTickets.length === 0 ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-[12px] text-amber-900 space-y-2">
                 <p>Aucun ticket ouvert pour ce client. Crée-en un avant d&apos;ajouter le temps :</p>
                 <Link
@@ -232,41 +214,54 @@ export function QuickAddOnsiteTimeModal({
                 </Link>
               </div>
             ) : (
-              <>
-                <Select value={ticketId} onValueChange={setTicketId}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {tickets.map((t) => {
-                      const isMine = suggestedMineIds.has(t.id);
-                      const isTeam = suggestedTeamIds.has(t.id);
-                      return (
+              <Select value={ticketId} onValueChange={setTicketId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {mineTickets.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>Mes tickets ce jour</SelectLabel>
+                      {mineTickets.map((t) => (
                         <SelectItem key={t.id} value={t.id}>
                           <span className="font-mono text-[11px] text-slate-500 mr-1.5">#{t.number}</span>
-                          {t.subject.slice(0, 70)}
-                          {t.subject.length > 70 ? "…" : ""}
-                          {isMine && (
+                          {t.subject.slice(0, 65)}{t.subject.length > 65 ? "…" : ""}
+                          {(t.myMinutesToday ?? 0) > 0 && (
                             <span className="ml-2 text-[10px] text-emerald-600 font-medium">
-                              · ton temps ce jour
-                              {(t.totalMinutesToday ?? 0) > 0 && ` (${fmtMin(t.totalMinutesToday!)})`}
-                            </span>
-                          )}
-                          {!isMine && isTeam && (
-                            <span className="ml-2 text-[10px] text-blue-600 font-medium">
-                              · collègue ce jour
-                              {(t.totalMinutesToday ?? 0) > 0 && ` (${fmtMin(t.totalMinutesToday!)})`}
+                              · {fmtMin(t.myMinutesToday!)}
                             </span>
                           )}
                         </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-                {(suggestedMineIds.size > 0 || suggestedTeamIds.size > 0) && (
-                  <p className="mt-1.5 text-[11px] text-slate-500">
-                    Les tickets avec une saisie de temps pour ce client ce jour-là apparaissent en premier.
-                  </p>
-                )}
-              </>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {teamTickets.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>Équipe présente ce jour</SelectLabel>
+                      {teamTickets.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          <span className="font-mono text-[11px] text-slate-500 mr-1.5">#{t.number}</span>
+                          {t.subject.slice(0, 65)}{t.subject.length > 65 ? "…" : ""}
+                          {(t.totalMinutesToday ?? 0) > 0 && (
+                            <span className="ml-2 text-[10px] text-blue-600 font-medium">
+                              · {fmtMin(t.totalMinutesToday!)} équipe
+                            </span>
+                          )}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {otherTickets.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>Autres tickets ouverts</SelectLabel>
+                      {otherTickets.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          <span className="font-mono text-[11px] text-slate-500 mr-1.5">#{t.number}</span>
+                          {t.subject.slice(0, 65)}{t.subject.length > 65 ? "…" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                </SelectContent>
+              </Select>
             )}
           </div>
 
@@ -369,7 +364,7 @@ export function QuickAddOnsiteTimeModal({
             variant="primary"
             size="sm"
             onClick={submit}
-            disabled={submitting || !ticketId || tickets.length === 0}
+            disabled={submitting || !ticketId || (mineTickets.length + teamTickets.length + otherTickets.length === 0)}
           >
             {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
             Ajouter le déplacement
