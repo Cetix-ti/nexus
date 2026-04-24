@@ -167,14 +167,29 @@ interface FtigConfig {
 }
 function loadHourBankConfig(orgId: string): HourBankConfig {
   if (typeof window === "undefined") return {};
-  try { return JSON.parse(localStorage.getItem(`nexus:client-hour-bank:${orgId}`) || "{}"); } catch { return {}; }
+  try {
+    const raw = localStorage.getItem(`nexus:client-hour-bank:${orgId}`);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    // Protège contre `null` / valeurs primitives / arrays — on a observé des
+    // entrées `"null"` stockées historiquement qui crashaient le composant
+    // au premier `{ ...hourBankCfg }` ou accès propriété.
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    return {};
+  } catch { return {}; }
 }
 function saveHourBankConfig(orgId: string, cfg: HourBankConfig) {
   try { localStorage.setItem(`nexus:client-hour-bank:${orgId}`, JSON.stringify(cfg)); } catch {}
 }
 function loadFtigConfig(orgId: string): FtigConfig {
   if (typeof window === "undefined") return {};
-  try { return JSON.parse(localStorage.getItem(`nexus:client-ftig:${orgId}`) || "{}"); } catch { return {}; }
+  try {
+    const raw = localStorage.getItem(`nexus:client-ftig:${orgId}`);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    return {};
+  } catch { return {}; }
 }
 function saveFtigConfig(orgId: string, cfg: FtigConfig) {
   try { localStorage.setItem(`nexus:client-ftig:${orgId}`, JSON.stringify(cfg)); } catch {}
@@ -291,7 +306,10 @@ export function loadSystemTypeLabels(): Partial<Record<WorkTypeOption["timeType"
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(SYSTEM_TYPE_LABELS_KEY);
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    return {};
   } catch { return {}; }
 }
 export function saveSystemTypeLabels(
