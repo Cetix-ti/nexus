@@ -1811,25 +1811,6 @@ export default function ReportsPage() {
 
         return (
           <div className="space-y-8">
-            {/* Barre d'en-tête avec le bouton "Créer un dashboard" en première position */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
-              <button
-                type="button"
-                onClick={() => setShowCreateReport(true)}
-                className="group flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white/60 hover:bg-blue-50/60 hover:border-blue-400 transition-all p-6 min-h-[160px]"
-              >
-                <div className="h-11 w-11 rounded-xl bg-slate-100 group-hover:bg-blue-100 flex items-center justify-center transition-colors">
-                  <Plus className="h-5 w-5 text-slate-500 group-hover:text-blue-700" />
-                </div>
-                <p className="text-[13px] font-semibold text-slate-700 group-hover:text-blue-700">
-                  Créer un dashboard
-                </p>
-                <p className="text-[11.5px] text-slate-500 text-center">
-                  Assemble tes widgets favoris
-                </p>
-              </button>
-            </div>
-
             {sections.map((section) => (
               <div key={section.key} className="space-y-3">
                 <div className="flex items-center gap-2 border-b border-slate-200 pb-1.5">
