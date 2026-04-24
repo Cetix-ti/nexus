@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { TagOrganizationModal } from "@/components/analytics/tag-organization-modal";
@@ -424,6 +424,45 @@ function loadFolders(): DashboardFolder[] { try { const r = localStorage.getItem
 function saveFolders(folders: DashboardFolder[]) { try { localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders)); } catch {} }
 function loadRecent(): string[] { try { const r = localStorage.getItem(RECENT_KEY); if (r) return JSON.parse(r); } catch {} return []; }
 function saveRecent(ids: string[]) { try { localStorage.setItem(RECENT_KEY, JSON.stringify(ids)); } catch {} }
+
+// Filtres persistés par dashboard — pour qu'ils soient conservés entre
+// sessions et restitués automatiquement à l'ouverture d'un dashboard.
+interface PersistedFilters {
+  filterOrg: string;
+  filterAgent: string;
+  days: string;
+  customFrom: string;
+  customTo: string;
+}
+const DEFAULT_FILTERS: PersistedFilters = {
+  filterOrg: "all", filterAgent: "all", days: "30", customFrom: "", customTo: "",
+};
+function loadReportFilters(reportId: string): PersistedFilters | null {
+  try {
+    const r = localStorage.getItem(`nexus:report-filters:${reportId}`);
+    if (r) {
+      const parsed = JSON.parse(r);
+      if (parsed && typeof parsed === "object") {
+        return {
+          filterOrg: typeof parsed.filterOrg === "string" ? parsed.filterOrg : "all",
+          filterAgent: typeof parsed.filterAgent === "string" ? parsed.filterAgent : "all",
+          days: typeof parsed.days === "string" ? parsed.days : "30",
+          customFrom: typeof parsed.customFrom === "string" ? parsed.customFrom : "",
+          customTo: typeof parsed.customTo === "string" ? parsed.customTo : "",
+        };
+      }
+    }
+  } catch {}
+  return null;
+}
+function saveReportFilters(reportId: string, f: PersistedFilters) {
+  try { localStorage.setItem(`nexus:report-filters:${reportId}`, JSON.stringify(f)); } catch {}
+}
+function isDashboardView(view: string): boolean {
+  // Les "pseudo-views" (galerie, favoris, récents, tous, dossier) commencent
+  // par "__". Tout le reste est un reportId réel (built-in ou custom).
+  return !view.startsWith("__");
+}
 function loadCollapsedSections(): Record<string, boolean> { try { const r = localStorage.getItem(COLLAPSED_SECTIONS_KEY); if (r) return JSON.parse(r); } catch {} return {}; }
 function saveCollapsedSections(s: Record<string, boolean>) { try { localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify(s)); } catch {} }
 
@@ -752,10 +791,42 @@ export default function ReportsPage() {
   }, [editMode, editHistory, editFuture, dashItems, editBaseline]);
 
   // Filtres globaux (panneau Filtres) — déclarés AVANT `load` car la
-  // callback en dépend.
+  // callback en dépend. Restaurés depuis localStorage à chaque changement
+  // de dashboard (useEffect plus bas) pour que les filtres appliqués
+  // à un dashboard persistent entre sessions.
   const [filterOrg, setFilterOrg] = useState("all");
   const [filterAgent, setFilterAgent] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
+  // Drapeau « on vient de charger des filtres depuis le storage » — évite
+  // que le useEffect de sauvegarde ré-écrive les filtres de l'ancien
+  // dashboard sous la clé du nouveau pendant que les setters asynchrones
+  // se propagent.
+  const skipNextFilterSaveRef = useRef(false);
+
+  // --- Persistance des filtres par dashboard ---
+  // À l'ouverture d'un dashboard (view ≠ pseudo-view), restaure ses
+  // filtres sauvegardés, ou réinitialise aux valeurs par défaut.
+  useEffect(() => {
+    if (!isDashboardView(view)) return;
+    const saved = loadReportFilters(view) ?? DEFAULT_FILTERS;
+    skipNextFilterSaveRef.current = true;
+    setFilterOrg(saved.filterOrg);
+    setFilterAgent(saved.filterAgent);
+    setDays(saved.days);
+    setCustomFrom(saved.customFrom);
+    setCustomTo(saved.customTo);
+  }, [view]);
+
+  // Sauvegarde à chaque modification d'un filtre, sauf juste après un
+  // chargement (pour ne pas re-sauvegarder les valeurs fraîchement lues).
+  useEffect(() => {
+    if (!isDashboardView(view)) return;
+    if (skipNextFilterSaveRef.current) {
+      skipNextFilterSaveRef.current = false;
+      return;
+    }
+    saveReportFilters(view, { filterOrg, filterAgent, days, customFrom, customTo });
+  }, [view, filterOrg, filterAgent, days, customFrom, customTo]);
 
   const load = useCallback(() => {
     setLoading(true);
