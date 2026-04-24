@@ -292,6 +292,28 @@ function detectSource(subject: string, senderEmail: string, body: string): Detec
 }
 
 /**
+ * Converts HTML email content to plain text, preserving line breaks from
+ * block-level elements so that multiline patterns (e.g. "Host: HOSTNAME")
+ * remain detectable by line-anchored regexes.
+ */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:p|div|tr|li|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
  * Cherche TOUS les tokens qui ressemblent à un hostname "CODECLIENT-XXX"
  * (ex: "HVAC-SRV01", "BDU_FS02") dans le sujet ET le corps. Uppercase
  * obligatoire pour le préfixe — évite les faux positifs du type "on host"
@@ -306,7 +328,9 @@ function extractAllClientCodePrefixes(subject: string, body: string): string[] {
   const seen = new Set<string>();
 
   // 1) Priorité : la ligne "Host: XYZ" du body Zabbix.
-  const zabbixHost = body.match(/^\s*Host:\s*([A-Z][A-Z0-9_\-\.]+)\s*$/im);
+  // Pas d'ancre de début de ligne stricte : bodyPreview HTML peut être
+  // aplati en une seule ligne sans retours chariot.
+  const zabbixHost = body.match(/(?:^|[\n\r])\s*Host:\s*([A-Z][A-Z0-9_\-\.]+)/im);
   if (zabbixHost) {
     const name = zabbixHost[1];
     // Préfixe = 2–8 lettres suivies d'un digit OU d'un séparateur. Aligne
@@ -533,7 +557,11 @@ export async function syncMonitoringAlerts(
 
               const senderEmail = msg.from?.emailAddress?.address?.toLowerCase() || "";
               const senderDomain = senderEmail.split("@")[1] || "";
-              const bodyText = msg.bodyPreview || "";
+              // Utilise le corps complet (HTML converti en texte) plutôt que
+              // bodyPreview (255 car.) pour ne pas manquer "Host: VDSA-SRV01"
+              // quand il apparaît après les premiers caractères de l'email.
+              const rawContent = msg.body.content || msg.bodyPreview || "";
+              const bodyText = msg.body.contentType === "html" ? htmlToText(rawContent) : rawContent;
 
               const detected = detectSource(msg.subject, senderEmail, bodyText);
 
@@ -754,6 +782,45 @@ export async function syncMonitoringAlerts(
       } catch (err) {
         errors.push(`Dossier "${folder}": ${err instanceof Error ? err.message : String(err)}`);
       }
+    }
+
+    // ---- Backfill : ré-associe les alertes sans organisation ----
+    // Re-traite les alertes stockées avec organizationId=null en utilisant
+    // les maps org courantes. Corrige les alertes ingérées avant qu'un code
+    // client soit configuré, ou dont le bodyPreview était trop court.
+    try {
+      const unmatched = await prisma.monitoringAlert.findMany({
+        where: { organizationId: null, messageKind: "ALERT" },
+        select: { id: true, subject: true, body: true, senderDomain: true },
+        orderBy: { receivedAt: "desc" },
+        take: 500,
+      });
+      for (const a of unmatched) {
+        let aOrg = domainMap.get(a.senderDomain);
+        if (!aOrg) {
+          const orgName = extractOrgNameFromSubject(a.subject);
+          if (orgName) aOrg = nameMap.get(orgName.toLowerCase().trim()) ?? undefined;
+        }
+        if (!aOrg) {
+          const prefixes = extractAllClientCodePrefixes(a.subject, a.body || "");
+          for (const p of prefixes) {
+            const m = clientCodeMap.get(p);
+            if (m) { aOrg = m; break; }
+          }
+        }
+        if (!aOrg) {
+          const p = extractClientPrefix(a.subject);
+          if (p) aOrg = clientCodeMap.get(p) ?? undefined;
+        }
+        if (aOrg) {
+          await prisma.monitoringAlert.update({
+            where: { id: a.id },
+            data: { organizationId: aOrg.id, organizationName: aOrg.name },
+          });
+        }
+      }
+    } catch {
+      /* non-bloquant */
     }
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));

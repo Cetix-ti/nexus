@@ -23,6 +23,8 @@ export async function PATCH(
     if (body.isResolved) data.resolvedAt = new Date();
   }
   if (body.ticketId !== undefined) data.ticketId = body.ticketId;
+  if (body.organizationId !== undefined) data.organizationId = body.organizationId;
+  if (body.organizationName !== undefined) data.organizationName = body.organizationName;
 
   const updated = await prisma.monitoringAlert.update({ where: { id }, data });
   return NextResponse.json(updated);
