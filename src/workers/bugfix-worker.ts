@@ -52,13 +52,16 @@ interface ClaudeOutput {
 // Shell helpers
 // ----------------------------------------------------------------------------
 async function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<{ stdout: string; stderr: string; code: number }> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const p = spawn(cmd, args, { cwd: opts.cwd ?? REPO_ROOT, env: { ...process.env, ...opts.env } });
     let stdout = ""; let stderr = "";
     p.stdout.on("data", (d) => (stdout += d.toString()));
     p.stderr.on("data", (d) => (stderr += d.toString()));
     p.on("close", (code) => resolve({ stdout, stderr, code: code ?? -1 }));
-    p.on("error", reject);
+    // Résout plutôt que de rejeter sur erreur de spawn (ex: binaire introuvable
+    // ENOENT). Les callers vérifient `code` et logent `stderr` proprement,
+    // sans propager d'exception qui ferait abandonner tout le pipeline.
+    p.on("error", (err) => resolve({ stdout, stderr: stderr + (err instanceof Error ? err.message : String(err)), code: -1 }));
   });
 }
 
@@ -191,7 +194,9 @@ interface ProcessOptions { dryRun?: boolean; baseBranch?: string }
 async function processBug(bug: BugReport, opts: ProcessOptions): Promise<BugFixAttempt> {
   const model = pickModelForSeverity(bug.severity);
   const attempt = await prisma.bugFixAttempt.create({
-    data: { bugId: bug.id, status: "ANALYZING", agentModel: model },
+    // files_changed a une contrainte NOT NULL en base (drift vs schema) —
+    // on fournit l'array vide explicitement pour éviter le crash P2011.
+    data: { bugId: bug.id, status: "ANALYZING", agentModel: model, filesChanged: [] },
   });
   await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "FIX_IN_PROGRESS" } });
 
@@ -334,15 +339,52 @@ async function processBug(bug: BugReport, opts: ProcessOptions): Promise<BugFixA
       return attempt;
     }
 
-    log("Vérif ESLint sur fichiers modifiés…");
-    const eslint = await run("npx", ["eslint", "--max-warnings=50", ...actualChanged.filter((f) => /\.(tsx?|jsx?)$/.test(f))], { cwd });
-    if (eslint.code !== 0 && eslint.stdout.includes("error")) {
-      log(`ESLint errors : ${eslint.stdout.slice(-2000)}`);
-      await finishAttempt("FAILED", { abortReason: "ESLint errors after patch", filesChanged: actualChanged, diffSummary: parsed.diffSummary });
+    // Check ESLint avec baseline : on tolère les erreurs pré-existantes dans
+    // les fichiers modifiés, on fail uniquement si Claude a *introduit* des
+    // erreurs (nombre d'erreurs après > nombre d'erreurs avant).
+    log("Vérif ESLint (baseline vs après fix)…");
+    const jsLike = actualChanged.filter((f) => /\.(tsx?|jsx?)$/.test(f));
+    const regressions: Array<{ file: string; before: number; after: number }> = [];
+    for (const f of jsLike) {
+      // After: lint le fichier dans le worktree (état post-fix).
+      const afterRun = await run("npx", ["eslint", "--format=json", f], { cwd });
+      let after = 0;
+      try {
+        const data = JSON.parse(afterRun.stdout) as Array<{ errorCount?: number }>;
+        after = data.reduce((s, d) => s + (d.errorCount ?? 0), 0);
+      } catch { after = afterRun.code !== 0 ? 1 : 0; }
+
+      // Before: lint la version origin/<baseBranch> du fichier via stdin.
+      // Si le fichier est nouveau (pas sur base), before = 0.
+      const show = await git(["show", `origin/${baseBranch}:${f}`], cwd);
+      let before = 0;
+      if (show.code === 0) {
+        const beforeOut = await new Promise<{ stdout: string; code: number }>((resolve) => {
+          const p = spawn("npx", ["eslint", "--format=json", "--stdin", "--stdin-filename", f], { cwd, env: process.env });
+          let stdout = "";
+          p.stdout.on("data", (d) => (stdout += d.toString()));
+          p.on("close", (code) => resolve({ stdout, code: code ?? -1 }));
+          p.stdin.write(show.stdout);
+          p.stdin.end();
+        });
+        try {
+          const data = JSON.parse(beforeOut.stdout) as Array<{ errorCount?: number }>;
+          before = data.reduce((s, d) => s + (d.errorCount ?? 0), 0);
+        } catch { before = 0; }
+      }
+
+      if (after > before) regressions.push({ file: f, before, after });
+    }
+
+    if (regressions.length > 0) {
+      const summary = regressions.map((r) => `${r.file} ${r.before}→${r.after}`).join(", ");
+      log(`ESLint régression(s) introduite(s) par le fix : ${summary}`);
+      await finishAttempt("FAILED", { abortReason: `ESLint regression: ${summary}`, filesChanged: actualChanged, diffSummary: parsed.diffSummary });
       await cleanupWorktree();
       await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "TRIAGED" } });
       return attempt;
     }
+    if (jsLike.length > 0) log(`ESLint OK (pas de régression sur ${jsLike.length} fichier(s)).`);
 
     // 7. Commit + push + PR (dans le worktree).
     log("Commit…");
@@ -428,6 +470,7 @@ async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
   const bugIdArg = args.find((a) => a.startsWith("--bug-id="))?.split("=")[1];
+  const bugIdsArg = args.find((a) => a.startsWith("--bug-ids="))?.split("=")[1];
   const maxPerRun = parseInt(args.find((a) => a.startsWith("--max="))?.split("=")[1] ?? String(DEFAULT_MAX_PER_RUN), 10);
 
   console.log(`[bugfix-worker] Démarrage (dryRun=${dryRun}, max=${maxPerRun})`);
@@ -437,6 +480,14 @@ async function main() {
     const b = await prisma.bugReport.findUnique({ where: { id: bugIdArg } });
     if (!b) { console.error("Bug introuvable"); process.exit(1); }
     bugs = [b];
+  } else if (bugIdsArg) {
+    // Liste explicite fournie par l'UI : on respecte l'ordre et on limite à
+    // max par sécurité. N'importe quel statut passe (l'appelant est responsable
+    // d'avoir approuvé avant).
+    const ids = bugIdsArg.split(",").map((s) => s.trim()).filter(Boolean);
+    const found = await prisma.bugReport.findMany({ where: { id: { in: ids } } });
+    const byId = new Map(found.map((b) => [b.id, b]));
+    bugs = ids.map((id) => byId.get(id)).filter((b): b is BugReport => !!b).slice(0, maxPerRun);
   } else {
     bugs = await prisma.bugReport.findMany({
       where: { status: "APPROVED_FOR_FIX" },
@@ -454,6 +505,39 @@ async function main() {
   }
 
   console.log("\n[bugfix-worker] Terminé.");
+
+  // Relance demandée (flag posé par /api/v1/bugs/run-fix-now OU re-posé par
+  // un run précédent quand il restait > maxPerRun bugs). Le worker cascade
+  // ainsi tout seul jusqu'à vider la queue APPROVED_FOR_FIX.
+  // Désactivé en dry-run et quand --bug-id (singulier) est utilisé (usage
+  // ciblé one-shot). --bug-ids (pluriel) est OK : on laisse le prochain run
+  // prendre les prochains APPROVED_FOR_FIX dans l'ordre normal (severity desc).
+  if (!dryRun && !bugIdArg) {
+    const flag = path.join(os.tmpdir(), "nexus-bugfix-rerun.flag");
+    try {
+      await fs.access(flag);
+      await fs.unlink(flag);
+      const remaining = await prisma.bugReport.count({ where: { status: "APPROVED_FOR_FIX" } });
+      if (remaining > 0) {
+        console.log(`[bugfix-worker] Flag rerun détecté · ${remaining} bug(s) restants · relance…`);
+        // Re-pose le flag pour que le prochain run cascade aussi s'il reste
+        // encore du travail après lui. On le fait seulement si remaining >
+        // maxPerRun ; sinon ce sera le dernier run, pas besoin de cascader.
+        if (remaining > maxPerRun) {
+          await fs.writeFile(flag, String(Date.now()));
+        }
+        const child = spawn("npx", ["tsx", __filename, `--max=${maxPerRun}`], {
+          cwd: REPO_ROOT,
+          env: process.env,
+          detached: true,
+          stdio: "ignore",
+        });
+        child.unref();
+      } else {
+        console.log("[bugfix-worker] Flag rerun détecté mais plus de bug à traiter.");
+      }
+    } catch { /* pas de flag — run normal terminé */ }
+  }
 }
 
 if (require.main === module) {

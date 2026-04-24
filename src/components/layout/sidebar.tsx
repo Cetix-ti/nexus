@@ -35,6 +35,7 @@ import {
   Search,
   TrendingUp,
   CheckSquare,
+  Bug,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/stores/sidebar";
@@ -136,18 +137,27 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Supervision", href: "/supervision", icon: BarChart3, minRole: "SUPERVISOR" },
     ],
   },
-  // Bibliothèques — contenus documentaires transversaux (Particularités,
-  // Politiques, Logiciels, Changements). Chaque module a un onglet dédié
-  // dans la fiche organisation ; cette section offre la vue cross-clients.
+  // Bibliothèques — contenu documentaire à consulter (catalogues + KB).
+  // Workflows opérationnels (approbations, changements, baseline) déplacés
+  // dans "Gouvernance" pour séparer "contenu à consulter" de "actions à faire".
   {
     label: "Bibliothèques",
     items: [
-      { label: "Particularités clientes", href: "/particularities", icon: Lightbulb, minRole: "TECHNICIAN" },
-      { label: "Politiques",              href: "/policies",        icon: ShieldCheck, minRole: "TECHNICIAN" },
       { label: "Logiciels",               href: "/software",        icon: Package,     minRole: "TECHNICIAN" },
-      { label: "Changements",             href: "/changes",         icon: GitCommit,   minRole: "TECHNICIAN" },
-      { label: "Approbations",            href: "/approvals",       icon: CheckSquare, minRole: "TECHNICIAN" },
-      { label: "Baseline de maturité",    href: "/baseline",        icon: TrendingUp,  minRole: "SUPERVISOR" },
+      { label: "Politiques",              href: "/policies",        icon: ShieldCheck, minRole: "TECHNICIAN" },
+      { label: "Particularités clientes", href: "/particularities", icon: Lightbulb,   minRole: "TECHNICIAN" },
+      { label: "Base de connaissances",   href: "/knowledge",       icon: BookOpen },
+    ],
+  },
+  // Gouvernance — workflows d'approbation, change mgmt, évaluation de
+  // maturité. Ces items imposent une action ou un suivi, contrairement aux
+  // Bibliothèques qui sont du contenu de référence.
+  {
+    label: "Gouvernance",
+    items: [
+      { label: "Approbations",         href: "/approvals", icon: CheckSquare, minRole: "TECHNICIAN" },
+      { label: "Changements",          href: "/changes",   icon: GitCommit,   minRole: "TECHNICIAN" },
+      { label: "Baseline de maturité", href: "/baseline",  icon: TrendingUp,  minRole: "SUPERVISOR" },
     ],
   },
   {
@@ -176,7 +186,6 @@ const NAV_SECTIONS: NavSection[] = [
           },
         ],
       },
-      { label: "Base de connaissances", href: "/knowledge", icon: BookOpen },
     ],
   },
   {
@@ -199,6 +208,12 @@ const NAV_SECTIONS: NavSection[] = [
           { label: "Propositions", href: "/intelligence/proposals" },
           { label: "Coaching techs", href: "/intelligence/techs" },
         ],
+      },
+      {
+        label: "Bug reports",
+        href: "/admin/bugs",
+        icon: Bug,
+        minRole: "MSP_ADMIN",
       },
     ],
   },
