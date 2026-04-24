@@ -105,7 +105,7 @@ export default function ExpenseDetailPage() {
           <h3 className="text-[15px] font-semibold text-slate-900 flex items-center gap-2"><Wallet className="h-4 w-4 text-slate-500" /> Détail des entrées</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[620px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/60 text-left">
                 <th className="px-4 py-3 font-medium text-slate-500">Date</th>
