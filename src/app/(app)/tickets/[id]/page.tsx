@@ -1755,6 +1755,17 @@ export default function TicketDetailPage() {
                         setCatLevel3(l3);
                         const finalId = l3 || l2 || l1;
                         await patchTicketField({ categoryId: finalId });
+                        // Appliquer = feedback positif implicite (équivalent thumbs up).
+                        if (aiCatSuggestion.invocationId) {
+                          fetch(
+                            `/api/v1/ai/invocations/${aiCatSuggestion.invocationId}/action`,
+                            {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ action: "accepted" }),
+                            },
+                          ).catch(() => {});
+                        }
                         const cat = categories.find((c) => c.id === finalId);
                         (ticket as { categoryName?: string }).categoryName =
                           cat?.name || "—";
