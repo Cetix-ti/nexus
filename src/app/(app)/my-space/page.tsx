@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { TimeEntryCalendar } from "@/components/billing/time-entry-calendar";
 import { QuickAddOnsiteTimeModal } from "@/components/my-space/quick-add-onsite-time-modal";
+import { MultiOrgTripModal } from "@/components/my-space/multi-org-trip-modal";
 
 // ===========================================================================
 // Types
@@ -166,6 +167,9 @@ export default function MySpacePage() {
   const [quickTripBusy, setQuickTripBusy] = useState<string | null>(null);
   const [quickAddTravel, setQuickAddTravel] = useState<{
     startsAt: string; organizationId: string; organizationName: string;
+  } | null>(null);
+  const [multiOrgTrip, setMultiOrgTrip] = useState<{
+    eventDate: string; organizations: Array<{ id: string; name: string }>;
   } | null>(null);
   // Filtre mois pour "Toutes mes dépenses" + kilométrage. Format YYYY-MM.
   // Défaut = mois courant. Utilisé pour les deux endpoints.
@@ -742,34 +746,76 @@ export default function MySpacePage() {
                       Ces déplacements sont dans ton calendrier mais aucun tech n&apos;a encore enregistré de temps onsite pour ce client ce jour-là.
                     </p>
                     <ul className="mt-2 space-y-1">
-                      {missingTravels.slice(0, 5).map((m) => (
-                        <li
-                          key={m.eventId}
-                          className="text-[12px] text-amber-900 flex items-center gap-2"
-                        >
-                          <span className="tabular-nums text-amber-700 w-14 shrink-0">
-                            {new Date(m.startsAt).toLocaleDateString("fr-CA", { day: "2-digit", month: "short" })}
-                          </span>
-                          <span className="font-medium flex-1 min-w-0 truncate">
-                            {m.organizationName}
-                            {!m.billToClient && (
-                              <span className="ml-1.5 text-[10px] text-amber-600 font-normal">(non facturé)</span>
-                            )}
-                          </span>
-                          {m.billToClient ? (
-                            <button
-                              type="button"
-                              onClick={() => setQuickAddTravel({
-                                startsAt: m.startsAt,
-                                organizationId: m.organizationId,
-                                organizationName: m.organizationName,
-                              })}
-                              className="shrink-0 inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100 hover:border-amber-400 transition-colors"
+                      {(() => {
+                        // Groupe les missingTravels par eventId pour détecter
+                        // les tournées multi-clients (≥ 2 orgs sur le même event).
+                        const groups = new Map<string, typeof missingTravels>();
+                        for (const m of missingTravels) {
+                          const arr = groups.get(m.eventId) ?? [];
+                          arr.push(m);
+                          groups.set(m.eventId, arr);
+                        }
+                        return Array.from(groups.entries()).slice(0, 5).map(([eventId, items]) => {
+                          if (items.length >= 2) {
+                            // Tournée multi-clients — un seul bouton qui ouvre le modal multi-org.
+                            const billable = items.filter((i) => i.billToClient);
+                            return (
+                              <li key={eventId} className="text-[12px] text-amber-900 flex items-center gap-2">
+                                <span className="tabular-nums text-amber-700 w-14 shrink-0">
+                                  {new Date(items[0].startsAt).toLocaleDateString("fr-CA", { day: "2-digit", month: "short" })}
+                                </span>
+                                <span className="font-medium flex-1 min-w-0 truncate">
+                                  Tournée — {items.map((i) => i.organizationName).join(", ")}
+                                  <span className="ml-1.5 text-[10px] text-indigo-700 font-normal">({items.length} clients)</span>
+                                </span>
+                                {billable.length >= 2 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setMultiOrgTrip({
+                                      eventDate: items[0].startsAt,
+                                      organizations: billable.map((i) => ({ id: i.organizationId, name: i.organizationName })),
+                                    })}
+                                    className="shrink-0 inline-flex items-center gap-1 rounded-md border border-indigo-300 bg-white px-2 py-0.5 text-[11px] font-medium text-indigo-800 hover:bg-indigo-100 hover:border-indigo-400 transition-colors"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    Saisies multi-clients
+                                  </button>
+                                ) : (
+                                  <span className="text-[10.5px] text-amber-700 italic">Traiter individuellement</span>
+                                )}
+                              </li>
+                            );
+                          }
+                          // Cas mono-client — UI inchangée
+                          const m = items[0];
+                          return (
+                            <li
+                              key={m.eventId}
+                              className="text-[12px] text-amber-900 flex items-center gap-2"
                             >
-                              <Plus className="h-3 w-3" />
-                              Lier à un ticket
-                            </button>
-                          ) : (
+                              <span className="tabular-nums text-amber-700 w-14 shrink-0">
+                                {new Date(m.startsAt).toLocaleDateString("fr-CA", { day: "2-digit", month: "short" })}
+                              </span>
+                              <span className="font-medium flex-1 min-w-0 truncate">
+                                {m.organizationName}
+                                {!m.billToClient && (
+                                  <span className="ml-1.5 text-[10px] text-amber-600 font-normal">(non facturé)</span>
+                                )}
+                              </span>
+                              {m.billToClient ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setQuickAddTravel({
+                                    startsAt: m.startsAt,
+                                    organizationId: m.organizationId,
+                                    organizationName: m.organizationName,
+                                  })}
+                                  className="shrink-0 inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100 hover:border-amber-400 transition-colors"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  Lier à un ticket
+                                </button>
+                              ) : (
                             <button
                               type="button"
                               disabled={quickTripBusy === m.eventId}
@@ -803,12 +849,17 @@ export default function MySpacePage() {
                             </button>
                           )}
                         </li>
-                      ))}
-                      {missingTravels.length > 5 && (
-                        <li className="text-[11.5px] text-amber-700 italic">
-                          + {missingTravels.length - 5} autre{missingTravels.length - 5 > 1 ? "s" : ""}…
-                        </li>
-                      )}
+                      );
+                        });
+                      })()}
+                      {(() => {
+                        const groupCount = new Set(missingTravels.map((m) => m.eventId)).size;
+                        return groupCount > 5 ? (
+                          <li className="text-[11.5px] text-amber-700 italic">
+                            + {groupCount - 5} autre{groupCount - 5 > 1 ? "s" : ""}…
+                          </li>
+                        ) : null;
+                      })()}
                     </ul>
                   </div>
                 </div>
@@ -1146,6 +1197,19 @@ export default function MySpacePage() {
           organizationId={quickAddTravel.organizationId}
           organizationName={quickAddTravel.organizationName}
           onCreated={() => { setQuickAddTravel(null); loadExpensesTab(); }}
+        />
+      )}
+
+      {multiOrgTrip && (
+        <MultiOrgTripModal
+          open
+          onClose={() => setMultiOrgTrip(null)}
+          eventDate={multiOrgTrip.eventDate}
+          organizations={multiOrgTrip.organizations}
+          onCreated={(created, failed) => {
+            if (failed === 0) setMultiOrgTrip(null);
+            void loadExpensesTab();
+          }}
         />
       )}
     </div>
