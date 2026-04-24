@@ -20,6 +20,43 @@ const SCALE_PRESETS: Array<{ label: string; value: number; hint: string }> = [
   { label: "Géant",      value: 1.75, hint: "+75%" },
 ];
 
+function ScaleSection({
+  label, hint, value, onChange,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <section>
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+        {label}
+      </h3>
+      <p className="text-[10.5px] text-slate-500 mb-2 leading-relaxed">{hint}</p>
+      <div className="grid grid-cols-5 gap-1.5">
+        {SCALE_PRESETS.map((p) => (
+          <button
+            key={p.value}
+            type="button"
+            onClick={() => onChange(p.value)}
+            className={cn(
+              "rounded-md border px-1.5 py-2 text-center transition-colors",
+              value === p.value
+                ? "border-blue-500 bg-blue-50 text-blue-700"
+                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+            )}
+            title={`${p.label} (${p.hint})`}
+          >
+            <div className="text-[11px] font-semibold">{p.label}</div>
+            <div className="text-[9.5px] text-slate-400 mt-0.5">{p.hint}</div>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 const CHART_TYPE_OPTIONS: Array<{ value: ChartType; label: string }> = [
   { value: "number",         label: "Nombre" },
   { value: "progress",       label: "Progression" },
@@ -58,8 +95,12 @@ export function DashboardItemAppearance({
   item, supportsStyleOverride, onChange, onClose,
 }: Props) {
   const fontScale = item.fontScale ?? 1;
+  const titleScale = item.titleScale ?? 1;
+  const chartScale = item.chartScale ?? 1;
   const hasAnyOverride =
     fontScale !== 1 ||
+    titleScale !== 1 ||
+    chartScale !== 1 ||
     !!item.overrideColor ||
     !!item.overrideChartType;
 
@@ -80,31 +121,33 @@ export function DashboardItemAppearance({
           La définition du widget reste inchangée ailleurs.
         </p>
 
-        {/* ---- Taille du contenu ---- */}
-        <section>
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
-            Taille du contenu
-          </h3>
-          <div className="grid grid-cols-5 gap-1.5">
-            {SCALE_PRESETS.map((p) => (
-              <button
-                key={p.value}
-                type="button"
-                onClick={() => onChange({ fontScale: p.value === 1 ? undefined : p.value })}
-                className={cn(
-                  "rounded-md border px-1.5 py-2 text-center transition-colors",
-                  fontScale === p.value
-                    ? "border-blue-500 bg-blue-50 text-blue-700"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
-                )}
-                title={`${p.label} (${p.hint})`}
-              >
-                <div className="text-[11px] font-semibold">{p.label}</div>
-                <div className="text-[9.5px] text-slate-400 mt-0.5">{p.hint}</div>
-              </button>
-            ))}
-          </div>
-        </section>
+        {/* ---- Taille globale ---- */}
+        <ScaleSection
+          label="Taille globale"
+          hint="Agrandit tout le widget (titre + graphique) d'un coup."
+          value={fontScale}
+          onChange={(v) => onChange({ fontScale: v === 1 ? undefined : v })}
+        />
+
+        {/* ---- Taille du titre ---- */}
+        {supportsStyleOverride && (
+          <ScaleSection
+            label="Taille du titre"
+            hint="Ajuste uniquement le nom du widget au-dessus du graphique."
+            value={titleScale}
+            onChange={(v) => onChange({ titleScale: v === 1 ? undefined : v })}
+          />
+        )}
+
+        {/* ---- Taille du graphique ---- */}
+        {supportsStyleOverride && (
+          <ScaleSection
+            label="Taille du graphique"
+            hint="Ajuste le graphique et ses libellés (axes, légende, valeurs) sans toucher au titre."
+            value={chartScale}
+            onChange={(v) => onChange({ chartScale: v === 1 ? undefined : v })}
+          />
+        )}
 
         {/* ---- Couleur & type (widgets personnalisés uniquement) ---- */}
         {supportsStyleOverride ? (
@@ -179,7 +222,13 @@ export function DashboardItemAppearance({
 
       <div className="border-t border-slate-200 px-4 py-3 shrink-0 flex items-center justify-between gap-2">
         <button
-          onClick={() => onChange({ fontScale: undefined, overrideColor: undefined, overrideChartType: undefined })}
+          onClick={() => onChange({
+            fontScale: undefined,
+            titleScale: undefined,
+            chartScale: undefined,
+            overrideColor: undefined,
+            overrideChartType: undefined,
+          })}
           disabled={!hasAnyOverride}
           className="text-[12px] text-slate-600 hover:text-slate-900 inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
           title="Retirer tous les ajustements"

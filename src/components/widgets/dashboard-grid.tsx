@@ -26,11 +26,23 @@ export interface DashboardItem {
   w: number; // 1-20 columns
   h: number; // 1-12 row units
   /**
-   * Échelle visuelle du contenu (1 = normal, 1.5 = 150%). Appliquée via
-   * CSS zoom dans le rendu de la cellule — permet d'agrandir le texte
-   * et les graphiques d'un widget spécifique sur un dashboard donné.
+   * Échelle visuelle globale du contenu (1 = normal, 1.5 = 150%). Appliquée
+   * via CSS zoom au wrapper externe — agrandit proportionnellement TOUT le
+   * widget (titre + graphique).
    */
   fontScale?: number;
+  /**
+   * Échelle du TITRE uniquement — appliquée à un sous-wrapper autour du
+   * nom du widget. Permet d'agrandir le titre sans toucher au graphique.
+   * Widgets personnalisés uniquement.
+   */
+  titleScale?: number;
+  /**
+   * Échelle du GRAPHIQUE uniquement — appliquée au wrapper qui entoure
+   * le chart (incluant ses axes, légende et data labels). Permet
+   * d'agrandir le graphique sans toucher au titre. Widgets custom.
+   */
+  chartScale?: number;
   /**
    * Override de couleur pour ce widget dans ce dashboard uniquement.
    * S'applique aux widgets personnalisés (QueryWidget).

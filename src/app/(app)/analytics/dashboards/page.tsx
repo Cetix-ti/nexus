@@ -2467,6 +2467,8 @@ export default function ReportsPage() {
                       customTo={days === "custom" ? customTo : undefined}
                       overrideColor={item?.overrideColor}
                       overrideChartType={item?.overrideChartType}
+                      titleScale={item?.titleScale}
+                      chartScale={item?.chartScale}
                     />;
                 }
                 })();
@@ -2990,6 +2992,8 @@ function QueryWidgetRenderer({
   customTo,
   overrideColor,
   overrideChartType,
+  titleScale = 1,
+  chartScale = 1,
 }: {
   widgetId: string;
   /**
@@ -3006,6 +3010,10 @@ function QueryWidgetRenderer({
   overrideColor?: string;
   /** Override du type de graphique pour ce widget dans ce dashboard uniquement. */
   overrideChartType?: string;
+  /** Échelle du titre (rendu séparément au-dessus du graphique). */
+  titleScale?: number;
+  /** Échelle du graphique (wrapper zoom autour de WidgetChart). */
+  chartScale?: number;
 }) {
   const [result, setResult] = useState<{ label: string; value: number }[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -3082,14 +3090,24 @@ function QueryWidgetRenderer({
   return (
     <Card>
       <CardContent className="p-4">
-        <WidgetChart
-          results={result}
-          chartType={(overrideChartType || widget.chartType) as ChartType}
-          color={overrideColor || widget.color || "#2563eb"}
-          name={widget.name}
-          aggregate={typeof widget.query?.aggregate === "string" ? widget.query.aggregate : undefined}
-          onDrillDown={handleDrillDown}
-        />
+        {widget.name && (
+          <div
+            style={titleScale !== 1 ? { zoom: titleScale } : undefined}
+            className="mb-1"
+          >
+            <p className="text-[12px] font-semibold text-slate-800">{widget.name}</p>
+          </div>
+        )}
+        <div style={chartScale !== 1 ? { zoom: chartScale } : undefined}>
+          <WidgetChart
+            results={result}
+            chartType={(overrideChartType || widget.chartType) as ChartType}
+            color={overrideColor || widget.color || "#2563eb"}
+            name=""
+            aggregate={typeof widget.query?.aggregate === "string" ? widget.query.aggregate : undefined}
+            onDrillDown={handleDrillDown}
+          />
+        </div>
       </CardContent>
     </Card>
   );

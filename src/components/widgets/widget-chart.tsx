@@ -56,6 +56,11 @@ interface WidgetChartProps {
   results: ChartDatum[];
   chartType: ChartType;
   color: string;
+  /**
+   * Titre affiché au-dessus du graphique. Passer une chaîne vide pour
+   * masquer complètement le titre interne (utile quand le caller rend
+   * le titre séparément pour lui appliquer une taille distincte).
+   */
   name: string;
   /** Optionnel — affiché sous la valeur en mode "number" (ex: "Somme") */
   aggregate?: string;
@@ -80,7 +85,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
   if (chartType === "number" || isSingle) {
     return (
       <div className="text-center py-4">
-        <p className="text-[11px] text-slate-500 mb-1">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-1">{name}</p>}
         <p className="text-3xl font-bold tabular-nums" style={{ color }}>
           {results[0].value.toLocaleString("fr-CA")}
         </p>
@@ -94,7 +99,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
     return (
       <div className="py-4 space-y-2">
         <div className="flex justify-between">
-          <span className="text-[11px] text-slate-500">{name}</span>
+          {name && <span className="text-[11px] text-slate-500">{name}</span>}
           <span className="text-[14px] font-bold" style={{ color }}>{pct}%</span>
         </div>
         <div className="h-3 rounded-full bg-slate-100 overflow-hidden">
@@ -108,7 +113,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
     const drillable = !!onDrillDown;
     return (
       <div className="py-2">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <div className="flex items-end gap-1 h-28">
           {results.map((r, i) => {
             const content = (
@@ -144,7 +149,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
     const drillable = !!onDrillDown;
     return (
       <div className="py-2 space-y-1.5">
-        <p className="text-[11px] text-slate-500 mb-1">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-1">{name}</p>}
         {results.map((r, i) => {
           const inner = (
             <>
@@ -180,7 +185,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
   if (chartType === "line") {
     return (
       <div className="py-2">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -197,7 +202,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
   if (chartType === "area") {
     return (
       <div className="py-2">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <ResponsiveContainer width="100%" height={220}>
           <AreaChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -214,7 +219,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
   if (chartType === "pie" || chartType === "donut") {
     return (
       <div className="py-2">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <ResponsiveContainer width="100%" height={220}>
           <PieChart>
             <Pie
@@ -250,7 +255,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
     const scatterData = results.map((r, i) => ({ x: i + 1, y: r.value, label: r.label }));
     return (
       <div className="py-2">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <ResponsiveContainer width="100%" height={220}>
           <ReScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -267,7 +272,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
   if (chartType === "radar") {
     return (
       <div className="py-2">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <ResponsiveContainer width="100%" height={240}>
           <RadarChart data={results}>
             <PolarGrid stroke="#e2e8f0" />
@@ -308,7 +313,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
     }
     return (
       <div className="py-2">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <ResponsiveContainer width="100%" height={240}>
           <Sankey
             data={{ nodes, links }}
@@ -328,7 +333,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
   if (chartType === "combo" || chartType === "stacked_bar") {
     return (
       <div className="py-2">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -350,7 +355,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
     const maxVal2 = sorted[0]?.value ?? 1;
     return (
       <div className="py-2">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <div className="space-y-1">
           {sorted.map((r, i) => {
             const widthPct = Math.max(10, (r.value / maxVal2) * 100);
@@ -379,7 +384,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
     }));
     return (
       <div className="py-2">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <ResponsiveContainer width="100%" height={240}>
           <Treemap
             data={tmData}
@@ -409,7 +414,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
     const cols = Math.ceil(Math.sqrt(results.length));
     return (
       <div className="py-2">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
           {results.map((r, i) => {
             const intensity = r.value / maxVal;
@@ -437,7 +442,7 @@ export function WidgetChart({ results, chartType, color, name, aggregate, onDril
     const angle = -90 + pct * 180;
     return (
       <div className="py-2 flex flex-col items-center">
-        <p className="text-[11px] text-slate-500 mb-2">{name}</p>
+        {name && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <svg viewBox="0 0 200 120" className="w-48 h-28">
           <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#e2e8f0" strokeWidth={16} strokeLinecap="round" />
           <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke={color} strokeWidth={16} strokeLinecap="round"
