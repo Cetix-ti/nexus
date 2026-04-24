@@ -2138,6 +2138,10 @@ model OrgMileageRate {
   kmRoundTrip    Float        @map("km_round_trip")
   billToClient   Boolean      @default(true) @map("bill_to_client")
   agentRatePerKm Float        @default(0.55) @map("agent_rate_per_km")
+  // Forfait fixe par déplacement (en $). Si défini, remplace le calcul
+  // km A/R × taux global pour la facturation au client. Null = mode
+  // kilométrique classique.
+  flatFee        Float?       @map("flat_fee")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
