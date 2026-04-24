@@ -897,7 +897,7 @@ export default function OrganizationDetailPage() {
   useEffect(() => {
     fetch("/api/v1/me")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d?.capabilities) setUserCapabilities(d.capabilities); })
+      .then((d) => { const caps = d?.effectiveCapabilities ?? d?.capabilities; if (caps) setUserCapabilities(caps); })
       .catch(() => {});
   }, []);
   const canFinances = userCapabilities.includes("finances");

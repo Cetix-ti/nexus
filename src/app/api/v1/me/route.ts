@@ -24,7 +24,19 @@ export async function GET() {
       },
     });
 
-    return NextResponse.json(user ?? { id: me.id, avatar: null, preferences: null, mfaEnabled: false, signature: null, signatureHtml: null });
+    // Capacités effectives = union des capacités personnelles (user.capabilities)
+    // et des permissions accordées au rôle (me.rolePermissions). La vérif
+    // serveur (hasCapability) fait déjà cette union ; le frontend doit avoir
+    // la même vue pour que les gates côté client (ex. canFinances) soient
+    // cohérents avec les guards API.
+    const personalCaps: string[] = (user?.capabilities as string[] | null) ?? [];
+    const effectiveCapabilities = [...new Set([...personalCaps, ...me.rolePermissions])];
+
+    return NextResponse.json(
+      user
+        ? { ...user, effectiveCapabilities }
+        : { id: me.id, avatar: null, preferences: null, mfaEnabled: false, signature: null, signatureHtml: null, effectiveCapabilities }
+    );
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 });
   }
