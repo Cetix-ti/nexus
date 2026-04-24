@@ -108,6 +108,12 @@ export interface TimeEntry {
    * Ignoré par le moteur de billing mais préservé tel quel en base.
    */
   hasTravelBilled?: boolean;
+  /**
+   * Durée du trajet (aller-retour) en minutes quand hasTravelBilled=true.
+   * Source de vérité unique pour le temps de trajet — l'onglet Déplacements
+   * du ticket dérive ses entrées directement de ce champ.
+   */
+  travelDurationMinutes?: number | null;
   // Coverage decision (computed by billing engine)
   coverageStatus: CoverageStatus;
   coverageReason: string;     // human-readable explanation

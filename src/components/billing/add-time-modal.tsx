@@ -124,6 +124,9 @@ export function AddTimeModal({
   const [isWeekend, setIsWeekend] = useState(false);
   const [forceNonBillable, setForceNonBillable] = useState(false);
   const [hasTravelBilled, setHasTravelBilled] = useState(false);
+  // Temps de trajet (minutes) quand un déplacement est facturé. Synchronisé
+  // avec l'onglet Déplacements du ticket (même donnée en source unique).
+  const [travelDurationMinutes, setTravelDurationMinutes] = useState<number | "">("");
   const [submitting, setSubmitting] = useState(false);
 
   // Pré-remplissage des champs depuis l'entrée à éditer. Déclenché quand
@@ -144,6 +147,7 @@ export function AddTimeModal({
       setIsWeekend(false);
       setForceNonBillable(false);
       setHasTravelBilled(false);
+      setTravelDurationMinutes("");
       return;
     }
     // Édition : on reconstitue date/heure depuis startedAt/endedAt.
@@ -165,6 +169,9 @@ export function AddTimeModal({
     setIsAfterHours(!!editingEntry.isAfterHours);
     setIsWeekend(!!editingEntry.isWeekend);
     setHasTravelBilled(!!editingEntry.hasTravelBilled);
+    setTravelDurationMinutes(
+      editingEntry.travelDurationMinutes != null ? editingEntry.travelDurationMinutes : "",
+    );
     // "Forcer non facturable" n'est pas stocké — on le dérive du statut
     // de couverture (non_billable) pour préserver le choix de l'utilisateur.
     setForceNonBillable(editingEntry.coverageStatus === "non_billable");
@@ -274,6 +281,7 @@ export function AddTimeModal({
     setIsWeekend(false);
     setForceNonBillable(false);
     setHasTravelBilled(false);
+    setTravelDurationMinutes("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -309,6 +317,9 @@ export function AddTimeModal({
         isUrgent: false,
         isOnsite,
         hasTravelBilled,
+        travelDurationMinutes: hasTravelBilled && typeof travelDurationMinutes === "number" && travelDurationMinutes > 0
+          ? travelDurationMinutes
+          : null,
         // Preview seulement — le serveur recalcule autoritairement via
         // resolveDecisionForEntry(). On l'envoie pour compat mais le POST
         // remplace ces 4 champs par la décision serveur.
@@ -523,8 +534,41 @@ export function AddTimeModal({
             <div className="mt-2 border-t border-slate-200 pt-2 space-y-1">
               <label className="flex items-center justify-between gap-3 px-2 py-1.5">
                 <span className="text-[13px] text-slate-700">Facturer un déplacement</span>
-                <Switch checked={hasTravelBilled} onCheckedChange={setHasTravelBilled} />
+                <Switch
+                  checked={hasTravelBilled}
+                  onCheckedChange={(v) => {
+                    setHasTravelBilled(v);
+                    // Si on désactive, efface la durée de trajet.
+                    if (!v) setTravelDurationMinutes("");
+                  }}
+                />
               </label>
+              {hasTravelBilled && (
+                <div className="px-2 py-1.5">
+                  <label className="flex items-center justify-between gap-3">
+                    <span className="text-[12.5px] text-slate-700">
+                      Temps de trajet (A/R) — minutes
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={24 * 60}
+                      step={5}
+                      value={travelDurationMinutes === "" ? "" : travelDurationMinutes}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setTravelDurationMinutes(v === "" ? "" : Math.max(0, Number(v) || 0));
+                      }}
+                      placeholder="Ex : 45"
+                      className="w-24 rounded-md border border-slate-300 bg-white px-2 py-1 text-[13px] text-slate-900 text-right focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </label>
+                  <p className="mt-1 text-[10.5px] text-slate-500 leading-relaxed">
+                    Synchronisé avec l&apos;onglet <strong>Déplacements</strong> du ticket —
+                    une seule saisie, visible des deux côtés.
+                  </p>
+                </div>
+              )}
               <label className="flex items-center justify-between gap-3 px-2 py-1.5">
                 <span className="text-[13px] text-slate-700">Forcer non-facturable</span>
                 <Switch checked={forceNonBillable} onCheckedChange={setForceNonBillable} />

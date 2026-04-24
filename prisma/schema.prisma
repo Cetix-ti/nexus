@@ -1505,6 +1505,10 @@ model TimeEntry {
   /// sur place. Utilisé par les widgets analytics pour compter les déplacements
   /// et par la détection de doublons même-jour même-client.
   hasTravelBilled Boolean   @default(false) @map("has_travel_billed")
+  /// Durée du trajet (aller-retour) en minutes quand hasTravelBilled=true.
+  /// Synchronisé avec le déplacement affiché dans l'onglet Déplacements du
+  /// ticket : une seule source de vérité pour le temps de trajet.
+  travelDurationMinutes Int? @map("travel_duration_minutes")
   coverageStatus  String    @default("pending") @map("coverage_status")
   coverageReason  String    @default("") @map("coverage_reason")
   hourlyRate      Float?    @map("hourly_rate")

@@ -19,6 +19,7 @@ export interface TimeEntryRow {
   isUrgent: boolean;
   isOnsite: boolean;
   hasTravelBilled: boolean;
+  travelDurationMinutes: number | null;
   coverageStatus: string;
   coverageReason: string;
   hourlyRate: number | null;
@@ -104,6 +105,7 @@ export async function listTimeEntries(
     isUrgent: r.isUrgent,
     isOnsite: r.isOnsite,
     hasTravelBilled: r.hasTravelBilled,
+    travelDurationMinutes: r.travelDurationMinutes ?? null,
     coverageStatus: r.coverageStatus,
     coverageReason: r.coverageReason,
     hourlyRate: r.hourlyRate,
@@ -128,6 +130,7 @@ export async function createTimeEntry(input: {
   isUrgent?: boolean;
   isOnsite?: boolean;
   hasTravelBilled?: boolean;
+  travelDurationMinutes?: number | null;
   // Ces 4 champs sont ignorés (laissés pour compat) — le serveur les
   // recalcule via resolveDecisionForEntry() avec son état de vérité.
   coverageStatus?: string;
@@ -176,6 +179,7 @@ export async function createTimeEntry(input: {
       isUrgent: input.isUrgent ?? false,
       isOnsite: input.isOnsite ?? false,
       hasTravelBilled: input.hasTravelBilled ?? false,
+      travelDurationMinutes: input.hasTravelBilled ? (input.travelDurationMinutes ?? null) : null,
       coverageStatus: decision.status,
       coverageReason: decision.reason,
       hourlyRate: decision.rate ?? null,
@@ -228,7 +232,14 @@ export async function updateTimeEntry(id: string, patch: any) {
   if (patch.isWeekend !== undefined) data.isWeekend = patch.isWeekend;
   if (patch.isUrgent !== undefined) data.isUrgent = patch.isUrgent;
   if (patch.isOnsite !== undefined) data.isOnsite = patch.isOnsite;
-  if (patch.hasTravelBilled !== undefined) data.hasTravelBilled = patch.hasTravelBilled;
+  if (patch.hasTravelBilled !== undefined) {
+    data.hasTravelBilled = patch.hasTravelBilled;
+    // Si on décoche "déplacement facturé", efface aussi la durée synchro.
+    if (!patch.hasTravelBilled) data.travelDurationMinutes = null;
+  }
+  if (patch.travelDurationMinutes !== undefined) {
+    data.travelDurationMinutes = patch.travelDurationMinutes;
+  }
   if (patch.coverageStatus !== undefined) data.coverageStatus = patch.coverageStatus;
   if (patch.coverageReason !== undefined) data.coverageReason = patch.coverageReason;
   if (patch.hourlyRate !== undefined) data.hourlyRate = patch.hourlyRate;

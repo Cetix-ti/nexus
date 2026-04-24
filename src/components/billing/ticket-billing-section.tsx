@@ -110,6 +110,7 @@ export function TicketBillingSection({
             isUrgent: Boolean(r.isUrgent),
             isOnsite: Boolean(r.isOnsite),
             hasTravelBilled: Boolean(r.hasTravelBilled),
+            travelDurationMinutes: (r.travelDurationMinutes as number | null | undefined) ?? null,
             coverageStatus: r.coverageStatus as TimeEntry["coverageStatus"],
             coverageReason: String(r.coverageReason ?? ""),
             hourlyRate: (r.hourlyRate as number | null) ?? undefined,
@@ -256,28 +257,79 @@ export function TicketBillingSection({
             }}
           />
         )}
-        {tab === "travel" && (
-          <EntryList
-            empty="Aucun déplacement pour ce ticket"
-            rows={travelEntries.map((e) => {
-              const route = e.fromLocation && e.toLocation ? `${e.fromLocation} → ${e.toLocation}` : "Déplacement";
-              const km = typeof e.distanceKm === "number" ? e.distanceKm * (e.isRoundTrip ? 2 : 1) : null;
+        {tab === "travel" && (() => {
+          // Dérive les déplacements depuis les saisies de temps avec
+          // hasTravelBilled=true. C'est la source de vérité unique : les
+          // deux onglets (Temps + Déplacements) montrent la même donnée.
+          const derivedRows = timeEntries
+            .filter((e) => e.hasTravelBilled)
+            .map((e) => {
+              const minutes = e.travelDurationMinutes ?? null;
               return {
-                id: e.id,
-                date: e.date,
+                id: `te-travel-${e.id}`,
+                date: e.startedAt,
                 icon: "🚗",
-                label: route,
-                description: e.notes || (e.durationMinutes ? `${e.durationMinutes} min de trajet` : ""),
+                label: "Déplacement (synchronisé avec la saisie de temps)",
+                description: e.description || "Déplacement facturé",
                 agent: e.agentName,
-                metric: km !== null ? `${km} km` : (e.durationMinutes ? `${e.durationMinutes} min` : ""),
-                amount: e.amount,
-                coverageStatus: e.coverageStatus,
-                coverageReason: e.coverageReason,
+                metric: minutes != null ? `${minutes} min` : "Durée non saisie",
+                amount: undefined as number | undefined,
+                coverageStatus: "travel_billable" as const,
+                coverageReason:
+                  minutes != null
+                    ? "Temps de trajet aller-retour saisi sur la saisie de temps."
+                    : "Déplacement facturé — aucune durée de trajet saisie.",
+                _sourceTimeEntryId: e.id,
               };
-            })}
-            onDelete={(id) => setTravelEntries((prev) => prev.filter((e) => e.id !== id))}
-          />
-        )}
+            });
+          const manualRows = travelEntries.map((e) => {
+            const route = e.fromLocation && e.toLocation ? `${e.fromLocation} → ${e.toLocation}` : "Déplacement";
+            const km = typeof e.distanceKm === "number" ? e.distanceKm * (e.isRoundTrip ? 2 : 1) : null;
+            return {
+              id: e.id,
+              date: e.date,
+              icon: "🚗",
+              label: route,
+              description: e.notes || (e.durationMinutes ? `${e.durationMinutes} min de trajet` : ""),
+              agent: e.agentName,
+              metric: km !== null ? `${km} km` : (e.durationMinutes ? `${e.durationMinutes} min` : ""),
+              amount: e.amount,
+              coverageStatus: e.coverageStatus,
+              coverageReason: e.coverageReason,
+              _sourceTimeEntryId: undefined as string | undefined,
+            };
+          });
+          const rows = [...derivedRows, ...manualRows];
+          return (
+            <EntryList
+              empty="Aucun déplacement pour ce ticket"
+              rows={rows}
+              onEdit={(id) => {
+                const r = rows.find((x) => x.id === id);
+                if (r?._sourceTimeEntryId) {
+                  // Renvoie à l'édition de la saisie de temps source.
+                  setEditingTimeEntryId(r._sourceTimeEntryId);
+                  setShowTimeModal(true);
+                }
+              }}
+              onDelete={(id) => {
+                const r = rows.find((x) => x.id === id);
+                if (r?._sourceTimeEntryId) {
+                  // Supprimer depuis un déplacement synchro = décocher la
+                  // case sur la saisie de temps source.
+                  if (!confirm("Retirer le déplacement facturé de cette saisie de temps ?")) return;
+                  fetch("/api/v1/time-entries", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: r._sourceTimeEntryId, hasTravelBilled: false, travelDurationMinutes: null }),
+                  }).then((res) => { if (res.ok) setReloadTime((k) => k + 1); });
+                } else {
+                  setTravelEntries((prev) => prev.filter((e) => e.id !== id));
+                }
+              }}
+            />
+          );
+        })()}
         {tab === "expense" && (
           <EntryList
             empty="Aucune dépense pour ce ticket"
@@ -321,6 +373,7 @@ export function TicketBillingSection({
               isUrgent: entry.isUrgent,
               isOnsite: entry.isOnsite,
               hasTravelBilled: entry.hasTravelBilled ?? false,
+              travelDurationMinutes: entry.hasTravelBilled ? (entry.travelDurationMinutes ?? null) : null,
               // Le serveur IGNORE ces 4 champs et recalcule via
               // resolveDecisionForEntry(). On les envoie pour préserver
               // le contrat d'API mais ils ne sont jamais stockés tels quels.
@@ -391,6 +444,12 @@ interface EntryRow {
   amount?: number;
   coverageStatus: import("@/lib/billing/types").CoverageStatus;
   coverageReason: string;
+  /**
+   * Si défini, la ligne est dérivée d'une saisie de temps (déplacement
+   * synchronisé). Les actions Modifier/Supprimer reviennent à éditer
+   * la saisie source.
+   */
+  _sourceTimeEntryId?: string;
 }
 
 function EntryList({
