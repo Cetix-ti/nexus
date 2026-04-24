@@ -17,6 +17,21 @@ export interface UiOrganization {
   phone: string;
   logo: string | null;
   isInternal: boolean;
+  // Champs supplémentaires chargés depuis la DB pour que EditOrgModal
+  // puisse repopuler correctement son formulaire sans refaire un fetch
+  // détail à chaque ouverture.
+  calendarAliases: string[];
+  endpointPatterns: string[];
+  domains: string[];
+  website: string | null;
+  address: string | null;
+  city: string | null;
+  province: string | null;
+  postalCode: string | null;
+  country: string | null;
+  plan: string | null;
+  description: string | null;
+  isActive: boolean;
 }
 
 const COLORS = ["bg-blue-600", "bg-emerald-600", "bg-violet-600", "bg-amber-600", "bg-rose-600", "bg-cyan-600", "bg-indigo-600", "bg-pink-600"];
@@ -96,6 +111,22 @@ export async function listOrganizations(search?: string): Promise<UiOrganization
     phone: "—",
     logo: o.logo || null,
     isInternal: o.isInternal,
+    // Champs utilisés par EditOrgModal — si on ne les renvoie pas,
+    // la modale les réinitialise à "" à chaque ouverture et donne
+    // l'illusion que Save n'a rien sauvegardé (la DB a pourtant les
+    // valeurs, elles ne se rechargent juste pas dans le formulaire).
+    calendarAliases: o.calendarAliases ?? [],
+    endpointPatterns: o.endpointPatterns ?? [],
+    domains: o.domains ?? [],
+    website: o.website,
+    address: o.address,
+    city: o.city,
+    province: o.province,
+    postalCode: o.postalCode,
+    country: o.country,
+    plan: o.plan,
+    description: o.description,
+    isActive: o.isActive,
   }));
 }
 
@@ -186,6 +217,8 @@ export async function updateOrganization(
     calendarAliases: string[];
     /** Patterns hostname pour le résolveur Centre de sécurité. */
     endpointPatterns: string[];
+    /** Auto-publish des rapports mensuels au portail client. */
+    monthlyReportAutoPublish: boolean;
   }>
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

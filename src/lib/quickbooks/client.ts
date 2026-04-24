@@ -58,6 +58,23 @@ export interface QboPayment {
   customerName: string;
 }
 
+/**
+ * QBO "Purchase" — toute sortie d'argent vers un fournisseur : dépense
+ * (cash / chèque / carte de crédit). N'inclut pas les Bills (factures
+ * fournisseur en attente) ni les VendorCredits. PaymentType distingue
+ * la nature de la sortie.
+ */
+export interface QboExpense {
+  id: string;
+  docNumber: string;
+  txnDate: string;
+  totalAmount: number;
+  paymentType: "Cash" | "Check" | "CreditCard" | string;
+  vendorName: string;      // EntityRef — souvent un fournisseur
+  accountName: string;     // AccountRef — compte débité (catégorie)
+  memo: string;            // PrivateNote / notes internes
+}
+
 // ---------------------------------------------------------------------------
 // Config persistence
 // ---------------------------------------------------------------------------
@@ -251,6 +268,42 @@ export async function getPayments(config?: QboConfig | null): Promise<QboPayment
     txnDate: p.TxnDate ?? "",
     customerName: p.CustomerRef?.name ?? "",
   }));
+}
+
+/**
+ * Récupère les dépenses (entité Purchase). Le compte débité est extrait
+ * du premier Line item (AccountBasedExpenseLineDetail) — c'est la vue
+ * la plus utile pour catégoriser les dépenses en analytics.
+ */
+export async function getExpenses(config?: QboConfig | null): Promise<QboExpense[]> {
+  const cfg = config ?? await getQboConfig();
+  if (!cfg?.accessToken || !cfg.realmId) return [];
+
+  const data = await qboQuery(
+    cfg,
+    "SELECT * FROM Purchase ORDER BY TxnDate DESC MAXRESULTS 200",
+  );
+  const rows = data?.QueryResponse?.Purchase ?? [];
+
+  return rows.map((p: any) => {
+    // AccountRef direct OU, à défaut, le premier line item (cas des
+    // transactions split). On prend le plus informatif disponible.
+    const lineAccount = Array.isArray(p.Line)
+      ? p.Line
+          .map((l: any) => l?.AccountBasedExpenseLineDetail?.AccountRef?.name)
+          .find(Boolean)
+      : undefined;
+    return {
+      id: p.Id,
+      docNumber: p.DocNumber ?? "",
+      txnDate: p.TxnDate ?? "",
+      totalAmount: p.TotalAmt ?? 0,
+      paymentType: p.PaymentType ?? "",
+      vendorName: p.EntityRef?.name ?? "",
+      accountName: p.AccountRef?.name ?? lineAccount ?? "",
+      memo: p.PrivateNote ?? "",
+    };
+  });
 }
 
 export async function getCompanyInfo(config?: QboConfig | null): Promise<any> {

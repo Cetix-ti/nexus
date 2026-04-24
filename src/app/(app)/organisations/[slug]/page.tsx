@@ -49,8 +49,6 @@ import {
 import { OrgApproversSection } from "@/components/approvers/org-approvers-section";
 import { ContractModal } from "@/components/settings/contract-modal";
 import { EditContactModal, type EditContactModalContact } from "@/components/contacts/edit-contact-modal";
-import { FreshserviceImportModal } from "@/components/freshservice/freshservice-import-modal";
-import { Database } from "lucide-react";
 import type { Contract as BillingContract } from "@/lib/billing/types";
 import { ClientBillingOverridesSection } from "@/components/billing/client-billing-overrides-section";
 import { OrgAssetsTab } from "@/components/assets/org-assets-tab";
@@ -722,12 +720,16 @@ function OrgSitesTab({
               <AddressAutocomplete
                 label="Adresse"
                 value={form.address}
-                onChange={(v) => setForm({ ...form, address: v })}
+                onChange={(v) => setForm((f) => ({ ...f, address: v }))}
                 onSelect={(result) => {
                   setForm((f) => ({
                     ...f,
                     address: result.street || f.address,
-                    city: result.city ? `${result.city}, ${result.province}` : f.city,
+                    city: result.city
+                      ? result.province
+                        ? `${result.city}, ${result.province}`
+                        : result.city
+                      : f.city,
                   }));
                 }}
                 placeholder="Commencez à taper une adresse..."
@@ -923,7 +925,6 @@ export default function OrganizationDetailPage() {
   }, [visibleTabs, activeTab]);
   const [editingOrg, setEditingOrg] = useState<EditOrgModalOrg | null>(null);
   const [editingContact, setEditingContact] = useState<EditContactModalContact | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
   const [editingPortalUser, setEditingPortalUser] = useState<PortalAccessUser | null>(null);
   const [editingContract, setEditingContract] = useState<BillingContract | null>(null);
   const [creatingContract, setCreatingContract] = useState(false);
@@ -1245,15 +1246,6 @@ export default function OrganizationDetailPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setImportOpen(true)}
-          >
-            <Database className="h-4 w-4" strokeWidth={2.25} />
-            <span className="hidden sm:inline">Importer Freshservice</span>
-            <span className="sm:hidden">Freshservice</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
             onClick={() =>
               setEditingOrg({
                 id: o.id,
@@ -1292,11 +1284,6 @@ export default function OrganizationDetailPage() {
         open={!!editingContact}
         onClose={() => setEditingContact(null)}
         contact={editingContact}
-      />
-
-      <FreshserviceImportModal
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
       />
 
       <EditPortalAccessModal
@@ -1776,7 +1763,7 @@ export default function OrganizationDetailPage() {
         <OrgChangesTab organizationId={orgId} organizationName={o.name} />
       )}
 
-      {/* Budget IT — annuel, construit par Cetix, approuvé par le client. */}
+      {/* Budget TI — annuel, construit par Cetix, approuvé par le client. */}
       {activeTab === "budget" && (
         <OrgBudgetTab organizationId={orgId} organizationName={o.name} />
       )}

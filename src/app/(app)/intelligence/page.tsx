@@ -34,6 +34,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CategoryBackfillCard } from "@/components/intelligence/category-backfill-card";
 
 interface FeatureHealth {
   feature: string;
@@ -79,15 +80,6 @@ interface SlaRisk {
   assigneeName?: string;
 }
 
-interface RequesterAnomaly {
-  contactEmail: string;
-  organizationName: string;
-  severity: "low" | "medium" | "high";
-  signals: string[];
-  detectedAt: string;
-  affectedTicketIds: string[];
-}
-
 interface BudgetRow {
   feature: string;
   usageCents: number;
@@ -112,7 +104,6 @@ interface OverviewPayload {
     total: number;
   };
   slaRisks: SlaRisk[];
-  requesterAnomalies: RequesterAnomaly[];
   budget: BudgetRow[];
   digitalTwin: DigitalTwinRun[];
   counts: {
@@ -190,6 +181,11 @@ export default function IntelligencePage() {
           />
         </div>
       </header>
+
+      {/* Carte admin : backfill de catégorisation IA (tickets historiques
+          sans catégorie). Placée en tête pour qu'un admin voie tout de
+          suite l'état de couverture et puisse lancer le job. */}
+      <CategoryBackfillCard />
 
       {/* GRID 1 — Feature health + Digital twin */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -374,8 +370,9 @@ export default function IntelligencePage() {
         </SectionCard>
       </div>
 
-      {/* GRID 3 — SLA risks + Requester anomalies */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {/* GRID 3 — SLA risks (pleine largeur depuis le retrait du widget
+          "Anomalies requester"). */}
+      <div className="grid grid-cols-1 gap-4">
         <SectionCard
           title={`Tickets à risque SLA (${data.slaRisks.length})`}
           icon={<Clock className="h-4 w-4 text-orange-500" />}
@@ -400,44 +397,6 @@ export default function IntelligencePage() {
                   </div>
                   <span className="ml-1 text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
                     {Math.round(r.riskScore * 100)}%
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </SectionCard>
-
-        <SectionCard
-          title={`Anomalies requester (${data.requesterAnomalies.length})`}
-          icon={<AlertTriangle className="h-4 w-4 text-amber-500" />}
-          hint="Comportements inhabituels : spikes, horaires, catégories étrangères."
-          href="/intelligence/anomalies"
-        >
-          {data.requesterAnomalies.length === 0 ? (
-            <Empty>Aucune anomalie détectée récemment.</Empty>
-          ) : (
-            <ul className="space-y-1.5">
-              {data.requesterAnomalies.slice(0, 6).map((a, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <SeverityDot severity={a.severity} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
-                      {a.contactEmail}{" "}
-                      <span className="text-xs text-slate-500 dark:text-slate-400">
-                        · {a.organizationName}
-                      </span>
-                    </div>
-                    <div className="truncate text-xs text-slate-500 dark:text-slate-400">
-                      {a.signals[0] ?? ""}
-                    </div>
-                  </div>
-                  <span className="shrink-0 text-[10px] text-slate-400">
-                    {new Date(a.detectedAt).toLocaleString("fr-CA", {
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
                   </span>
                 </li>
               ))}
@@ -495,21 +454,26 @@ export default function IntelligencePage() {
           ) : (
             <ul className="space-y-2">
               {data.maintenanceSuggestions.slice(0, 6).map((s, i) => (
-                <li key={s.suggestionId ?? i} className="flex items-start gap-2">
-                  <ImpactBadge impact={s.clientImpact} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
-                      {s.title ?? "Sans titre"}
+                <li key={s.suggestionId ?? i}>
+                  <Link
+                    href="/intelligence/proposals?tab=maintenance"
+                    className="flex items-start gap-2 rounded px-1 py-0.5 -mx-1 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                  >
+                    <ImpactBadge impact={s.clientImpact} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100 hover:text-purple-600">
+                        {s.title ?? "Sans titre"}
+                      </div>
+                      <div className="truncate text-xs text-slate-500 dark:text-slate-400">
+                        {s.rationale ?? ""}
+                      </div>
                     </div>
-                    <div className="truncate text-xs text-slate-500 dark:text-slate-400">
-                      {s.rationale ?? ""}
-                    </div>
-                  </div>
-                  {s.estimatedEffort && (
-                    <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                      {s.estimatedEffort}
-                    </span>
-                  )}
+                    {s.estimatedEffort && (
+                      <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {s.estimatedEffort}
+                      </span>
+                    )}
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -679,20 +643,6 @@ function ScoreRing({ value }: { value: number }) {
 function RiskDot({ value }: { value: number }) {
   const color =
     value >= 0.85 ? "bg-rose-500" : value >= 0.6 ? "bg-amber-500" : "bg-slate-400";
-  return <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", color)} />;
-}
-
-function SeverityDot({
-  severity,
-}: {
-  severity: "low" | "medium" | "high";
-}) {
-  const color =
-    severity === "high"
-      ? "bg-rose-500"
-      : severity === "medium"
-        ? "bg-amber-500"
-        : "bg-slate-400";
   return <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", color)} />;
 }
 

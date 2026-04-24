@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
+import { useLocaleStore } from "@/stores/locale-store";
 
 interface FinanceData {
   summary: {
@@ -42,17 +43,19 @@ interface FinanceData {
   }[];
 }
 
-const COVERAGE_LABELS: Record<string, string> = {
-  billable: "Facturable",
-  included_in_contract: "Inclus contrat",
-  hour_bank: "Banque d'heures",
-  hour_bank_overage: "Dépassement",
-  non_billable: "Non facturable",
-  pending: "En attente",
+const COVERAGE_KEY: Record<string, string> = {
+  billable: "portal.finances.coverage.billable",
+  included_in_contract: "portal.finances.coverage.included_in_contract",
+  hour_bank: "portal.finances.coverage.hour_bank",
+  hour_bank_overage: "portal.finances.coverage.hour_bank_overage",
+  non_billable: "portal.finances.coverage.non_billable",
+  pending: "portal.finances.coverage.pending",
 };
 
-function fmtMoney(v: number): string {
-  return v.toLocaleString("fr-CA", { style: "currency", currency: "CAD" });
+function useFmtMoney() {
+  const locale = useLocaleStore((s) => s.locale);
+  return (v: number): string =>
+    v.toLocaleString(locale === "fr" ? "fr-CA" : "en-CA", { style: "currency", currency: "CAD" });
 }
 
 function fmtDuration(mins: number): string {
@@ -63,6 +66,9 @@ function fmtDuration(mins: number): string {
 
 export default function PortalFinancesPage() {
   const { organizationName, permissions } = usePortalUser();
+  const t = useLocaleStore((s) => s.t);
+  const locale = useLocaleStore((s) => s.locale);
+  const fmtMoney = useFmtMoney();
   const [data, setData] = useState<FinanceData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -81,9 +87,9 @@ export default function PortalFinancesPage() {
   if (!data) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-bold text-slate-900">Finances</h1>
+        <h1 className="text-xl font-bold text-slate-900">{t("portal.finances.heading")}</h1>
         <Card><CardContent className="py-12 text-center text-[13px] text-slate-400">
-          Aucune donnée financière disponible.
+          {t("portal.finances.noData")}
         </CardContent></Card>
       </div>
     );
@@ -94,16 +100,16 @@ export default function PortalFinancesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">Finances</h1>
-        <p className="text-[13px] text-slate-500 mt-0.5">Relevé financier — {organizationName}</p>
+        <h1 className="text-xl font-bold text-slate-900">{t("portal.finances.heading")}</h1>
+        <p className="text-[13px] text-slate-500 mt-0.5">{t("portal.finances.statement", { org: organizationName ?? "" })}</p>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard label="Total facturé" value={fmtMoney(s.totalBilled)} icon={<DollarSign className="h-5 w-5 text-emerald-600" />} bg="bg-emerald-50" />
-        <StatCard label="Heures totales" value={`${s.totalHours}h`} icon={<Clock className="h-5 w-5 text-blue-600" />} bg="bg-blue-50" />
-        <StatCard label="En attente" value={fmtMoney(s.pendingAmount)} icon={<AlertCircle className="h-5 w-5 text-amber-600" />} bg="bg-amber-50" />
-        <StatCard label="Déjà facturé" value={fmtMoney(s.invoicedAmount)} icon={<CheckCircle2 className="h-5 w-5 text-emerald-600" />} bg="bg-emerald-50" />
+        <StatCard label={t("portal.finances.totalBilled")} value={fmtMoney(s.totalBilled)} icon={<DollarSign className="h-5 w-5 text-emerald-600" />} bg="bg-emerald-50" />
+        <StatCard label={t("portal.finances.totalHours")} value={`${s.totalHours}h`} icon={<Clock className="h-5 w-5 text-blue-600" />} bg="bg-blue-50" />
+        <StatCard label={t("portal.finances.pending")} value={fmtMoney(s.pendingAmount)} icon={<AlertCircle className="h-5 w-5 text-amber-600" />} bg="bg-amber-50" />
+        <StatCard label={t("portal.finances.alreadyBilled")} value={fmtMoney(s.invoicedAmount)} icon={<CheckCircle2 className="h-5 w-5 text-emerald-600" />} bg="bg-emerald-50" />
       </div>
 
       {/* Contracts */}
@@ -112,17 +118,19 @@ export default function PortalFinancesPage() {
           <CardContent className="p-5">
             <h3 className="text-[15px] font-semibold text-slate-900 mb-4 flex items-center gap-2">
               <FileText className="h-4 w-4 text-slate-500" />
-              Vos contrats
+              {t("portal.finances.contracts")}
             </h3>
             <div className="space-y-3">
               {data.contracts.map((c) => (
                 <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3">
                   <div>
                     <p className="text-[13px] font-medium text-slate-900">{c.name}</p>
-                    <p className="text-[11px] text-slate-500">{c.type} · {c.endDate ? `Expire le ${new Date(c.endDate).toLocaleDateString("fr-CA")}` : "Sans échéance"}</p>
+                    <p className="text-[11px] text-slate-500">{c.type} · {c.endDate
+                      ? t("portal.finances.expiresOn", { date: new Date(c.endDate).toLocaleDateString(locale === "fr" ? "fr-CA" : "en-CA") })
+                      : t("portal.finances.noEndDate")}</p>
                   </div>
                   {c.monthlyValue && (
-                    <p className="text-[14px] font-bold text-slate-800 tabular-nums">{fmtMoney(c.monthlyValue)}/mois</p>
+                    <p className="text-[14px] font-bold text-slate-800 tabular-nums">{fmtMoney(c.monthlyValue)}{t("portal.finances.perMonth")}</p>
                   )}
                 </div>
               ))}
@@ -137,25 +145,25 @@ export default function PortalFinancesPage() {
           <div className="px-5 py-4 border-b border-slate-200">
             <h3 className="text-[15px] font-semibold text-slate-900 flex items-center gap-2">
               <Receipt className="h-4 w-4 text-slate-500" />
-              Interventions récentes
+              {t("portal.finances.recentEntries")}
             </h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/60 text-left">
-                  <th className="px-4 py-3 font-medium text-slate-500">Date</th>
-                  <th className="px-4 py-3 font-medium text-slate-500">Description</th>
-                  <th className="px-4 py-3 font-medium text-slate-500">Durée</th>
-                  <th className="px-4 py-3 font-medium text-slate-500">Couverture</th>
-                  <th className="px-4 py-3 font-medium text-slate-500 text-right">Montant</th>
+                  <th className="px-4 py-3 font-medium text-slate-500">{t("portal.finances.col.date")}</th>
+                  <th className="px-4 py-3 font-medium text-slate-500">{t("portal.finances.col.description")}</th>
+                  <th className="px-4 py-3 font-medium text-slate-500">{t("portal.finances.col.duration")}</th>
+                  <th className="px-4 py-3 font-medium text-slate-500">{t("portal.finances.col.coverage")}</th>
+                  <th className="px-4 py-3 font-medium text-slate-500 text-right">{t("portal.finances.col.amount")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {data.recentEntries.map((e) => (
                   <tr key={e.id} className="hover:bg-slate-50/80">
                     <td className="px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">
-                      {new Date(e.date).toLocaleDateString("fr-CA")}
+                      {new Date(e.date).toLocaleDateString(locale === "fr" ? "fr-CA" : "en-CA")}
                     </td>
                     <td className="px-4 py-3 text-[12.5px] text-slate-700 truncate max-w-[300px]">
                       {e.description || "—"}
@@ -165,7 +173,7 @@ export default function PortalFinancesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant="default" className="text-[10px]">
-                        {COVERAGE_LABELS[e.coverageStatus] ?? e.coverageStatus}
+                        {COVERAGE_KEY[e.coverageStatus] ? t(COVERAGE_KEY[e.coverageStatus]) : e.coverageStatus}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-right text-[12px] font-medium tabular-nums text-slate-800">

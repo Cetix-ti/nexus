@@ -272,6 +272,7 @@ export interface Project {
   // Client
   organizationId: string;
   organizationName: string;
+  organizationLogo?: string | null;
   // Classification
   type: ProjectType;
   status: ProjectStatus;

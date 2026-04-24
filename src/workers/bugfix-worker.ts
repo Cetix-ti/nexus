@@ -24,6 +24,7 @@
 
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import prisma from "@/lib/prisma";
 import { pickModelForSeverity } from "@/lib/bugs/model-picker";
@@ -61,8 +62,8 @@ async function run(cmd: string, args: string[], opts: { cwd?: string; env?: Node
   });
 }
 
-async function git(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
-  return run("git", args);
+async function git(args: string[], cwd?: string): Promise<{ stdout: string; stderr: string; code: number }> {
+  return run("git", args, { cwd });
 }
 
 function shortId(id: string): string { return id.slice(0, 8); }
@@ -134,7 +135,7 @@ Analyse, localise, et corrige ce bug. Modifie le strict nécessaire. Puis émets
 // ----------------------------------------------------------------------------
 // Spawn Claude Code CLI
 // ----------------------------------------------------------------------------
-async function runClaude(systemPrompt: string, userPrompt: string, model: string): Promise<{ stdout: string; stderr: string; code: number }> {
+async function runClaude(systemPrompt: string, userPrompt: string, model: string, cwd?: string): Promise<{ stdout: string; stderr: string; code: number }> {
   // Utilise --print (non-interactive), --model pour sélectionner le modèle,
   // --permission-mode acceptEdits pour autoriser les éditions sans prompt,
   // --allowed-tools pour restreindre aux outils sûrs (pas de réseau).
@@ -146,7 +147,7 @@ async function runClaude(systemPrompt: string, userPrompt: string, model: string
     "--append-system-prompt", systemPrompt,
   ];
   return new Promise((resolve, reject) => {
-    const p = spawn(CLAUDE_CMD, args, { cwd: REPO_ROOT, env: process.env });
+    const p = spawn(CLAUDE_CMD, args, { cwd: cwd ?? REPO_ROOT, env: process.env });
     let stdout = ""; let stderr = "";
     p.stdout.on("data", (d) => (stdout += d.toString()));
     p.stderr.on("data", (d) => (stderr += d.toString()));
@@ -199,6 +200,11 @@ async function processBug(bug: BugReport, opts: ProcessOptions): Promise<BugFixA
 
   const baseBranch = opts.baseBranch ?? DEFAULT_BASE_BRANCH;
   const branch = `bugfix/bug-${shortId(bug.id)}-${slugify(bug.title)}`;
+  // Worktree isolé : découple totalement du working tree du dev (qui peut
+  // être sale sur une autre branche). `git worktree` crée un checkout
+  // séparé pointant sur le même .git — pas de clone, léger, propre.
+  const worktreeDir = path.join(os.tmpdir(), `nexus-bugfix-${bug.id}-${Date.now()}`);
+  let worktreeCreated = false;
 
   async function finishAttempt(status: BugFixAttempt["status"], extra: Partial<BugFixAttempt> = {}) {
     await prisma.bugFixAttempt.update({
@@ -212,33 +218,58 @@ async function processBug(bug: BugReport, opts: ProcessOptions): Promise<BugFixA
     });
   }
 
+  async function cleanupWorktree() {
+    if (!worktreeCreated) return;
+    // Force remove — le checkout peut avoir des modifs locales si Claude a écrit
+    // mais qu'on abandonne. Supprimer aussi le refs worktree côté .git/worktrees.
+    await run("git", ["worktree", "remove", "--force", worktreeDir]);
+    // Au cas où, tue le dossier résiduel.
+    await run("rm", ["-rf", worktreeDir]);
+  }
+
   try {
-    // 1. Git setup : assure main clean, crée branche.
     if (!opts.dryRun) {
-      const clean = await git(["status", "--porcelain"]);
-      if (clean.stdout.trim().length > 0) {
-        log("Working tree sale — abandon.");
-        await finishAttempt("FAILED", { abortReason: "Working tree not clean" });
+      // 1. Fetch base fresh depuis origin (peu importe l'état du repo principal).
+      const fetch = await git(["fetch", "origin", baseBranch]);
+      if (fetch.code !== 0) {
+        log(`git fetch origin ${baseBranch} failed : ${fetch.stderr}`);
+        await finishAttempt("FAILED", { abortReason: `fetch failed: ${fetch.stderr.slice(0, 500)}` });
         await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "APPROVED_FOR_FIX" } });
         return attempt;
       }
-      await git(["checkout", baseBranch]);
-      await git(["pull", "origin", baseBranch]);
-      await git(["checkout", "-b", branch]);
-      log(`Branche créée : ${branch}`);
+
+      // 2. Crée un worktree isolé depuis origin/<baseBranch>, avec la branche bugfix directement.
+      //    Cela fonctionne même si le working tree principal est sale sur une autre branche.
+      const wt = await git(["worktree", "add", "-b", branch, worktreeDir, `origin/${baseBranch}`]);
+      if (wt.code !== 0) {
+        log(`git worktree add failed : ${wt.stderr}`);
+        await finishAttempt("FAILED", { abortReason: `worktree add failed: ${wt.stderr.slice(0, 500)}` });
+        await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "APPROVED_FOR_FIX" } });
+        return attempt;
+      }
+      worktreeCreated = true;
+      log(`Worktree : ${worktreeDir} (branche ${branch})`);
+
+      // Lien symbolique node_modules → évite réinstall + garantit que tsc/eslint/prisma retrouvent leurs deps.
+      try { await fs.symlink(path.join(REPO_ROOT, "node_modules"), path.join(worktreeDir, "node_modules")); } catch (e) {
+        log(`node_modules symlink failed (continue) : ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
 
-    // 2. Spawn Claude.
+    const cwd = opts.dryRun ? REPO_ROOT : worktreeDir;
+
+    // 3. Spawn Claude dans le worktree.
     log(`Lancement Claude (${model})…`);
     const { stdout, stderr, code } = await runClaude(
       buildSystemPrompt(),
       buildUserPrompt(bug),
       model,
+      cwd,
     );
     if (code !== 0) {
       log(`Claude exit ${code}. stderr: ${stderr.slice(0, 1000)}`);
       await finishAttempt("FAILED", { abortReason: `Claude exit ${code}` });
-      if (!opts.dryRun) await git(["checkout", baseBranch]);
+      await cleanupWorktree();
       await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "APPROVED_FOR_FIX" } });
       return attempt;
     }
@@ -248,22 +279,22 @@ async function processBug(bug: BugReport, opts: ProcessOptions): Promise<BugFixA
     if (parsed.abortReason) {
       log(`Claude a abandonné : ${parsed.abortReason}`);
       await finishAttempt("ABANDONED", { abortReason: parsed.abortReason, diffSummary: parsed.diffSummary });
-      if (!opts.dryRun) { await git(["checkout", baseBranch]); await git(["branch", "-D", branch]); }
+      await cleanupWorktree();
       await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "TRIAGED" } });
       return attempt;
     }
 
-    // 3. Vérifie zones interdites.
+    // 4. Vérifie zones interdites (pré-diff, sur ce que Claude dit avoir modifié).
     const forbidden = filterForbidden(parsed.filesChanged);
     if (forbidden.length > 0) {
       log(`Zones interdites touchées : ${forbidden.join(", ")}`);
       await finishAttempt("ABANDONED", { abortReason: `Zones interdites : ${forbidden.join(", ")}`, filesChanged: parsed.filesChanged });
-      if (!opts.dryRun) { await git(["checkout", "--", "."]); await git(["checkout", baseBranch]); await git(["branch", "-D", branch]); }
+      await cleanupWorktree();
       await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "TRIAGED" } });
       return attempt;
     }
 
-    // 4. Vérifie que des modifs existent.
+    // 5. Dry run — on s'arrête ici sans diff réel.
     if (opts.dryRun) {
       log(`Dry run — fichiers modifiés : ${parsed.filesChanged.join(", ")}`);
       await finishAttempt("PROPOSED", {
@@ -274,64 +305,65 @@ async function processBug(bug: BugReport, opts: ProcessOptions): Promise<BugFixA
       return attempt;
     }
 
-    const diff = await git(["diff", "--name-only"]);
+    const diff = await git(["diff", "--name-only"], cwd);
     const actualChanged = diff.stdout.trim().split("\n").filter(Boolean);
     if (actualChanged.length === 0) {
       log("Aucune modif écrite par Claude — abandon.");
       await finishAttempt("ABANDONED", { abortReason: "Aucune modification effective", diffSummary: parsed.diffSummary });
-      await git(["checkout", baseBranch]); await git(["branch", "-D", branch]);
+      await cleanupWorktree();
       await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "TRIAGED" } });
       return attempt;
     }
     const forbidden2 = filterForbidden(actualChanged);
     if (forbidden2.length > 0) {
       log(`Zones interdites modifiées (detection post-diff) : ${forbidden2.join(", ")}`);
-      await git(["checkout", "--", "."]); await git(["checkout", baseBranch]); await git(["branch", "-D", branch]);
       await finishAttempt("ABANDONED", { abortReason: `Zones interdites (post-diff) : ${forbidden2.join(", ")}`, filesChanged: actualChanged });
+      await cleanupWorktree();
       await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "TRIAGED" } });
       return attempt;
     }
 
-    // 5. Vérifications tsc + eslint sur fichiers modifiés.
+    // 6. Vérifications tsc + eslint sur fichiers modifiés (dans le worktree).
     log("Vérif tsc…");
-    const tsc = await run("npx", ["tsc", "--noEmit"]);
+    const tsc = await run("npx", ["tsc", "--noEmit"], { cwd });
     if (tsc.code !== 0) {
       log(`tsc échoue : ${tsc.stdout.slice(-2000)}`);
-      await git(["checkout", "--", "."]); await git(["checkout", baseBranch]); await git(["branch", "-D", branch]);
       await finishAttempt("FAILED", { abortReason: "tsc errors after patch", filesChanged: actualChanged, diffSummary: parsed.diffSummary });
+      await cleanupWorktree();
       await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "TRIAGED" } });
       return attempt;
     }
 
     log("Vérif ESLint sur fichiers modifiés…");
-    const eslint = await run("npx", ["eslint", "--max-warnings=50", ...actualChanged.filter((f) => /\.(tsx?|jsx?)$/.test(f))]);
+    const eslint = await run("npx", ["eslint", "--max-warnings=50", ...actualChanged.filter((f) => /\.(tsx?|jsx?)$/.test(f))], { cwd });
     if (eslint.code !== 0 && eslint.stdout.includes("error")) {
       log(`ESLint errors : ${eslint.stdout.slice(-2000)}`);
-      await git(["checkout", "--", "."]); await git(["checkout", baseBranch]); await git(["branch", "-D", branch]);
       await finishAttempt("FAILED", { abortReason: "ESLint errors after patch", filesChanged: actualChanged, diffSummary: parsed.diffSummary });
+      await cleanupWorktree();
       await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "TRIAGED" } });
       return attempt;
     }
 
-    // 6. Commit + push + PR
+    // 7. Commit + push + PR (dans le worktree).
     log("Commit…");
-    await git(["add", ...actualChanged]);
+    await git(["add", ...actualChanged], cwd);
     const commitMsg = `fix(bug-${shortId(bug.id)}): ${bug.title}\n\n${parsed.diffSummary}\n\nCo-Authored-By: Claude Bug Fixer <noreply@anthropic.com>`;
-    const commit = await git(["commit", "-m", commitMsg]);
+    const commit = await git(["commit", "-m", commitMsg], cwd);
     if (commit.code !== 0) {
       log(`Commit failed: ${commit.stderr}`);
       await finishAttempt("FAILED", { abortReason: "Commit failed", filesChanged: actualChanged, diffSummary: parsed.diffSummary });
-      await git(["checkout", baseBranch]);
+      await cleanupWorktree();
       await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "TRIAGED" } });
       return attempt;
     }
-    const sha = (await git(["rev-parse", "HEAD"])).stdout.trim();
+    const sha = (await git(["rev-parse", "HEAD"], cwd)).stdout.trim();
 
     log("Push…");
-    const push = await git(["push", "-u", "origin", branch]);
+    const push = await git(["push", "-u", "origin", branch], cwd);
     if (push.code !== 0) {
       log(`Push failed: ${push.stderr}`);
       await finishAttempt("FAILED", { abortReason: "Push failed", branch, commitSha: sha, filesChanged: actualChanged, diffSummary: parsed.diffSummary });
+      await cleanupWorktree();
       await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "TRIAGED" } });
       return attempt;
     }
@@ -353,7 +385,7 @@ async function processBug(bug: BugReport, opts: ProcessOptions): Promise<BugFixA
       "",
       `🤖 Auto-généré par le worker Nexus (modèle : ${model}).`,
     ].filter(Boolean).join("\n");
-    const prRes = await run(GH_CMD, ["pr", "create", "--base", baseBranch, "--head", branch, "--title", `fix: ${bug.title}`, "--body", prBody]);
+    const prRes = await run(GH_CMD, ["pr", "create", "--base", baseBranch, "--head", branch, "--title", `fix: ${bug.title}`, "--body", prBody], { cwd });
     let prUrl: string | null = null;
     let prNumber: number | null = null;
     if (prRes.code === 0) {
@@ -372,7 +404,9 @@ async function processBug(bug: BugReport, opts: ProcessOptions): Promise<BugFixA
       confidence: parsed.confidence,
     });
     await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "FIX_PROPOSED" } });
-    await git(["checkout", baseBranch]);
+    // Worktree peut être supprimé : le commit + push ont déjà transmis les changements au remote,
+    // et la branche locale subsiste dans .git/refs/heads même après worktree remove.
+    await cleanupWorktree();
 
     // Notifie le tech lead de la PR à merger (non-bloquant).
     void sendFixProposedEmail(attempt.id).catch((e) => log(`sendFixProposedEmail failed: ${e}`));
@@ -381,7 +415,7 @@ async function processBug(bug: BugReport, opts: ProcessOptions): Promise<BugFixA
     const msg = err instanceof Error ? err.message : String(err);
     log(`Exception : ${msg}`);
     await finishAttempt("FAILED", { abortReason: `Exception: ${msg}` });
-    try { await git(["checkout", baseBranch]); } catch {}
+    try { await cleanupWorktree(); } catch {}
     await prisma.bugReport.update({ where: { id: bug.id }, data: { status: "APPROVED_FOR_FIX" } });
     return attempt;
   }

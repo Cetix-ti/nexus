@@ -107,7 +107,7 @@ export default function PortalBudgetPage() {
         <Card>
           <div className="p-6 text-center">
             <Wallet className="h-10 w-10 mx-auto text-slate-300 mb-2" />
-            <h1 className="text-base font-semibold text-slate-900">Budget IT {data.fiscalYear}</h1>
+            <h1 className="text-base font-semibold text-slate-900">Budget TI {data.fiscalYear}</h1>
             <p className="text-sm text-slate-600 mt-1">{data.message}</p>
             <p className="text-[12px] text-slate-500 mt-3">
               Le budget est visible ici dès qu&apos;il a été approuvé. Contactez Cetix pour un statut.

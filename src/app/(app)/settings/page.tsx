@@ -32,6 +32,7 @@ import {
   Lock,
   Sparkles,
   Activity,
+  Wallet,
 } from "lucide-react";
 import { PortalAccessSection } from "@/components/settings/portal-access-section";
 import { Button } from "@/components/ui/button";
@@ -54,8 +55,10 @@ import { NotificationsSection } from "@/components/settings/notifications-sectio
 import { EmailSection } from "@/components/settings/email-section";
 import { AgentProfilesSection } from "@/components/settings/agent-profiles-section";
 import { BillingProfilesSection } from "@/components/settings/billing-profiles-section";
+import { WorkTypeCategoriesSection } from "@/components/settings/work-type-categories-section";
 import { ContractsSection } from "@/components/settings/contracts-section";
 import { BillingLockSection } from "@/components/billing/billing-lock-section";
+import { ExpensesConfigSection } from "@/components/settings/expenses-config-section";
 import { KanbanColumnsSection } from "@/components/settings/kanban-columns-section";
 import { KanbanBoardsSection } from "@/components/settings/kanban-boards-section";
 import { IntegrationsSection } from "@/components/settings/integrations-section";
@@ -131,8 +134,10 @@ const sectionGroups: SettingsGroup[] = [
     iconBg: "bg-emerald-50 ring-emerald-200/60",
     sections: [
       { key: "billing_profiles", label: "Profils de facturation", icon: DollarSign },
+      { key: "work_type_categories", label: "Catégories de base", icon: FileText },
       { key: "contracts", label: "Contrats", icon: FileText },
       { key: "billing_locks", label: "Verrouillage facturation", icon: Lock, requiredCapability: "billing" },
+      { key: "expenses_config", label: "Allocations & kilométrage", icon: Wallet, superAdminOnly: true },
     ],
   },
   {
@@ -707,6 +712,10 @@ interface DbUserRow {
   name: string;
   email: string;
   role: string;
+  /** Clé du rôle custom assigné (null si aucun). Détermine l'affichage du badge. */
+  customRoleKey: string | null;
+  /** Libellé à afficher : rôle custom s'il y en a un, sinon rôle système. */
+  roleLabel: string;
   roleBadge: "default" | "primary" | "success" | "warning" | "danger";
   status: string;
   lastLogin: string;
@@ -719,6 +728,9 @@ function ROLE_BADGE(role: string): DbUserRow["roleBadge"] {
   if (role === "SUPERVISOR") return "warning";
   if (role === "TECHNICIAN") return "primary";
   if (role === "CLIENT_ADMIN") return "success";
+  // Un rôle custom prend un badge neutre — le libellé (r.label) véhicule
+  // déjà la couleur définie par l'admin.
+  if (role === "CUSTOM") return "default";
   return "default";
 }
 
@@ -729,6 +741,8 @@ interface ApiUser {
   lastName: string;
   email: string;
   role: string;
+  customRoleKey: string | null;
+  effectiveRole: string;
   avatar: string | null;
   isActive: boolean;
   capabilities: string[];
@@ -748,27 +762,36 @@ function UsersSection() {
 
   useEffect(() => {
     let cancelled = false;
-    // includeAvatar=true — sans ce param, l'endpoint omet la colonne
-    // `avatar` (pour alléger les listes de 500 users). Mais ici on est
-    // SUR la liste d'utilisateurs et on a besoin des thumbnails.
-    fetch("/api/v1/users?includeInactive=true&includeSystem=true&includeAvatar=true")
-      .then((r) => r.json())
-      .then((data) => {
+    // Charge en parallèle : users + catalogue de rôles (pour mapper
+    // customRoleKey → libellé humain dans le badge de la liste).
+    Promise.all([
+      fetch("/api/v1/users?includeInactive=true&includeSystem=true&includeAvatar=true").then((r) => r.json()),
+      fetch("/api/v1/roles").then((r) => r.ok ? r.json() : { roles: [] }).catch(() => ({ roles: [] })),
+    ])
+      .then(([data, rolesJson]) => {
         if (cancelled || !Array.isArray(data)) return;
+        const roleLabelByKey = new Map<string, string>();
+        for (const r of rolesJson?.roles ?? []) roleLabelByKey.set(r.key, r.label);
         setUsers(
-          (data as ApiUser[]).map((u) => ({
-            id: u.id,
-            name: u.name || `${u.firstName} ${u.lastName}`,
-            email: u.email,
-            role: u.role,
-            roleBadge: ROLE_BADGE(u.role),
-            status: u.isActive ? "Actif" : "Inactif",
-            lastLogin: u.lastLoginAt
-              ? new Date(u.lastLoginAt).toLocaleDateString("fr-CA")
-              : "Jamais",
-            avatar: u.avatar ?? null,
-            capabilities: u.capabilities ?? [],
-          }))
+          (data as ApiUser[]).map((u) => {
+            const effKey = u.customRoleKey ?? u.role;
+            const label = roleLabelByKey.get(effKey) ?? u.role;
+            return {
+              id: u.id,
+              name: u.name || `${u.firstName} ${u.lastName}`,
+              email: u.email,
+              role: u.role,
+              customRoleKey: u.customRoleKey ?? null,
+              roleLabel: label,
+              roleBadge: ROLE_BADGE(u.customRoleKey ? "CUSTOM" : u.role),
+              status: u.isActive ? "Actif" : "Inactif",
+              lastLogin: u.lastLoginAt
+                ? new Date(u.lastLoginAt).toLocaleDateString("fr-CA")
+                : "Jamais",
+              avatar: u.avatar ?? null,
+              capabilities: u.capabilities ?? [],
+            };
+          })
         );
       })
       .catch((e) => console.error("users load failed", e))
@@ -899,7 +922,7 @@ function UsersSection() {
                       {user.email}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={user.roleBadge}>{user.role}</Badge>
+                      <Badge variant={user.roleBadge}>{user.roleLabel}</Badge>
                     </td>
                     <td className="px-4 py-3">
                       <Badge
@@ -922,6 +945,7 @@ function UsersSection() {
                               name: user.name,
                               email: user.email,
                               role: user.role,
+                              customRoleKey: user.customRoleKey,
                               status: user.status,
                               capabilities: user.capabilities ?? [],
                             })
@@ -1136,8 +1160,10 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   ),
   backup_kanban: <BackupKanbanSection />,
   billing_profiles: <BillingProfilesSection />,
+  work_type_categories: <WorkTypeCategoriesSection />,
   contracts: <ContractsSection />,
   billing_locks: <BillingLockSection />,
+  expenses_config: <ExpensesConfigSection />,
   project_types: <ProjectTypesSection />,
   integrations: <IntegrationsSection />,
   ai_intelligence: <AiIntelligenceSection />,
@@ -1191,6 +1217,19 @@ export default function SettingsPage() {
   function navigateToSection(key: string) {
     setActiveSection(key);
     window.history.pushState(null, "", `/settings?section=${key}`);
+    // UX : quand on change de section, le contenu de droite doit repartir
+    // du haut ET le bouton actif dans la sidebar interne doit rester
+    // visible. Sans ce scroll, on arrive sur une section nouvelle alors
+    // que la page est encore descendue sur l'ancienne.
+    if (typeof window !== "undefined") {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        const btn = document.querySelector<HTMLButtonElement>(
+          `[data-settings-nav-key="${key}"]`,
+        );
+        btn?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    }
   }
 
   function navigateToIndex() {
@@ -1333,9 +1372,13 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Layout: Sidebar (desktop) + Content */}
+      {/* Layout: Sidebar (desktop) + Content.
+          Sidebar sticky + scroll propre pour que l'item actif puisse être
+          remis visible via scrollIntoView sans dépendre du scroll global
+          de la page — sinon sur une longue liste de sections, l'item actif
+          reste "coincé en bas" quand on navigue vers le bas. */}
       <div className="flex flex-col gap-6 lg:flex-row">
-        <nav className="hidden lg:block w-64 shrink-0">
+        <nav className="hidden lg:block w-64 shrink-0 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
           <div className="space-y-4">
             {sectionGroups.map((group) => {
               const groupSections = group.sections.filter((s) => {
@@ -1355,6 +1398,7 @@ export default function SettingsPage() {
                       return (
                         <li key={section.key}>
                           <button
+                            data-settings-nav-key={section.key}
                             onClick={() => navigateToSection(section.key)}
                             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                               isActive

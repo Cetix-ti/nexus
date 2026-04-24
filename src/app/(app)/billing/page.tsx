@@ -464,7 +464,10 @@ export default function BillingPage() {
                     <Link href={`/tickets/${t.ticketId}`} className="text-blue-600 hover:underline">{t.ticketNumber}</Link>
                   </div>
                   <div className="text-[12.5px] text-slate-500">
-                    <span className="text-blue-600">{t.agentName}</span> · {t.fromLocation} → {t.toLocation} · {t.distanceKm} km
+                    <span className="text-blue-600">{t.agentName}</span>
+                    {t.fromLocation && t.toLocation && <> · {t.fromLocation} → {t.toLocation}</>}
+                    {typeof t.distanceKm === "number" && t.distanceKm > 0 && <> · {t.distanceKm} km</>}
+                    {t.durationMinutes && <> · {t.durationMinutes} min</>}
                   </div>
                 </div>
                 <div className="flex items-center gap-3">

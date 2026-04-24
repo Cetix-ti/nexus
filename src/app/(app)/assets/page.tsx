@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { PageLoader } from "@/components/ui/page-loader";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   Search,
@@ -117,6 +118,27 @@ export default function AssetsPage() {
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const router = useRouter();
+
+  async function handleDelete(asset: Asset) {
+    if (!confirm(`Supprimer définitivement l'actif « ${asset.name} » ?\nCette action est irréversible.`)) return;
+    setDeleting(asset.id);
+    setOpenMenu(null);
+    try {
+      const r = await fetch(`/api/v1/assets/${asset.id}`, { method: "DELETE" });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        alert(`Erreur lors de la suppression : ${err.error ?? `HTTP ${r.status}`}`);
+        return;
+      }
+      setAssets((prev) => prev.filter((a) => a.id !== asset.id));
+    } catch (e) {
+      alert(`Erreur réseau : ${e instanceof Error ? e.message : "inconnue"}`);
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -527,13 +549,22 @@ export default function AssetsPage() {
                               <Eye className="h-4 w-4" />
                               Voir
                             </Link>
-                            <button className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+                            <button
+                              type="button"
+                              onClick={() => { setOpenMenu(null); router.push(`/assets/${asset.id}`); }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                            >
                               <Pencil className="h-4 w-4" />
                               Modifier
                             </button>
-                            <button className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50">
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(asset)}
+                              disabled={deleting === asset.id}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
                               <Trash2 className="h-4 w-4" />
-                              Supprimer
+                              {deleting === asset.id ? "Suppression…" : "Supprimer"}
                             </button>
                           </div>
                         )}

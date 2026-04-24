@@ -45,6 +45,23 @@ import {
   type DecoderResult,
 } from "./location-decoder";
 import { stripHtmlToText } from "./description-utils";
+import { zonedWallClockToUtc } from "./tz-parse";
+
+/**
+ * Parse un champ dateTime Graph vers un Date UTC correct.
+ *
+ * Graph renvoie le plus souvent un wall-clock local accompagné d'un
+ * `timeZone` IANA — la conversion doit utiliser ce TZ. Si le string
+ * contient déjà une indication de zone (suffix "Z", "+00:00", etc.)
+ * on le respecte.
+ */
+function parseGraphDateTime(dateTime: string, timeZone: string | undefined): Date {
+  if (/(Z|[+-]\d{2}:?\d{2})$/.test(dateTime)) {
+    return new Date(dateTime);
+  }
+  const tz = timeZone && timeZone.length > 0 ? timeZone : "America/Montreal";
+  return zonedWallClockToUtc(dateTime, tz);
+}
 
 // ---------------------------------------------------------------------------
 // Config — stockée dans tenant_settings ("calendar.location-sync")
@@ -270,20 +287,59 @@ export async function pullOutlookLocations(options?: {
     }
 
     // Events Nexus liés à Outlook qui ne sont PLUS dans la fenêtre Outlook
-    // = supprimés côté Outlook. On les supprime côté Nexus (soft via status).
-    // On se limite à la fenêtre pour ne pas toucher aux events hors portée.
+    // = supprimés côté Outlook. On SOFT-DELETE côté Nexus (deletedAt=now)
+    // pour préserver les liens vers les tickets / time-entries. Si l'event
+    // avait des tickets liés au moment de la suppression, on notifie les
+    // agents assignés pour qu'ils soient au courant — rien ne disparait
+    // silencieusement.
     const nexusLinked = await prisma.calendarEvent.findMany({
       where: {
         outlookEventId: { not: null },
         startsAt: { gte: from, lte: to },
+        deletedAt: null, // on ignore ceux déjà soft-deleted
       },
-      select: { id: true, outlookEventId: true },
+      select: {
+        id: true,
+        outlookEventId: true,
+        title: true,
+        startsAt: true,
+        ownerId: true,
+        agents: { select: { userId: true } },
+        _count: { select: { linkedTickets: true } },
+      },
     });
     for (const n of nexusLinked) {
       if (n.outlookEventId && !seenOutlookIds.has(n.outlookEventId)) {
-        // Côté Outlook, l'event n'existe plus → on cascade supprime côté Nexus.
-        await prisma.calendarEvent.delete({ where: { id: n.id } }).catch(() => {});
+        await prisma.calendarEvent.update({
+          where: { id: n.id },
+          data: { deletedAt: new Date(), status: "cancelled" },
+        }).catch(() => {});
         deleted++;
+
+        // Notification : uniquement si des tickets y étaient attachés —
+        // sinon la suppression est benigne et n'a pas besoin d'alarmer
+        // qui que ce soit. Destinataires = tous les agents assignés +
+        // le propriétaire (dédup).
+        if (n._count.linkedTickets > 0) {
+          const recipients = new Set<string>();
+          if (n.ownerId) recipients.add(n.ownerId);
+          for (const a of n.agents) recipients.add(a.userId);
+          const dateLabel = n.startsAt.toLocaleDateString("fr-CA", {
+            weekday: "long", day: "numeric", month: "long",
+          });
+          if (recipients.size > 0) {
+            await prisma.notification.createMany({
+              data: Array.from(recipients).map((userId) => ({
+                userId,
+                type: "calendar_event_deleted",
+                title: "Événement calendrier supprimé dans Outlook",
+                body: `« ${n.title} » (${dateLabel}) a été supprimé d'Outlook. ${n._count.linkedTickets} ticket${n._count.linkedTickets > 1 ? "s étaient" : " était"} rattaché${n._count.linkedTickets > 1 ? "s" : ""} à cet événement.`,
+                link: `/calendar?event=${n.id}`,
+                metadata: { eventId: n.id, linkedTicketsCount: n._count.linkedTickets },
+              })),
+            }).catch(() => {});
+          }
+        }
       }
     }
   } catch (e) {
@@ -309,34 +365,39 @@ async function applyDecodedToNexus(args: {
   const rawTitle = ev.subject || "";
   const decoded = decodeLocationTitle(rawTitle, args.agents, args.orgs);
 
-  // Parse Outlook dates. Graph renvoie "2026-04-15T09:00:00.0000000" sans Z
-  // avec timeZone séparé. On les traite comme UTC.
-  const startIso = ev.start.dateTime.endsWith("Z")
-    ? ev.start.dateTime
-    : ev.start.dateTime + "Z";
-  const endIso = ev.end.dateTime.endsWith("Z")
-    ? ev.end.dateTime
-    : ev.end.dateTime + "Z";
-  const startsAt = new Date(startIso);
-  let endsAt = new Date(endIso);
+  // Parse Outlook dates. Graph renvoie un wall-clock ("2026-04-15T09:00:00")
+  // accompagné d'un champ `timeZone` ("America/Montreal"). Avec le header
+  // `Prefer: outlook.timezone="UTC"`, Graph rebase les events TIMED en UTC.
+  //
+  // IMPORTANT — bug "mauvais jour" pour les all-day :
+  //   Le header `Prefer: UTC` ne convertit PAS les événements toute la
+  //   journée. Pour un all-day 2026-04-23 à Montréal, Graph renvoie :
+  //     start: { dateTime: "2026-04-23T00:00:00", timeZone: "UTC" }
+  //   Mais c'est en fait minuit MONTRÉAL, pas minuit UTC. Si on parse
+  //   comme UTC, JS render en Montréal → 2026-04-22 20:00 (jour AVANT).
+  //
+  // Solution : pour les all-day, on ignore le timeZone déclaré et on
+  // convertit le wall-clock comme minuit LOCAL (Cetix = Montréal).
+  const defaultTz = process.env.CALENDAR_DEFAULT_TZ || "America/Montreal";
+  let startsAt: Date;
+  let endsAt: Date;
+  if (ev.isAllDay) {
+    startsAt = zonedWallClockToUtc(ev.start.dateTime, defaultTz);
+    endsAt = zonedWallClockToUtc(ev.end.dateTime, defaultTz);
+  } else {
+    startsAt = parseGraphDateTime(ev.start.dateTime, ev.start.timeZone);
+    endsAt = parseGraphDateTime(ev.end.dateTime, ev.end.timeZone);
+  }
 
   // Outlook encode les events all-day avec une fin EXCLUSIVE : un event
-  // "journée entière" du 15 avril a start=2026-04-15T00:00 et
-  // end=2026-04-16T00:00. Nexus affiche alors le 16 avril comme "fin" et
-  // l'event tuile s'étale sur 2 jours dans le grid. On normalise à
-  // l'import : fin = veille à 23:59:59.999 (fin INCLUSIVE, convention
-  // Nexus). Fait uniquement si la fin est pile à minuit ET qu'elle est
-  // strictement après le start — signal qu'on est bien sur le pattern
-  // Outlook "exclusive end".
+  // "journée entière" du 15 avril a start=minuit 15 et end=minuit 16.
+  // Nexus utilise une fin INCLUSIVE (23:59:59.999 du dernier jour) pour
+  // éviter que la tuile s'étale sur 2 jours dans le grid. Avec la
+  // conversion TZ propre, `endsAt` est maintenant un instant UTC qui
+  // correspond à minuit dans la zone de l'event — on retire juste 1 ms,
+  // Graph garantit déjà "midnight-to-midnight" quand isAllDay=true.
   if (ev.isAllDay && endsAt.getTime() > startsAt.getTime()) {
-    const h = endsAt.getUTCHours();
-    const m = endsAt.getUTCMinutes();
-    const s = endsAt.getUTCSeconds();
-    const ms = endsAt.getUTCMilliseconds();
-    const isMidnight = h === 0 && m === 0 && s === 0 && ms === 0;
-    if (isMidnight) {
-      endsAt = new Date(endsAt.getTime() - 1); // 23:59:59.999 du jour précédent
-    }
+    endsAt = new Date(endsAt.getTime() - 1);
   }
 
   // Match partiel : decoded.ok=true mais certaines initiales agent étaient
@@ -362,6 +423,14 @@ async function applyDecodedToNexus(args: {
   //   - Outlook avec vraie description → Nexus affiche le texte propre.
   const bodyContent = stripHtmlToText(ev.body?.content);
 
+  // Multi-orgs : quand le bloc lieu contient plusieurs codes ("SADB/BDU"),
+  // on stocke TOUS les ids dans `organizationIds` (le premier est aussi
+  // dans `organizationId` pour rétro-compat UI). Les audits (travel-audit
+  // supervision + my-space) lisent `organizationIds` pour fan-out.
+  const orgIds: string[] = decoded.ok && decoded.organizations
+    ? decoded.organizations.map((o) => o.id)
+    : (decoded.ok && decoded.organizationId ? [decoded.organizationId] : []);
+
   const data = {
     calendarId: args.nexusCalendarId,
     title: rawTitle,
@@ -372,6 +441,7 @@ async function applyDecodedToNexus(args: {
     allDay: !!ev.isAllDay,
     ownerId: decoded.ok && decoded.agents.length > 0 ? decoded.agents[0].id : null,
     organizationId: decoded.ok ? decoded.organizationId : null,
+    organizationIds: orgIds,
     location: ev.location?.displayName ?? null,
     outlookEventId: ev.id,
     outlookCalendarId: "Localisation",
@@ -380,6 +450,9 @@ async function applyDecodedToNexus(args: {
     syncError: decoded.ok ? partialAgentsNote : decoded.message,
     lastSyncedAt: new Date(),
     status: "active",
+    // On "ressuscite" un event s'il avait été soft-deleted avant mais qu'il
+    // est réapparu côté Outlook (cas : un admin annule la suppression).
+    deletedAt: null,
   };
 
   let eventId: string;

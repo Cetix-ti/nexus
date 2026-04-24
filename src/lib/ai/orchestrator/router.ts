@@ -5,8 +5,9 @@
 // Stratégie (self-hosted first) :
 //   1. Filtrer les providers listés dans policy.allowedProviders
 //   2. Tester availability (cache 30s pour Ollama, instantané pour OpenAI)
-//   3. Préférer Ollama/local en PREMIER quand le GPU local est dispo
-//      (coût zéro + données restent on-prem — souhait explicite du MSP).
+//   3. Préférer Ollama (VM dédiée GPU sur LAN interne) en PREMIER quand
+//      il est joignable (coût zéro + données restent on-prem — souhait
+//      explicite du MSP).
 //   4. Fallback OpenAI seulement si Ollama indisponible OU policy interdit
 //      explicitement (ex: feature qui exige des capacités absentes du
 //      modèle local — aujourd'hui aucune).

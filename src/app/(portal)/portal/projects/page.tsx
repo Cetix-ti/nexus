@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { ProjectCard } from "@/components/portal/project-card";
 import type { Project } from "@/lib/projects/types";
+import { useLocaleStore } from "@/stores/locale-store";
 
 /** Partial Project shape returned by the portal API (no visibilitySettings). */
 type PortalProject = Omit<Project, "visibilitySettings" | "managerId" | "consumedAmount" | "budgetAmount" | "actualEndDate" | "riskNotes" | "isArchived" | "linkedTicketCount" | "memberCount" | "phaseCount" | "milestoneCount"> & {
@@ -22,12 +23,12 @@ type PortalProject = Omit<Project, "visibilitySettings" | "managerId" | "consume
 
 type Filter = "all" | "active" | "upcoming" | "completed" | "at_risk";
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "Tous" },
-  { key: "active", label: "En cours" },
-  { key: "upcoming", label: "À venir" },
-  { key: "completed", label: "Terminés" },
-  { key: "at_risk", label: "À risque" },
+const FILTERS: { key: Filter; labelKey: string }[] = [
+  { key: "all", labelKey: "portal.projects.filter.all" },
+  { key: "active", labelKey: "portal.projects.filter.active" },
+  { key: "upcoming", labelKey: "portal.projects.filter.upcoming" },
+  { key: "completed", labelKey: "portal.projects.filter.completed" },
+  { key: "at_risk", labelKey: "portal.projects.filter.atRisk" },
 ];
 
 function matchesFilter(p: PortalProject, f: Filter): boolean {
@@ -47,6 +48,7 @@ function matchesFilter(p: PortalProject, f: Filter): boolean {
 
 export default function PortalProjectsPage() {
   const { organizationName } = usePortalUser();
+  const t = useLocaleStore((s) => s.t);
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [projects, setProjects] = useState<PortalProject[]>([]);
@@ -63,14 +65,14 @@ export default function PortalProjectsPage() {
         return;
       }
       const json = await res.json();
-      if (!res.ok && !json.data) throw new Error(json.error || "Erreur lors du chargement");
+      if (!res.ok && !json.data) throw new Error(json.error || t("portal.projects.loadingError"));
       setProjects(json.data ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur inconnue");
+      setError(err instanceof Error ? err.message : t("portal.projects.unknownError"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchProjects();
@@ -116,7 +118,7 @@ export default function PortalProjectsPage() {
             onClick={fetchProjects}
             className="mt-4 rounded-xl bg-[#2563EB] px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            Réessayer
+            {t("portal.projects.retry")}
           </button>
         </div>
       </div>
@@ -126,9 +128,9 @@ export default function PortalProjectsPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-neutral-900">Mes projets</h1>
+        <h1 className="text-3xl font-bold text-neutral-900">{t("portal.projects.heading")}</h1>
         <p className="mt-2 text-base text-neutral-500">
-          Suivez l&apos;avancement des projets en cours pour{" "}
+          {t("portal.projects.subtitlePrefix")}{" "}
           <span className="font-medium text-neutral-700">
             {organizationName}
           </span>
@@ -143,7 +145,7 @@ export default function PortalProjectsPage() {
               <FolderKanban className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs text-neutral-500">Projets en cours</p>
+              <p className="text-xs text-neutral-500">{t("portal.projects.stat.active")}</p>
               <p className="text-xl sm:text-2xl font-bold text-neutral-900">
                 {activeCount}
               </p>
@@ -156,7 +158,7 @@ export default function PortalProjectsPage() {
               <Clock className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs text-neutral-500">Heures consommées</p>
+              <p className="text-xs text-neutral-500">{t("portal.projects.stat.hours")}</p>
               <p className="text-xl sm:text-2xl font-bold text-neutral-900">
                 {totalConsumedHours.toFixed(1)} h
               </p>
@@ -169,7 +171,7 @@ export default function PortalProjectsPage() {
               <Flag className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-neutral-500">Total projets</p>
+              <p className="text-xs text-neutral-500">{t("portal.projects.stat.total")}</p>
               <p className="text-xl sm:text-2xl font-bold text-neutral-900">
                 {projects.length}
               </p>
@@ -192,7 +194,7 @@ export default function PortalProjectsPage() {
                   : "bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-50"
               )}
             >
-              {f.label}
+              {t(f.labelKey)}
             </button>
           ))}
         </div>
@@ -202,7 +204,7 @@ export default function PortalProjectsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Rechercher un projet..."
+            placeholder={t("portal.projects.searchPlaceholder")}
             className="w-full rounded-xl border border-neutral-200 bg-white py-2.5 pl-10 pr-4 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
           />
         </div>
@@ -215,10 +217,10 @@ export default function PortalProjectsPage() {
             <Inbox className="h-7 w-7" />
           </div>
           <h3 className="mt-4 text-base font-semibold text-neutral-900">
-            Aucun projet à afficher
+            {t("portal.projects.noResults")}
           </h3>
           <p className="mt-1.5 text-sm text-neutral-500">
-            Aucun projet ne correspond à vos critères pour le moment.
+            {t("portal.projects.noResultsDesc")}
           </p>
         </div>
       ) : (

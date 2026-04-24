@@ -38,7 +38,7 @@ export async function renderBudgetToPdf(budgetId: string): Promise<Buffer> {
       margin: { top: "15mm", right: "12mm", bottom: "15mm", left: "12mm" },
       displayHeaderFooter: true,
       headerTemplate: `<div></div>`,
-      footerTemplate: `<div style="font-size:8px;color:#94a3b8;width:100%;text-align:center;padding:0 10mm;">Budget IT · <span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
+      footerTemplate: `<div style="font-size:8px;color:#94a3b8;width:100%;text-align:center;padding:0 10mm;">Budget TI · <span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
     return Buffer.from(pdf);
   } finally {

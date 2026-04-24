@@ -396,6 +396,8 @@ function NewProjectModal({
   const [type, setType] = useState<string>("internal");
   const [description, setDescription] = useState("");
   const [isInternal, setIsInternal] = useState(false);
+  const [budgetHours, setBudgetHours] = useState("");
+  const [budgetAmount, setBudgetAmount] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [orgs, setOrgs] = useState<{ id: string; name: string; isInternal?: boolean }[]>([]);
@@ -438,6 +440,8 @@ function NewProjectModal({
           status: "planning",
           startDate: new Date().toISOString().split("T")[0],
           isInternal,
+          budgetHours: budgetHours ? Number(budgetHours) : undefined,
+          budgetAmount: budgetAmount ? Number(budgetAmount) : undefined,
         }),
       });
       if (!res.ok) {
@@ -478,14 +482,11 @@ function NewProjectModal({
             <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
               Organisation
             </label>
-            <Select value={orgId} onValueChange={setOrgId}>
-              <SelectTrigger><SelectValue placeholder="Sélectionner..." /></SelectTrigger>
-              <SelectContent>
-                {orgs.map((o) => (
-                  <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <OrgAutocomplete
+              orgs={orgs}
+              value={orgId}
+              onChange={setOrgId}
+            />
           </div>
           <div>
             <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
@@ -510,6 +511,22 @@ function NewProjectModal({
               rows={3}
               placeholder="Décrivez le projet..."
               className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Budget heures (optionnel)"
+              type="number"
+              placeholder="40"
+              value={budgetHours}
+              onChange={(e) => setBudgetHours(e.target.value)}
+            />
+            <Input
+              label="Budget $ (optionnel)"
+              type="number"
+              placeholder="5000"
+              value={budgetAmount}
+              onChange={(e) => setBudgetAmount(e.target.value)}
             />
           </div>
           <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 p-3 cursor-pointer hover:bg-slate-50 transition-colors">
@@ -549,6 +566,87 @@ function NewProjectModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+// Autocomplete combobox pour sélectionner une organisation. Permet la saisie
+// libre avec filtrage en direct sur le nom — pratique quand on a 50+ clients.
+function OrgAutocomplete({
+  orgs,
+  value,
+  onChange,
+}: {
+  orgs: { id: string; name: string }[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const selected = orgs.find((o) => o.id === value);
+  const [query, setQuery] = useState(selected?.name ?? "");
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+
+  useEffect(() => {
+    if (!open && selected) setQuery(selected.name);
+  }, [selected, open]);
+
+  const filtered = query.trim()
+    ? orgs.filter((o) => o.name.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+    : orgs.slice(0, 20);
+
+  function pick(id: string) {
+    const o = orgs.find((x) => x.id === id);
+    onChange(id);
+    if (o) setQuery(o.name);
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+          setHighlight(0);
+          if (!e.target.value) onChange("");
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => {
+          if (!open) return;
+          if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => Math.min(h + 1, filtered.length - 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((h) => Math.max(h - 1, 0)); }
+          else if (e.key === "Enter" && filtered[highlight]) { e.preventDefault(); pick(filtered[highlight].id); }
+          else if (e.key === "Escape") { setOpen(false); }
+        }}
+        placeholder="Rechercher une organisation..."
+        className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3.5 text-[13px] placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 left-0 right-0 mt-1 max-h-[240px] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+          {filtered.map((o, i) => (
+            <button
+              key={o.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pick(o.id)}
+              className={cn(
+                "w-full text-left px-3 py-2 text-[13px] transition-colors",
+                i === highlight ? "bg-blue-50 text-blue-700" : "hover:bg-slate-50 text-slate-700",
+              )}
+            >
+              {o.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && filtered.length === 0 && (
+        <div className="absolute z-50 left-0 right-0 mt-1 rounded-lg border border-slate-200 bg-white shadow-lg p-3 text-[12.5px] text-slate-500">
+          Aucune organisation trouvée.
+        </div>
+      )}
     </div>
   );
 }

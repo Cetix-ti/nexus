@@ -1,18 +1,29 @@
-# Installation Ollama sur le serveur Nexus (GPU P6000)
+# Installation Ollama sur la VM dédiée IA (GPU P6000)
 
-Ces commandes doivent être exécutées en sudo sur le serveur. Elles
+> **Note d'architecture** — Ollama tourne sur une **VM Ubuntu dédiée**
+> (`192.168.203.11`) avec le passthrough PCI GPU P6000 attaché. Nexus la
+> joint via `OLLAMA_URL` en HTTP sur le LAN interne. Raison : le
+> passthrough PCI d'un GPU bloque les snapshots VM, donc Veeam ne pouvait
+> plus backup la VM Nexus quand le GPU y était attaché. Séparer isole
+> l'état précieux (Postgres Nexus = snapshotté) du compute jetable
+> (VM Ollama = poids re-téléchargeables).
+>
+> Les commandes ci-dessous s'exécutent **sur la VM Ollama**, pas sur Nexus.
+
+Ces commandes doivent être exécutées en sudo sur la VM IA. Elles
 n'ont pas été automatisées par le build pour laisser le contrôle manuel
 sur l'installation d'un service système.
 
 ## 1. Prérequis — drivers NVIDIA & CUDA
 
-Déjà installés (driver 535, CUDA 12.2). Vérifier avant de continuer :
+Driver 535 + CUDA 12.2 recommandés. Vérifier :
 
 ```bash
 nvidia-smi
 ```
 
-Doit afficher la Quadro P6000 avec 24 GB de VRAM.
+Doit afficher la Quadro P6000 avec 24 GB de VRAM. Si absent, vérifier
+que le passthrough PCI est bien actif côté ESXi/vCenter pour la VM.
 
 ## 2. Installation Ollama
 
@@ -21,64 +32,80 @@ Doit afficher la Quadro P6000 avec 24 GB de VRAM.
 # systemd `ollama.service` et configure le port 11434 par défaut).
 curl -fsSL https://ollama.com/install.sh | sudo sh
 
-# Vérifier que le service est actif et écoute localhost uniquement
-# (on NE veut PAS exposer Ollama sur le réseau — il doit rester
-# accessible UNIQUEMENT depuis Nexus sur le même serveur).
 sudo systemctl status ollama
-ss -tlnp | grep 11434
 ```
 
-Le bind doit être `127.0.0.1:11434`. Si jamais c'est `0.0.0.0`, ajouter
-dans `/etc/systemd/system/ollama.service.d/override.conf` :
+## 3. Exposer Ollama sur l'interface LAN
 
-```ini
-[Service]
-Environment="OLLAMA_HOST=127.0.0.1:11434"
-```
-
-Puis `sudo systemctl daemon-reload && sudo systemctl restart ollama`.
-
-## 3. Télécharger les modèles
+Par défaut le daemon bind `127.0.0.1` — inaccessible depuis Nexus.
+Créer l'override :
 
 ```bash
-# Modèle chat principal — Llama 3.1 8B quantisé (Q4_K_M, ~4.7 GB VRAM)
-sudo -u ollama ollama pull llama3.1:8b
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+sudo tee /etc/systemd/system/ollama.service.d/override.conf >/dev/null <<'EOF'
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+EOF
 
-# Optionnel — version plus grande si on a de la marge (Llama 3.1 70B
-# dépasse 24 GB en Q4, donc on ne l'active PAS avec la P6000).
-# Alternative plus légère pour classification ultra-rapide :
-sudo -u ollama ollama pull qwen2.5:7b-instruct-q4_K_M
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+ss -tlnp | grep 11434   # doit afficher 0.0.0.0:11434
+```
 
-# Modèle d'embeddings (pour future Phase 2 — RAG vectoriel)
+**Firewall** : Ollama n'a aucune auth native. La VM doit bloquer tout
+trafic entrant 11434 sauf depuis l'IP exacte de Nexus. Exemple UFW :
+
+```bash
+sudo ufw default deny incoming
+sudo ufw allow from 192.168.204.11 to any port 11434 proto tcp
+sudo ufw allow ssh
+sudo ufw enable
+```
+
+(Adapter `192.168.204.11` à l'IP LAN réelle de Nexus.)
+
+## 4. Télécharger les modèles
+
+```bash
+# Modèles par défaut utilisés par Nexus (OLLAMA_MODEL / OLLAMA_MODEL_SMALL)
+sudo -u ollama ollama pull gemma3:12b
+sudo -u ollama ollama pull gemma3:4b
+
+# Modèle d'embeddings (RAG Phase 2)
 sudo -u ollama ollama pull nomic-embed-text
 ```
 
-## 4. Vérification
+## 5. Vérification (depuis la VM Ollama)
 
 ```bash
-# Chat de test
 curl -s http://localhost:11434/api/chat -d '{
-  "model": "llama3.1:8b",
+  "model": "gemma3:12b",
   "messages": [{"role":"user","content":"Réponds en 5 mots: ça marche?"}],
   "stream": false
 }' | jq .message.content
 
-# Embedding de test
 curl -s http://localhost:11434/api/embeddings -d '{
   "model": "nomic-embed-text",
   "prompt": "ticket imprimante hors ligne"
 }' | jq '.embedding | length'
-# Doit retourner 768 (dimension du modèle nomic-embed-text).
+# Doit retourner 768.
 ```
 
-## 5. Configuration Nexus
-
-Ajouter au `.env` de Nexus (ou laisser les défauts) :
+Depuis la VM Nexus, valider la joignabilité :
 
 ```bash
-# Défauts utilisés si non définis :
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.1:8b
+curl -s http://192.168.203.11:11434/api/tags | jq '.models[].name'
+```
+
+## 6. Configuration Nexus
+
+Sur Nexus (`/opt/nexus/.env`) :
+
+```bash
+OLLAMA_URL=http://192.168.203.11:11434
+OLLAMA_MODEL=gemma3:12b
+OLLAMA_MODEL_SMALL=gemma3:4b
+OLLAMA_EMBED_MODEL=nomic-embed-text
+OLLAMA_KEEP_ALIVE=30m
 ```
 
 Puis redémarrer Nexus :
@@ -87,34 +114,33 @@ Puis redémarrer Nexus :
 sudo systemctl restart nexus
 ```
 
-## 6. Santé & monitoring
+## 7. Santé & monitoring
 
 L'orchestrateur Nexus (`src/lib/ai/orchestrator/`) cache l'availability
 d'Ollama pendant 30 secondes. En cas de crash, Nexus bascule
 automatiquement sur OpenAI pour les policies qui l'autorisent, et bloque
 proprement les policies `regulated`.
 
-Vérifier ponctuellement la charge GPU :
+Endpoint santé côté Nexus : `GET /api/v1/ai/health`.
+
+Charge GPU sur la VM Ollama :
 
 ```bash
 watch -n 2 nvidia-smi
 ```
 
-Un appel Llama 3.1 8B Q4 utilise ~5 GB VRAM et dure 2-8 secondes selon
-la longueur du prompt.
+Un appel gemma3:12b utilise ~9 GB VRAM.
 
-## 7. Mise à jour des modèles
+## 8. Mise à jour des modèles
 
 ```bash
-sudo -u ollama ollama pull llama3.1:8b
+sudo -u ollama ollama pull gemma3:12b
 sudo systemctl restart ollama
 ```
 
-Ollama utilise le même tag par défaut — pas de rolling version.
-
-## 8. Résidence des données
+## 9. Résidence des données
 
 Ollama ne fait AUCUN appel externe après l'installation. Les prompts,
-réponses, et poids du modèle restent sur le serveur. C'est la garantie
+réponses, et poids du modèle restent sur la VM. C'est la garantie
 de résidence complète pour les tâches `sensitivity=regulated` et la
 police par défaut des clients opt-out du cloud.

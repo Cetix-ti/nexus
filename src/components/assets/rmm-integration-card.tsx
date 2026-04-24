@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { RefreshCw, Plug, Settings, CheckCircle2, AlertCircle } from "lucide-react";
+import { RefreshCw, Plug, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -111,10 +111,6 @@ export function RmmIntegrationCard({ integration, onSync, onConnect }: RmmIntegr
             Connecter
           </Button>
         )}
-        <Button type="button" size="sm" variant="outline">
-          <Settings className="h-3.5 w-3.5" />
-          Configurer
-        </Button>
       </div>
     </Card>
   );

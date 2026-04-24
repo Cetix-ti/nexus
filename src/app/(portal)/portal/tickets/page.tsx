@@ -22,6 +22,7 @@ import {
   getGroupForStatus,
   type PortalStatusGroup,
 } from "@/lib/portal/ticket-status-config";
+import { useLocaleStore } from "@/stores/locale-store";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -53,12 +54,12 @@ type TabKey = "active" | "open" | "in_progress" | "waiting" | "resolved";
 
 // ── Tab config (derived from status groups) ────────────────────────────────
 
-const TABS: { key: TabKey; label: string; groupKeys: string[] }[] = [
-  { key: "active",      label: "Actifs",         groupKeys: ["open", "in_progress", "waiting"] },
-  { key: "open",        label: "Ouverts",        groupKeys: ["open"] },
-  { key: "in_progress", label: "En traitement",  groupKeys: ["in_progress"] },
-  { key: "waiting",     label: "En attente",     groupKeys: ["waiting"] },
-  { key: "resolved",    label: "Résolus / Fermés", groupKeys: ["resolved"] },
+const TABS: { key: TabKey; labelKey: string; groupKeys: string[] }[] = [
+  { key: "active",      labelKey: "portal.tickets.tab.active",      groupKeys: ["open", "in_progress", "waiting"] },
+  { key: "open",        labelKey: "portal.tickets.tab.open",        groupKeys: ["open"] },
+  { key: "in_progress", labelKey: "portal.tickets.tab.in_progress", groupKeys: ["in_progress"] },
+  { key: "waiting",     labelKey: "portal.tickets.tab.waiting",     groupKeys: ["waiting"] },
+  { key: "resolved",    labelKey: "portal.tickets.tab.resolved",    groupKeys: ["resolved"] },
 ];
 
 function statusMatchesTab(status: string, tabKey: TabKey): boolean {
@@ -80,14 +81,18 @@ const GROUP_ICONS: Record<string, any> = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "À l'instant";
-  if (mins < 60) return `${mins}min`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}j`;
+function useTimeAgo() {
+  const tr = useLocaleStore((s) => s.t);
+  const locale = useLocaleStore((s) => s.locale);
+  return (iso: string): string => {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return tr("portal.home.timeNow");
+    if (mins < 60) return `${mins}min`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h`;
+    return `${Math.floor(hours / 24)}${locale === "fr" ? "j" : "d"}`;
+  };
 }
 
 function countForGroup(
@@ -104,6 +109,8 @@ function countForGroup(
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function PortalTicketsPage() {
+  const tr = useLocaleStore((s) => s.t);
+  const timeAgo = useTimeAgo();
   const [tickets, setTickets] = useState<PortalTicket[]>([]);
   const [stats, setStats] = useState<TicketStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -190,9 +197,9 @@ export default function PortalTicketsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Mes billets</h1>
+          <h1 className="text-xl font-bold text-slate-900">{tr("portal.tickets.heading")}</h1>
           <p className="text-[13px] text-slate-500 mt-0.5">
-            Vue d&apos;ensemble de vos demandes de support
+            {tr("portal.tickets.subtitle")}
           </p>
         </div>
         <Link
@@ -200,7 +207,7 @@ export default function PortalTicketsPage() {
           className="inline-flex items-center gap-2 h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium rounded-lg shadow-sm transition-colors"
         >
           <Plus className="h-4 w-4" />
-          Nouveau billet
+          {tr("portal.tickets.newButton")}
         </Link>
       </div>
 
@@ -242,7 +249,7 @@ export default function PortalTicketsPage() {
                 </span>
               </div>
               <p className={cn("text-[12px] font-medium", group.textClass)}>
-                {group.label}
+                {tr(group.labelKey)}
               </p>
             </button>
           );
@@ -269,7 +276,7 @@ export default function PortalTicketsPage() {
             </span>
           </div>
           <p className="text-[12px] font-medium text-slate-400">
-            Résolus / Fermés
+            {tr("portal.tickets.resolvedClosed")}
           </p>
         </button>
       </div>
@@ -278,8 +285,8 @@ export default function PortalTicketsPage() {
       {statusBarSegments.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <span>Distribution des billets actifs</span>
-            <span>{activeTotal} billet{activeTotal > 1 ? "s" : ""} actif{activeTotal > 1 ? "s" : ""}</span>
+            <span>{tr("portal.tickets.activeDistribution")}</span>
+            <span>{tr(activeTotal > 1 ? "portal.tickets.activeCountMany" : "portal.tickets.activeCountSingle", { count: activeTotal })}</span>
           </div>
           <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100">
             {statusBarSegments.map((seg) => (
@@ -305,7 +312,7 @@ export default function PortalTicketsPage() {
                   className="h-2 w-2 rounded-full"
                   style={{ backgroundColor: seg.group.color }}
                 />
-                {seg.group.label}: {seg.count}
+                {tr(seg.group.labelKey)}: {seg.count}
               </div>
             ))}
           </div>
@@ -317,7 +324,7 @@ export default function PortalTicketsPage() {
       {stats && stats.byPriority.length > 0 && (
         <div className="flex items-center gap-4 flex-wrap">
           <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-            Par priorité
+            {tr("portal.tickets.byPriority")}
           </span>
           {PORTAL_PRIORITIES.map((p) => {
             const count =
@@ -336,7 +343,7 @@ export default function PortalTicketsPage() {
                   className="h-1.5 w-1.5 rounded-full"
                   style={{ backgroundColor: p.color }}
                 />
-                {p.label}: {count}
+                {tr(p.labelKey)}: {count}
               </span>
             );
           })}
@@ -352,7 +359,7 @@ export default function PortalTicketsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Rechercher un billet..."
+              placeholder={tr("portal.tickets.searchPlaceholder")}
               className="h-10 w-full pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-[13px] placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
@@ -370,7 +377,7 @@ export default function PortalTicketsPage() {
                 tab.key === "resolved" && activeTab !== "resolved" && "text-slate-400",
               )}
             >
-              {tab.label}
+              {tr(tab.labelKey)}
               <span className="ml-1.5 text-[11px] tabular-nums text-slate-400">
                 {tabCounts[tab.key] ?? 0}
               </span>
@@ -385,8 +392,11 @@ export default function PortalTicketsPage() {
           {filtered.map((t) => {
             const st = STATUS_MAP[t.status] ?? {
               label: t.status,
+              labelKey: "",
               bg: "bg-slate-50",
               text: "text-slate-600",
+              color: "#94A3B8",
+              value: t.status,
             };
             const pr = PRIORITY_MAP[t.priority];
             const isResolved = ["resolved", "closed", "cancelled"].includes(
@@ -415,7 +425,7 @@ export default function PortalTicketsPage() {
                         st.text,
                       )}
                     >
-                      {st.label}
+                      {st.labelKey ? tr(st.labelKey) : st.label}
                     </span>
                     {pr && (
                       <span
@@ -425,7 +435,7 @@ export default function PortalTicketsPage() {
                           pr.textClass,
                         )}
                       >
-                        {pr.label}
+                        {tr(pr.labelKey)}
                       </span>
                     )}
                     {t.assigneeName && (
@@ -454,8 +464,8 @@ export default function PortalTicketsPage() {
           />
           <p className="text-[14px] text-slate-500">
             {tickets.length === 0
-              ? "Aucun billet pour le moment."
-              : "Aucun résultat pour cette recherche."}
+              ? tr("portal.tickets.noneYet")
+              : tr("portal.tickets.noResults")}
           </p>
         </div>
       )}

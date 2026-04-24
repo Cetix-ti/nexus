@@ -7,7 +7,15 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser, isStaffRole } from "@/lib/auth-utils";
 import { sendNewBugEmail } from "@/lib/bugs/notifications";
+import { notifyUser, notifyUsers } from "@/lib/notifications/notify";
 import type { BugSeverity, BugStatus } from "@prisma/client";
+
+const SEVERITY_LABELS: Record<BugSeverity, string> = {
+  LOW: "mineur",
+  MEDIUM: "moyen",
+  HIGH: "majeur",
+  CRITICAL: "critique",
+};
 
 const SEVERITIES: BugSeverity[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 const STATUSES: BugStatus[] = ["NEW", "TRIAGED", "APPROVED_FOR_FIX", "FIX_IN_PROGRESS", "FIX_PROPOSED", "FIXED", "REJECTED", "DUPLICATE"];
@@ -63,7 +71,67 @@ export async function POST(req: Request) {
       linkedTicketId: body?.linkedTicketId || null,
     },
   });
-  // Email non-bloquant pour triage.
+  // Email dédié (avec boutons approve/reject one-click) — non-bloquant.
   void sendNewBugEmail(created.id).catch((e) => console.error("[bugs] sendNewBugEmail failed", e));
+
+  // In-app : notifier tous les admins (hors reporter) pour triage,
+  // + accusé de réception au reporter. Le dispatcher central respecte
+  // les préférences par-event.
+  void (async () => {
+    try {
+      const admins = await prisma.user.findMany({
+        where: { role: { in: ["SUPER_ADMIN", "MSP_ADMIN"] }, isActive: true },
+        select: { id: true },
+      });
+      const adminIds = admins.map((a) => a.id);
+      const detailLink = `/admin/bugs/${created.id}`;
+      const sevLabel = SEVERITY_LABELS[severity];
+      const reporterName = `${me.firstName} ${me.lastName}`.trim() || me.email;
+
+      await notifyUsers(
+        adminIds,
+        "bug_reported",
+        {
+          title: `Bug ${sevLabel} signalé`,
+          body: `${reporterName} · ${created.title}`,
+          link: detailLink,
+          metadata: { bugId: created.id, severity, reporterUserId: me.id },
+          emailSubject: `[Bug ${severity}] ${created.title}`,
+          email: {
+            title: `Bug ${sevLabel} signalé`,
+            intro: `${reporterName} vient de signaler un bug depuis ${created.contextUrl ?? "Nexus"}.`,
+            metadata: [
+              { label: "Sévérité", value: sevLabel },
+              { label: "Reporter", value: reporterName },
+              ...(created.contextUrl ? [{ label: "Page", value: created.contextUrl }] : []),
+            ],
+            body: created.description.slice(0, 500) + (created.description.length > 500 ? "…" : ""),
+            ctaUrl: detailLink,
+            ctaLabel: "Voir le bug",
+          },
+        },
+        me.id,
+      );
+
+      await notifyUser(me.id, "bug_reported_ack", {
+        title: "Bug enregistré",
+        body: created.title,
+        link: detailLink,
+        metadata: { bugId: created.id, severity },
+        emailSubject: `Bug enregistré : ${created.title}`,
+        email: {
+          title: "Bug enregistré",
+          intro: "Merci ! Ton signalement a été transmis aux admins pour triage.",
+          metadata: [{ label: "Sévérité", value: sevLabel }],
+          body: created.description.slice(0, 300),
+          ctaUrl: detailLink,
+          ctaLabel: "Suivre l'avancement",
+        },
+      });
+    } catch (e) {
+      console.error("[bugs] in-app notify failed", e);
+    }
+  })();
+
   return NextResponse.json(created, { status: 201 });
 }

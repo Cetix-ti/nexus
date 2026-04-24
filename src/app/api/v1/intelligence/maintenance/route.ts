@@ -41,28 +41,44 @@ export async function GET() {
 
   const suggestions: Array<Suggestion & { updatedAt: string }> = [];
   const orgIds = new Set<string>();
+  const allEvidenceIds = new Set<string>();
   for (const r of rows) {
     const v = r.value as Suggestion | null;
     if (!v) continue;
     if (v.organizationId) orgIds.add(v.organizationId);
+    for (const tid of v.evidenceTicketIds ?? []) allEvidenceIds.add(tid);
     suggestions.push({ ...v, updatedAt: r.lastUpdatedAt.toISOString() });
   }
 
-  const orgs =
+  const [orgs, evidenceTickets] = await Promise.all([
     orgIds.size > 0
-      ? await prisma.organization.findMany({
+      ? prisma.organization.findMany({
           where: { id: { in: Array.from(orgIds) } },
           select: { id: true, name: true },
         })
-      : [];
+      : Promise.resolve([]),
+    allEvidenceIds.size > 0
+      ? prisma.ticket.findMany({
+          where: { id: { in: Array.from(allEvidenceIds) } },
+          select: { id: true, number: true, subject: true },
+        })
+      : Promise.resolve([]),
+  ]);
   const orgNameById = new Map(orgs.map((o) => [o.id, o.name]));
+  const ticketById = new Map(
+    evidenceTickets.map((t) => [t.id, { id: t.id, number: t.number, subject: t.subject }]),
+  );
 
-  // Enrichis avec le nom d'org et filtre les orphelins.
+  // Enrichis avec le nom d'org + numéros de tickets de référence, et filtre
+  // les orphelins.
   const enriched = suggestions
     .map((s) => ({
       ...s,
       organizationName:
         s.organizationId ? orgNameById.get(s.organizationId) ?? null : null,
+      evidenceTickets: (s.evidenceTicketIds ?? [])
+        .map((tid) => ticketById.get(tid))
+        .filter((t): t is { id: string; number: number; subject: string } => !!t),
     }))
     .filter((s) => s.suggestionId);
 

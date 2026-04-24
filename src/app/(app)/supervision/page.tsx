@@ -170,6 +170,33 @@ function fmtTime(iso: string): string {
 // Page
 // ---------------------------------------------------------------------------
 
+interface CloseAuditRow {
+  invocationId: string;
+  ticketId: string;
+  ticketNumber: number;
+  ticketSubject: string;
+  orgName: string;
+  closedAt: string | null;
+  verdict: "needs_improvement" | "blocked";
+  readinessScore: number;
+  warnings: string[];
+  missingFields: string[];
+  agent: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    avatar: string | null;
+  } | null;
+}
+
+interface CloseAuditBucket {
+  agent: CloseAuditRow["agent"];
+  needsImprovement: number;
+  blocked: number;
+  items: CloseAuditRow[];
+}
+
 export default function SupervisionPage() {
   const [data, setData] = useState<AgentData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -178,6 +205,8 @@ export default function SupervisionPage() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
+  const [closeAudits, setCloseAudits] = useState<CloseAuditBucket[]>([]);
+  const [closeAuditsLoading, setCloseAuditsLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -202,6 +231,25 @@ export default function SupervisionPage() {
   }, [range, customFrom, customTo]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Audits IA des notes de résolution — charge en parallèle du dashboard
+  // principal. On garde les listes verticales courtes : si un ticket a été
+  // audité plusieurs fois, seul le dernier verdict compte (agrégé côté API).
+  useEffect(() => {
+    let cancelled = false;
+    setCloseAuditsLoading(true);
+    const { from, to } = resolveRange(range, customFrom, customTo);
+    const params = new URLSearchParams({
+      from: from.toISOString(),
+      to: to.toISOString(),
+    });
+    fetch(`/api/v1/supervision/close-audits?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : { agents: [] }))
+      .then((d) => { if (!cancelled) setCloseAudits(d.agents ?? []); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setCloseAuditsLoading(false); });
+    return () => { cancelled = true; };
+  }, [range, customFrom, customTo]);
 
   if (loading && data.length === 0) {
     return (
@@ -302,6 +350,24 @@ export default function SupervisionPage() {
         </div>
       )}
 
+      {/* Audits IA des notes de résolution — superviseur uniquement.
+          Liste les tickets fermés sans note jugée suffisante. */}
+      <CloseAuditsSection buckets={closeAudits} loading={closeAuditsLoading} />
+
+      {/* Audit déplacements : détection manqués/doublons basés sur les
+          events calendrier WORK_LOCATION vs les saisies de temps onsite. */}
+      <TravelAuditSection
+        from={resolveRange(range, customFrom, customTo).from.toISOString()}
+        to={resolveRange(range, customFrom, customTo).to.toISOString()}
+      />
+
+      {/* Dépenses soumises par les agents sur la plage (total, sans reçu,
+          détail). Aide à repérer les patterns inhabituels. */}
+      <AgentExpensesSection
+        from={resolveRange(range, customFrom, customTo).from.toISOString()}
+        to={resolveRange(range, customFrom, customTo).to.toISOString()}
+      />
+
       {/* Agent cards */}
       <div className="space-y-4">
         {data.map((d) => (
@@ -314,6 +380,502 @@ export default function SupervisionPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Agent expenses — vue agrégée des dépenses soumises par les agents sur la
+// plage courante. Permet au superviseur de voir qui dépense quoi et de
+// repérer les entrées sans pièce jointe (à chasser).
+// ---------------------------------------------------------------------------
+interface AgentExpensesBucket {
+  agent: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    avatar: string | null;
+  };
+  total: number;
+  billable: number;
+  entryCount: number;
+  withoutReceiptCount: number;
+  entries: Array<{
+    id: string;
+    date: string;
+    category: string;
+    description: string;
+    amount: number;
+    vendor: string | null;
+    isBillable: boolean;
+    hasReceipt: boolean;
+    organizationName: string | null;
+    reportId: string;
+    reportTitle: string;
+    reportStatus: string;
+  }>;
+}
+
+function AgentExpensesSection({ from, to }: { from: string; to: string }) {
+  const [buckets, setBuckets] = useState<AgentExpensesBucket[]>([]);
+  const [grandTotal, setGrandTotal] = useState(0);
+  const [withoutReceipt, setWithoutReceipt] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const params = new URLSearchParams({ from, to });
+    fetch(`/api/v1/supervision/expenses?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d) return;
+        setBuckets(d.agents ?? []);
+        setGrandTotal(d.totals?.grandTotal ?? 0);
+        setWithoutReceipt(d.totals?.withoutReceipt ?? 0);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [from, to]);
+
+  if (!loading && buckets.length === 0) return null;
+
+  const fmtMoneyCa = (v: number) =>
+    v.toLocaleString("fr-CA", { style: "currency", currency: "CAD" });
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-3">
+        <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+          <Briefcase className="h-5 w-5 text-emerald-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-semibold text-slate-900">
+            Dépenses soumises par les agents
+            {grandTotal > 0 && (
+              <span className="ml-2 text-[12.5px] font-normal text-slate-500 tabular-nums">
+                · {fmtMoneyCa(grandTotal)}
+              </span>
+            )}
+          </p>
+          <p className="text-[12px] text-slate-500">
+            Toutes les entrées créées sur la plage, regroupées par agent.
+            {withoutReceipt > 0 && (
+              <span className="ml-1 text-amber-700">
+                · {withoutReceipt} sans pièce jointe
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+      {loading ? (
+        <div className="px-5 py-6 text-[13px] text-slate-400">Chargement…</div>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {buckets.map((b) => {
+            const isOpen = expanded.has(b.agent.id);
+            return (
+              <li key={b.agent.id}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpanded((s) => {
+                      const next = new Set(s);
+                      if (next.has(b.agent.id)) next.delete(b.agent.id);
+                      else next.add(b.agent.id);
+                      return next;
+                    })
+                  }
+                  className="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors text-left"
+                >
+                  {isOpen ? (
+                    <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13.5px] font-medium text-slate-900 truncate">
+                      {b.agent.firstName} {b.agent.lastName}
+                    </p>
+                    <p className="text-[11.5px] text-slate-500 truncate">
+                      {b.entryCount} entrée{b.entryCount > 1 ? "s" : ""}
+                      {b.billable > 0 && (
+                        <>
+                          {" · "}
+                          Facturable : <span className="tabular-nums">{fmtMoneyCa(b.billable)}</span>
+                        </>
+                      )}
+                      {b.withoutReceiptCount > 0 && (
+                        <span className="text-amber-700">
+                          {" · "}
+                          {b.withoutReceiptCount} sans facture
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <span className="text-[13px] font-bold text-slate-800 tabular-nums">
+                    {fmtMoneyCa(b.total)}
+                  </span>
+                </button>
+                {isOpen && (
+                  <ul className="divide-y divide-slate-100 bg-slate-50/40">
+                    {b.entries.map((e) => (
+                      <li key={e.id} className="px-5 py-2.5 pl-12">
+                        <div className="flex items-center gap-3 text-[12.5px]">
+                          <span className="text-slate-500 tabular-nums w-20 shrink-0">
+                            {new Date(e.date).toLocaleDateString("fr-CA", { day: "2-digit", month: "short" })}
+                          </span>
+                          <span className="text-slate-400 shrink-0 min-w-[90px]">{e.category}</span>
+                          <span className="flex-1 text-slate-700 truncate">
+                            {e.description || <span className="italic text-slate-400">(sans description)</span>}
+                          </span>
+                          {e.organizationName && (
+                            <span className="text-[11px] text-slate-500 shrink-0">{e.organizationName}</span>
+                          )}
+                          {e.isBillable && (
+                            <span className="text-[10.5px] font-semibold text-violet-700 bg-violet-50 ring-1 ring-violet-200 rounded px-1.5 py-0.5 shrink-0">
+                              Fact.
+                            </span>
+                          )}
+                          {!e.hasReceipt && (
+                            <span
+                              className="text-[10.5px] font-semibold text-amber-700 bg-amber-50 ring-1 ring-amber-200 rounded px-1.5 py-0.5 shrink-0"
+                              title="Aucune pièce jointe (facture)"
+                            >
+                              Pas de facture
+                            </span>
+                          )}
+                          <span className="font-bold tabular-nums text-slate-800 w-20 text-right shrink-0">
+                            {fmtMoneyCa(e.amount)}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Travel audit — events WORK_LOCATION (Outlook) vs saisies de temps onsite.
+// Détecte : (1) aucun agent n'a facturé de déplacement alors qu'une visite
+// a eu lieu, (2) plusieurs agents ont facturé le même déplacement en
+// doublon. Les clients dont OrgMileageRate.billToClient=false sont ignorés.
+// ---------------------------------------------------------------------------
+interface TravelAuditRow {
+  eventId: string;
+  title: string;
+  rawTitle: string | null;
+  startsAt: string;
+  organizationId: string;
+  organizationName: string;
+  source: "db" | "decoded";
+  expectedAgents: Array<{ id: string; name: string }>;
+  billedEntries: Array<{
+    timeEntryId: string;
+    agentId: string;
+    agentName: string;
+    ticketId: string;
+    ticketNumber: number;
+    ticketSubject: string;
+  }>;
+  status: "missing" | "duplicated" | "ok" | "not_billable";
+}
+
+function TravelAuditSection({ from, to }: { from: string; to: string }) {
+  const [missing, setMissing] = useState<TravelAuditRow[]>([]);
+  const [duplicated, setDuplicated] = useState<TravelAuditRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const params = new URLSearchParams({ from, to });
+    fetch(`/api/v1/supervision/travel-audit?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : { missing: [], duplicated: [] }))
+      .then((d) => {
+        if (cancelled) return;
+        setMissing(d.missing ?? []);
+        setDuplicated(d.duplicated ?? []);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [from, to]);
+
+  if (!loading && missing.length === 0 && duplicated.length === 0) return null;
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-3">
+        <div className="h-10 w-10 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
+          <MapPin className="h-5 w-5 text-orange-600" />
+        </div>
+        <div className="flex-1">
+          <p className="text-[14px] font-semibold text-slate-900">
+            Audit des déplacements
+            <span className="ml-2 inline-flex h-5 min-w-[22px] items-center justify-center rounded-full bg-orange-100 px-2 text-[11px] font-bold text-orange-700 tabular-nums">
+              {missing.length + duplicated.length}
+            </span>
+          </p>
+          <p className="text-[12px] text-slate-500">
+            Events calendrier (Outlook « Localisation ») croisés avec les saisies de temps
+            onsite. Vérifie que chaque déplacement est facturé exactement une fois.
+          </p>
+        </div>
+      </div>
+
+      <div className="divide-y divide-slate-100">
+        {missing.length > 0 && (
+          <div className="px-5 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-rose-700 mb-2 flex items-center gap-1.5">
+              <AlertTriangle className="h-3 w-3" /> Aucun déplacement facturé ({missing.length})
+            </p>
+            <ul className="space-y-2">
+              {missing.map((r) => (
+                <TravelRow key={r.eventId} row={r} variant="missing" />
+              ))}
+            </ul>
+          </div>
+        )}
+        {duplicated.length > 0 && (
+          <div className="px-5 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 mb-2 flex items-center gap-1.5">
+              <AlertTriangle className="h-3 w-3" /> Facturé par plusieurs agents ({duplicated.length})
+            </p>
+            <ul className="space-y-2">
+              {duplicated.map((r) => (
+                <TravelRow key={r.eventId} row={r} variant="duplicated" />
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function TravelRow({ row, variant }: { row: TravelAuditRow; variant: "missing" | "duplicated" }) {
+  const dateStr = new Date(row.startsAt).toLocaleDateString("fr-CA", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+  return (
+    <li className={cn(
+      "rounded-lg border px-3 py-2",
+      variant === "missing"
+        ? "border-rose-100 bg-rose-50/40"
+        : "border-amber-100 bg-amber-50/40",
+    )}>
+      <div className="flex items-center gap-2 text-[12.5px]">
+        <span className="font-medium text-slate-800 truncate">{row.organizationName}</span>
+        <span className="text-slate-400">·</span>
+        <span className="text-slate-500">{dateStr}</span>
+        {row.rawTitle && (
+          <>
+            <span className="text-slate-400">·</span>
+            <span className="font-mono text-[11px] text-slate-500">{row.rawTitle}</span>
+          </>
+        )}
+        {row.source === "decoded" && (
+          <span
+            className="text-[10px] font-semibold text-blue-600 bg-blue-50 ring-1 ring-blue-200 rounded px-1.5 py-0.5"
+            title="Client/agents résolus depuis le titre — vérifier si calendarAliases manque"
+          >
+            décodé
+          </span>
+        )}
+      </div>
+      {row.expectedAgents.length > 0 && (
+        <p className="mt-1 text-[11.5px] text-slate-500">
+          Agents attendus : {row.expectedAgents.map((a) => a.name).join(", ")}
+        </p>
+      )}
+      {row.billedEntries.length > 0 && (
+        <ul className="mt-2 space-y-0.5">
+          {row.billedEntries.map((e) => (
+            <li key={e.timeEntryId} className="text-[11.5px] text-slate-600 flex items-center gap-1.5">
+              <span className="font-mono text-[10.5px] text-slate-400">TK-{e.ticketNumber}</span>
+              <span className="text-slate-400">·</span>
+              <span>{e.agentName}</span>
+              <Link
+                href={`/tickets/${e.ticketId}`}
+                className="text-blue-600 hover:text-blue-700 ml-auto"
+              >
+                Voir ticket →
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Close audits — tickets fermés/résolus avec documentation insuffisante
+// selon l'IA. Regroupés par agent pour que le superviseur identifie les
+// techs qui ont tendance à fermer trop vite sans documenter.
+// ---------------------------------------------------------------------------
+function CloseAuditsSection({
+  buckets,
+  loading,
+}: {
+  buckets: CloseAuditBucket[];
+  loading: boolean;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const total = buckets.reduce((s, b) => s + b.blocked + b.needsImprovement, 0);
+
+  if (!loading && total === 0) {
+    return (
+      <Card>
+        <CardContent className="p-5 flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+          </div>
+          <div>
+            <p className="text-[14px] font-semibold text-slate-900">Notes de résolution conformes</p>
+            <p className="text-[12.5px] text-slate-500">
+              Aucune fermeture récente n&apos;a été signalée par l&apos;IA comme ayant une
+              documentation insuffisante.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-3">
+        <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+          <Sparkles className="h-5 w-5 text-amber-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-semibold text-slate-900">
+            Notes de résolution à revoir
+            <span className="ml-2 inline-flex h-5 min-w-[22px] items-center justify-center rounded-full bg-amber-100 px-2 text-[11px] font-bold text-amber-700 tabular-nums">
+              {total}
+            </span>
+          </p>
+          <p className="text-[12px] text-slate-500">
+            Tickets fermés sans note jugée suffisante par l&apos;IA (verdict « à améliorer » ou « insuffisant »).
+          </p>
+        </div>
+      </div>
+      {loading ? (
+        <div className="px-5 py-6 text-[13px] text-slate-400">Chargement…</div>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {buckets.map((b) => {
+            const key = b.agent?.id ?? "__unassigned__";
+            const isOpen = expanded.has(key);
+            const name = b.agent
+              ? `${b.agent.firstName} ${b.agent.lastName}`.trim()
+              : "(ticket non assigné)";
+            const subtotal = b.blocked + b.needsImprovement;
+            return (
+              <li key={key}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpanded((s) => {
+                      const next = new Set(s);
+                      if (next.has(key)) next.delete(key);
+                      else next.add(key);
+                      return next;
+                    })
+                  }
+                  className="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors text-left"
+                >
+                  {isOpen ? (
+                    <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13.5px] font-medium text-slate-900 truncate">{name}</p>
+                    {b.agent?.email && (
+                      <p className="text-[11.5px] text-slate-500 truncate">{b.agent.email}</p>
+                    )}
+                  </div>
+                  {b.blocked > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-200">
+                      {b.blocked} insuffisant{b.blocked > 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {b.needsImprovement > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                      {b.needsImprovement} à améliorer
+                    </span>
+                  )}
+                  <span className="text-[11.5px] text-slate-400 tabular-nums w-10 text-right">
+                    {subtotal}
+                  </span>
+                </button>
+                {isOpen && (
+                  <ul className="divide-y divide-slate-100 bg-slate-50/40">
+                    {b.items.map((r) => (
+                      <li key={r.invocationId} className="px-5 py-3 pl-12">
+                        <Link
+                          href={`/tickets/${r.ticketId}`}
+                          className="group flex items-start gap-3"
+                        >
+                          <span className="font-mono text-[11px] text-slate-400 tabular-nums w-14 pt-0.5 shrink-0">
+                            TK-{r.ticketNumber}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] font-medium text-slate-900 truncate group-hover:text-blue-600">
+                              {r.ticketSubject}
+                            </p>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11.5px] text-slate-500">
+                              <span>{r.orgName}</span>
+                              {r.closedAt && (
+                                <>
+                                  <span className="text-slate-300">·</span>
+                                  <span>Fermé {new Date(r.closedAt).toLocaleDateString("fr-CA")}</span>
+                                </>
+                              )}
+                              <span className="text-slate-300">·</span>
+                              <span>Score {Math.round((r.readinessScore ?? 0) * 100)}%</span>
+                            </div>
+                            {r.warnings.length > 0 && (
+                              <p className="mt-1 text-[12px] text-amber-700">
+                                {r.warnings[0]}
+                              </p>
+                            )}
+                          </div>
+                          <span
+                            className={cn(
+                              "shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1",
+                              r.verdict === "blocked"
+                                ? "bg-red-50 text-red-700 ring-red-200"
+                                : "bg-amber-50 text-amber-700 ring-amber-200",
+                            )}
+                          >
+                            {r.verdict === "blocked" ? "Insuffisant" : "À améliorer"}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
   );
 }
 

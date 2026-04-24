@@ -51,6 +51,37 @@ export async function PATCH(
   const cuid = await resolveCuid(input);
   if (!cuid) return NextResponse.json({ error: "Ticket introuvable" }, { status: 404 });
   const body = await req.json();
+
+  // Blocage par dépendance : si on tente de faire avancer un ticket hors
+  // des statuts "parking" (NEW, OPEN, PENDING…) alors qu'un upstream n'est
+  // pas RESOLVED/CLOSED, on refuse. L'utilisateur doit d'abord fermer le
+  // ou les tickets amont (ou retirer la dépendance).
+  if (body?.status) {
+    const activeStatuses = new Set(["in_progress", "on_site", "scheduled"]);
+    if (activeStatuses.has(String(body.status).toLowerCase())) {
+      const prisma = (await import("@/lib/prisma")).default;
+      const deps = await prisma.ticketDependency.findMany({
+        where: { ticketId: cuid },
+        include: { upstream: { select: { number: true, status: true } } },
+      });
+      const pending = deps.filter(
+        (d) => !["RESOLVED", "CLOSED"].includes(d.upstream.status.toUpperCase()),
+      );
+      if (pending.length > 0) {
+        return NextResponse.json(
+          {
+            error: "Ticket bloqué par des dépendances non résolues.",
+            pendingUpstreams: pending.map((d) => ({
+              number: d.upstream.number,
+              status: d.upstream.status,
+            })),
+          },
+          { status: 409 },
+        );
+      }
+    }
+  }
+
   const updated = await updateTicket(cuid, body, me.id);
   return NextResponse.json(updated);
 }

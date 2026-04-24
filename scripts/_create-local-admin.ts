@@ -59,7 +59,7 @@ async function main() {
   console.log("========================================");
   console.log(`\n  Role     : SUPER_ADMIN`);
   console.log(`  Login    : http://192.168.200.42:3000/login`);
-  console.log(`             (marche aussi sur http://192.168.200.41:3000 et https://nexus.cetix.ca)`);
+  console.log(`             (marche aussi sur http://192.168.204.11:3000 et https://nexus.cetix.ca)`);
   console.log("\n  Le mot de passe NE SERA PLUS JAMAIS AFFICHÉ.");
   console.log("  Pour le réinitialiser : relance `npx tsx scripts/_create-local-admin.ts`");
 

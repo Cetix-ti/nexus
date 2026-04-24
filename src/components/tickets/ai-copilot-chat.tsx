@@ -162,8 +162,7 @@ export function AiCopilotChat({ ticketId }: { ticketId: string }) {
         />
         <div className="flex items-center justify-between gap-2">
           <p className="text-[10.5px] text-slate-500">
-            Ctrl/⌘ + Entrée pour envoyer • contexte ticket + similaires +
-            conventions client injectés
+            Contexte ticket + similaires + conventions client injectés
           </p>
           <Button
             size="sm"

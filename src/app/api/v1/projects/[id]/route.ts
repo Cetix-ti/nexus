@@ -15,9 +15,17 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const project = await prisma.project.findUnique({
     where: { id },
     include: {
-      organization: { select: { id: true, name: true } },
-      manager: { select: { id: true, firstName: true, lastName: true } },
+      organization: { select: { id: true, name: true, logo: true } },
+      manager: { select: { id: true, firstName: true, lastName: true, avatar: true } },
       tasks: { orderBy: { sortOrder: "asc" } },
+      phases: { orderBy: { sortOrder: "asc" } },
+      milestones: { orderBy: { targetDate: "asc" } },
+      members: {
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
 
@@ -34,6 +42,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       description: project.description ?? "",
       organizationId: project.organizationId,
       organizationName: project.organization.name,
+      organizationLogo: project.organization.logo ?? null,
       type: project.type,
       status: project.status,
       priority: project.priority,
@@ -48,6 +57,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       budgetAmount: project.budgetAmount,
       consumedAmount: project.consumedAmount,
       isVisibleToClient: project.isVisibleToClient,
+      visibilitySettings: project.visibilitySettings ?? null,
       tags: project.tags,
       isAtRisk: project.isAtRisk,
       riskNotes: project.riskNotes,
@@ -73,6 +83,33 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         isVisibleToClient: t.isVisibleToClient,
         order: t.sortOrder,
       })),
+      phases: project.phases.map((p) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description ?? "",
+        status: p.status,
+        sortOrder: p.sortOrder,
+        startDate: p.startDate?.toISOString() ?? null,
+        endDate: p.endDate?.toISOString() ?? null,
+      })),
+      milestones: project.milestones.map((m) => ({
+        id: m.id,
+        name: m.name,
+        description: m.description ?? "",
+        status: m.status,
+        targetDate: m.targetDate.toISOString(),
+        achievedDate: m.achievedDate?.toISOString() ?? null,
+        isCriticalPath: m.isCriticalPath,
+      })),
+      members: project.members.map((mem) => ({
+        id: mem.id,
+        userId: mem.userId,
+        agentName: `${mem.user.firstName} ${mem.user.lastName}`.trim(),
+        agentEmail: mem.user.email,
+        agentAvatar: mem.user.avatar ?? null,
+        role: mem.role,
+        allocatedHoursPerWeek: mem.allocatedHoursPerWeek,
+      })),
     },
   });
 }
@@ -92,6 +129,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (body.type !== undefined) data.type = body.type;
   if (body.progressPercent !== undefined) data.progressPercent = body.progressPercent;
   if (body.isVisibleToClient !== undefined) data.isVisibleToClient = body.isVisibleToClient;
+  if (body.visibilitySettings !== undefined) data.visibilitySettings = body.visibilitySettings;
   if (body.isAtRisk !== undefined) data.isAtRisk = body.isAtRisk;
   if (body.riskNotes !== undefined) data.riskNotes = body.riskNotes;
   if (body.budgetHours !== undefined) data.budgetHours = body.budgetHours;

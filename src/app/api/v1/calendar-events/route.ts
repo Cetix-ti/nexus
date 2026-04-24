@@ -24,7 +24,9 @@ export async function GET(req: Request) {
 
   // Contraintes communes (status + calendarIds) qui s'appliquent à TOUS
   // les events, qu'ils soient récurrents ou non.
-  const baseWhere: Record<string, unknown> = { status: "active" };
+  // Exclut aussi les soft-deleted (events supprimés dans Outlook mais
+  // conservés pour préserver les liens ticket/time-entry).
+  const baseWhere: Record<string, unknown> = { status: "active", deletedAt: null };
   if (calendarIdsStr) {
     const ids = calendarIdsStr.split(",").filter(Boolean);
     if (ids.length > 0) baseWhere.calendarId = { in: ids };

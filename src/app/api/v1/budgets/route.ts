@@ -46,40 +46,46 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const body = await req.json();
-  const organizationId = String(body?.organizationId ?? "");
-  if (!organizationId) return NextResponse.json({ error: "organizationId requis" }, { status: 400 });
-  const guard = await assertUserOrgAccess(me, organizationId);
-  if (!guard.ok) return guard.res;
+  try {
+    const me = await getCurrentUser();
+    if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const body = await req.json();
+    const organizationId = String(body?.organizationId ?? "");
+    if (!organizationId) return NextResponse.json({ error: "organizationId requis" }, { status: 400 });
+    const guard = await assertUserOrgAccess(me, organizationId);
+    if (!guard.ok) return guard.res;
 
-  const fiscalYear = typeof body?.fiscalYear === "number"
-    ? body.fiscalYear
-    : await getCurrentFiscalYear(organizationId);
+    const fiscalYear = typeof body?.fiscalYear === "number"
+      ? body.fiscalYear
+      : await getCurrentFiscalYear(organizationId);
 
-  const existing = await prisma.budget.findUnique({
-    where: { organizationId_fiscalYear: { organizationId, fiscalYear } },
-    select: { id: true },
-  });
-  if (existing) {
-    return NextResponse.json({ error: `Un budget existe déjà pour ${fiscalYear}`, budgetId: existing.id }, { status: 409 });
+    const existing = await prisma.budget.findUnique({
+      where: { organizationId_fiscalYear: { organizationId, fiscalYear } },
+      select: { id: true },
+    });
+    if (existing) {
+      return NextResponse.json({ error: `Un budget existe déjà pour ${fiscalYear}`, budgetId: existing.id }, { status: 409 });
+    }
+
+    const created = await prisma.budget.create({
+      data: {
+        organizationId,
+        fiscalYear,
+        title: body?.title || `Budget TI ${fiscalYear}`,
+        summary: body?.summary || null,
+        currency: body?.currency || "CAD",
+        targetAmount: body?.targetAmount ?? null,
+        contingencyPct: typeof body?.contingencyPct === "number" ? body.contingencyPct : 0,
+        internalNotes: body?.internalNotes || null,
+        visibility: body?.visibility === "INTERNAL" ? "INTERNAL" : "CLIENT_ADMIN",
+        createdByUserId: me.id,
+        updatedByUserId: me.id,
+      },
+    });
+    return NextResponse.json(created, { status: 201 });
+  } catch (err) {
+    console.error("[budgets POST]", err);
+    const msg = err instanceof Error ? err.message : "Erreur inconnue";
+    return NextResponse.json({ error: "Erreur lors de la création du budget", detail: msg }, { status: 500 });
   }
-
-  const created = await prisma.budget.create({
-    data: {
-      organizationId,
-      fiscalYear,
-      title: body?.title || `Budget IT ${fiscalYear}`,
-      summary: body?.summary || null,
-      currency: body?.currency || "CAD",
-      targetAmount: body?.targetAmount ?? null,
-      contingencyPct: typeof body?.contingencyPct === "number" ? body.contingencyPct : 0,
-      internalNotes: body?.internalNotes || null,
-      visibility: body?.visibility === "INTERNAL" ? "INTERNAL" : "CLIENT_ADMIN",
-      createdByUserId: me.id,
-      updatedByUserId: me.id,
-    },
-  });
-  return NextResponse.json(created, { status: 201 });
 }

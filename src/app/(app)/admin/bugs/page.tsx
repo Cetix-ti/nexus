@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Bug, Filter } from "lucide-react";
+import { Bug, Filter, Check } from "lucide-react";
 
 type Severity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 type BugStatus = "NEW" | "TRIAGED" | "APPROVED_FOR_FIX" | "FIX_IN_PROGRESS" | "FIX_PROPOSED" | "FIXED" | "REJECTED" | "DUPLICATE";
@@ -53,6 +53,7 @@ export default function BugsAdminPage() {
   const [bugs, setBugs] = useState<BugRow[] | null>(null);
   const [statusFilter, setStatusFilter] = useState<BugStatus | "">("");
   const [severityFilter, setSeverityFilter] = useState<Severity | "">("");
+  const [approvingAll, setApprovingAll] = useState(false);
 
   async function load() {
     const params = new URLSearchParams();
@@ -64,6 +65,28 @@ export default function BugsAdminPage() {
   }
 
   useEffect(() => { void load(); }, [statusFilter, severityFilter]);
+
+  const pendingApprovalCount = useMemo(
+    () => (bugs ?? []).filter((b) => b.status === "NEW" || b.status === "TRIAGED" || b.status === "REJECTED").length,
+    [bugs],
+  );
+
+  async function approveAll() {
+    if (pendingApprovalCount === 0) return;
+    if (!confirm(`Approuver ${pendingApprovalCount} bug(s) en attente pour auto-fix ?\nCela inclut tous les bugs Nouveau, Trié et Rejeté (réapprouvés).`)) return;
+    setApprovingAll(true);
+    try {
+      const r = await fetch(`/api/v1/bugs/approve-all`, { method: "POST" });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        alert(`Erreur : ${err.error ?? `HTTP ${r.status}`}`);
+        return;
+      }
+      await load();
+    } finally {
+      setApprovingAll(false);
+    }
+  }
 
   const counts = useMemo(() => {
     if (!bugs) return null;
@@ -87,13 +110,26 @@ export default function BugsAdminPage() {
             Signalements in-app avec workflow d&apos;auto-fix nocturne par Claude.
           </p>
         </div>
-        {counts && (
-          <div className="flex items-center gap-2 flex-wrap text-[12px]">
-            <span className="rounded bg-violet-50 text-violet-700 px-2 py-1">{counts.NEW} nouveau(x)</span>
-            <span className="rounded bg-emerald-50 text-emerald-700 px-2 py-1">{counts.APPROVED_FOR_FIX} en attente</span>
-            <span className="rounded bg-indigo-50 text-indigo-700 px-2 py-1">{counts.FIX_PROPOSED} PR à merger</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {counts && (
+            <div className="flex items-center gap-2 flex-wrap text-[12px]">
+              <span className="rounded bg-violet-50 text-violet-700 px-2 py-1">{counts.NEW} nouveau(x)</span>
+              <span className="rounded bg-emerald-50 text-emerald-700 px-2 py-1">{counts.APPROVED_FOR_FIX} en attente</span>
+              <span className="rounded bg-indigo-50 text-indigo-700 px-2 py-1">{counts.FIX_PROPOSED} PR à merger</span>
+            </div>
+          )}
+          {pendingApprovalCount > 0 && (
+            <button
+              type="button"
+              onClick={approveAll}
+              disabled={approvingAll}
+              className="inline-flex items-center gap-1.5 rounded bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-[12px] font-medium px-3 py-1.5 transition-colors"
+            >
+              <Check className="h-3.5 w-3.5" />
+              {approvingAll ? "Approbation…" : `Approuver tous (${pendingApprovalCount})`}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">

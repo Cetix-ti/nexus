@@ -284,7 +284,7 @@ const isProduction = process.env.NODE_ENV === "production";
 // `__Secure-`, pas de flag Secure). Motif :
 //   - L'AUTH_URL est https://nexus.cetix.ca (FQDN prod).
 //   - Les agents accèdent aussi au serveur directement par IP en HTTP
-//     depuis le LAN (http://192.168.200.41:3000 ou .42:3000). Avec
+//     depuis le LAN (http://192.168.204.11:3000 ou 192.168.200.42:3000). Avec
 //     `__Secure-*` + Secure=true, le navigateur REFUSE les cookies
 //     envoyés par une réponse HTTP → login impossible hors FQDN.
 //   - En interne sur LAN, pas de risque d'interception. En HTTPS (FQDN)
@@ -306,7 +306,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // retirer le préfixe `__Secure-` et le flag Secure=true. Sinon
   // NextAuth v5 auto-détecte depuis AUTH_URL et, comme AUTH_URL est
   // HTTPS, forçait des cookies sécurisés partout → login impossible
-  // en LAN via http://192.168.200.xx:3000.
+  // en LAN via http://192.168.204.11:3000 ou 192.168.200.42:3000.
   //
   // Avec cette config, un seul nom de cookie (`authjs.session-token`)
   // sans flag Secure :

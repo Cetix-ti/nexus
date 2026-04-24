@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
+import { useLocaleStore } from "@/stores/locale-store";
 
 interface PortalAsset {
   id: string;
@@ -56,6 +57,7 @@ const STATUS_VARIANTS: Record<string, "success" | "default" | "warning" | "dange
 
 export default function PortalAssetsPage() {
   const { permissions, organizationName } = usePortalUser();
+  const t = useLocaleStore((s) => s.t);
   const [assets, setAssets] = useState<PortalAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -95,16 +97,16 @@ export default function PortalAssetsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Mes actifs</h1>
+        <h1 className="text-xl font-semibold text-slate-900">{t("portal.assets.heading")}</h1>
         <p className="text-[13px] text-slate-500 mt-1">
           {permissions.canSeeAllOrgAssets
-            ? `Tous les actifs de ${organizationName}`
-            : "Équipements qui vous sont assignés"}
+            ? t("portal.assets.subtitleAll", { org: organizationName ?? "" })
+            : t("portal.assets.subtitleAssigned")}
         </p>
       </div>
 
       <Input
-        placeholder="Rechercher par nom, IP, modèle..."
+        placeholder={t("portal.assets.searchPlaceholder")}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         iconLeft={<Search className="h-4 w-4" />}
@@ -115,8 +117,8 @@ export default function PortalAssetsPage() {
           <CardContent className="py-16 text-center text-[13px] text-slate-400">
             <Monitor className="h-10 w-10 mx-auto mb-2" strokeWidth={1.5} />
             {assets.length === 0
-              ? "Aucun actif assigné."
-              : "Aucun résultat pour cette recherche."}
+              ? t("portal.assets.noAssetsAssigned")
+              : t("portal.assets.noResults")}
           </CardContent>
         </Card>
       ) : (

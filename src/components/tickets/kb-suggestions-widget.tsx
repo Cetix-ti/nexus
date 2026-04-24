@@ -57,7 +57,13 @@ export function KbSuggestionsWidget({ ticketId }: { ticketId: string }) {
         if (!res.ok) return;
         const data = (await res.json()) as { suggestions?: Suggestion[] };
         if (!cancelled && Array.isArray(data.suggestions)) {
-          setSuggestions(data.suggestions);
+          // Seuil de pertinence : on masque les articles trop éloignés
+          // (cosine < 0.55). En dessous, le titre est rarement pertinent
+          // et ajoute du bruit dans la sidebar. Si aucun article ne
+          // passe le seuil, le widget ne s'affiche pas (cf. return null
+          // quand `suggestions.length === 0`).
+          const MIN_SIM = 0.55;
+          setSuggestions(data.suggestions.filter((s) => s.similarity >= MIN_SIM));
         }
       } catch {
         /* silent — widget optionnel */
@@ -85,7 +91,7 @@ export function KbSuggestionsWidget({ ticketId }: { ticketId: string }) {
   if (suggestions.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden dark:border-slate-800 dark:bg-slate-900">
       <div className="border-b border-slate-200 px-4 py-2.5 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <BookOpen className="h-4 w-4 text-indigo-500" />
@@ -104,39 +110,42 @@ export function KbSuggestionsWidget({ ticketId }: { ticketId: string }) {
             <div
               key={s.articleId}
               className={cn(
-                "group/row relative flex items-start gap-1",
+                "group/row relative min-w-0 transition hover:bg-slate-50 dark:hover:bg-slate-800/50",
                 currentFeedback === "bad" && "opacity-40",
               )}
             >
+              {/* Bloc principal cliquable — titre libre sur 2 lignes.
+                  Badge de similarité en haut à droite (compact), icône
+                  "même catégorie" à côté du titre. */}
               <Link
                 href={`/knowledge/${s.articleId}`}
                 className={cn(
-                  "flex-1 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/50",
+                  "block px-4 py-2.5",
                   currentFeedback === "bad" && "pointer-events-none line-through",
                 )}
               >
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+                    <div className="flex items-start gap-1.5">
+                      <div className="flex-1 min-w-0 text-[13px] font-medium text-slate-800 leading-snug line-clamp-2 break-words dark:text-slate-200">
                         {s.title}
                       </div>
                       {s.sameCategory && (
                         <CheckCircle2
-                          className="h-3 w-3 text-emerald-500"
+                          className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5"
                           aria-label="Même catégorie que ce ticket"
                         />
                       )}
                     </div>
                     {s.summary && (
-                      <div className="mt-0.5 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
+                      <div className="mt-1 line-clamp-2 text-[11.5px] text-slate-500 leading-snug dark:text-slate-400">
                         {s.summary}
                       </div>
                     )}
                   </div>
                   <span
                     className={cn(
-                      "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                      "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium tabular-nums",
                       s.similarity >= 0.7
                         ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
                         : s.similarity >= 0.6
@@ -150,8 +159,9 @@ export function KbSuggestionsWidget({ ticketId }: { ticketId: string }) {
                 </div>
               </Link>
 
-              {/* Boutons review — s'affichent au hover de la ligne. */}
-              <div className="flex items-center gap-0.5 pr-3 pt-3 opacity-0 transition-opacity group-hover/row:opacity-100">
+              {/* Actions — rangée séparée, visible au hover. Ne volent
+                  plus de largeur au titre. */}
+              <div className="flex items-center justify-end gap-0.5 px-3 pb-1.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
                 {currentFeedback ? (
                   <button
                     type="button"

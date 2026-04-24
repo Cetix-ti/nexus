@@ -188,7 +188,7 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
       return;
     }
     try {
-      await fetch(`/api/v1/organizations/${org.id}`, {
+      const res = await fetch(`/api/v1/organizations/${org.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -229,8 +229,18 @@ export function EditOrgModal({ open, onClose, org }: EditOrgModalProps) {
           description: description || null,
         }),
       });
+      // Si le serveur répond en erreur, on laisse la modale ouverte
+      // pour que l'user puisse corriger / réessayer plutôt que de la
+      // fermer silencieusement (ce qui donnait l'impression que la
+      // sauvegarde avait réussi).
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(`Échec de la sauvegarde : ${data.error || res.status}`);
+        return;
+      }
     } catch (err) {
-      alert("Erreur : " + (err instanceof Error ? err.message : String(err)));
+      alert("Erreur réseau : " + (err instanceof Error ? err.message : String(err)));
+      return;
     }
     handleClose();
     router.refresh();

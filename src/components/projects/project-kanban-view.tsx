@@ -13,10 +13,11 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Timer, TrendingUp, TrendingDown, Activity, Users } from "lucide-react";
+import { Timer, TrendingUp, TrendingDown, Activity, Users, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TicketCard } from "@/components/tickets/ticket-card";
 import { ProjectKanbanQuickView } from "./project-kanban-quick-view";
+import { QuickCreateTicketModal } from "./quick-create-ticket-modal";
 import {
   type Ticket,
   type TicketStatus,
@@ -102,6 +103,9 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
   const [projectData, setProjectData] = useState<{
     budgetHours?: number;
     tasks: { estimatedHours?: number | null }[];
+    organizationId?: string;
+    organizationName?: string;
+    projectName?: string;
   } | null>(null);
   const columnsConfig = useKanbanStore((s) => s.columns);
 
@@ -114,11 +118,25 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
         setProjectData({
           budgetHours: json.data.budgetHours ?? undefined,
           tasks: json.data.tasks ?? [],
+          organizationId: json.data.organizationId,
+          organizationName: json.data.organizationName,
+          projectName: json.data.name,
         });
       })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [projectId]);
+
+  // État de la modale QuickCreateTicket — ouverte depuis les boutons "+"
+  // des colonnes Kanban. Remplace le redirect vers /tickets/new pour
+  // permettre la création en batch sans quitter la page du projet.
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [quickCreateStatus, setQuickCreateStatus] = useState<string>("new");
+
+  function openCreateTicket(status: TicketStatus) {
+    setQuickCreateStatus(String(status));
+    setQuickCreateOpen(true);
+  }
 
   const [localTickets, setLocalTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
@@ -126,11 +144,15 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
   const [quickViewOpen, setQuickViewOpen] = useState(false);
 
   // Fetch tickets linked to this project
-  useEffect(() => {
+  const reloadTickets = () => {
     fetch(`/api/v1/tickets?projectId=${projectId}`)
       .then((r) => r.ok ? r.json() : [])
       .then((d) => setLocalTickets(Array.isArray(d) ? d : []))
       .catch(() => setLocalTickets([]));
+  };
+  useEffect(() => {
+    reloadTickets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   const sensors = useSensors(
@@ -348,6 +370,14 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
                 <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-md bg-white px-1.5 text-[11px] font-bold text-slate-700 tabular-nums shadow-sm ring-1 ring-inset ring-slate-200/60">
                   {col.tickets.length}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => openCreateTicket(col.status)}
+                  title="Ajouter un ticket dans cette colonne"
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-white text-slate-500 hover:text-blue-600 shadow-sm ring-1 ring-inset ring-slate-200/60"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
               </div>
               <DroppableColumnBody
                 status={col.status}
@@ -379,6 +409,22 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
         open={quickViewOpen}
         onClose={() => setQuickViewOpen(false)}
         onStatusChange={handleStatusChangeFromModal}
+      />
+
+      <QuickCreateTicketModal
+        open={quickCreateOpen}
+        onClose={() => setQuickCreateOpen(false)}
+        projectId={projectId}
+        projectName={projectData?.projectName}
+        organizationId={projectData?.organizationId}
+        organizationName={projectData?.organizationName}
+        initialStatus={quickCreateStatus}
+        onCreated={() => {
+          // Recharge la liste du Kanban après création réussie.
+          // L'option "En créer un autre" de la modale la garde ouverte ;
+          // sinon elle se ferme via onClose.
+          reloadTickets();
+        }}
       />
     </div>
   );

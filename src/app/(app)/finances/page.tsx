@@ -54,6 +54,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AddonsCatalogSection } from "@/components/billing/addons-catalog-section";
 
 // ===========================================================================
 // Types
@@ -110,6 +111,7 @@ interface PurchaseOrderRow {
 const TABS = [
   { key: "overview", label: "Vue d'ensemble", icon: PieChart },
   { key: "invoices", label: "Facturation", icon: Receipt },
+  { key: "addons", label: "Services connexes", icon: Package },
   { key: "time", label: "Saisies de temps", icon: Clock },
   { key: "expenses", label: "Dépenses", icon: Wallet },
   { key: "expense_reports", label: "Comptes de dépenses", icon: Briefcase },
@@ -818,6 +820,18 @@ export default function FinancesPage() {
               </div>
             </Card>
           )}
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* TAB: Services connexes — catalogue des abonnements récurrents   */}
+      {/* vendus aux clients (antivirus, licences, sauvegarde, etc.).     */}
+      {/* L'assignation par client se fait dans la fiche facturation de   */}
+      {/* chaque organisation.                                            */}
+      {/* ================================================================ */}
+      {tab === "addons" && (
+        <div className="space-y-5">
+          <AddonsCatalogSection />
         </div>
       )}
 

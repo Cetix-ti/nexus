@@ -31,6 +31,15 @@ interface TicketRow {
   number: number;
   subject: string;
   status: string;
+  totalMinutesToday?: number;
+}
+
+function fmtMin(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m} min`;
+  if (m === 0) return `${h}h`;
+  return `${h}h${m.toString().padStart(2, "0")}`;
 }
 
 interface Props {
@@ -87,12 +96,15 @@ export function QuickAddOnsiteTimeModal({
       .then(([sug]) => {
         const mineRows: TicketRow[] = (sug.mine ?? []).map((t: any) => ({
           id: t.id, number: t.number ?? 0, subject: t.subject ?? "", status: t.status ?? "",
+          totalMinutesToday: t.totalMinutesToday ?? 0,
         }));
         const teamRows: TicketRow[] = (sug.team ?? []).map((t: any) => ({
           id: t.id, number: t.number ?? 0, subject: t.subject ?? "", status: t.status ?? "",
+          totalMinutesToday: t.totalMinutesToday ?? 0,
         }));
         const openRows: TicketRow[] = (sug.recentOpen ?? []).map((t: any) => ({
           id: t.id, number: t.number ?? 0, subject: t.subject ?? "", status: t.status ?? "",
+          totalMinutesToday: t.totalMinutesToday ?? 0,
         }));
         const mineSet = new Set(mineRows.map((t) => t.id));
         const teamSet = new Set(teamRows.map((t) => t.id));
@@ -232,8 +244,18 @@ export function QuickAddOnsiteTimeModal({
                           <span className="font-mono text-[11px] text-slate-500 mr-1.5">#{t.number}</span>
                           {t.subject.slice(0, 70)}
                           {t.subject.length > 70 ? "…" : ""}
-                          {isMine && <span className="ml-2 text-[10px] text-emerald-600 font-medium">· ton temps ce jour</span>}
-                          {!isMine && isTeam && <span className="ml-2 text-[10px] text-blue-600 font-medium">· temps d&apos;un collègue ce jour</span>}
+                          {isMine && (
+                            <span className="ml-2 text-[10px] text-emerald-600 font-medium">
+                              · ton temps ce jour
+                              {(t.totalMinutesToday ?? 0) > 0 && ` (${fmtMin(t.totalMinutesToday!)})`}
+                            </span>
+                          )}
+                          {!isMine && isTeam && (
+                            <span className="ml-2 text-[10px] text-blue-600 font-medium">
+                              · collègue ce jour
+                              {(t.totalMinutesToday ?? 0) > 0 && ` (${fmtMin(t.totalMinutesToday!)})`}
+                            </span>
+                          )}
                         </SelectItem>
                       );
                     })}

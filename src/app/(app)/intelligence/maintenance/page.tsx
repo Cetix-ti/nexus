@@ -34,6 +34,8 @@ interface Suggestion {
   estimatedEffort: "S" | "M" | "L" | "XL";
   clientImpact: "low" | "medium" | "high";
   evidenceTicketIds: string[];
+  /** Enrichi côté API avec le numéro + sujet pour affichage TK-NNNN. */
+  evidenceTickets: Array<{ id: string; number: number; subject: string }>;
   assetIds: string[];
   status: "open" | "accepted" | "rejected";
   confidence: number;
@@ -76,13 +78,21 @@ export default function MaintenanceDashboardPage() {
 
   const handleReject = async (id: string) => {
     setBusyId(id);
+    setError(null);
     try {
       const res = await fetch(`/api/v1/intelligence/maintenance/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "rejected" }),
       });
-      if (res.ok) void load();
+      if (res.ok) {
+        void load();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error || `Erreur ${res.status} — rejet impossible`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur réseau");
     } finally {
       setBusyId(null);
     }
@@ -90,6 +100,7 @@ export default function MaintenanceDashboardPage() {
 
   const handleAccept = async (id: string) => {
     setBusyId(id);
+    setError(null);
     try {
       const res = await fetch(
         `/api/v1/intelligence/maintenance/${id}/create-ticket`,
@@ -98,7 +109,12 @@ export default function MaintenanceDashboardPage() {
       if (res.ok) {
         const { ticketId } = (await res.json()) as { ticketId: string };
         router.push(`/tickets/${ticketId}`);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error || `Erreur ${res.status} — création de ticket impossible`);
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur réseau");
     } finally {
       setBusyId(null);
     }
@@ -112,10 +128,10 @@ export default function MaintenanceDashboardPage() {
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
       <div className="p-8">
-        <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>
+        <p className="text-sm text-rose-600 dark:text-rose-400">{error ?? "Chargement..."}</p>
       </div>
     );
   }
@@ -133,6 +149,15 @@ export default function MaintenanceDashboardPage() {
           hotspots. Accepter crée un ticket SERVICE_REQUEST interne pré-rempli.
         </p>
       </header>
+
+      {error && (
+        <div className="flex items-center justify-between rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+          <span>{error}</span>
+          <button type="button" onClick={() => setError(null)} className="text-rose-500 hover:text-rose-700">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <Section
         title={`À traiter (${data.open.length})`}
@@ -291,20 +316,21 @@ function Section({
                     </p>
                   </div>
                 )}
-                {s.evidenceTicketIds.length > 0 && (
+                {s.evidenceTickets.length > 0 && (
                   <div>
                     <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                       Tickets de référence
                     </h4>
                     <ul className="flex flex-wrap gap-1">
-                      {s.evidenceTicketIds.map((tid) => (
-                        <li key={tid}>
+                      {s.evidenceTickets.map((t) => (
+                        <li key={t.id}>
                           <Link
-                            href={`/tickets/${tid}`}
+                            href={`/tickets/${t.id}`}
+                            title={t.subject}
                             className="flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                           >
                             <TicketIcon className="h-2.5 w-2.5" />
-                            {tid.slice(-6)}
+                            TK-{t.number}
                           </Link>
                         </li>
                       ))}
