@@ -299,6 +299,60 @@ export function saveSystemTypeLabels(
 ) {
   try { localStorage.setItem(SYSTEM_TYPE_LABELS_KEY, JSON.stringify(labels)); } catch {}
 }
+
+// ---------------------------------------------------------------------------
+// Types système personnalisés — étendent les 9 TimeType de base avec de
+// nouvelles entrées définies par l'utilisateur. Chaque type custom pointe
+// vers un type de base (`mapsTo`) qui dicte le comportement du moteur de
+// facturation. Visibles partout où les TimeType apparaissent (Catégories de
+// base, types de travail des orgs, filtres analytics).
+// ---------------------------------------------------------------------------
+export interface CustomSystemType {
+  id: string;                                // id stable stocké sur les TimeEntry
+  label: string;                             // affichage
+  mapsTo: WorkTypeOption["timeType"];        // comportement engine
+}
+const CUSTOM_SYSTEM_TYPES_KEY = "nexus:custom-system-types";
+export function loadCustomSystemTypes(): CustomSystemType[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CUSTOM_SYSTEM_TYPES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+export function saveCustomSystemTypes(list: CustomSystemType[]) {
+  try { localStorage.setItem(CUSTOM_SYSTEM_TYPES_KEY, JSON.stringify(list)); } catch {}
+}
+
+/**
+ * Liste unifiée des types système — built-ins + customs. Chaque entrée
+ * expose son `id`, son `label` (avec override user appliqué) et son type
+ * de base pour l'engine (`mapsTo`).
+ */
+export interface SystemTypeEntry {
+  id: string;
+  label: string;
+  mapsTo: WorkTypeOption["timeType"];
+  builtin: boolean;
+}
+export function loadAllSystemTypes(): SystemTypeEntry[] {
+  const overrides = loadSystemTypeLabels();
+  const customs = loadCustomSystemTypes();
+  const builtins: SystemTypeEntry[] = [
+    { id: "remote_work",    label: overrides.remote_work    ?? "Travail à distance", mapsTo: "remote_work",    builtin: true },
+    { id: "onsite_work",    label: overrides.onsite_work    ?? "Travail sur site",   mapsTo: "onsite_work",    builtin: true },
+    { id: "travel",         label: overrides.travel         ?? "Déplacement",        mapsTo: "travel",         builtin: true },
+    { id: "preparation",    label: overrides.preparation    ?? "Préparation",        mapsTo: "preparation",    builtin: true },
+    { id: "administration", label: overrides.administration ?? "Administration",    mapsTo: "administration", builtin: true },
+    { id: "waiting",        label: overrides.waiting        ?? "Attente",            mapsTo: "waiting",        builtin: true },
+    { id: "follow_up",      label: overrides.follow_up      ?? "Suivi",              mapsTo: "follow_up",      builtin: true },
+    { id: "internal",       label: overrides.internal       ?? "Temps interne",      mapsTo: "internal",       builtin: true },
+    { id: "other",          label: overrides.other          ?? "Autre",              mapsTo: "other",          builtin: true },
+  ];
+  return [...builtins, ...customs.map((c): SystemTypeEntry => ({ id: c.id, label: c.label, mapsTo: c.mapsTo, builtin: false }))];
+}
 /**
  * Retourne le label lisible d'une catégorie à partir de son identifiant.
  *
@@ -337,9 +391,13 @@ export function labelForBaseCategory(id: string, cats?: BaseCategory[]): string 
   //    autre catégorie ciblant le même type système existe.
   const bySystem = list.find((c) => c.systemTimeType === id);
   if (bySystem) return bySystem.label;
-  // 3. Fallback sur le label par défaut du TimeType
+  // 3. Match dans la liste unifiée des types système (built-in + custom).
+  const allSys = loadAllSystemTypes();
+  const sys = allSys.find((s) => s.id === id);
+  if (sys) return sys.label;
+  // 4. Fallback sur le label par défaut du TimeType
   if (DEFAULT_TIME_TYPE_LABELS[id]) return DEFAULT_TIME_TYPE_LABELS[id];
-  // 4. Raw id — garde l'info en analytique même si la catégorie n'existe plus.
+  // 5. Raw id — garde l'info en analytique même si la catégorie n'existe plus.
   return id;
 }
 const DEFAULT_WORK_TYPES: WorkTypeOption[] = [
