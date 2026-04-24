@@ -9,6 +9,7 @@
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { signBugApprovalToken } from "@/lib/bugs/approval-token";
+import { buildNexusEmail } from "@/lib/email/nexus-template";
 
 function notifyEmail(): string {
   return process.env.BUG_REPORTS_NOTIFY_EMAIL ?? "informatique@cetix.ca";
@@ -18,32 +19,17 @@ function appUrl(): string {
 }
 
 const SEVERITY_LABEL: Record<string, string> = { LOW: "Mineur", MEDIUM: "Moyen", HIGH: "Majeur", CRITICAL: "Critique" };
-const STATUS_LABEL: Record<string, string> = {
-  NEW: "Nouveau", TRIAGED: "Trié", APPROVED_FOR_FIX: "Approuvé",
-  FIX_IN_PROGRESS: "Fix en cours", FIX_PROPOSED: "PR proposée",
-  FIXED: "Fixé", REJECTED: "Rejeté", DUPLICATE: "Doublon",
-};
-
-function wrapHtml(title: string, body: string): string {
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head>
-<body style="font-family:-apple-system,Segoe UI,sans-serif;background:#f8fafc;margin:0;padding:24px;color:#1e293b">
-<div style="max-width:640px;margin:0 auto;background:white;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
-<div style="padding:18px 22px;background:linear-gradient(135deg,#0f172a,#1e293b);color:white">
-<div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;opacity:0.7">Nexus · Bug Reports</div>
-<div style="font-size:20px;font-weight:600;margin-top:4px">${escapeHtml(title)}</div>
-</div>
-<div style="padding:22px">${body}</div>
-<div style="padding:14px 22px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8">
-Nexus · envoyé automatiquement · ne pas répondre</div>
-</div></body></html>`;
-}
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }
 
-function btn(label: string, href: string, color = "#2563eb"): string {
-  return `<a href="${href}" style="display:inline-block;background:${color};color:white;text-decoration:none;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:500;margin-right:6px">${escapeHtml(label)}</a>`;
+function actionBtn(label: string, href: string, bg: string): string {
+  return `<a href="${href}" style="display:inline-block;background:${bg};color:white;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;margin-right:8px;margin-bottom:8px;">${escapeHtml(label)}</a>`;
+}
+
+function quoteStyle(accentColor: string): string {
+  return `border-left:3px solid ${accentColor};background:#F8FAFC;border-radius:0 8px 8px 0;padding:14px 18px;margin:0 0 20px;font-size:14px;color:#334155;line-height:1.6;white-space:pre-wrap;`;
 }
 
 // ============================================================================
@@ -63,29 +49,40 @@ export async function sendNewBugEmail(bugId: string): Promise<boolean> {
   const rejectUrl = `${base}/api/v1/bugs/approval?token=${encodeURIComponent(rejectToken)}`;
   const detailUrl = `${base}/admin/bugs/${bug.id}`;
 
-  const severityColors: Record<string, string> = {
-    LOW: "#64748b", MEDIUM: "#d97706", HIGH: "#ea580c", CRITICAL: "#dc2626",
-  };
-  const sevColor = severityColors[bug.severity] ?? "#64748b";
+  const reporterName = bug.reporter
+    ? `${bug.reporter.firstName} ${bug.reporter.lastName}`
+    : "(inconnu)";
+
+  const desc = bug.description.slice(0, 800) + (bug.description.length > 800 ? "…" : "");
 
   const body = `
-<div style="font-size:13px;color:#64748b;margin-bottom:8px">
-<span style="display:inline-block;background:${sevColor};color:white;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">${SEVERITY_LABEL[bug.severity] ?? bug.severity}</span>
-&nbsp;signalé par ${bug.reporter ? escapeHtml(`${bug.reporter.firstName} ${bug.reporter.lastName}`) : "(inconnu)"}
+<div style="${quoteStyle("#991B1B")}">${escapeHtml(desc)}</div>
+<div style="margin:0 0 16px;">
+  ${actionBtn("✓ Approuver pour auto-fix", approveUrl, "#059669")}
+  ${actionBtn("✕ Rejeter", rejectUrl, "#64748b")}
 </div>
-<h2 style="margin:0 0 8px 0;font-size:17px">${escapeHtml(bug.title)}</h2>
-<p style="white-space:pre-wrap;font-size:13px;color:#334155;line-height:1.55">${escapeHtml(bug.description.slice(0, 800))}${bug.description.length > 800 ? "…" : ""}</p>
-${bug.contextUrl ? `<div style="font-size:11.5px;color:#64748b;margin-top:8px"><strong>URL :</strong> <code style="background:#f1f5f9;padding:1px 4px;border-radius:3px">${escapeHtml(bug.contextUrl)}</code></div>` : ""}
-<div style="margin-top:20px">
-  ${btn("✓ Approuver pour auto-fix", approveUrl, "#059669")}
-  ${btn("✕ Rejeter", rejectUrl, "#64748b")}
-  ${btn("Voir dans Nexus", detailUrl, "#0f172a")}
-</div>
-<p style="font-size:11px;color:#94a3b8;margin-top:18px">
-L'approbation enclenche le worker Claude nocturne (22h-6h). Le worker propose une PR — tu gardes le contrôle du merge.
+<p style="font-size:11px;color:#94a3b8;margin:0;">
+  L'approbation enclenche le worker Claude nocturne (22h–6h). Le worker propose une PR — tu gardes le contrôle du merge.
 </p>`;
+
+  const html = buildNexusEmail({
+    event: "bug_reported",
+    preheader: `Bug ${SEVERITY_LABEL[bug.severity] ?? bug.severity} – ${bug.title}`,
+    title: bug.title,
+    intro: `Signalé par ${reporterName}`,
+    metadata: [
+      { label: "Sévérité", value: SEVERITY_LABEL[bug.severity] ?? bug.severity },
+      { label: "Signalé par", value: reporterName },
+      ...(bug.contextUrl ? [{ label: "URL", value: bug.contextUrl }] : []),
+      { label: "Date", value: new Date(bug.createdAt).toLocaleString("fr-CA") },
+    ],
+    body,
+    ctaUrl: detailUrl,
+    ctaLabel: "Voir dans Nexus",
+  });
+
   const subject = `[Bug ${bug.severity}] ${bug.title}`;
-  return sendEmail(notifyEmail(), subject, wrapHtml("Nouveau bug signalé", body), {
+  return sendEmail(notifyEmail(), subject, html, {
     from: { name: "Nexus Bugs", email: notifyEmail() },
   });
 }
@@ -103,23 +100,39 @@ export async function sendFixProposedEmail(attemptId: string): Promise<boolean> 
   const detailUrl = `${appUrl()}/admin/bugs/${bug.id}`;
   const confidencePct = attempt.confidence != null ? Math.round(attempt.confidence * 100) : null;
 
+  const filesStr = attempt.filesChanged.length
+    ? attempt.filesChanged.slice(0, 8).map(escapeHtml).join(", ") +
+      (attempt.filesChanged.length > 8 ? ` (+${attempt.filesChanged.length - 8})` : "")
+    : null;
+
+  const diffSummary = attempt.diffSummary ?? "(pas de résumé)";
+
   const body = `
-<div style="font-size:13px;color:#64748b;margin-bottom:8px">
-PR automatique générée par <code style="background:#f1f5f9;padding:1px 4px;border-radius:3px">${escapeHtml(attempt.agentModel)}</code>
-${confidencePct != null ? ` · Confiance ${confidencePct}%` : ""}
+<div style="${quoteStyle("#5B21B6")}">${escapeHtml(diffSummary)}</div>
+<div style="margin:0 0 12px;">
+  ${actionBtn("Voir le bug dans Nexus", detailUrl, "#0f172a")}
 </div>
-<h2 style="margin:0 0 8px 0;font-size:17px">${escapeHtml(bug.title)}</h2>
-<p style="font-size:13px;color:#334155;line-height:1.55;white-space:pre-wrap">${escapeHtml(attempt.diffSummary ?? "(pas de résumé)")}</p>
-${attempt.filesChanged.length ? `<div style="font-size:12px;color:#64748b;margin-top:8px"><strong>Fichiers :</strong> ${attempt.filesChanged.slice(0, 10).map(escapeHtml).join(", ")}${attempt.filesChanged.length > 10 ? ` (+${attempt.filesChanged.length - 10})` : ""}</div>` : ""}
-<div style="margin-top:20px">
-  ${btn("Voir la PR GitHub", attempt.prUrl, "#6366f1")}
-  ${btn("Voir le bug dans Nexus", detailUrl, "#0f172a")}
-</div>
-<p style="font-size:11px;color:#94a3b8;margin-top:18px">
-Reviewer le code, puis merger via GitHub. Aucun merge automatique — tu gardes le contrôle.
+<p style="font-size:11px;color:#94a3b8;margin:0;">
+  Reviewer le code, puis merger via GitHub. Aucun merge automatique — tu gardes le contrôle.
 </p>`;
+
+  const html = buildNexusEmail({
+    event: "bug_fix_proposed",
+    preheader: `PR prête à merger — ${bug.title}`,
+    title: bug.title,
+    intro: `Fix automatique généré par ${attempt.agentModel}${confidencePct != null ? ` · Confiance ${confidencePct}%` : ""}`,
+    metadata: [
+      { label: "Modèle IA", value: attempt.agentModel },
+      ...(confidencePct != null ? [{ label: "Confiance", value: `${confidencePct}%` }] : []),
+      ...(filesStr ? [{ label: "Fichiers modifiés", value: filesStr }] : []),
+    ],
+    body,
+    ctaUrl: attempt.prUrl,
+    ctaLabel: "Voir la PR GitHub",
+  });
+
   const subject = `[PR à merger] ${bug.title}`;
-  return sendEmail(notifyEmail(), subject, wrapHtml("Fix proposé", body), {
+  return sendEmail(notifyEmail(), subject, html, {
     from: { name: "Nexus Bugs", email: notifyEmail() },
   });
 }
@@ -163,51 +176,77 @@ export async function sendDailyDigestEmail(options: { force?: boolean } = {}): P
   }
 
   const base = appUrl();
+
   type BugWithReporter = typeof newBugs[number];
   function bugLine(b: BugWithReporter): string {
     const rep = b.reporter;
-    return `<li style="margin:4px 0"><a href="${base}/admin/bugs/${b.id}" style="color:#2563eb;text-decoration:none">${escapeHtml(b.title)}</a> <span style="color:#94a3b8;font-size:11px">· ${SEVERITY_LABEL[b.severity]}${rep ? ` · ${escapeHtml(`${rep.firstName} ${rep.lastName}`)}` : ""}</span></li>`;
+    return `<li style="margin:5px 0;font-size:13px;color:#334155;">
+      <a href="${base}/admin/bugs/${b.id}" style="color:#2563eb;text-decoration:none;font-weight:500;">${escapeHtml(b.title)}</a>
+      <span style="color:#94a3b8;font-size:11px;"> · ${SEVERITY_LABEL[b.severity] ?? b.severity}${rep ? ` · ${escapeHtml(`${rep.firstName} ${rep.lastName}`)}` : ""}</span>
+    </li>`;
+  }
+
+  function sectionHeader(label: string, count: number, color: string): string {
+    return `<div style="font-size:11px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:0.6px;margin:20px 0 8px;padding-bottom:4px;border-bottom:1px solid #e2e8f0;">${escapeHtml(label)} (${count})</div>`;
   }
 
   const sections: string[] = [];
 
   if (fixProposed.length > 0) {
-    sections.push(`<h3 style="margin:18px 0 6px 0;font-size:14px;color:#4f46e5">🔁 PRs en attente de merge (${fixProposed.length})</h3>
-<ul style="margin:0;padding-left:18px">${fixProposed.map((b) => {
-  const pr = b.fixAttempts[0];
-  return `<li style="margin:4px 0"><a href="${pr?.prUrl ?? `${base}/admin/bugs/${b.id}`}" style="color:#4f46e5;text-decoration:none"><strong>${escapeHtml(b.title)}</strong></a>${pr?.confidence != null ? ` <span style="color:#94a3b8;font-size:11px">· confiance ${Math.round(pr.confidence * 100)}%</span>` : ""}</li>`;
-}).join("")}</ul>`);
+    sections.push(`${sectionHeader("PRs en attente de merge", fixProposed.length, "#4f46e5")}
+<ul style="margin:0;list-style:none;padding:0;">
+  ${fixProposed.map((b) => {
+    const pr = b.fixAttempts[0];
+    const pct = pr?.confidence != null ? Math.round(pr.confidence * 100) : null;
+    return `<li style="margin:6px 0;font-size:13px;color:#334155;">
+      <a href="${pr?.prUrl ?? `${base}/admin/bugs/${b.id}`}" style="color:#4f46e5;text-decoration:none;font-weight:600;">${escapeHtml(b.title)}</a>
+      ${pct != null ? `<span style="color:#94a3b8;font-size:11px;"> · confiance ${pct}%</span>` : ""}
+    </li>`;
+  }).join("")}
+</ul>`);
   }
 
   if (newBugs.length > 0) {
-    sections.push(`<h3 style="margin:18px 0 6px 0;font-size:14px">🆕 Nouveaux bugs aujourd'hui (${newBugs.length})</h3>
-<ul style="margin:0;padding-left:18px">${newBugs.map(bugLine).join("")}</ul>`);
+    sections.push(`${sectionHeader("Nouveaux bugs aujourd'hui", newBugs.length, "#0f172a")}
+<ul style="margin:0;list-style:disc;padding-left:18px;">${newBugs.map(bugLine).join("")}</ul>`);
   }
 
   if (fixedBugs.length > 0) {
-    sections.push(`<h3 style="margin:18px 0 6px 0;font-size:14px;color:#059669">✅ Bugs fixés dans les 24h (${fixedBugs.length})</h3>
-<ul style="margin:0;padding-left:18px">${fixedBugs.map((b) => `<li style="margin:4px 0">${escapeHtml(b.title)}</li>`).join("")}</ul>`);
+    sections.push(`${sectionHeader("Bugs résolus", fixedBugs.length, "#059669")}
+<ul style="margin:0;list-style:disc;padding-left:18px;">
+  ${fixedBugs.map((b) => `<li style="margin:5px 0;font-size:13px;color:#334155;">${escapeHtml(b.title)}</li>`).join("")}
+</ul>`);
   }
 
   if (pendingApproval.length > 0) {
-    sections.push(`<h3 style="margin:18px 0 6px 0;font-size:14px;color:#d97706">⏳ En attente de triage (${pendingApproval.length})</h3>
-<ul style="margin:0;padding-left:18px">${pendingApproval.slice(0, 8).map(bugLine).join("")}${pendingApproval.length > 8 ? `<li style="color:#94a3b8;font-size:11px">… et ${pendingApproval.length - 8} autres</li>` : ""}</ul>`);
+    sections.push(`${sectionHeader("En attente de triage", pendingApproval.length, "#d97706")}
+<ul style="margin:0;list-style:disc;padding-left:18px;">
+  ${pendingApproval.slice(0, 8).map(bugLine).join("")}
+  ${pendingApproval.length > 8 ? `<li style="color:#94a3b8;font-size:11px;margin:5px 0;">… et ${pendingApproval.length - 8} autres</li>` : ""}
+</ul>`);
   }
 
   if (runningAttempts.length > 0) {
-    sections.push(`<h3 style="margin:18px 0 6px 0;font-size:14px;color:#0891b2">⚙️ Fixes lancés cette nuit (${runningAttempts.length})</h3>
-<ul style="margin:0;padding-left:18px">${runningAttempts.map((a) => `<li style="margin:4px 0">${escapeHtml(a.bug.title)} <span style="color:#94a3b8;font-size:11px">· ${a.agentModel}</span></li>`).join("")}</ul>`);
+    sections.push(`${sectionHeader("Fixes en cours cette nuit", runningAttempts.length, "#0891b2")}
+<ul style="margin:0;list-style:disc;padding-left:18px;">
+  ${runningAttempts.map((a) => `<li style="margin:5px 0;font-size:13px;color:#334155;">${escapeHtml(a.bug.title)} <span style="color:#94a3b8;font-size:11px;">· ${escapeHtml(a.agentModel)}</span></li>`).join("")}
+</ul>`);
   }
 
-  const body = `
-<p style="font-size:13px;color:#475569;margin:0 0 4px 0">Résumé quotidien ${new Date().toLocaleDateString("fr-CA")}</p>
-${sections.join("")}
-<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0">
-  ${btn("Ouvrir le dashboard", `${base}/admin/bugs`, "#0f172a")}
-</div>`;
+  const today = new Date().toLocaleDateString("fr-CA");
 
-  const subject = `[Bugs] Résumé ${new Date().toLocaleDateString("fr-CA")} — ${newBugs.length} nouveau(x), ${fixedBugs.length} fixé(s), ${fixProposed.length} PR à merger`;
-  const ok = await sendEmail(notifyEmail(), subject, wrapHtml("Résumé quotidien", body), {
+  const html = buildNexusEmail({
+    event: "bug_daily_digest",
+    preheader: `${newBugs.length} nouveau(x) · ${fixedBugs.length} réglé(s) · ${fixProposed.length} PR à merger`,
+    title: `Résumé quotidien — ${today}`,
+    intro: `${newBugs.length} nouveau(x) bug(s) · ${fixedBugs.length} réglé(s) · ${fixProposed.length} PR prête(s) à merger`,
+    body: sections.join(""),
+    ctaUrl: `${base}/admin/bugs`,
+    ctaLabel: "Ouvrir le dashboard",
+  });
+
+  const subject = `[Bugs] Résumé ${today} — ${newBugs.length} nouveau(x), ${fixedBugs.length} fixé(s), ${fixProposed.length} PR à merger`;
+  const ok = await sendEmail(notifyEmail(), subject, html, {
     from: { name: "Nexus Bugs", email: notifyEmail() },
   });
   return { sent: ok };
