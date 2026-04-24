@@ -751,6 +751,12 @@ export default function ReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode, editHistory, editFuture, dashItems, editBaseline]);
 
+  // Filtres globaux (panneau Filtres) — déclarés AVANT `load` car la
+  // callback en dépend.
+  const [filterOrg, setFilterOrg] = useState("all");
+  const [filterAgent, setFilterAgent] = useState("all");
+  const [showFilters, setShowFilters] = useState(false);
+
   const load = useCallback(() => {
     setLoading(true);
     // Pour le range custom, on approxime en jours depuis la plage pour
@@ -763,14 +769,17 @@ export default function ReportsPage() {
       const n = Math.max(1, Math.ceil((to - from) / 86_400_000));
       effectiveDays = String(n);
     }
+    // orgContextId (atelier d'org) prime, sinon on prend le filtre « Organisation »
+    // du panneau de filtres s'il est actif.
+    const effectiveOrgId = orgContextId ?? (filterOrg !== "all" ? filterOrg : null);
     const qs = new URLSearchParams({ days: effectiveDays });
-    if (orgContextId) qs.set("organizationId", orgContextId);
+    if (effectiveOrgId) qs.set("organizationId", effectiveOrgId);
     fetch(`/api/v1/reports/global?${qs.toString()}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [days, customFrom, customTo, orgContextId]);
+  }, [days, customFrom, customTo, orgContextId, filterOrg]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1096,10 +1105,7 @@ export default function ReportsPage() {
     });
   }
 
-  // Global filters
-  const [filterOrg, setFilterOrg] = useState("all");
-  const [filterAgent, setFilterAgent] = useState("all");
-  const [showFilters, setShowFilters] = useState(false);
+  // Global filters — state déclaré plus haut (juste avant `load`).
 
   // Org and agent lists for filter dropdowns
   const orgList = data ? [...new Set([
@@ -2186,7 +2192,7 @@ export default function ReportsPage() {
                       overrideChartType={item?.overrideChartType}
                       titleScale={item?.titleScale}
                       chartScale={item?.chartScale}
-                      orgContextId={orgContextId}
+                      orgContextId={orgContextId ?? (filterOrg !== "all" ? filterOrg : null)}
                     />;
                 }
                 })();
@@ -3561,9 +3567,35 @@ function PeriodPicker({
       apply: () => { setDays("1"); },
     },
     {
+      key: "current_week",
+      label: "Semaine en cours",
+      apply: () => {
+        // Du lundi de la semaine courante jusqu'à aujourd'hui (inclus).
+        const now = new Date();
+        const day = now.getDay(); // 0 = dim, 1 = lun, …
+        const mondayOffset = day === 0 ? 6 : day - 1;
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset);
+        setCustomFrom(start.toISOString().slice(0, 10));
+        setCustomTo(now.toISOString().slice(0, 10));
+        setDays("custom");
+      },
+    },
+    {
       key: "last_week",
       label: "Semaine dernière",
       apply: () => { setDays("7"); },
+    },
+    {
+      key: "current_month",
+      label: "Mois en cours",
+      apply: () => {
+        // Du 1er du mois courant jusqu'à aujourd'hui (inclus).
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        setCustomFrom(start.toISOString().slice(0, 10));
+        setCustomTo(now.toISOString().slice(0, 10));
+        setDays("custom");
+      },
     },
     {
       key: "last_month",
