@@ -500,6 +500,7 @@ export default function ReportsPage() {
   const [tagDefs, setTagDefs] = useState<TagDef[]>(() => loadTagDefinitions());
   const [managingTags, setManagingTags] = useState(false);
   const [assignTagsReportId, setAssignTagsReportId] = useState<string | null>(null);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const tagDefById = useMemo(() => {
     const map: Record<string, TagDef> = {};
     for (const t of tagDefs) map[t.id] = t;
@@ -1662,10 +1663,52 @@ export default function ReportsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button variant="primary" size="sm" onClick={() => setShowCreateReport(true)} className="hidden md:inline-flex">
-              <Plus className="h-3.5 w-3.5" />
-              Nouveau
-            </Button>
+            <div className="relative hidden md:block">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setCreateMenuOpen((v) => !v)}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Nouveau
+                <ChevronDown className="h-3 w-3 opacity-80" />
+              </Button>
+              {createMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setCreateMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-40 w-52 rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreateMenuOpen(false);
+                        setShowCreateReport(true);
+                      }}
+                      className="w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-50"
+                    >
+                      <LayoutDashboard className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[12.5px] font-medium text-slate-900">Nouveau dashboard</div>
+                        <div className="text-[10.5px] text-slate-500">Assemble tes widgets</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreateMenuOpen(false);
+                        addFolder();
+                      }}
+                      className="w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-slate-50"
+                    >
+                      <FolderPlus className="h-4 w-4 mt-0.5 text-amber-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[12.5px] font-medium text-slate-900">Nouveau dossier</div>
+                        <div className="text-[10.5px] text-slate-500">Regroupe plusieurs dashboards</div>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1988,10 +2031,20 @@ export default function ReportsPage() {
                       tagDefs={r.tags?.map((id) => tagDefById[id]).filter(Boolean) as TagDef[] ?? []}
                       orgIds={getReportOrgs(r)}
                       orgNameById={orgNameById}
+                      folders={folders}
                       onOpen={() => setView(r.id)}
                       onTagOrg={() => setTaggingReportId(r.id)}
                       onTagLabels={() => setAssignTagsReportId(r.id)}
                       onDuplicate={() => duplicateReport(r.id)}
+                      onToggleFolder={(folderId) => {
+                        const folder = folders.find((f) => f.id === folderId);
+                        if (!folder) return;
+                        if (folder.dashboardIds.includes(r.id)) {
+                          removeDashboardFromFolder(folderId, r.id);
+                        } else {
+                          addDashboardToFolder(folderId, r.id);
+                        }
+                      }}
                     />
                   ))}
                 </div>
@@ -2396,7 +2449,8 @@ export default function ReportsPage() {
 // ===========================================================================
 function GalleryCard({
   report, isFav, isPrimary, widgetCount, childCount, tagDefs,
-  orgIds, orgNameById, onOpen, onTagOrg, onTagLabels, onDuplicate,
+  orgIds, orgNameById, folders, onOpen, onTagOrg, onTagLabels,
+  onDuplicate, onToggleFolder,
 }: {
   report: ReportDef;
   isFav: boolean;
@@ -2406,12 +2460,16 @@ function GalleryCard({
   tagDefs: TagDef[];
   orgIds: string[];
   orgNameById: Record<string, string>;
+  folders: DashboardFolder[];
   onOpen: () => void;
   onTagOrg: () => void;
   onTagLabels: () => void;
   onDuplicate: () => void;
+  onToggleFolder: (folderId: string) => void;
 }) {
+  const [folderMenuOpen, setFolderMenuOpen] = useState(false);
   const isCustom = report.id.startsWith("custom_");
+  const currentFolderIds = folders.filter((f) => f.dashboardIds.includes(report.id)).map((f) => f.id);
   const orgLabel = orgIds.length === 0 ? "" : orgIds.length === 1 ? (orgNameById[orgIds[0]] ?? "…") : `${orgIds.length} orgs`;
   const orgTitle = orgIds.length === 0
     ? "Attribuer à une ou plusieurs organisations"
@@ -2459,6 +2517,65 @@ function GalleryCard({
         >
           <Copy className="h-3 w-3" />
         </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setFolderMenuOpen((v) => !v); }}
+            className={cn(
+              "inline-flex items-center justify-center h-6 w-6 rounded-md ring-1 transition-all",
+              currentFolderIds.length > 0
+                ? "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100"
+                : "bg-white/90 text-slate-500 ring-slate-200 opacity-0 group-hover:opacity-100 hover:bg-amber-50 hover:text-amber-700 hover:ring-amber-300",
+            )}
+            title={
+              currentFolderIds.length === 0
+                ? "Ajouter à un dossier"
+                : `Dans ${currentFolderIds.length} dossier${currentFolderIds.length > 1 ? "s" : ""}`
+            }
+          >
+            <Folder className="h-3 w-3" />
+          </button>
+          {folderMenuOpen && (
+            <div
+              className="absolute right-0 top-full mt-1 z-30 w-56 rounded-lg border border-slate-200 bg-white shadow-lg py-1"
+              onClick={(e) => e.stopPropagation()}
+              onMouseLeave={() => setFolderMenuOpen(false)}
+            >
+              <p className="px-3 py-1 text-[9.5px] font-semibold uppercase tracking-wider text-slate-400">
+                Dossiers
+              </p>
+              {folders.length === 0 ? (
+                <p className="px-3 py-1.5 text-[11px] text-slate-500 italic">
+                  Aucun dossier — crée-en un depuis la sidebar ou le bouton « + Nouveau ».
+                </p>
+              ) : (
+                folders.map((f) => {
+                  const isIn = f.dashboardIds.includes(report.id);
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleFolder(f.id);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50 text-left"
+                    >
+                      <div className={cn(
+                        "h-3.5 w-3.5 shrink-0 rounded border flex items-center justify-center",
+                        isIn ? "bg-blue-600 border-blue-600 text-white" : "border-slate-300 bg-white",
+                      )}>
+                        {isIn && <CheckCircle2 className="h-2.5 w-2.5" />}
+                      </div>
+                      <Folder className="h-3 w-3 text-blue-500 shrink-0" />
+                      <span className="truncate flex-1">{f.name}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <button
