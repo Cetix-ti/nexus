@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { isBillable, isCovered, isNonBillable } from "@/lib/billing/coverage-statuses";
 
 /**
  * GET /api/v1/organizations/[id]/reports?days=30
@@ -96,21 +97,20 @@ export async function GET(
   const totalHours = Math.round((totalMinutes / 60) * 100) / 100;
   const totalRevenue = timeEntries.reduce((s, e) => s + (e.amount ?? 0), 0);
 
-  const billableEntries = timeEntries.filter(
-    (e) => e.coverageStatus === "billable" || e.coverageStatus === "hour_bank_overage" || e.coverageStatus === "msp_overage" || e.coverageStatus === "travel_billable"
-  );
+  const billableEntries = timeEntries.filter((e) => isBillable(e.coverageStatus));
   const billableMinutes = billableEntries.reduce((s, e) => s + e.durationMinutes, 0);
   const billableHours = Math.round((billableMinutes / 60) * 100) / 100;
   const billableRevenue = billableEntries.reduce((s, e) => s + (e.amount ?? 0), 0);
 
-  const includedEntries = timeEntries.filter(
-    (e) => e.coverageStatus === "included_in_contract" || e.coverageStatus === "hour_bank"
-  );
+  // "hour_bank" était phantom : la valeur réelle est "deducted_from_hour_bank"
+  // assignée par engine.ts, couverte par isCovered().
+  const includedEntries = timeEntries.filter((e) => isCovered(e.coverageStatus));
   const includedMinutes = includedEntries.reduce((s, e) => s + e.durationMinutes, 0);
   const includedHours = Math.round((includedMinutes / 60) * 100) / 100;
 
+  // isNonBillable inclut maintenant "internal_time" (était ignoré avant).
   const nonBillableMinutes = timeEntries
-    .filter((e) => e.coverageStatus === "non_billable")
+    .filter((e) => isNonBillable(e.coverageStatus))
     .reduce((s, e) => s + e.durationMinutes, 0);
   const nonBillableHours = Math.round((nonBillableMinutes / 60) * 100) / 100;
 
@@ -139,7 +139,7 @@ export async function GET(
     if (entry) {
       entry.hours += e.durationMinutes / 60;
       entry.revenue += e.amount ?? 0;
-      if (e.coverageStatus === "billable" || e.coverageStatus === "hour_bank_overage" || e.coverageStatus === "msp_overage" || e.coverageStatus === "travel_billable") {
+      if (isBillable(e.coverageStatus)) {
         entry.billableHours += e.durationMinutes / 60;
       }
     }
@@ -272,7 +272,7 @@ export async function GET(
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEntries = timeEntries.filter((e) => {
       const d = new Date(e.startedAt);
-      return d >= monthStart && (e.coverageStatus === "included_in_contract" || e.coverageStatus === "hour_bank");
+      return d >= monthStart && isCovered(e.coverageStatus);
     });
     const usedMinutes = monthEntries.reduce((s, e) => s + e.durationMinutes, 0);
     const usedHours = Math.round((usedMinutes / 60) * 100) / 100;

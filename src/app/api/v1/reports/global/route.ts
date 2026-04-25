@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { isBillable, isCovered } from "@/lib/billing/coverage-statuses";
 
 /**
  * GET /api/v1/reports/global?days=30
@@ -143,10 +144,9 @@ export async function GET(req: Request) {
     const prevHours = Math.round(prevTimeEntries.reduce((s, e) => s + e.durationMinutes, 0) / 60 * 100) / 100;
     const revenueTrend = prevRevenue > 0 ? Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 100) : 0;
 
-    const billableStatuses = ["billable", "hour_bank_overage", "msp_overage", "travel_billable"];
-    const billableMinutes = timeEntries.filter((e) => billableStatuses.includes(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes, 0);
+    const billableMinutes = timeEntries.filter((e) => isBillable(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes, 0);
     const billableHours = Math.round((billableMinutes / 60) * 100) / 100;
-    const billableRevenue = timeEntries.filter((e) => billableStatuses.includes(e.coverageStatus)).reduce((s, e) => s + (e.amount ?? 0), 0);
+    const billableRevenue = timeEntries.filter((e) => isBillable(e.coverageStatus)).reduce((s, e) => s + (e.amount ?? 0), 0);
     const billableRate = totalMinutes > 0 ? Math.round((billableMinutes / totalMinutes) * 100) : 0;
     const avgHourlyRate = billableHours > 0 ? Math.round((billableRevenue / billableHours) * 100) / 100 : 0;
 
@@ -170,7 +170,7 @@ export async function GET(req: Request) {
       if (entry) {
         entry.hours += e.durationMinutes / 60;
         entry.revenue += e.amount ?? 0;
-        if (billableStatuses.includes(e.coverageStatus)) entry.billableHours += e.durationMinutes / 60;
+        if (isBillable(e.coverageStatus)) entry.billableHours += e.durationMinutes / 60;
       }
     }
     const monthlyBreakdown = Array.from(monthlyMap.entries()).map(([month, d]) => ({
@@ -287,7 +287,7 @@ export async function GET(req: Request) {
       const monthEntries = timeEntries.filter((e) =>
         e.organizationId === c.organizationId &&
         new Date(e.startedAt) >= monthStart &&
-        ["included_in_contract", "hour_bank"].includes(e.coverageStatus),
+        isCovered(e.coverageStatus),
       );
       const usedMinutes = monthEntries.reduce((s, e) => s + e.durationMinutes, 0);
       const usedHours = Math.round((usedMinutes / 60) * 100) / 100;

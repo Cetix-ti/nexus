@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { isBillable } from "@/lib/billing/coverage-statuses";
 
 /**
  * GET /api/v1/my-space?days=30
@@ -81,8 +82,7 @@ export async function GET(req: Request) {
     const totalHours = Math.round((totalMinutes / 60) * 100) / 100;
     const totalRevenue = timeEntries.reduce((s, e) => s + (e.amount ?? 0), 0);
 
-    const billableStatuses = ["billable", "hour_bank_overage", "msp_overage", "travel_billable"];
-    const billableMinutes = timeEntries.filter((e) => billableStatuses.includes(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes, 0);
+    const billableMinutes = timeEntries.filter((e) => isBillable(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes, 0);
     const billableHours = Math.round((billableMinutes / 60) * 100) / 100;
     const billableRate = totalMinutes > 0 ? Math.round((billableMinutes / totalMinutes) * 100) : 0;
 
@@ -92,7 +92,7 @@ export async function GET(req: Request) {
     const afterHoursHours = Math.round((afterHoursMinutes / 60) * 100) / 100;
 
     const avgHourlyRate = billableHours > 0
-      ? Math.round((timeEntries.filter((e) => billableStatuses.includes(e.coverageStatus)).reduce((s, e) => s + (e.amount ?? 0), 0) / billableHours) * 100) / 100
+      ? Math.round((timeEntries.filter((e) => isBillable(e.coverageStatus)).reduce((s, e) => s + (e.amount ?? 0), 0) / billableHours) * 100) / 100
       : 0;
 
     // Monthly breakdown (12 months)
@@ -109,7 +109,7 @@ export async function GET(req: Request) {
       if (entry) {
         entry.hours += e.durationMinutes / 60;
         entry.revenue += e.amount ?? 0;
-        if (billableStatuses.includes(e.coverageStatus)) entry.billableHours += e.durationMinutes / 60;
+        if (isBillable(e.coverageStatus)) entry.billableHours += e.durationMinutes / 60;
       }
     }
 

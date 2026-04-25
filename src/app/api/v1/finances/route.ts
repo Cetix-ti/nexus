@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser, hasCapability } from "@/lib/auth-utils";
+import { isBillable, isCovered, isNonBillable } from "@/lib/billing/coverage-statuses";
 
 export async function GET(req: Request) {
   try {
@@ -60,9 +61,7 @@ export async function GET(req: Request) {
     const totalMinutes = timeEntries.reduce((s, e) => s + e.durationMinutes, 0);
     const totalHours = Math.round(totalMinutes / 60 * 10) / 10;
 
-    const billableEntries = timeEntries.filter((e) =>
-      ["billable", "hour_bank_overage", "msp_overage", "travel_billable"].includes(e.coverageStatus),
-    );
+    const billableEntries = timeEntries.filter((e) => isBillable(e.coverageStatus));
     const billableMinutes = billableEntries.reduce((s, e) => s + e.durationMinutes, 0);
     const billableHours = Math.round(billableMinutes / 60 * 10) / 10;
 
@@ -82,13 +81,18 @@ export async function GET(req: Request) {
       ? Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 100)
       : 0;
 
+    // Couvert par contrat / banque d'heures (sans extra à facturer).
+    // Note: "hour_bank" était utilisé ici comme phantom — la valeur réelle
+    // assignée par engine.ts est "deducted_from_hour_bank", couverte par isCovered().
     const includedMinutes = timeEntries
-      .filter((e) => ["included_in_contract", "hour_bank"].includes(e.coverageStatus))
+      .filter((e) => isCovered(e.coverageStatus))
       .reduce((s, e) => s + e.durationMinutes, 0);
     const includedHours = Math.round(includedMinutes / 60 * 10) / 10;
 
+    // "pending" était un phantom : c'est une valeur de approvalStatus, pas
+    // de coverageStatus. La vraie liste non-facturable inclut "internal_time".
     const nonBillableMinutes = timeEntries
-      .filter((e) => ["non_billable", "pending"].includes(e.coverageStatus))
+      .filter((e) => isNonBillable(e.coverageStatus))
       .reduce((s, e) => s + e.durationMinutes, 0);
     const nonBillableHours = Math.round(nonBillableMinutes / 60 * 10) / 10;
 
