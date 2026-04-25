@@ -124,7 +124,7 @@ export default function SoftwareTemplateDetailPage() {
             {drifted > 0 && <span className="ml-1 text-amber-700">· {drifted} désynchronisé(s)</span>}
           </div>
           <div className="flex items-start justify-between gap-3">
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <Input value={data.name} onChange={(e) => patch("name", e.target.value)} className="text-[20px] font-semibold border-transparent shadow-none px-0 focus-visible:ring-0" />
               <div className="mt-1 grid gap-2 md:grid-cols-2">
                 <Input value={data.vendor ?? ""} onChange={(e) => patch("vendor", e.target.value)} placeholder="Éditeur" />
@@ -200,10 +200,10 @@ export default function SoftwareTemplateDetailPage() {
               ) : (
                 <div className="space-y-2">
                   {data.installers.map((i) => (
-                    <div key={i.id} className="rounded-md border border-slate-200 bg-white p-3 flex items-center justify-between">
-                      <div>
-                        <div className="text-[13px] font-medium text-slate-900">{i.title}</div>
-                        <div className="text-[11.5px] text-slate-500">{i.filename} · {(i.sizeBytes / 1048576).toFixed(1)} Mo</div>
+                    <div key={i.id} className="rounded-md border border-slate-200 bg-white p-3 flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-medium text-slate-900 truncate">{i.title}</div>
+                        <div className="text-[11.5px] text-slate-500 truncate">{i.filename} · {(i.sizeBytes / 1048576).toFixed(1)} Mo</div>
                       </div>
                       <span className="text-[11px] text-slate-500">{i._count.downloadLinks} lien(s)</span>
                     </div>
