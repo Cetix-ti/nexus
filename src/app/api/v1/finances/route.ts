@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser, hasCapability } from "@/lib/auth-utils";
-import { isBillable, isCovered, isNonBillable } from "@/lib/billing/coverage-statuses";
+import { isBillable, isCovered, isNonBillable, EXCLUDED_APPROVAL_STATUSES } from "@/lib/billing/coverage-statuses";
 
 export async function GET(req: Request) {
   try {
@@ -30,8 +30,13 @@ export async function GET(req: Request) {
       // Orgs with tickets
       orgTicketCounts,
     ] = await Promise.all([
+      // Exclut les saisies rejetées des agrégations financières (cf.
+      // EXCLUDED_APPROVAL_STATUSES). Les drafts sont conservés = WIP réel.
       prisma.timeEntry.findMany({
-        where: { startedAt: { gte: since } },
+        where: {
+          startedAt: { gte: since },
+          approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+        },
         select: {
           durationMinutes: true,
           coverageStatus: true,
@@ -43,7 +48,10 @@ export async function GET(req: Request) {
         },
       }),
       prisma.timeEntry.findMany({
-        where: { startedAt: { gte: prevStart, lt: since } },
+        where: {
+          startedAt: { gte: prevStart, lt: since },
+          approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+        },
         select: { durationMinutes: true, amount: true, coverageStatus: true },
       }),
       prisma.contract.findMany({

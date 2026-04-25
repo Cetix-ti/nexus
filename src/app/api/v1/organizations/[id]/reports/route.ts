@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { isBillable, isCovered, isNonBillable } from "@/lib/billing/coverage-statuses";
+import { isBillable, isCovered, isNonBillable, EXCLUDED_APPROVAL_STATUSES } from "@/lib/billing/coverage-statuses";
 
 /**
  * GET /api/v1/organizations/[id]/reports?days=30
@@ -41,9 +41,13 @@ export async function GET(
 
   // Parallel data fetch
   const [timeEntries, tickets, contracts, allTimeEntries12m] = await Promise.all([
-    // Time entries for the selected period
+    // Time entries for the selected period (rejected exclus des KPIs).
     prisma.timeEntry.findMany({
-      where: { organizationId: orgId, startedAt: { gte: since } },
+      where: {
+        organizationId: orgId,
+        startedAt: { gte: since },
+        approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+      },
       orderBy: { startedAt: "desc" },
     }),
     // Tickets for the selected period
@@ -74,11 +78,12 @@ export async function GET(
         endDate: true,
       },
     }),
-    // 12 months of time entries for monthly trend
+    // 12 months of time entries for monthly trend (rejected exclus).
     prisma.timeEntry.findMany({
       where: {
         organizationId: orgId,
         startedAt: { gte: new Date(new Date().setMonth(new Date().getMonth() - 12)) },
+        approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
       },
       select: {
         startedAt: true,

@@ -20,7 +20,7 @@
 
 import 'dotenv/config';
 import { prisma } from '../src/lib/prisma';
-import { isBillable } from '../src/lib/billing/coverage-statuses';
+import { isBillable, EXCLUDED_APPROVAL_STATUSES } from '../src/lib/billing/coverage-statuses';
 import { buildMonthlyReportPayload } from '../src/lib/reports/monthly/builder';
 
 const TOLERANCE_HOURS = 0.05; // 3 minutes max d'écart toléré (arrondi décimal)
@@ -56,8 +56,13 @@ async function main() {
     const orgName = org?.name ?? `(${orgId})`;
 
     // RÉFÉRENCE : calcul direct depuis le helper canonique
+    // Filtre approvalStatus aligné sur les consommateurs (rejected exclu).
     const entries = await prisma.timeEntry.findMany({
-      where: { organizationId: orgId, startedAt: { gte: monthStart, lt: monthEnd } },
+      where: {
+        organizationId: orgId,
+        startedAt: { gte: monthStart, lt: monthEnd },
+        approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+      },
       select: { durationMinutes: true, coverageStatus: true },
     });
     const refMinutes = entries.filter((e) => isBillable(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes, 0);
