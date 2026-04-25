@@ -164,6 +164,10 @@ export async function buildMonthlyReportPayload(
       resolvedAt: true,
       closedAt: true,
       requesterId: true,
+      // Résumé IA pré-généré (warmup en arrière-plan après chaque
+      // génération de rapport). Si null/non-confiant, on n'affiche rien.
+      aiSummary: true,
+      aiSummaryConfidence: true,
       requester: {
         select: {
           id: true,
@@ -518,6 +522,14 @@ export async function buildMonthlyReportPayload(
       agents: new Map<string, number>(),
       entries: [],
     };
+    // Résumé IA — uniquement si déjà persisté avec confiance >= 0.8.
+    // Pas de génération inline ici : trop lent (peut prendre des minutes
+    // pour un rapport avec beaucoup de tickets et faire timeout côté
+    // navigateur). Le warmup est lancé en arrière-plan par le service
+    // après la génération du rapport (cf. service.ts → warmReportSummaries).
+    const aiSummary =
+      t.aiSummary && (t.aiSummaryConfidence ?? 0) >= 0.8 ? t.aiSummary : null;
+
     ticketsBlocks.push({
       displayId: displayTicketId(t.number),
       ticketId: t.id,
@@ -538,6 +550,7 @@ export async function buildMonthlyReportPayload(
       totalAmount: round2(bt.amount),
       resolutionNote: resolutionNoteByTicket.get(tid) ?? null,
       timeEntries: bt.entries.sort((a, b) => a.date.localeCompare(b.date)),
+      aiSummary,
     });
   }
   // Tri final : par numéro de ticket croissant.

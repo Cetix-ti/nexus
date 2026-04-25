@@ -806,6 +806,20 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
         </span>
       </div>
 
+      {ticket.aiSummary ? (
+        <p
+          style={{
+            margin: "10px 0 0 0",
+            fontSize: "12px",
+            lineHeight: 1.55,
+            color: THEME.inkSoft,
+            fontStyle: "italic",
+          }}
+        >
+          {ticket.aiSummary}
+        </p>
+      ) : null}
+
       <div
         style={{
           marginTop: "12px",

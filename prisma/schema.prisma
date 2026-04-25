@@ -501,6 +501,12 @@ model Ticket {
   /// Confidence (0-1) de l'IA au moment de l'application auto — affichée
   /// dans l'UI à côté de la catégorie.
   categoryConfidence Float?         @map("category_confidence")
+  /// Résumé court (1-2 phrases) généré par l'IA pour clarifier le sujet
+  /// dans les livrables (ex. rapport mensuel client) quand le titre seul
+  /// est insuffisant. Null si pas encore généré ou confidence trop basse.
+  aiSummary           String?        @map("ai_summary") @db.Text
+  aiSummaryConfidence Float?         @map("ai_summary_confidence")
+  aiSummaryGeneratedAt DateTime?     @map("ai_summary_generated_at")
   urgency            TicketUrgency  @default(MEDIUM)
   impact             TicketImpact   @default(MEDIUM)
   type               TicketType     @default(INCIDENT)

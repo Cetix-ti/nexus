@@ -98,6 +98,9 @@ export interface MonthlyReportTicketBlock {
   resolutionNote: string | null;
   /** Notes des time entries du mois, triées par date. */
   timeEntries: MonthlyReportTimeEntryLine[];
+  /** Résumé IA court (1-2 phrases) — affiché sous le sujet quand présent.
+   *  null si l'IA n'a pas atteint le seuil de confiance requis. */
+  aiSummary?: string | null;
 }
 
 /** Un déplacement dans la section "Déplacements". */
