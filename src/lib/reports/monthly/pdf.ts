@@ -120,11 +120,13 @@ export async function renderReportToPdf(reportId: string): Promise<Buffer> {
     const pdf = await page.pdf({
       format: "Letter",
       printBackground: true,
-      preferCSSPageSize: true,
-      // Bottom margin = 24mm pour laisser respirer le footer (logo Cetix +
-      // pagination ~14mm de hauteur ressentie) + un coussin ~10mm pour que
-      // le contenu ne touche pas la zone footer. Top reste à 14mm.
-      margin: { top: "14mm", right: "14mm", bottom: "24mm", left: "14mm" },
+      // preferCSSPageSize désactivé — on veut que les marges Puppeteer
+      // soient autoritaires (le @page CSS du document n'override plus).
+      // Marges symétriques 18mm sur les 4 côtés. Le footer est rendu
+      // À L'INTÉRIEUR de la marge bottom — donc 18mm doit être suffisant
+      // pour son contenu (logo 14px + texte ~10px + padding) tout en
+      // laissant l'impression d'une marge cohérente avec les autres bords.
+      margin: { top: "18mm", right: "18mm", bottom: "20mm", left: "18mm" },
       displayHeaderFooter: true,
       headerTemplate: `<div></div>`,
       footerTemplate: await buildFooterTemplate(),
@@ -150,7 +152,7 @@ async function buildFooterTemplate(): Promise<string> {
   // externe, pas de classes Tailwind. Polices de fallback système car
   // Geist n'est pas disponible dans le contexte d'impression Puppeteer.
   return `
-    <div style="width:100%;padding:0 14mm;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;font-size:8.5px;color:#64748B;">
+    <div style="width:100%;padding:0 18mm;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;font-size:8.5px;color:#64748B;">
       <div style="display:flex;align-items:center;gap:8px;">
         ${logoImg}
         <span style="font-weight:500;">Cetix</span>

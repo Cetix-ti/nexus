@@ -168,7 +168,10 @@ export function MonthlyReportDocument({
           border-top: 2px solid ${THEME.ink};
           margin: 0;
         }
-        @page { size: Letter; margin: 0; }
+        /* IMPORTANT : on laisse Puppeteer (page.pdf({ margin: ... }))
+           contrôler les marges. Pas de @page margin override ici, sinon
+           la footer template overlaperait le contenu. */
+        @page { size: Letter; }
         @media print {
           body { background: ${THEME.paper}; }
         }
@@ -213,8 +216,12 @@ function CoverPage({
     <section
       className="break-after-page"
       style={{
-        padding: "60px 60px 40px",
-        minHeight: "100vh",
+        // Puppeteer applique 18mm sur les bords. Pas de padding latéral
+        // interne (sinon double). Vertical : un peu de respiration pour
+        // que la grille top/middle/bottom n'embrasse pas exactement les
+        // bords de la zone imprimable.
+        padding: "0 0 16px",
+        minHeight: "calc(100vh - 38mm)",
         display: "grid",
         gridTemplateRows: "auto 1fr auto",
       }}
@@ -416,7 +423,10 @@ function PageSection({
   return (
     <section
       className={[breakAfter ? "break-after-page" : "", breakBefore ? "break-before-page" : ""].join(" ")}
-      style={{ padding: "56px 60px" }}
+      // Puppeteer applique déjà 18mm sur les 4 bords via page.pdf({ margin }).
+      // Padding interne réduit à 8px vertical seulement pour aérer entre
+      // sections sans empiler avec la marge externe.
+      style={{ padding: "8px 0" }}
     >
       {children}
     </section>
