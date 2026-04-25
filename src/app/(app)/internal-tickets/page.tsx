@@ -154,62 +154,98 @@ export default function InternalTicketsPage() {
         </Card>
       ) : (
         <Card className="overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50/60 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="px-4 py-2.5 text-left">#</th>
-                <th className="px-4 py-2.5 text-left">Sujet</th>
-                <th className="px-4 py-2.5 text-left">Statut</th>
-                <th className="px-4 py-2.5 text-left">Priorité</th>
-                <th className="px-4 py-2.5 text-left">Assigné</th>
-                <th className="px-4 py-2.5 text-right">Temps</th>
-                <th className="px-4 py-2.5 text-left">Créé</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="px-4 py-3 text-[12px] font-mono text-blue-600">
-                    <Link href={`/internal-tickets/${t.id}`}>{t.number}</Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link href={`/internal-tickets/${t.id}`} className="text-[13px] text-slate-900 font-medium hover:underline">
-                      {t.subject}
-                    </Link>
-                    {t.meetingId && (
-                      <div className="mt-0.5 text-[10.5px] text-slate-400">
-                        <Link href={`/calendar/meetings/${t.meetingId}`} className="hover:underline">
-                          ← issu d&apos;une rencontre
-                        </Link>
+          {/* Mobile : cards compactes */}
+          <ul className="sm:hidden divide-y divide-slate-100">
+            {filtered.map((t) => (
+              <li key={t.id} className="px-3 py-2.5 hover:bg-slate-50/80">
+                <Link href={`/internal-tickets/${t.id}`} className="block">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[11px] font-mono text-blue-600">#{t.number}</span>
+                        <Badge variant="default">{t.status}</Badge>
                       </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant="default">{t.status}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-[12px] text-slate-600">{t.priority}</td>
-                  <td className="px-4 py-3 text-[12px] text-slate-600">{t.assigneeName ?? "—"}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {timeStats[t.id]?.totalMinutes ? (
-                      <span
-                        className="inline-flex items-center gap-1 text-[11.5px] font-medium text-slate-700"
-                        title={`${timeStats[t.id].entries} entrée(s) de temps`}
-                      >
-                        <Clock className="h-3 w-3 text-slate-400" />
-                        {Math.floor(timeStats[t.id].totalMinutes / 60)}h
-                        {String(timeStats[t.id].totalMinutes % 60).padStart(2, "0")}
-                      </span>
-                    ) : (
-                      <span className="text-[11.5px] text-slate-300">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-[12px] text-slate-500 tabular-nums">
-                    {formatDistanceToNow(new Date(t.createdAt), { addSuffix: true, locale: fr })}
-                  </td>
+                      <h3 className="text-[13px] font-medium text-slate-900 truncate">{t.subject}</h3>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-slate-500 flex-wrap">
+                        <span>{t.priority}</span>
+                        {t.assigneeName && (<><span className="text-slate-300">·</span><span>{t.assigneeName}</span></>)}
+                        {timeStats[t.id]?.totalMinutes ? (
+                          <>
+                            <span className="text-slate-300">·</span>
+                            <span className="inline-flex items-center gap-0.5">
+                              <Clock className="h-2.5 w-2.5" />
+                              {Math.floor(timeStats[t.id].totalMinutes / 60)}h{String(timeStats[t.id].totalMinutes % 60).padStart(2, "0")}
+                            </span>
+                          </>
+                        ) : null}
+                        <span className="text-slate-300">·</span>
+                        <span>{formatDistanceToNow(new Date(t.createdAt), { addSuffix: true, locale: fr })}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {/* Tablette+ : table classique */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50/60 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-4 py-2.5 text-left">#</th>
+                  <th className="px-4 py-2.5 text-left">Sujet</th>
+                  <th className="px-4 py-2.5 text-left">Statut</th>
+                  <th className="px-4 py-2.5 text-left hidden md:table-cell">Priorité</th>
+                  <th className="px-4 py-2.5 text-left hidden lg:table-cell">Assigné</th>
+                  <th className="px-4 py-2.5 text-right">Temps</th>
+                  <th className="px-4 py-2.5 text-left hidden md:table-cell">Créé</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((t) => (
+                  <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="px-4 py-3 text-[12px] font-mono text-blue-600">
+                      <Link href={`/internal-tickets/${t.id}`}>{t.number}</Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link href={`/internal-tickets/${t.id}`} className="text-[13px] text-slate-900 font-medium hover:underline">
+                        {t.subject}
+                      </Link>
+                      {t.meetingId && (
+                        <div className="mt-0.5 text-[10.5px] text-slate-400">
+                          <Link href={`/calendar/meetings/${t.meetingId}`} className="hover:underline">
+                            ← issu d&apos;une rencontre
+                          </Link>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant="default">{t.status}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-slate-600 hidden md:table-cell">{t.priority}</td>
+                    <td className="px-4 py-3 text-[12px] text-slate-600 hidden lg:table-cell">{t.assigneeName ?? "—"}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {timeStats[t.id]?.totalMinutes ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-[11.5px] font-medium text-slate-700"
+                          title={`${timeStats[t.id].entries} entrée(s) de temps`}
+                        >
+                          <Clock className="h-3 w-3 text-slate-400" />
+                          {Math.floor(timeStats[t.id].totalMinutes / 60)}h
+                          {String(timeStats[t.id].totalMinutes % 60).padStart(2, "0")}
+                        </span>
+                      ) : (
+                        <span className="text-[11.5px] text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-slate-500 tabular-nums hidden md:table-cell">
+                      {formatDistanceToNow(new Date(t.createdAt), { addSuffix: true, locale: fr })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
 

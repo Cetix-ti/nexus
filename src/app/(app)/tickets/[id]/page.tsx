@@ -1789,9 +1789,10 @@ export default function TicketDetailPage() {
                     </button>
                     {/* Feedback IA — le tech peut signaler si la suggestion
                         était utile, même s'il décide de ne pas l'appliquer.
-                        Câble le category-feedback-learner. */}
+                        Câble le category-feedback-learner. Layout flex-wrap
+                        pour que les boutons restent visibles sur mobile. */}
                     {aiCatSuggestion.invocationId && (
-                      <div className="flex items-center justify-between gap-2 pt-1">
+                      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 pt-1">
                         <span className="text-[10.5px] text-violet-700/80">
                           Cette suggestion était-elle utile ?
                         </span>

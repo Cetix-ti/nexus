@@ -1512,57 +1512,80 @@ export default function OrganizationDetailPage() {
                 <p className="text-[13px] text-slate-500">Chargement des contacts...</p>
               </div>
             </div>
+          ) : filteredContacts.length === 0 ? (
+            <div className="px-4 py-12 text-center text-gray-400 text-sm">Aucun contact trouvé.</div>
           ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/60">
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Nom</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Courriel</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Téléphone</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Poste</th>
-                  <th className="px-4 py-3 text-center font-medium text-gray-500">VIP</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <>
+              {/* Mobile : cards verticales */}
+              <ul className="sm:hidden divide-y divide-gray-100">
                 {filteredContacts.map((c) => (
-                  <tr
+                  <li
                     key={c.id}
-                    className="hover:bg-gray-50/80 transition-colors cursor-pointer"
-                    onClick={() =>
-                      setEditingContact({
-                        id: c.id,
-                        name: `${c.firstName} ${c.lastName}`,
-                        email: c.email,
-                        phone: c.phone,
-                        organization: o.name,
-                        jobTitle: c.jobTitle,
-                        isVIP: c.vip,
-                      })
-                    }
+                    className="px-4 py-3 hover:bg-gray-50/80 cursor-pointer"
+                    onClick={() => setEditingContact({
+                      id: c.id, name: `${c.firstName} ${c.lastName}`, email: c.email,
+                      phone: c.phone, organization: o.name, jobTitle: c.jobTitle, isVIP: c.vip,
+                    })}
                   >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
-                          {c.firstName.charAt(0)}{c.lastName.charAt(0)}
-                        </div>
-                        <span className="font-medium text-gray-900">{c.firstName} {c.lastName}</span>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600 shrink-0">
+                        {c.firstName.charAt(0)}{c.lastName.charAt(0)}
                       </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{c.email}</td>
-                    <td className="px-4 py-3 text-gray-600">{c.phone}</td>
-                    <td className="px-4 py-3 text-gray-600">{c.jobTitle}</td>
-                    <td className="px-4 py-3 text-center">
-                      {c.vip && <Star className="inline h-4 w-4 text-amber-500 fill-amber-500" />}
-                    </td>
-                  </tr>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-gray-900 text-sm truncate">{c.firstName} {c.lastName}</span>
+                          {c.vip && <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />}
+                        </div>
+                        {c.jobTitle && <p className="text-[12px] text-gray-500 truncate">{c.jobTitle}</p>}
+                        {c.email && <p className="text-[12px] text-gray-600 truncate mt-0.5">{c.email}</p>}
+                        {c.phone && <p className="text-[12px] text-gray-600 truncate">{c.phone}</p>}
+                      </div>
+                    </div>
+                  </li>
                 ))}
-                {filteredContacts.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-12 text-center text-gray-400">Aucun contact trouvé.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+              </ul>
+              {/* Tablette+ : table */}
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50/60">
+                      <th className="px-4 py-3 text-left font-medium text-gray-500">Nom</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-500">Courriel</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-500 hidden md:table-cell">Téléphone</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-500 hidden lg:table-cell">Poste</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-500">VIP</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredContacts.map((c) => (
+                      <tr
+                        key={c.id}
+                        className="hover:bg-gray-50/80 transition-colors cursor-pointer"
+                        onClick={() => setEditingContact({
+                          id: c.id, name: `${c.firstName} ${c.lastName}`, email: c.email,
+                          phone: c.phone, organization: o.name, jobTitle: c.jobTitle, isVIP: c.vip,
+                        })}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600 shrink-0">
+                              {c.firstName.charAt(0)}{c.lastName.charAt(0)}
+                            </div>
+                            <span className="font-medium text-gray-900 truncate">{c.firstName} {c.lastName}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 truncate max-w-[220px]">{c.email}</td>
+                        <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{c.phone}</td>
+                        <td className="px-4 py-3 text-gray-600 hidden lg:table-cell">{c.jobTitle}</td>
+                        <td className="px-4 py-3 text-center">
+                          {c.vip && <Star className="inline h-4 w-4 text-amber-500 fill-amber-500" />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </Card>
       )}
