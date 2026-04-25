@@ -939,14 +939,11 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
                     {e.isWeekend && <ContextBadge label="Tarif weekend" tone="purple" />}
                     {e.isUrgent && <ContextBadge label="Tarif urgent" tone="rose" />}
                     {e.hasTravelBilled && (
-                      <ContextBadge
-                        label={
-                          e.travelDurationMinutes != null
-                            ? `Déplacement · ${e.travelDurationMinutes} min de trajet`
-                            : "Déplacement facturé"
-                        }
-                        tone="cyan"
-                      />
+                      // Note : la durée de trajet (travelDurationMinutes) est
+                      // une donnée interne (paie agent) — on ne l'affiche pas
+                      // au client. Juste le fait qu'un déplacement a été
+                      // facturé.
+                      <ContextBadge label="Déplacement facturé" tone="cyan" />
                     )}
                   </div>
                 )}

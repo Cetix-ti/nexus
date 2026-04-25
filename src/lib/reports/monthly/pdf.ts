@@ -16,7 +16,9 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import prisma from "@/lib/prisma";
 import { signReportToken } from "./token";
+import type { MonthlyReportPayload } from "./types";
 
 // Logo Cetix encodé en base64, mis en cache pour la durée du process.
 // Embedded directement dans le footerTemplate Puppeteer (qui n'a pas
@@ -94,6 +96,23 @@ export async function renderReportToPdf(reportId: string): Promise<Buffer> {
   const base = getSelfBaseUrl();
   const url = `${base}/internal/reports/monthly/${reportId}?token=${encodeURIComponent(token)}`;
 
+  // Récupère le label de période pour le footer (ex « Avril 2026 »).
+  // Best-effort : si la lecture échoue, on tombe sur un footer générique.
+  let periodLabel: string | null = null;
+  try {
+    const row = await prisma.monthlyClientReport.findUnique({
+      where: { id: reportId },
+      select: { payloadJson: true },
+    });
+    const payload = row?.payloadJson as unknown as MonthlyReportPayload | null;
+    if (payload?.period?.label) {
+      const lbl = payload.period.label;
+      periodLabel = lbl.charAt(0).toUpperCase() + lbl.slice(1);
+    }
+  } catch {
+    // Ignoré — footer rendu sans period
+  }
+
   const browser = await getBrowser();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const page: any = await browser.newPage();
@@ -129,7 +148,7 @@ export async function renderReportToPdf(reportId: string): Promise<Buffer> {
       margin: { top: "18mm", right: "18mm", bottom: "20mm", left: "18mm" },
       displayHeaderFooter: true,
       headerTemplate: `<div></div>`,
-      footerTemplate: await buildFooterTemplate(),
+      footerTemplate: await buildFooterTemplate(periodLabel),
     });
     return Buffer.from(pdf);
   } finally {
@@ -143,23 +162,33 @@ export async function renderReportToPdf(reportId: string): Promise<Buffer> {
  * Puppeteer s'exécute dans un contexte isolé (pas d'accès aux assets
  * Next.js), d'où l'embedding du logo en base64.
  */
-async function buildFooterTemplate(): Promise<string> {
+async function buildFooterTemplate(periodLabel: string | null): Promise<string> {
   const logoDataUri = await getLogoDataUri();
   const logoImg = logoDataUri
-    ? `<img src="${logoDataUri}" style="height:14px;width:auto;display:block;" alt="Cetix" />`
+    ? `<img src="${logoDataUri}" style="height:13px;width:auto;display:block;" alt="Cetix" />`
     : "";
   // Note : Puppeteer footerTemplate exige des styles INLINE — pas de CSS
   // externe, pas de classes Tailwind. Polices de fallback système car
   // Geist n'est pas disponible dans le contexte d'impression Puppeteer.
+  //
+  // Alignement : le footer template a la largeur FULL de la page.
+  // Pour matcher l'alignement gauche/droite du contenu de la page
+  // (Puppeteer margin = 18mm), on applique exactement 18mm de padding
+  // à gauche et à droite. box-sizing:border-box pour que le padding
+  // soit calculé sur la width totale et pas en supplément.
+  const periodSegment = periodLabel
+    ? `<span style="color:#94A3B8;margin:0 4px;">·</span><span style="color:#0F172A;font-weight:500;">${periodLabel}</span>`
+    : "";
   return `
-    <div style="width:100%;padding:0 18mm;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;font-size:8.5px;color:#64748B;">
-      <div style="display:flex;align-items:center;gap:8px;">
+    <div style="width:100%;box-sizing:border-box;padding:0 18mm;margin:0;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;font-size:8.5px;color:#64748B;">
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
         ${logoImg}
-        <span style="font-weight:500;">Cetix</span>
-        <span style="color:#94A3B8;">·</span>
-        <span style="font-size:8px;letter-spacing:0.08em;text-transform:uppercase;color:#94A3B8;">Rapport mensuel</span>
+        <span style="font-weight:500;color:#0F172A;">Cetix</span>
+        <span style="color:#94A3B8;margin:0 2px;">·</span>
+        <span style="font-size:8px;letter-spacing:0.08em;text-transform:uppercase;color:#64748B;">Rapport mensuel</span>
+        ${periodSegment}
       </div>
-      <div style="font-family:ui-monospace,SFMono-Regular,monospace;font-size:9px;color:#0F172A;font-weight:500;">
+      <div style="font-family:ui-monospace,SFMono-Regular,monospace;font-size:9px;color:#0F172A;font-weight:500;flex-shrink:0;">
         <span class="pageNumber"></span> <span style="color:#94A3B8;">/</span> <span class="totalPages"></span>
       </div>
     </div>`;
