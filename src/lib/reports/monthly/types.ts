@@ -66,6 +66,16 @@ export interface MonthlyReportTimeEntryLine {
   description: string; // note saisie par l'agent
   coverageStatus: string; // "billable" | "non_billable" | "included_in_contract" | ...
   amount: number | null;
+  /** Flags contextuels — utilisés par le document pour afficher des badges
+   *  qui expliquent pourquoi le tarif horaire varie d'une entrée à l'autre
+   *  (soir / weekend / urgent / sur place / déplacement facturé). */
+  isAfterHours?: boolean;
+  isWeekend?: boolean;
+  isUrgent?: boolean;
+  isOnsite?: boolean;
+  hasTravelBilled?: boolean;
+  travelDurationMinutes?: number | null;
+  hourlyRate?: number | null;
 }
 
 /** Bloc détaillé d'un ticket dans le rapport. */

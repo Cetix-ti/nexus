@@ -103,7 +103,7 @@ export async function buildMonthlyReportPayload(
       city: true,
       province: true,
       mileageRate: {
-        select: { kmRoundTrip: true, billToClient: true },
+        select: { kmRoundTrip: true, billToClient: true, flatFee: true },
       },
     },
   });
@@ -127,6 +127,11 @@ export async function buildMonthlyReportPayload(
       durationMinutes: true,
       description: true,
       isOnsite: true,
+      isAfterHours: true,
+      isWeekend: true,
+      isUrgent: true,
+      hasTravelBilled: true,
+      travelDurationMinutes: true,
       coverageStatus: true,
       hourlyRate: true,
       amount: true,
@@ -313,14 +318,29 @@ export async function buildMonthlyReportPayload(
       description: (e.description ?? "").trim(),
       coverageStatus: e.coverageStatus,
       amount: e.amount ?? null,
+      // Flags contextuels — permettent au document de rendre des badges
+      // (Soir / Weekend / Urgent / Sur place / Déplacement+durée) qui
+      // expliquent les variations de tarif horaire visible côté client.
+      isAfterHours: e.isAfterHours,
+      isWeekend: e.isWeekend,
+      isUrgent: e.isUrgent,
+      isOnsite: e.isOnsite,
+      hasTravelBilled: e.hasTravelBilled,
+      travelDurationMinutes: e.travelDurationMinutes ?? null,
+      hourlyRate: e.hourlyRate ?? null,
     });
     byTicketMap.set(e.ticketId, bt);
 
-    // Déplacements : dédup par (agent, jour, org). Un seul déplacement
-    // compté par journée et agent pour ce client.
-    if (e.isOnsite) {
+    // Déplacements : on s'appuie sur le flag `hasTravelBilled` posé
+    // par l'agent dans la modale de saisie (au lieu de l'ancien `isOnsite`
+    // qui était trop large). Dédup par (agent, jour, ticket) pour éviter
+    // les doublons quand un agent a plusieurs entries pour le même
+    // déplacement le même jour. Un déplacement par CONJONCTION (agent +
+    // jour + ticket) — si le même agent visite deux clients le même jour
+    // sur deux tickets, ça compte comme deux déplacements distincts.
+    if (e.hasTravelBilled) {
       const dayKey = isoDate(e.startedAt);
-      const tripKey = `${e.agentId}|${dayKey}`;
+      const tripKey = `${e.agentId}|${dayKey}|${e.ticketId}`;
       if (!tripSeen.has(tripKey)) {
         tripSeen.add(tripKey);
         tripPicks.set(tripKey, {
@@ -330,7 +350,6 @@ export async function buildMonthlyReportPayload(
           firstEntryAt: e.startedAt,
         });
       } else {
-        // Si une entry plus tôt existe déjà, garde-la. Sinon ne rien faire.
         const existing = tripPicks.get(tripKey)!;
         if (e.startedAt < existing.firstEntryAt) {
           tripPicks.set(tripKey, {
@@ -444,6 +463,12 @@ export async function buildMonthlyReportPayload(
     .sort((a, b) => b.hours - a.hours);
 
   // 11) Trips.
+  // Si l'org a un OrgMileageRate.flatFee défini, on utilise ce montant fixe
+  // par déplacement (mode forfait — typiquement 40 $ pour HVAC). Sinon
+  // (mode kilométrique) le client n'est pas facturé directement par
+  // déplacement — la facturation se fait via le taux horaire onsite.
+  // Dans ce dernier cas, on n'affiche pas de montant.
+  const tripFlatFee = mileage?.flatFee ?? null;
   const tripLines: MonthlyReportTripLine[] = Array.from(tripPicks.values())
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((t) => {
@@ -453,7 +478,9 @@ export async function buildMonthlyReportPayload(
         agentName: agentOf(t.agentId).fullName,
         ticketDisplayId: ticket ? displayTicketId(ticket.number) : null,
         ticketSubject: ticket?.subject ?? null,
-        billedAmount: tripsBillable ? 0 : null, // voir note §7
+        billedAmount: tripsBillable
+          ? (tripFlatFee != null ? tripFlatFee : 0)
+          : null,
       };
     });
 
@@ -549,8 +576,14 @@ export async function buildMonthlyReportPayload(
       coveredHours: round1(coveredMinutes / 60),
       nonBillableHours: round1(nonBillableMinutes / 60),
       hoursAmount: round2(hoursAmount),
-      tripsAmount: 0, // voir note §7 — pas de frais fixe par déplacement pour l'instant
-      totalAmount: round2(hoursAmount),
+      // Total déplacements = somme des billedAmount des tripLines (ne
+      // compte que ceux où billable=true et flatFee défini ; sinon 0).
+      tripsAmount: round2(
+        tripLines.reduce((s, t) => s + (t.billedAmount ?? 0), 0),
+      ),
+      totalAmount: round2(
+        hoursAmount + tripLines.reduce((s, t) => s + (t.billedAmount ?? 0), 0),
+      ),
       ticketsTouchedCount,
       ticketsOpenedCount,
       ticketsResolvedCount,
@@ -562,7 +595,7 @@ export async function buildMonthlyReportPayload(
       nonBillableReason,
       count: tripLines.length,
       lines: tripLines,
-      totalAmount: 0,
+      totalAmount: round2(tripLines.reduce((s, t) => s + (t.billedAmount ?? 0), 0)),
     },
     tickets: ticketsBlocks,
   };

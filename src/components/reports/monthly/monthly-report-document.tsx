@@ -864,7 +864,7 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
                   padding: "10px 14px",
                 }}
               >
-                {/* Bandeau métadonnées : date + agent + durée + couverture */}
+                {/* Bandeau métadonnées : date + agent + durée + tarif + couverture */}
                 <div
                   style={{
                     display: "flex",
@@ -891,6 +891,18 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
                   >
                     {fmtMinutesAsHours(e.durationMinutes)}
                   </span>
+                  {e.hourlyRate != null && e.hourlyRate > 0 && (
+                    <>
+                      <span style={{ color: THEME.hair }}>·</span>
+                      <span
+                        className="mrd-mono"
+                        style={{ color: THEME.slate, whiteSpace: "nowrap", fontSize: "10.5px" }}
+                        title="Taux horaire appliqué — peut varier selon les flags soir/weekend/urgent"
+                      >
+                        {fmtMoney(e.hourlyRate)}/h
+                      </span>
+                    </>
+                  )}
                   <span
                     className="mrd-eyebrow"
                     style={{ color: THEME.accent, marginLeft: "auto", whiteSpace: "nowrap" }}
@@ -898,6 +910,35 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
                     {coverageLabel(e.coverageStatus)}
                   </span>
                 </div>
+
+                {/* Badges contextuels — expliquent pourquoi le tarif est plus
+                    élevé que le taux de base (soir, weekend, urgent, etc.).
+                    Indispensable pour que le client comprenne ses montants. */}
+                {(e.isAfterHours || e.isWeekend || e.isUrgent || e.isOnsite || e.hasTravelBilled) && (
+                  <div
+                    style={{
+                      marginTop: "6px",
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "4px",
+                    }}
+                  >
+                    {e.isAfterHours && <ContextBadge label="De soir" tone="indigo" />}
+                    {e.isWeekend && <ContextBadge label="Weekend" tone="purple" />}
+                    {e.isUrgent && <ContextBadge label="Urgent" tone="rose" />}
+                    {e.isOnsite && <ContextBadge label="Sur place" tone="amber" />}
+                    {e.hasTravelBilled && (
+                      <ContextBadge
+                        label={
+                          e.travelDurationMinutes != null
+                            ? `Déplacement · ${e.travelDurationMinutes} min de trajet`
+                            : "Déplacement facturé"
+                        }
+                        tone="cyan"
+                      />
+                    )}
+                  </div>
+                )}
                 {/* Note / description sur sa propre ligne pour respirer et
                     permettre le wrap multi-lignes naturellement. */}
                 <p
@@ -945,6 +986,46 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
         </div>
       ) : null}
     </article>
+  );
+}
+
+/**
+ * Petit badge tinté pour signaler un flag contextuel sur une intervention
+ * (Soir, Weekend, Urgent, Sur place, Déplacement). Utilise le même
+ * vocabulaire visuel que les eyebrows mais en pastille fermée pour
+ * pouvoir en aligner plusieurs côte-à-côte.
+ */
+function ContextBadge({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "indigo" | "purple" | "rose" | "amber" | "cyan";
+}) {
+  const tones: Record<string, { bg: string; fg: string }> = {
+    indigo: { bg: "#EEF2FF", fg: "#4338CA" }, // soir
+    purple: { bg: "#F5F3FF", fg: "#6D28D9" }, // weekend
+    rose:   { bg: "#FFF1F2", fg: "#BE123C" }, // urgent
+    amber:  { bg: "#FFFBEB", fg: "#B45309" }, // sur place
+    cyan:   { bg: "#ECFEFF", fg: "#0E7490" }, // déplacement
+  };
+  const c = tones[tone];
+  return (
+    <span
+      style={{
+        background: c.bg,
+        color: c.fg,
+        fontSize: "9.5px",
+        fontWeight: 500,
+        letterSpacing: "0.04em",
+        textTransform: "uppercase",
+        padding: "2px 7px",
+        borderRadius: "999px",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
   );
 }
 
