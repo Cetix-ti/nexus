@@ -122,10 +122,10 @@ function ProcedureItem({ proc, isOwn, open, onToggle, onRemove, onSaved }: {
   return (
     <div className="rounded-md border border-slate-200 bg-white">
       <button className="w-full p-3 text-left flex items-center justify-between gap-3" onClick={onToggle}>
-        <div className="flex items-center gap-2">
-          <span className="text-[10.5px] uppercase tracking-wide rounded px-1.5 py-0.5 bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200">{KIND_LABELS[proc.kind]}</span>
-          <span className="text-[13px] font-medium">{proc.title}</span>
-          <span className="text-[10.5px] text-slate-400">v{proc.version}</span>
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="text-[10.5px] uppercase tracking-wide rounded px-1.5 py-0.5 bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200 shrink-0">{KIND_LABELS[proc.kind]}</span>
+          <span className="text-[13px] font-medium truncate">{proc.title}</span>
+          <span className="text-[10.5px] text-slate-400 shrink-0">v{proc.version}</span>
         </div>
         {isOwn && onRemove && (
           <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="text-slate-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>

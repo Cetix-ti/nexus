@@ -65,7 +65,7 @@ export function VisibilityPicker({ value, onChange, allow, disabled, className }
             )}
           >
             <Icon className="h-3.5 w-3.5" strokeWidth={2} />
-            <span>{o.label}</span>
+            <span className="hidden sm:inline">{o.label}</span>
           </button>
         );
       })}
