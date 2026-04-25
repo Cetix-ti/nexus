@@ -492,25 +492,11 @@ export async function buildMonthlyReportPayload(
 
   // 12) Construction tickets (détail).
   const ticketsBlocks: MonthlyReportTicketBlock[] = [];
-  // Affiche TOUS les tickets touchés dans le mois (créés + résolus + avec
-  // temps saisi) pour la section détail. Les tickets simplement "créés"
-  // sans temps saisi apparaissent aussi, pour que le client voie tout.
-  const ticketIdsToShow = Array.from(
-    new Set(
-      [
-        ...ticketIds,
-        ...Array.from(ticketById.values())
-          .filter(
-            (t) =>
-              (t.createdAt >= start && t.createdAt <= end) ||
-              (t.resolvedAt != null &&
-                t.resolvedAt >= start &&
-                t.resolvedAt <= end),
-          )
-          .map((t) => t.id),
-      ],
-    ),
-  );
+  // Affiche UNIQUEMENT les tickets qui ont au moins une saisie de temps
+  // dans le mois. Un ticket simplement créé ou résolu sans intervention
+  // facturable n'a pas sa place dans le détail client (les compteurs
+  // globaux dans `totals` reflètent toujours créés/résolus).
+  const ticketIdsToShow = ticketIds;
 
   for (const tid of ticketIdsToShow) {
     const t = ticketById.get(tid);
