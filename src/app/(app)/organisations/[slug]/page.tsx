@@ -62,6 +62,7 @@ import { OrgNetworkSection } from "@/components/organizations/org-network-sectio
 import { OrgAiIntelligenceTab } from "@/components/organizations/org-ai-intelligence-tab";
 import { OrgBudgetTab } from "@/components/budgets/org-budget-tab";
 import { OrgMonthlyReportsTab } from "@/components/reports/monthly/org-monthly-reports-tab";
+import { SectionErrorBoundary } from "@/components/ui/error-boundary";
 import { OrgParticularitiesTab } from "@/components/particularities/org-particularities-tab";
 import { OrgSoftwareTab } from "@/components/software/org-software-tab";
 import { OrgPoliciesTab } from "@/components/policies/org-policies-tab";
@@ -1629,10 +1630,15 @@ export default function OrganizationDetailPage() {
                 </p>
               </div>
             </div>
-            <OrgMonthlyReportsTab
-              organizationId={orgId}
-              initialAutoPublish={dbOrg?.monthlyReportAutoPublish ?? false}
-            />
+            <SectionErrorBoundary
+              label={`Impossible d'afficher les rapports mensuels de ${o.name}`}
+              scope="OrgMonthlyReportsTab"
+            >
+              <OrgMonthlyReportsTab
+                organizationId={orgId}
+                initialAutoPublish={dbOrg?.monthlyReportAutoPublish ?? false}
+              />
+            </SectionErrorBoundary>
           </div>
         </div>
       )}

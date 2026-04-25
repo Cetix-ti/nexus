@@ -537,33 +537,66 @@ function RateField({
 // silencieusement toute la page Facturation. Affiche un message avec les
 // détails pour qu'on puisse diagnostiquer les régressions sur certains
 // clients (données localStorage corrompues, mock absent, etc.).
-interface BillingBoundaryState { hasError: boolean; message?: string }
+interface BillingBoundaryState { hasError: boolean; message?: string; stack?: string; componentStack?: string }
 class BillingErrorBoundary extends React.Component<
   { children: React.ReactNode; organizationName: string },
   BillingBoundaryState
 > {
   state: BillingBoundaryState = { hasError: false };
   static getDerivedStateFromError(err: Error): BillingBoundaryState {
-    return { hasError: true, message: err?.message ?? String(err) };
+    return { hasError: true, message: err?.message ?? String(err), stack: err?.stack };
   }
-  componentDidCatch(err: unknown, info: unknown) {
+  componentDidCatch(err: unknown, info: { componentStack?: string }) {
     console.error("[ClientBillingOverridesSection]", err, info);
+    this.setState({ componentStack: info?.componentStack });
   }
+  handleResetLocalStorage = () => {
+    if (typeof window === "undefined") return;
+    if (!confirm("Réinitialiser la configuration locale (localStorage) pour ce client ? Les widgets et préférences spécifiques à ce client seront perdus. Les données serveur restent intactes.")) return;
+    const keys = Object.keys(localStorage);
+    for (const k of keys) {
+      if (k.startsWith("nexus:client-")) localStorage.removeItem(k);
+    }
+    location.reload();
+  };
   render() {
     if (this.state.hasError) {
       return (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-[13px] text-amber-900">
-          <p className="font-semibold">Impossible d&apos;afficher la facturation de {this.props.organizationName}</p>
-          <p className="mt-1 text-[12px] text-amber-800">
-            Une erreur s&apos;est produite lors du rendu de cette section
-            pour cette organisation. Détail : <code>{this.state.message}</code>
+          <p className="font-semibold text-[14px]">⚠ Impossible d&apos;afficher la facturation de {this.props.organizationName}</p>
+          <p className="mt-2 text-[12px] text-amber-800">
+            Erreur capturée — l&apos;équipe technique va l&apos;analyser à partir du détail ci-dessous.
           </p>
-          <p className="mt-2 text-[11.5px] text-amber-800">
-            Astuce : tu peux essayer de recharger la page (Ctrl+Shift+R).
-            Si l&apos;erreur persiste sur un client précis, c&apos;est
-            souvent dû à des données de configuration locales
-            (<code>localStorage</code>) corrompues.
-          </p>
+          <details className="mt-3" open>
+            <summary className="cursor-pointer text-[11.5px] font-medium">Détails techniques</summary>
+            <div className="mt-2 rounded bg-white border border-amber-200 p-2.5 text-[11px] text-slate-800 font-mono">
+              <div><strong>Message :</strong> {this.state.message}</div>
+              {this.state.componentStack && (
+                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[10px] text-slate-700">{this.state.componentStack.trim()}</pre>
+              )}
+              {this.state.stack && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-[10.5px] text-slate-600">Stack trace</summary>
+                  <pre className="mt-1 max-h-60 overflow-auto whitespace-pre-wrap text-[10px] text-slate-600">{this.state.stack.trim()}</pre>
+                </details>
+              )}
+            </div>
+          </details>
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => location.reload()}
+              className="text-[11.5px] rounded bg-amber-700 text-white px-3 py-1.5 hover:bg-amber-800"
+            >
+              Recharger la page
+            </button>
+            <button
+              onClick={this.handleResetLocalStorage}
+              className="text-[11.5px] rounded border border-amber-400 bg-white text-amber-900 px-3 py-1.5 hover:bg-amber-100"
+              title="Supprime toutes les clés nexus:client-* du localStorage"
+            >
+              Réinitialiser la config locale (localStorage)
+            </button>
+          </div>
         </div>
       );
     }
