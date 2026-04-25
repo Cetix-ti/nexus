@@ -18,6 +18,8 @@
 // via listTimeEntries (mêmes règles).
 
 import { NextResponse } from "next/server";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import ExcelJS from "exceljs";
 import {
   listTimeEntries,
@@ -25,6 +27,20 @@ import {
 } from "@/lib/billing/time-entries-service";
 import { getCurrentUser, hasCapability, hasMinimumRole } from "@/lib/auth-utils";
 import { TIME_TYPE_LABELS, type TimeType } from "@/lib/billing/types";
+
+// Charge le logo Cetix une seule fois par lifetime du process Node.
+// Le PNG est ~quelques Ko, ne charge pas la mémoire.
+let cachedLogo: Buffer | null = null;
+async function loadCetixLogo(): Promise<Buffer | null> {
+  if (cachedLogo) return cachedLogo;
+  try {
+    const p = path.join(process.cwd(), "public", "images", "cetix-logo-bleu-horizontal-HD.png");
+    cachedLogo = await readFile(p);
+    return cachedLogo;
+  } catch {
+    return null;
+  }
+}
 
 const COVERAGE_LABELS: Record<string, string> = {
   billable: "Facturable",
@@ -119,11 +135,18 @@ export async function GET(req: Request) {
   wb.created = new Date();
   wb.properties.date1904 = false;
 
+  // Logo Cetix (variant bleu = "dark" sur fond clair) — ajouté à toutes les
+  // feuilles. Cohérent avec la règle de branding interne.
+  const logoBuf = await loadCetixLogo();
+  const logoImageId = logoBuf
+    ? wb.addImage({ buffer: logoBuf as unknown as ArrayBuffer, extension: "png" })
+    : null;
+
   // ---------- Feuille 1 : Bons de travail ----------
-  buildEntriesSheet(wb, sanitized, { showMoney });
+  buildEntriesSheet(wb, sanitized, { showMoney, logoImageId });
 
   // ---------- Feuille 2 : Synthèse ----------
-  buildSummarySheet(wb, sanitized, { showMoney, scoped: !!organizationId });
+  buildSummarySheet(wb, sanitized, { showMoney, scoped: !!organizationId, logoImageId });
 
   // ---------- Stream ----------
   const buffer = (await wb.xlsx.writeBuffer()) as ArrayBuffer;
@@ -145,8 +168,11 @@ export async function GET(req: Request) {
 function buildEntriesSheet(
   wb: ExcelJS.Workbook,
   rows: TimeEntryRow[],
-  opts: { showMoney: boolean },
+  // Pas de logo sur la feuille de données (table dense, pas de place propre).
+  // Le logo apparaît sur la feuille Synthèse qui sert de "couverture" du fichier.
+  opts: { showMoney: boolean; logoImageId: number | null },
 ) {
+  void opts.logoImageId;
   const sheet = wb.addWorksheet("Bons de travail", {
     views: [{ state: "frozen", ySplit: 1 }],
     properties: { defaultRowHeight: 18 },
@@ -262,15 +288,26 @@ function buildEntriesSheet(
 function buildSummarySheet(
   wb: ExcelJS.Workbook,
   rows: TimeEntryRow[],
-  opts: { showMoney: boolean; scoped: boolean },
+  opts: { showMoney: boolean; scoped: boolean; logoImageId: number | null },
 ) {
   const sheet = wb.addWorksheet("Synthèse", {
-    views: [{ state: "frozen", ySplit: 1 }],
+    views: [{ state: "frozen", ySplit: 4 }],
   });
 
-  let currentRow = 1;
+  // Bandeau logo Cetix en haut — variant bleu sur fond papier.
+  if (opts.logoImageId != null) {
+    sheet.addImage(opts.logoImageId, {
+      tl: { col: 0, row: 0 } as ExcelJS.Anchor,
+      ext: { width: 140, height: 32 },
+      editAs: "absolute",
+    });
+    const logoRow = sheet.getRow(1);
+    logoRow.height = 36;
+  }
 
-  // Titre + meta
+  // Titre + meta démarrent à la row 2 (sous le bandeau logo).
+  let currentRow = 2;
+
   const title = sheet.getCell(`A${currentRow}`);
   title.value = "Synthèse des bons de travail";
   title.font = { name: "Calibri", size: 16, bold: true, color: { argb: COLOR.ink } };

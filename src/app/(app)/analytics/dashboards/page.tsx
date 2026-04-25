@@ -2191,6 +2191,36 @@ export default function ReportsPage() {
       {/* ============================================================ */}
       {activeReport && (
         <div data-print-target>
+          {/* Bandeau d'en-tête Cetix — visible uniquement à l'export
+              (PDF / PNG). Masqué en navigation normale via la classe
+              `print-only`. Définit l'identité Cetix sur tous les
+              livrables exportés depuis l'analytique. */}
+          <div
+            className="print-only mb-4 pb-3 border-b border-slate-200"
+            data-export-show
+            style={{ display: "none" }}
+          >
+            <div className="flex items-end justify-between gap-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/cetix-logo-bleu-horizontal-HD.png"
+                alt="Cetix"
+                style={{ height: "32px", objectFit: "contain" }}
+              />
+              <div className="text-right">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                  Rapport analytique
+                </div>
+                <div className="text-[12px] text-slate-700 font-medium mt-0.5">
+                  {activeReport.label}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  Généré le {new Date().toLocaleDateString("fr-CA", { year: "numeric", month: "long", day: "numeric" })}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {loading && !data && (
             <div className="flex items-center justify-center py-20"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
           )}
