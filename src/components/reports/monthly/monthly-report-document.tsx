@@ -21,24 +21,36 @@ import type { MonthlyReportPayload, MonthlyReportTicketBlock } from "@/lib/repor
 
 // ---------------------------------------------------------------------------
 // Palette + tokens — exposés en CSS vars pour cohérence sur tout le doc.
+// Direction « tech IT moderne » : blue-forward, accents cyan, neutres slate,
+// pas de chaleur cream/copper. Look Vercel/Linear/Stripe.
 // ---------------------------------------------------------------------------
 const THEME = {
-  paper:      "#FAFAF6",
-  ink:        "#0F172A",
-  inkSoft:    "#1A2236",
-  blue:       "#1E40AF",
-  blueBright: "#3B82F6",
-  cream:      "#F5EFDF",
-  creamLine:  "#E8DEC2",
-  copper:     "#9A4A1F",
-  sage:       "#5A7D5E",
-  stone:      "#78716C",
-  hair:       "#D6D3CB",
+  paper:       "#FFFFFF",
+  paperSubtle: "#F8FAFC",  // slate-50, très léger fond pour cards
+  ink:         "#0F172A",
+  inkSoft:     "#1E293B",
+  // Spectre Cetix Blue
+  blueDeep:    "#1E3A8A",  // navy 800 — titres, brand fort
+  blue:        "#2563EB",  // blue 600 — primary action
+  blueBright:  "#3B82F6",  // blue 500 — accents lumineux
+  bluePale:    "#DBEAFE",  // blue 100 — fonds doux
+  blueIce:     "#EFF6FF",  // blue 50  — sidebars, blocs synthèse
+  // Accent tech (cyan/teal) — replace l'ancien copper
+  accent:      "#0891B2",  // cyan 600 — eyebrows, mentions techniques
+  accentBright:"#22D3EE",  // cyan 400 — highlights
+  // Sémantique
+  positive:    "#059669",  // emerald 600 — KPI verts, notes résolution
+  warning:     "#D97706",  // amber 600 — warnings (sparingly)
+  // Neutres
+  slate:       "#64748B",  // slate 500 — texte secondaire
+  slateLight:  "#94A3B8",  // slate 400 — meta
+  hair:        "#E2E8F0",  // slate 200 — séparateurs
+  hairLight:   "#F1F5F9",  // slate 100 — alt rows
 };
 
-const FONT_DISPLAY = "var(--font-fraunces), Georgia, serif";
-const FONT_BODY    = "var(--font-dm-sans), -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
-const FONT_MONO    = "var(--font-jetbrains), ui-monospace, monospace";
+const FONT_DISPLAY = "var(--font-geist), -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+const FONT_BODY    = "var(--font-geist), -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+const FONT_MONO    = "var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace";
 
 // ---------------------------------------------------------------------------
 // Format helpers
@@ -144,7 +156,7 @@ export function MonthlyReportDocument({
           letter-spacing: 0.18em;
           text-transform: uppercase;
           font-weight: 500;
-          color: ${THEME.copper};
+          color: ${THEME.accent};
         }
         .mrd-rule {
           border: 0;
@@ -227,7 +239,7 @@ function CoverPage({
           <div>
             <div
               className="mrd-eyebrow"
-              style={{ marginBottom: "16px", color: THEME.stone }}
+              style={{ marginBottom: "16px", color: THEME.slate }}
             >
               Période
             </div>
@@ -259,7 +271,7 @@ function CoverPage({
             }}
           >
             <div>
-              <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "6px" }}>
+              <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "6px" }}>
                 Préparé pour
               </div>
               <div
@@ -277,14 +289,14 @@ function CoverPage({
               {organization.clientCode ? (
                 <div
                   className="mrd-mono"
-                  style={{ fontSize: "11px", color: THEME.stone, marginTop: "6px" }}
+                  style={{ fontSize: "11px", color: THEME.slate, marginTop: "6px" }}
                 >
                   {organization.clientCode}
                 </div>
               ) : null}
             </div>
             <div style={{ textAlign: "right" }}>
-              <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "6px" }}>
+              <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "6px" }}>
                 Couverture
               </div>
               <div className="mrd-mono" style={{ fontSize: "12px" }}>
@@ -296,15 +308,15 @@ function CoverPage({
           {/* Synthèse exécutive */}
           <div
             style={{
-              background: THEME.cream,
-              borderLeft: `3px solid ${THEME.copper}`,
+              background: THEME.blueIce,
+              borderLeft: `3px solid ${THEME.accent}`,
               padding: "20px 24px",
               marginTop: "12px",
             }}
           >
             <div
               className="mrd-eyebrow"
-              style={{ color: THEME.copper, marginBottom: "10px" }}
+              style={{ color: THEME.accent, marginBottom: "10px" }}
             >
               Synthèse du mois
             </div>
@@ -332,7 +344,7 @@ function CoverPage({
           gridTemplateColumns: "1fr 1fr 1fr",
           gap: "24px",
           fontSize: "10px",
-          color: THEME.stone,
+          color: THEME.slate,
           paddingTop: "32px",
           borderTop: `1px solid ${THEME.hair}`,
         }}
@@ -355,7 +367,7 @@ function CoverPage({
 function Meta({ label, value, align }: { label: string; value: string; align?: "right" }) {
   return (
     <div style={{ textAlign: align ?? "left" }}>
-      <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "4px" }}>
+      <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "4px" }}>
         {label}
       </div>
       <div style={{ color: THEME.ink, fontSize: "11px" }}>{value}</div>
@@ -469,7 +481,8 @@ function HeroKpi({ label, value, sub }: { label: string; value: string; sub?: st
   return (
     <div
       style={{
-        background: THEME.ink,
+        // Gradient subtil navy → bleu Cetix : profondeur sans noir mort.
+        background: `linear-gradient(135deg, ${THEME.ink} 0%, ${THEME.blueDeep} 100%)`,
         color: THEME.paper,
         padding: "32px 32px 28px",
         display: "flex",
@@ -482,7 +495,7 @@ function HeroKpi({ label, value, sub }: { label: string; value: string; sub?: st
       <div>
         <div
           className="mrd-eyebrow"
-          style={{ color: THEME.creamLine, marginBottom: "12px" }}
+          style={{ color: THEME.bluePale, marginBottom: "12px" }}
         >
           {label}
         </div>
@@ -495,14 +508,14 @@ function HeroKpi({ label, value, sub }: { label: string; value: string; sub?: st
             lineHeight: 1,
             fontWeight: 500,
             letterSpacing: "-0.03em",
-            color: THEME.cream,
+            color: THEME.blueIce,
             fontVariationSettings: "'opsz' 144, 'SOFT' 30",
           }}
         >
           {value}
         </div>
         {sub ? (
-          <div style={{ fontSize: "11px", color: THEME.creamLine, marginTop: "10px", opacity: 0.85 }}>
+          <div style={{ fontSize: "11px", color: THEME.bluePale, marginTop: "10px", opacity: 0.85 }}>
             {sub}
           </div>
         ) : null}
@@ -522,7 +535,7 @@ function SideKpiStack({
         <div
           key={i}
           style={{
-            background: it.muted ? THEME.cream : "transparent",
+            background: it.muted ? THEME.blueIce : "transparent",
             border: it.muted ? "none" : `1px solid ${THEME.hair}`,
             padding: "16px 20px",
             display: "flex",
@@ -532,11 +545,11 @@ function SideKpiStack({
           }}
         >
           <div style={{ minWidth: 0 }}>
-            <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "4px" }}>
+            <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "4px" }}>
               {it.label}
             </div>
             {it.sub ? (
-              <div style={{ fontSize: "10.5px", color: THEME.stone }}>{it.sub}</div>
+              <div style={{ fontSize: "10.5px", color: THEME.slate }}>{it.sub}</div>
             ) : null}
           </div>
           <div
@@ -560,7 +573,7 @@ function SideKpiStack({
 function StatBand({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
   return (
     <div style={{ padding: "0 20px", borderRight: `1px solid ${THEME.hair}` }}>
-      <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "6px" }}>
+      <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "6px" }}>
         {label}
       </div>
       <div
@@ -568,7 +581,7 @@ function StatBand({ label, value, positive }: { label: string; value: string; po
         style={{
           fontSize: "26px",
           fontWeight: 500,
-          color: positive ? THEME.sage : THEME.ink,
+          color: positive ? THEME.positive : THEME.ink,
           letterSpacing: "-0.02em",
           fontVariationSettings: "'opsz' 36",
         }}
@@ -666,7 +679,7 @@ function TripsSection({ trips }: { trips: MonthlyReportPayload["trips"] }) {
       {!trips.billable && trips.nonBillableReason ? (
         <div
           style={{
-            background: THEME.cream,
+            background: THEME.blueIce,
             borderLeft: `3px solid ${THEME.blue}`,
             padding: "14px 18px",
             marginBottom: "20px",
@@ -763,7 +776,7 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
             {ticket.subject}
           </h3>
         </div>
-        <span className="mrd-eyebrow" style={{ color: THEME.stone, whiteSpace: "nowrap" }}>
+        <span className="mrd-eyebrow" style={{ color: THEME.slate, whiteSpace: "nowrap" }}>
           {ticket.status}
         </span>
       </div>
@@ -775,7 +788,7 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
           flexWrap: "wrap",
           gap: "20px",
           fontSize: "11px",
-          color: THEME.stone,
+          color: THEME.slate,
         }}
       >
         {ticket.requesterName ? (
@@ -787,13 +800,13 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
       </div>
 
       {ticket.agents.length > 0 ? (
-        <div style={{ marginTop: "8px", fontSize: "11px", color: THEME.stone }}>
-          <span className="mrd-eyebrow" style={{ color: THEME.stone }}>Techniciens · </span>
+        <div style={{ marginTop: "8px", fontSize: "11px", color: THEME.slate }}>
+          <span className="mrd-eyebrow" style={{ color: THEME.slate }}>Techniciens · </span>
           {ticket.agents.map((a, i) => (
             <span key={a.name}>
               {i > 0 ? " · " : ""}
               <span style={{ color: THEME.ink }}>{a.name}</span>
-              <span style={{ color: THEME.stone }}> ({fmtMinutesAsHours(a.minutes)})</span>
+              <span style={{ color: THEME.slate }}> ({fmtMinutesAsHours(a.minutes)})</span>
             </span>
           ))}
         </div>
@@ -803,12 +816,12 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
         <div
           style={{
             marginTop: "16px",
-            background: "#F1F8F2",
-            borderLeft: `3px solid ${THEME.sage}`,
+            background: "#ECFDF5",
+            borderLeft: `3px solid ${THEME.positive}`,
             padding: "12px 16px",
           }}
         >
-          <div className="mrd-eyebrow" style={{ color: THEME.sage, marginBottom: "6px" }}>
+          <div className="mrd-eyebrow" style={{ color: THEME.positive, marginBottom: "6px" }}>
             Note de résolution
           </div>
           <p
@@ -827,14 +840,14 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
 
       {ticket.timeEntries.length > 0 ? (
         <div style={{ marginTop: "16px" }}>
-          <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "8px" }}>
+          <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "8px" }}>
             Interventions
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
             <tbody>
               {ticket.timeEntries.map((e) => (
                 <tr key={e.id} style={{ borderBottom: `1px solid ${THEME.hair}`, verticalAlign: "top" }}>
-                  <td className="mrd-mono" style={{ padding: "6px 12px 6px 0", color: THEME.stone, whiteSpace: "nowrap", width: "60px" }}>
+                  <td className="mrd-mono" style={{ padding: "6px 12px 6px 0", color: THEME.slate, whiteSpace: "nowrap", width: "60px" }}>
                     {fmtDateShort(e.date)}
                   </td>
                   <td style={{ padding: "6px 12px 6px 0", color: THEME.inkSoft, whiteSpace: "nowrap", width: "120px" }}>
@@ -843,11 +856,11 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
                   <td className="mrd-mono" style={{ padding: "6px 12px 6px 0", textAlign: "right", whiteSpace: "nowrap", width: "55px", color: THEME.ink }}>
                     {fmtMinutesAsHours(e.durationMinutes)}
                   </td>
-                  <td className="mrd-eyebrow" style={{ padding: "6px 12px 6px 0", color: THEME.stone, whiteSpace: "nowrap", width: "80px" }}>
+                  <td className="mrd-eyebrow" style={{ padding: "6px 12px 6px 0", color: THEME.slate, whiteSpace: "nowrap", width: "80px" }}>
                     {coverageLabel(e.coverageStatus)}
                   </td>
                   <td style={{ padding: "6px 0", color: THEME.inkSoft }}>
-                    {e.description || <span style={{ fontStyle: "italic", color: THEME.stone }}>Aucune note</span>}
+                    {e.description || <span style={{ fontStyle: "italic", color: THEME.slate }}>Aucune note</span>}
                   </td>
                 </tr>
               ))}
@@ -862,7 +875,7 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
 function Meta2({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <span>
-      <span className="mrd-eyebrow" style={{ color: THEME.stone }}>{label} · </span>
+      <span className="mrd-eyebrow" style={{ color: THEME.slate }}>{label} · </span>
       <span className={mono ? "mrd-mono" : ""} style={{ color: THEME.ink, fontSize: "11px" }}>{value}</span>
     </span>
   );
@@ -919,7 +932,7 @@ function FinancialSummary({
         <div
           style={{
             fontSize: "10px",
-            color: THEME.stone,
+            color: THEME.slate,
             fontStyle: "italic",
             marginTop: "20px",
             paddingTop: "16px",
@@ -942,7 +955,7 @@ function FinancialRow({ label, value, muted }: { label: string; value: string; m
         justifyContent: "space-between",
         padding: "10px 0",
         fontSize: "13px",
-        color: muted ? THEME.stone : THEME.ink,
+        color: muted ? THEME.slate : THEME.ink,
         borderBottom: `1px solid ${THEME.hair}`,
       }}
     >
@@ -1005,7 +1018,7 @@ function EditorialTable({
                 style={{
                   padding: "12px 12px 12px 0",
                   textAlign: c.align ?? "left",
-                  color: c.muted ? THEME.stone : THEME.ink,
+                  color: c.muted ? THEME.slate : THEME.ink,
                   fontWeight: c.emphasis ? 600 : 400,
                   fontVariantNumeric: c.align === "right" ? "tabular-nums" : "normal",
                 }}
@@ -1016,7 +1029,7 @@ function EditorialTable({
           </tr>
         ))}
         {totalRow ? (
-          <tr style={{ background: THEME.cream, borderTop: `1px solid ${THEME.creamLine}` }}>
+          <tr style={{ background: THEME.blueIce, borderTop: `1px solid ${THEME.bluePale}` }}>
             {columns.map((c) => (
               <td
                 key={c.key}
@@ -1047,11 +1060,11 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
       style={{
         padding: "24px",
         textAlign: "center",
-        color: THEME.stone,
+        color: THEME.slate,
         fontStyle: "italic",
         fontSize: "12px",
-        background: THEME.cream,
-        border: `1px dashed ${THEME.creamLine}`,
+        background: THEME.blueIce,
+        border: `1px dashed ${THEME.bluePale}`,
       }}
     >
       {children}

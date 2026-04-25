@@ -14,7 +14,34 @@
 // sauts de page CSS. Identique à un aperçu navigateur.
 // ============================================================================
 
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { signReportToken } from "./token";
+
+// Logo Cetix encodé en base64, mis en cache pour la durée du process.
+// Embedded directement dans le footerTemplate Puppeteer (qui n'a pas
+// accès aux assets du serveur Next.js — il rend dans un contexte
+// totalement isolé).
+let cachedLogoDataUri: string | null = null;
+async function getLogoDataUri(): Promise<string | null> {
+  if (cachedLogoDataUri) return cachedLogoDataUri;
+  try {
+    const p = path.join(process.cwd(), "public", "images", "cetix-transparent-emblem.png");
+    const buf = await readFile(p);
+    cachedLogoDataUri = `data:image/png;base64,${buf.toString("base64")}`;
+    return cachedLogoDataUri;
+  } catch {
+    // Fallback : variant horizontal HD si l'emblème n'existe pas
+    try {
+      const p = path.join(process.cwd(), "public", "images", "cetix-logo-bleu-horizontal-HD.png");
+      const buf = await readFile(p);
+      cachedLogoDataUri = `data:image/png;base64,${buf.toString("base64")}`;
+      return cachedLogoDataUri;
+    } catch {
+      return null;
+    }
+  }
+}
 
 // Type stub minimal — évite de dépendre du package puppeteer pour le
 // type-checking. L'import runtime est dynamique ci-dessous ; ajouter
@@ -97,18 +124,40 @@ export async function renderReportToPdf(reportId: string): Promise<Buffer> {
       margin: { top: "12mm", right: "12mm", bottom: "14mm", left: "12mm" },
       displayHeaderFooter: true,
       headerTemplate: `<div></div>`,
-      footerTemplate: `
-        <div style="width:100%;font-size:8.5px;color:#78716c;padding:0 14mm;display:flex;justify-content:space-between;align-items:center;font-family:Georgia,serif;letter-spacing:0.06em;">
-          <span style="text-transform:uppercase;">Cetix · Rapport mensuel</span>
-          <span style="font-family:ui-monospace,monospace;letter-spacing:0;color:#0f172a;">
-            <span class="pageNumber"></span> / <span class="totalPages"></span>
-          </span>
-        </div>`,
+      footerTemplate: await buildFooterTemplate(),
     });
     return Buffer.from(pdf);
   } finally {
     await page.close().catch(() => {});
   }
+}
+
+/**
+ * Footer rendu sur chaque page du PDF — emblème Cetix à gauche +
+ * « Rapport mensuel » + numéro de page en mono à droite. Le template
+ * Puppeteer s'exécute dans un contexte isolé (pas d'accès aux assets
+ * Next.js), d'où l'embedding du logo en base64.
+ */
+async function buildFooterTemplate(): Promise<string> {
+  const logoDataUri = await getLogoDataUri();
+  const logoImg = logoDataUri
+    ? `<img src="${logoDataUri}" style="height:14px;width:auto;display:block;" alt="Cetix" />`
+    : "";
+  // Note : Puppeteer footerTemplate exige des styles INLINE — pas de CSS
+  // externe, pas de classes Tailwind. Polices de fallback système car
+  // Geist n'est pas disponible dans le contexte d'impression Puppeteer.
+  return `
+    <div style="width:100%;padding:0 14mm;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;font-size:8.5px;color:#64748B;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        ${logoImg}
+        <span style="font-weight:500;">Cetix</span>
+        <span style="color:#94A3B8;">·</span>
+        <span style="font-size:8px;letter-spacing:0.08em;text-transform:uppercase;color:#94A3B8;">Rapport mensuel</span>
+      </div>
+      <div style="font-family:ui-monospace,SFMono-Regular,monospace;font-size:9px;color:#0F172A;font-weight:500;">
+        <span class="pageNumber"></span> <span style="color:#94A3B8;">/</span> <span class="totalPages"></span>
+      </div>
+    </div>`;
 }
 
 /** Ferme le browser partagé — utile en hot reload dev ou tests. */
