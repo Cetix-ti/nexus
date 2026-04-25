@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
+import { isBillable, isCovered } from "@/lib/billing/coverage-statuses";
 
 export async function GET(_request: NextRequest) {
   const user = await getCurrentPortalUser();
@@ -66,12 +67,10 @@ export async function GET(_request: NextRequest) {
   }
 
   if (perms.canSeeTimeReports && timeEntries.length > 0) {
-    const billableStatuses = ["billable", "hour_bank_overage", "msp_overage", "travel_billable"];
-    const includedStatuses = ["included_in_contract", "hour_bank"];
     reports.time = {
       totalHours: Math.round(timeEntries.reduce((s, e) => s + e.durationMinutes / 60, 0) * 10) / 10,
-      billableHours: Math.round(timeEntries.filter((e) => billableStatuses.includes(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes / 60, 0) * 10) / 10,
-      includedHours: Math.round(timeEntries.filter((e) => includedStatuses.includes(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes / 60, 0) * 10) / 10,
+      billableHours: Math.round(timeEntries.filter((e) => isBillable(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes / 60, 0) * 10) / 10,
+      includedHours: Math.round(timeEntries.filter((e) => isCovered(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes / 60, 0) * 10) / 10,
     };
   }
 
@@ -83,7 +82,7 @@ export async function GET(_request: NextRequest) {
     const contractUsage = contracts.map((c) => {
       const usedMinutes = timeEntries
         .filter((e) => {
-          if (!["included_in_contract", "hour_bank"].includes(e.coverageStatus)) return false;
+          if (!isCovered(e.coverageStatus)) return false;
           const started = (e as unknown as { startedAt: Date | string }).startedAt;
           return started ? new Date(started) >= monthStart : false;
         })

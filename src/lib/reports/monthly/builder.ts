@@ -12,6 +12,7 @@
 // ============================================================================
 
 import prisma from "@/lib/prisma";
+import { isBillable as isBillableCoverage, isCovered as isCoveredCoverage, isNonBillable as isNonBillableCoverage } from "@/lib/billing/coverage-statuses";
 import type {
   MonthlyReportPayload,
   MonthlyReportTicketBlock,
@@ -53,23 +54,27 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// Délégation aux helpers canoniques (src/lib/billing/coverage-statuses.ts)
+// pour garder le PDF mensuel client COHÉRENT avec les KPI dashboards.
+//
+// AVANT : `isBillableStatus` ne reconnaissait que "billable" — les entries
+// "travel_billable", "hour_bank_overage", "msp_overage" étaient comptées en
+// non-facturable dans le PDF, alors que les dashboards les comptaient en
+// facturable. Résultat : KPI Finances ≠ rapport client envoyé en PDF.
+//
+// AVANT : `isCoveredStatus` incluait "msp_monthly" (qui est en réalité un
+// type de contrat, pas un coverageStatus jamais assigné par engine.ts) →
+// code mort. Maintenant aligné sur les valeurs effectivement assignées.
 function isBillableStatus(coverageStatus: string): boolean {
-  // Une entry est "facturable" quand son coverage indique une facturation
-  // directe (time_and_materials). Les entries couvertes par forfait/banque
-  // ne sont pas facturées en extra.
-  return coverageStatus === "billable";
+  return isBillableCoverage(coverageStatus);
 }
 
 function isCoveredStatus(coverageStatus: string): boolean {
-  return (
-    coverageStatus === "included_in_contract" ||
-    coverageStatus === "deducted_from_hour_bank" ||
-    coverageStatus === "msp_monthly"
-  );
+  return isCoveredCoverage(coverageStatus);
 }
 
 function isNonBillableStatus(coverageStatus: string): boolean {
-  return coverageStatus === "non_billable";
+  return isNonBillableCoverage(coverageStatus);
 }
 
 export interface BuildOptions {

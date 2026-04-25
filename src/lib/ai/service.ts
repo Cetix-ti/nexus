@@ -13,6 +13,7 @@
 import prisma from "@/lib/prisma";
 import { runAiTask } from "@/lib/ai/orchestrator";
 import { POLICY_LEGACY_CHAT } from "@/lib/ai/orchestrator/policies";
+import { isBillable } from "@/lib/billing/coverage-statuses";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -693,7 +694,9 @@ async function getTimeEntriesSummary(): Promise<string> {
   });
   if (entries.length === 0) return "Aucune saisie de temps cette semaine.";
   const total = entries.reduce((s, e) => s + e.durationMinutes, 0);
-  const billable = entries.filter((e) => ["billable", "hour_bank_overage", "msp_overage"].includes(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes, 0);
+  // Avant : liste inline incomplète (oubliait "travel_billable"). Aligné
+  // sur la définition canonique de coverage-statuses.ts.
+  const billable = entries.filter((e) => isBillable(e.coverageStatus)).reduce((s, e) => s + e.durationMinutes, 0);
   return `${entries.length} saisies cette semaine, ${Math.round(total / 60)}h total, ${Math.round(billable / 60)}h facturables`;
 }
 

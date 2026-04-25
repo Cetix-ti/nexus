@@ -128,8 +128,12 @@ export const DATASETS: Record<string, DatasetDef> = {
     defaultDateField: "startedAt",
     dateFields: ["startedAt", "endedAt", "createdAt"],
     fields: [
+      // Valeurs alignées sur celles effectivement assignées par
+      // src/lib/billing/engine.ts (8 statuses). Source unique de vérité :
+      // src/lib/billing/coverage-statuses.ts. "excluded_from_billing" et
+      // "travel_non_billable" étaient phantoms (jamais assignés) — retirés.
       { name: "coverageStatus", label: "Couverture", type: "enum", groupable: true, aggregable: false,
-        values: ["billable", "non_billable", "included_in_contract", "deducted_from_hour_bank", "hour_bank_overage", "excluded_from_billing", "internal_time", "travel_billable", "travel_non_billable", "msp_overage"] },
+        values: ["billable", "travel_billable", "hour_bank_overage", "msp_overage", "included_in_contract", "deducted_from_hour_bank", "non_billable", "internal_time"] },
       { name: "timeType", label: "Type de travail", type: "enum", groupable: true, aggregable: false,
         values: ["remote_work", "onsite_work", "travel", "preparation", "administration", "waiting", "follow_up", "internal", "other"] },
       { name: "approvalStatus", label: "Statut approbation", type: "enum", groupable: true, aggregable: false,
