@@ -102,10 +102,10 @@ export default function TechsPage() {
       : 0;
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4 p-4 sm:p-6">
       <header>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-          <Users className="h-6 w-6 text-indigo-500" />
+        <h1 className="flex items-center gap-2 text-xl sm:text-2xl font-semibold text-slate-900 dark:text-slate-100">
+          <Users className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-500" />
           Coaching techniciens
         </h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -115,7 +115,7 @@ export default function TechsPage() {
         </p>
       </header>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Kpi label="Techs actifs" value={String(techs.length)} />
         <Kpi
           label="Critiques SLA"
@@ -147,25 +147,24 @@ export default function TechsPage() {
             <li key={t.id}>
               <Link
                 href={`/intelligence/techs/${t.id}`}
-                className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white p-4 transition hover:border-indigo-200 hover:bg-indigo-50/30 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/30"
+                className="flex items-start sm:items-center gap-3 sm:gap-4 rounded-lg border border-slate-200 bg-white p-3 sm:p-4 transition hover:border-indigo-200 hover:bg-indigo-50/30 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/30"
               >
                 <Avatar name={t.name} />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
                       {t.name}
                     </span>
                     <RoleBadge role={t.role} />
                   </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                    <span>{t.email}</span>
-                    <span className="text-slate-300">·</span>
-                    <span>{t.totalResolved} résolutions historiques</span>
-                    <span className="text-slate-300">·</span>
-                    <GraduationCap className="h-3 w-3" />
-                    <span>
-                      {t.categoriesMastered}/{t.totalCategories} catégories
-                      maîtrisées
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="truncate max-w-full">{t.email}</span>
+                    <span className="text-slate-300 hidden sm:inline">·</span>
+                    <span className="hidden sm:inline">{t.totalResolved} résolutions historiques</span>
+                    <span className="text-slate-300 hidden sm:inline">·</span>
+                    <span className="inline-flex items-center gap-1">
+                      <GraduationCap className="h-3 w-3" />
+                      {t.categoriesMastered}/{t.totalCategories}
                     </span>
                   </div>
                   {t.top3.length > 0 && (
@@ -182,8 +181,20 @@ export default function TechsPage() {
                       ))}
                     </div>
                   )}
+                  <div className="mt-2 flex sm:hidden flex-wrap items-center gap-1.5">
+                    <LoadPill load={t.openLoad} />
+                    {t.slaRisks.total > 0 && (
+                      <span className={cn(
+                        "flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                        t.slaRisks.critical > 0 ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700",
+                      )}>
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                        {t.slaRisks.total} SLA
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-col items-end gap-1">
+                <div className="hidden sm:flex flex-col items-end gap-1 shrink-0">
                   <LoadPill load={t.openLoad} />
                   {t.slaRisks.total > 0 && (
                     <span
@@ -201,7 +212,7 @@ export default function TechsPage() {
                     </span>
                   )}
                 </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                <ChevronRight className="hidden sm:block h-4 w-4 shrink-0 text-slate-400" />
               </Link>
             </li>
           ))}
