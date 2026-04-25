@@ -649,8 +649,8 @@ function RequesterSection({ byRequester }: { byRequester: MonthlyReportPayload["
       <SectionTitle eyebrow="03 — Demandeurs">Tickets par demandeur</SectionTitle>
       <EditorialTable
         columns={[
-          { key: "name", label: "Demandeur", width: "32%" },
-          { key: "title", label: "Fonction", width: "30%", muted: true },
+          { key: "name", label: "Demandeur", width: "30%" },
+          { key: "email", label: "Courriel", width: "32%", muted: true },
           { key: "opened", label: "Créés", align: "right" },
           { key: "resolved", label: "Résolus", align: "right" },
           { key: "time", label: "Temps total", align: "right", emphasis: true },
@@ -658,7 +658,7 @@ function RequesterSection({ byRequester }: { byRequester: MonthlyReportPayload["
         rows={byRequester.map((r) => ({
           id: r.requester.id,
           name: r.requester.fullName,
-          title: r.requester.jobTitle ?? "—",
+          email: r.requester.email || "—",
           opened: String(r.ticketsOpenedThisMonth),
           resolved: String(r.ticketsResolvedThisMonth),
           time: fmtMinutesAsHours(r.totalMinutes),
@@ -839,33 +839,99 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
       ) : null}
 
       {ticket.timeEntries.length > 0 ? (
-        <div style={{ marginTop: "16px" }}>
-          <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "8px" }}>
-            Interventions
+        <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: `1px solid ${THEME.hair}` }}>
+          <div className="mrd-eyebrow" style={{ marginBottom: "12px" }}>
+            Interventions ({ticket.timeEntries.length})
           </div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
-            <tbody>
-              {ticket.timeEntries.map((e) => (
-                <tr key={e.id} style={{ borderBottom: `1px solid ${THEME.hair}`, verticalAlign: "top" }}>
-                  <td className="mrd-mono" style={{ padding: "6px 12px 6px 0", color: THEME.slate, whiteSpace: "nowrap", width: "60px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {ticket.timeEntries.map((e, idx) => (
+              <div
+                key={e.id}
+                className="break-inside-avoid"
+                style={{
+                  background: idx % 2 === 0 ? THEME.blueIce : THEME.paper,
+                  borderLeft: `2px solid ${THEME.bluePale}`,
+                  padding: "10px 14px",
+                }}
+              >
+                {/* Bandeau métadonnées : date + agent + durée + couverture */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    flexWrap: "wrap",
+                    gap: "12px",
+                    fontSize: "11px",
+                  }}
+                >
+                  <span
+                    className="mrd-mono"
+                    style={{ color: THEME.blue, fontWeight: 600, whiteSpace: "nowrap", letterSpacing: "0.02em" }}
+                  >
                     {fmtDateShort(e.date)}
-                  </td>
-                  <td style={{ padding: "6px 12px 6px 0", color: THEME.inkSoft, whiteSpace: "nowrap", width: "120px" }}>
+                  </span>
+                  <span style={{ color: THEME.hair }}>·</span>
+                  <span style={{ color: THEME.ink, fontWeight: 500, whiteSpace: "nowrap" }}>
                     {e.agentName}
-                  </td>
-                  <td className="mrd-mono" style={{ padding: "6px 12px 6px 0", textAlign: "right", whiteSpace: "nowrap", width: "55px", color: THEME.ink }}>
+                  </span>
+                  <span style={{ color: THEME.hair }}>·</span>
+                  <span
+                    className="mrd-mono"
+                    style={{ color: THEME.ink, fontWeight: 600, whiteSpace: "nowrap" }}
+                  >
                     {fmtMinutesAsHours(e.durationMinutes)}
-                  </td>
-                  <td className="mrd-eyebrow" style={{ padding: "6px 12px 6px 0", color: THEME.slate, whiteSpace: "nowrap", width: "80px" }}>
+                  </span>
+                  <span
+                    className="mrd-eyebrow"
+                    style={{ color: THEME.accent, marginLeft: "auto", whiteSpace: "nowrap" }}
+                  >
                     {coverageLabel(e.coverageStatus)}
-                  </td>
-                  <td style={{ padding: "6px 0", color: THEME.inkSoft }}>
-                    {e.description || <span style={{ fontStyle: "italic", color: THEME.slate }}>Aucune note</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </span>
+                </div>
+                {/* Note / description sur sa propre ligne pour respirer et
+                    permettre le wrap multi-lignes naturellement. */}
+                <p
+                  style={{
+                    marginTop: "6px",
+                    marginBottom: 0,
+                    fontSize: "11.5px",
+                    lineHeight: 1.5,
+                    color: e.description ? THEME.inkSoft : THEME.slate,
+                    fontStyle: e.description ? "normal" : "italic",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {e.description || "Aucune note saisie"}
+                </p>
+              </div>
+            ))}
+          </div>
+          {/* Total */}
+          <div
+            style={{
+              marginTop: "10px",
+              paddingTop: "10px",
+              borderTop: `1px solid ${THEME.hair}`,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              fontSize: "11.5px",
+            }}
+          >
+            <span className="mrd-eyebrow" style={{ color: THEME.slate }}>
+              Total ticket
+            </span>
+            <span
+              className="mrd-mono"
+              style={{
+                color: THEME.ink,
+                fontWeight: 600,
+                fontSize: "13px",
+              }}
+            >
+              {fmtMinutesAsHours(ticket.totalMinutes)}
+            </span>
+          </div>
         </div>
       ) : null}
     </article>

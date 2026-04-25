@@ -121,7 +121,10 @@ export async function renderReportToPdf(reportId: string): Promise<Buffer> {
       format: "Letter",
       printBackground: true,
       preferCSSPageSize: true,
-      margin: { top: "12mm", right: "12mm", bottom: "14mm", left: "12mm" },
+      // Bottom margin = 24mm pour laisser respirer le footer (logo Cetix +
+      // pagination ~14mm de hauteur ressentie) + un coussin ~10mm pour que
+      // le contenu ne touche pas la zone footer. Top reste à 14mm.
+      margin: { top: "14mm", right: "14mm", bottom: "24mm", left: "14mm" },
       displayHeaderFooter: true,
       headerTemplate: `<div></div>`,
       footerTemplate: await buildFooterTemplate(),
