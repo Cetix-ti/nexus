@@ -12,7 +12,7 @@
 // ============================================================================
 
 import prisma from "@/lib/prisma";
-import { isBillable as isBillableCoverage, isCovered as isCoveredCoverage, isNonBillable as isNonBillableCoverage } from "@/lib/billing/coverage-statuses";
+import { isBillable as isBillableCoverage, isCovered as isCoveredCoverage, isNonBillable as isNonBillableCoverage, EXCLUDED_APPROVAL_STATUSES } from "@/lib/billing/coverage-statuses";
 import type {
   MonthlyReportPayload,
   MonthlyReportTicketBlock,
@@ -109,11 +109,14 @@ export async function buildMonthlyReportPayload(
   });
   if (!org) throw new Error(`Organization not found: ${organizationId}`);
 
-  // 1) Time entries du mois, scope org.
+  // 1) Time entries du mois, scope org. Rejected exclus du PDF mensuel —
+  // une saisie rejetée n'a rien à voir dans le rapport client (cf.
+  // EXCLUDED_APPROVAL_STATUSES).
   const entries = await prisma.timeEntry.findMany({
     where: {
       organizationId,
       startedAt: { gte: start, lte: end },
+      approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
     },
     orderBy: { startedAt: "asc" },
     select: {

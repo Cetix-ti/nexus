@@ -87,3 +87,30 @@ export function getCoverageCategory(status: string | null | undefined): Coverage
 export const BILLABLE_STATUSES_ARR: readonly string[] = BILLABLE_STATUSES;
 export const COVERED_STATUSES_ARR: readonly string[] = COVERED_STATUSES;
 export const NON_BILLABLE_STATUSES_ARR: readonly string[] = NON_BILLABLE_STATUSES;
+
+// ----------------------------------------------------------------------------
+// approvalStatus — workflow d'approbation (orthogonal au coverageStatus)
+// ----------------------------------------------------------------------------
+//
+// Valeurs possibles sur TimeEntry.approvalStatus (par défaut "draft") :
+//   - "draft"      : saisie en cours, l'agent travaille encore dessus
+//   - "submitted"  : soumise, en attente de validation
+//   - "pending"    : en attente (synonyme de submitted dans certains flows)
+//   - "approved"   : approuvée par superviseur
+//   - "invoiced"   : intégrée à une facture
+//   - "rejected"   : rejetée explicitement
+//
+// Règle de comptabilisation par défaut : on EXCLUT "rejected" partout. Une
+// saisie rejetée n'est plus une heure de travail légitime ni un revenu.
+// Les drafts sont conservés (= WIP réel, l'agent peut affiner et resoumettre).
+
+/** Statuts à EXCLURE de toutes les agrégations heures et revenu. */
+export const EXCLUDED_APPROVAL_STATUSES = ["rejected"] as const;
+
+const excludedApprovalSet: ReadonlySet<string> = new Set(EXCLUDED_APPROVAL_STATUSES);
+
+/** True si la saisie doit être comptée dans les KPIs (heures, revenu). */
+export function isCountableEntry(approvalStatus: string | null | undefined): boolean {
+  if (approvalStatus == null) return true;
+  return !excludedApprovalSet.has(approvalStatus);
+}

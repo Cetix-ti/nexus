@@ -1,5 +1,17 @@
 import prisma from "@/lib/prisma";
 
+/**
+ * Erreur de validation métier sur une TimeEntry — distincte de BillingLockError.
+ * Les routes API peuvent la catcher pour retourner un 400 explicite plutôt
+ * qu'un 500 générique.
+ */
+export class TimeEntryValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TimeEntryValidationError";
+  }
+}
+
 export interface TimeEntryRow {
   id: string;
   ticketId: string;
@@ -139,6 +151,16 @@ export async function createTimeEntry(input: {
   amount?: number | null;
   forceNonBillable?: boolean;
 }) {
+  // Invariant métier : on ne peut pas facturer un déplacement sans avoir
+  // été physiquement sur place. `hasTravelBilled=true` requiert `isOnsite=true`.
+  // Sans cette garde, l'UI peut envoyer un état incohérent (ex: bug bouton
+  // mal câblé) qui produirait des saisies "travel_billable" en télétravail.
+  if (input.hasTravelBilled && !input.isOnsite) {
+    throw new TimeEntryValidationError(
+      "Le déplacement facturé nécessite une saisie sur place (isOnsite=true).",
+    );
+  }
+
   const { checkBillingLock, BillingLockError } = await import("./period-lock");
   const lockMsg = await checkBillingLock(input.startedAt);
   if (lockMsg) throw new BillingLockError(lockMsg);
@@ -240,6 +262,28 @@ export async function updateTimeEntry(id: string, patch: any) {
   if (patch.travelDurationMinutes !== undefined) {
     data.travelDurationMinutes = patch.travelDurationMinutes;
   }
+
+  // Invariant : hasTravelBilled=true requiert isOnsite=true. On vérifie sur
+  // l'état COMBINÉ (patch + existant) pour catcher le cas où le patch ne
+  // touche qu'à un seul des deux flags.
+  const finalHasTravel = patch.hasTravelBilled !== undefined ? patch.hasTravelBilled : null;
+  const finalIsOnsite = patch.isOnsite !== undefined ? patch.isOnsite : null;
+  if (finalHasTravel === true || finalIsOnsite === false) {
+    const current = await prisma.timeEntry.findUnique({
+      where: { id },
+      select: { hasTravelBilled: true, isOnsite: true },
+    });
+    if (current) {
+      const effHasTravel = finalHasTravel ?? current.hasTravelBilled;
+      const effIsOnsite = finalIsOnsite ?? current.isOnsite;
+      if (effHasTravel && !effIsOnsite) {
+        throw new TimeEntryValidationError(
+          "Le déplacement facturé nécessite une saisie sur place (isOnsite=true).",
+        );
+      }
+    }
+  }
+
   if (patch.coverageStatus !== undefined) data.coverageStatus = patch.coverageStatus;
   if (patch.coverageReason !== undefined) data.coverageReason = patch.coverageReason;
   if (patch.hourlyRate !== undefined) data.hourlyRate = patch.hourlyRate;

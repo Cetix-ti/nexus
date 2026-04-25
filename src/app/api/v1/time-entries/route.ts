@@ -108,10 +108,11 @@ export async function POST(req: Request) {
     return NextResponse.json(created, { status: 201 });
   } catch (e) {
     const isBillingLock = e instanceof Error && e.name === "BillingLockError";
-    if (!isBillingLock) console.error("time-entry create failed", e);
+    const isValidation = e instanceof Error && e.name === "TimeEntryValidationError";
+    if (!isBillingLock && !isValidation) console.error("time-entry create failed", e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Erreur de création" },
-      { status: isBillingLock ? 423 : 500 },
+      { status: isBillingLock ? 423 : isValidation ? 400 : 500 },
     );
   }
 }
@@ -142,9 +143,10 @@ export async function PATCH(req: Request) {
     return NextResponse.json(updated);
   } catch (err) {
     const isBillingLock = err instanceof Error && err.name === "BillingLockError";
+    const isValidation = err instanceof Error && err.name === "TimeEntryValidationError";
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Erreur" },
-      { status: isBillingLock ? 423 : 500 },
+      { status: isBillingLock ? 423 : isValidation ? 400 : 500 },
     );
   }
 }

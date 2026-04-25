@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { isBillable } from "@/lib/billing/coverage-statuses";
+import { isBillable, EXCLUDED_APPROVAL_STATUSES } from "@/lib/billing/coverage-statuses";
 
 /**
  * GET /api/v1/my-space?days=30
@@ -43,12 +43,20 @@ export async function GET(req: Request) {
         select: { id: true, firstName: true, lastName: true, email: true, avatar: true, role: true, createdAt: true },
       }),
       prisma.timeEntry.findMany({
-        where: { agentId: me.id, startedAt: { gte: since } },
+        where: {
+          agentId: me.id,
+          startedAt: { gte: since },
+          approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+        },
         orderBy: { startedAt: "desc" },
         take: 500,
       }),
       prisma.timeEntry.findMany({
-        where: { agentId: me.id, startedAt: { gte: twelveMonthsAgo } },
+        where: {
+          agentId: me.id,
+          startedAt: { gte: twelveMonthsAgo },
+          approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+        },
         select: { startedAt: true, durationMinutes: true, amount: true, coverageStatus: true },
       }),
       prisma.ticket.count({

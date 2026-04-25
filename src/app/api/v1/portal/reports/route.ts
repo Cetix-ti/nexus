@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
-import { isBillable, isCovered } from "@/lib/billing/coverage-statuses";
+import { isBillable, isCovered, EXCLUDED_APPROVAL_STATUSES } from "@/lib/billing/coverage-statuses";
 
 export async function GET(_request: NextRequest) {
   const user = await getCurrentPortalUser();
@@ -32,7 +32,12 @@ export async function GET(_request: NextRequest) {
       : [],
     (perms.canSeeTimeReports || perms.canSeeBillingReports)
       ? prisma.timeEntry.findMany({
-          where: { organizationId: orgId },
+          where: {
+            organizationId: orgId,
+            // Rejected exclus du portail (le client ne doit pas voir des heures
+            // qu'on ne facturera pas et que le tech a marquées rejetées).
+            approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+          },
           select: { durationMinutes: true, coverageStatus: true, amount: true, approvalStatus: true, startedAt: true },
           take: 5000,
         }).catch(() => [])

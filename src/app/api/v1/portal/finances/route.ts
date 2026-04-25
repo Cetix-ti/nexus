@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
+import { EXCLUDED_APPROVAL_STATUSES } from "@/lib/billing/coverage-statuses";
 
 export async function GET() {
   try {
@@ -15,7 +16,10 @@ export async function GET() {
 
     const [timeEntries, contracts] = await Promise.all([
       prisma.timeEntry.findMany({
-        where: { organizationId: orgId },
+        where: {
+          organizationId: orgId,
+          approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+        },
         orderBy: { startedAt: "desc" },
         take: 50,
         select: {

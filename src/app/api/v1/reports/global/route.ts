@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { isBillable, isCovered } from "@/lib/billing/coverage-statuses";
+import { isBillable, isCovered, EXCLUDED_APPROVAL_STATUSES } from "@/lib/billing/coverage-statuses";
 
 /**
  * GET /api/v1/reports/global?days=30
@@ -74,8 +74,13 @@ export async function GET(req: Request) {
         orderBy: { _count: { assigneeId: "desc" } },
         take: 15,
       }),
+      // Rejected exclus des agrégations (cf. EXCLUDED_APPROVAL_STATUSES).
       prisma.timeEntry.findMany({
-        where: { ...orgWhere, startedAt: { gte: since } },
+        where: {
+          ...orgWhere,
+          startedAt: { gte: since },
+          approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+        },
         select: {
           startedAt: true,
           durationMinutes: true, coverageStatus: true, hourlyRate: true, amount: true,
@@ -84,11 +89,19 @@ export async function GET(req: Request) {
         },
       }),
       prisma.timeEntry.findMany({
-        where: { ...orgWhere, startedAt: { gte: prevStart, lt: since } },
+        where: {
+          ...orgWhere,
+          startedAt: { gte: prevStart, lt: since },
+          approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+        },
         select: { durationMinutes: true, amount: true },
       }),
       prisma.timeEntry.findMany({
-        where: { ...orgWhere, startedAt: { gte: twelveMonthsAgo } },
+        where: {
+          ...orgWhere,
+          startedAt: { gte: twelveMonthsAgo },
+          approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+        },
         select: {
           startedAt: true, durationMinutes: true, amount: true,
           coverageStatus: true, organizationId: true, agentId: true,
