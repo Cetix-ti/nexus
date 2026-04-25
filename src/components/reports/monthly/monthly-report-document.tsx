@@ -5,64 +5,110 @@
 // Utilisé par la page /internal/reports/monthly/[id] (Puppeteer) et peut
 // aussi être affiché dans l'app pour aperçu.
 //
-// Styling : Tailwind + print-specific (break-inside, color-adjust).
+// Design : direction éditoriale "Service report B2B premium".
+//   - Pairing typographique Fraunces (display, serif) + DM Sans (body)
+//     + JetBrains Mono (chiffres techniques). Vars chargées par la page
+//     de rendu via next/font/google.
+//   - Palette warm-paper (#FAFAF6) + ink (#0F172A) + Cetix blue (#1E40AF)
+//     + cream (#F5EFDF) + copper accent (#9A4A1F) + sage (#5A7D5E).
+//   - Hiérarchie asymétrique : période en grand display serif, KPIs avec
+//     un "héros" surdimensionné. Lettre exécutive en couverture intérieure.
+//   - Tables : interlignes généreux, hairlines plutôt que bordures
+//     épaisses, capitales d'eyebrow pour les en-têtes.
 // ============================================================================
 
-import type { MonthlyReportPayload } from "@/lib/reports/monthly/types";
+import type { MonthlyReportPayload, MonthlyReportTicketBlock } from "@/lib/reports/monthly/types";
 
+// ---------------------------------------------------------------------------
+// Palette + tokens — exposés en CSS vars pour cohérence sur tout le doc.
+// ---------------------------------------------------------------------------
+const THEME = {
+  paper:      "#FAFAF6",
+  ink:        "#0F172A",
+  inkSoft:    "#1A2236",
+  blue:       "#1E40AF",
+  blueBright: "#3B82F6",
+  cream:      "#F5EFDF",
+  creamLine:  "#E8DEC2",
+  copper:     "#9A4A1F",
+  sage:       "#5A7D5E",
+  stone:      "#78716C",
+  hair:       "#D6D3CB",
+};
+
+const FONT_DISPLAY = "var(--font-fraunces), Georgia, serif";
+const FONT_BODY    = "var(--font-dm-sans), -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+const FONT_MONO    = "var(--font-jetbrains), ui-monospace, monospace";
+
+// ---------------------------------------------------------------------------
+// Format helpers
+// ---------------------------------------------------------------------------
 function fmtHours(hours: number): string {
   return `${hours.toLocaleString("fr-CA", { maximumFractionDigits: 1 })} h`;
 }
-
 function fmtMinutesAsHours(minutes: number): string {
   return fmtHours(Math.round((minutes / 60) * 10) / 10);
 }
-
 function fmtMoney(amount: number): string {
+  return amount.toLocaleString("fr-CA", { style: "currency", currency: "CAD" });
+}
+function fmtMoneyShort(amount: number): string {
+  // Pour les KPI : enlève les .00 quand entier pour respirer.
+  const isInt = Math.round(amount) === amount;
   return amount.toLocaleString("fr-CA", {
     style: "currency",
     currency: "CAD",
+    minimumFractionDigits: isInt ? 0 : 2,
+    maximumFractionDigits: 2,
   });
 }
-
 function fmtDateFR(iso: string): string {
-  // "2026-04-12" → "12 avril 2026"
   const d = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
-  return d.toLocaleDateString("fr-CA", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  return d.toLocaleDateString("fr-CA", { day: "numeric", month: "long", year: "numeric" });
 }
-
 function fmtDateShort(iso: string): string {
   const d = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
-  return d.toLocaleDateString("fr-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+  return d.toLocaleDateString("fr-CA", { day: "2-digit", month: "short" });
 }
-
 function coverageLabel(status: string): string {
   switch (status) {
-    case "billable":
-      return "Facturable";
-    case "included_in_contract":
-      return "Inclus au contrat";
-    case "deducted_from_hour_bank":
-      return "Banque d'heures";
-    case "msp_monthly":
-      return "Forfait MSP";
-    case "non_billable":
-      return "Non facturable";
-    case "pending":
-      return "En attente";
-    default:
-      return status;
+    case "billable":               return "Facturable";
+    case "included_in_contract":   return "Inclus";
+    case "deducted_from_hour_bank":return "Banque";
+    case "msp_monthly":             return "Forfait";
+    case "non_billable":            return "Non facturable";
+    case "pending":                 return "En attente";
+    default:                        return status;
   }
 }
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
+// ---------------------------------------------------------------------------
+// Génère un court paragraphe synthèse pour la lettre exécutive — calculé
+// depuis les totaux. Pas d'IA, juste de la composition textuelle.
+// ---------------------------------------------------------------------------
+function executiveSummaryText(payload: MonthlyReportPayload): string {
+  const t = payload.totals;
+  const billableShare = t.totalHours > 0
+    ? Math.round((t.billableHours / t.totalHours) * 100)
+    : 0;
+  const tripsLine = payload.trips.count > 0
+    ? `${payload.trips.count} déplacement${payload.trips.count > 1 ? "s" : ""}`
+    : "aucun déplacement";
+  return `Au cours de ${payload.period.label}, l'équipe Cetix a livré `
+    + `${fmtHours(t.totalHours)} de service à ${payload.organization.name}, dont `
+    + `${fmtHours(t.billableHours)} facturables (${billableShare}%) et `
+    + `${fmtHours(t.coveredHours)} incluses au contrat. `
+    + `${t.ticketsResolvedCount} ticket${t.ticketsResolvedCount > 1 ? "s ont été résolus" : " a été résolu"} `
+    + `sur ${t.ticketsTouchedCount} pris en charge, et ${tripsLine} `
+    + `${payload.trips.count > 0 ? "a été" : "n'a été"} consigné${payload.trips.count !== 1 ? "s" : ""} sur la période.`;
+}
+
+// ===========================================================================
+// MAIN COMPONENT
+// ===========================================================================
 export function MonthlyReportDocument({
   payload,
   logoSrc,
@@ -70,504 +116,738 @@ export function MonthlyReportDocument({
   payload: MonthlyReportPayload;
   logoSrc: string;
 }) {
-  const { organization, period, totals, byAgent, byRequester, trips, tickets } =
-    payload;
+  const { organization, period, totals, byAgent, byRequester, trips, tickets } = payload;
+  const summary = executiveSummaryText(payload);
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 font-sans">
-      {/* ================== Couverture ================== */}
-      <section className="px-12 pt-16 pb-8 break-after-page">
-        <div className="flex items-center justify-between border-b-2 border-blue-700 pb-6">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logoSrc} alt="Cetix" className="h-14" />
-          <div className="text-right text-xs text-slate-500 uppercase tracking-wider">
-            Rapport mensuel de service
-          </div>
-        </div>
-        <div className="mt-24 space-y-4">
-          <div className="text-sm text-slate-500 uppercase tracking-widest">
-            Rapport mensuel
-          </div>
-          <h1 className="text-5xl font-bold text-slate-900 leading-tight">
-            {period.label.charAt(0).toUpperCase() + period.label.slice(1)}
-          </h1>
-          <div className="text-3xl font-semibold text-blue-700 mt-6">
-            {organization.name}
-          </div>
-          {organization.clientCode ? (
-            <div className="text-sm text-slate-500">
-              Code client&nbsp;: {organization.clientCode}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="mt-32 grid grid-cols-2 gap-x-8 gap-y-3 text-sm border-t border-slate-200 pt-6">
-          <div>
-            <div className="text-slate-400 text-xs uppercase tracking-wider">
-              Période couverte
-            </div>
-            <div className="mt-1 text-slate-700">
-              Du {fmtDateFR(period.startDate)} au {fmtDateFR(period.endDate)}
-            </div>
-          </div>
-          <div>
-            <div className="text-slate-400 text-xs uppercase tracking-wider">
-              Généré le
-            </div>
-            <div className="mt-1 text-slate-700">
-              {fmtDateFR(payload.generatedAt.slice(0, 10))}
-            </div>
-          </div>
-          {payload.activeContracts.length > 0 ? (
-            <div className="col-span-2">
-              <div className="text-slate-400 text-xs uppercase tracking-wider">
-                Contrats actifs
-              </div>
-              <div className="mt-1 text-slate-700">
-                {payload.activeContracts.map((c) => c.name).join(" · ")}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      {/* ================== Sommaire exécutif ================== */}
-      <section className="px-12 py-10 break-after-page">
-        <SectionTitle>Sommaire exécutif</SectionTitle>
-        <div className="grid grid-cols-4 gap-4 mt-6">
-          <KpiCard
-            label="Heures totales"
-            value={fmtHours(totals.totalHours)}
-            sub={`${fmtHours(totals.billableHours)} facturables`}
-          />
-          <KpiCard
-            label="Heures couvertes"
-            value={fmtHours(totals.coveredHours)}
-            sub="Forfait / banque d'heures"
-          />
-          <KpiCard
-            label="Déplacements"
-            value={`${trips.count}`}
-            sub={
-              trips.billable
-                ? "Facturés au taux horaire"
-                : (trips.nonBillableReason ?? "Non facturés")
-            }
-          />
-          <KpiCard
-            label="Total du mois"
-            value={fmtMoney(totals.totalAmount)}
-            sub={`${fmtMoney(totals.hoursAmount)} heures`}
-            highlight
-          />
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 mt-6">
-          <KpiCard
-            label="Tickets créés"
-            value={`${totals.ticketsOpenedCount}`}
-          />
-          <KpiCard
-            label="Tickets résolus"
-            value={`${totals.ticketsResolvedCount}`}
-          />
-          <KpiCard
-            label="Tickets avec activité"
-            value={`${totals.ticketsTouchedCount}`}
-          />
-        </div>
-      </section>
-
-      {/* ================== Répartition par agent ================== */}
-      <section className="px-12 py-10 break-after-page">
-        <SectionTitle>Répartition des heures par technicien</SectionTitle>
-        {byAgent.length === 0 ? (
-          <EmptyNote>Aucune heure saisie pour ce mois.</EmptyNote>
-        ) : (
-          <table className="w-full text-sm mt-6 border-collapse">
-            <thead>
-              <tr className="border-b-2 border-slate-300 text-left text-xs uppercase tracking-wider text-slate-500">
-                <th className="py-2 pr-3">Technicien</th>
-                <th className="py-2 pr-3 text-right">Heures</th>
-                <th className="py-2 pr-3 text-right">% du mois</th>
-                <th className="py-2 pr-3 text-right">Facturables</th>
-                <th className="py-2 pr-3 text-right">Taux moyen</th>
-                <th className="py-2 text-right">Facturé</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byAgent.map((a) => (
-                <tr
-                  key={a.agent.id}
-                  className="border-b border-slate-100 break-inside-avoid"
-                >
-                  <td className="py-2 pr-3 font-medium text-slate-800">
-                    {a.agent.fullName}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {fmtHours(a.hours)}
-                  </td>
-                  <td className="py-2 pr-3 text-right text-slate-500 tabular-nums">
-                    {(a.share * 100).toLocaleString("fr-CA", {
-                      maximumFractionDigits: 0,
-                    })}
-                    %
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {fmtHours(a.billableHours)}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {a.averageRate != null ? fmtMoney(a.averageRate) : "—"}
-                  </td>
-                  <td className="py-2 text-right tabular-nums font-medium">
-                    {fmtMoney(a.billedAmount)}
-                  </td>
-                </tr>
-              ))}
-              <tr className="font-semibold bg-slate-50">
-                <td className="py-2 pr-3">Total</td>
-                <td className="py-2 pr-3 text-right tabular-nums">
-                  {fmtHours(totals.totalHours)}
-                </td>
-                <td className="py-2 pr-3" />
-                <td className="py-2 pr-3 text-right tabular-nums">
-                  {fmtHours(totals.billableHours)}
-                </td>
-                <td className="py-2 pr-3" />
-                <td className="py-2 text-right tabular-nums">
-                  {fmtMoney(totals.hoursAmount)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      {/* ================== Tickets par demandeur ================== */}
-      <section className="px-12 py-10 break-after-page">
-        <SectionTitle>Tickets par demandeur</SectionTitle>
-        {byRequester.length === 0 ? (
-          <EmptyNote>Aucun ticket avec demandeur identifié ce mois.</EmptyNote>
-        ) : (
-          <table className="w-full text-sm mt-6 border-collapse">
-            <thead>
-              <tr className="border-b-2 border-slate-300 text-left text-xs uppercase tracking-wider text-slate-500">
-                <th className="py-2 pr-3">Demandeur</th>
-                <th className="py-2 pr-3">Fonction</th>
-                <th className="py-2 pr-3 text-right">Tickets créés</th>
-                <th className="py-2 pr-3 text-right">Tickets résolus</th>
-                <th className="py-2 text-right">Temps total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byRequester.map((r) => (
-                <tr
-                  key={r.requester.id}
-                  className="border-b border-slate-100 break-inside-avoid"
-                >
-                  <td className="py-2 pr-3 font-medium text-slate-800">
-                    {r.requester.fullName}
-                  </td>
-                  <td className="py-2 pr-3 text-slate-500">
-                    {r.requester.jobTitle ?? "—"}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {r.ticketsOpenedThisMonth}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {r.ticketsResolvedThisMonth}
-                  </td>
-                  <td className="py-2 text-right tabular-nums">
-                    {fmtMinutesAsHours(r.totalMinutes)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      {/* ================== Déplacements ================== */}
-      <section className="px-12 py-10 break-after-page">
-        <SectionTitle>Déplacements</SectionTitle>
-        {!trips.billable && trips.nonBillableReason ? (
-          <div className="mt-4 text-sm bg-blue-50 border-l-4 border-blue-400 px-4 py-3 text-slate-700">
-            {trips.nonBillableReason}
-          </div>
-        ) : null}
-        {trips.count === 0 ? (
-          <EmptyNote>Aucun déplacement enregistré ce mois.</EmptyNote>
-        ) : (
-          <table className="w-full text-sm mt-6 border-collapse">
-            <thead>
-              <tr className="border-b-2 border-slate-300 text-left text-xs uppercase tracking-wider text-slate-500">
-                <th className="py-2 pr-3">Date</th>
-                <th className="py-2 pr-3">Technicien</th>
-                <th className="py-2 pr-3">Ticket</th>
-                <th className="py-2 pr-3">Sujet</th>
-                {trips.billable ? (
-                  <th className="py-2 text-right">Facturé</th>
-                ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {trips.lines.map((t, i) => (
-                <tr
-                  key={i}
-                  className="border-b border-slate-100 break-inside-avoid"
-                >
-                  <td className="py-2 pr-3 tabular-nums">
-                    {fmtDateShort(t.date)}
-                  </td>
-                  <td className="py-2 pr-3">{t.agentName}</td>
-                  <td className="py-2 pr-3 font-mono text-xs text-blue-700">
-                    {t.ticketDisplayId ?? "—"}
-                  </td>
-                  <td className="py-2 pr-3 text-slate-600">
-                    {t.ticketSubject ?? "—"}
-                  </td>
-                  {trips.billable ? (
-                    <td className="py-2 text-right tabular-nums">
-                      {t.billedAmount != null ? fmtMoney(t.billedAmount) : "—"}
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      {/* ================== Détail des tickets ================== */}
-      <section className="px-12 py-10">
-        <SectionTitle>Détail des tickets</SectionTitle>
-        {tickets.length === 0 ? (
-          <EmptyNote>Aucun ticket à afficher.</EmptyNote>
-        ) : (
-          <div className="mt-6 space-y-6">
-            {tickets.map((t) => (
-              <TicketBlock key={t.ticketId} ticket={t} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ================== Récapitulatif financier ================== */}
-      <section className="px-12 py-10 break-before-page">
-        <SectionTitle>Récapitulatif financier</SectionTitle>
-        <div className="mt-6 max-w-md ml-auto">
-          <FinancialRow label="Heures facturées" value={fmtMoney(totals.hoursAmount)} />
-          {trips.billable ? (
-            <FinancialRow
-              label={`Déplacements (${trips.count})`}
-              value={fmtMoney(totals.tripsAmount)}
-            />
-          ) : (
-            <FinancialRow
-              label={`Déplacements (${trips.count})`}
-              value="Inclus"
-              muted
-            />
-          )}
-          <div className="mt-3 pt-3 border-t-2 border-slate-900 flex justify-between text-lg font-bold">
-            <span>Total</span>
-            <span>{fmtMoney(totals.totalAmount)}</span>
-          </div>
-          <div className="text-xs text-slate-500 mt-4 italic">
-            Montants indicatifs — document généré automatiquement. À confirmer
-            avec la facture officielle.
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-// ---------- Sub-components ----------
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="text-xl font-bold text-slate-900 border-b-2 border-blue-700 pb-2">
-      {children}
-    </h2>
-  );
-}
-
-function KpiCard({
-  label,
-  value,
-  sub,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={
-        "rounded-lg p-4 border " +
-        (highlight
-          ? "bg-blue-600 text-white border-blue-700"
-          : "bg-slate-50 border-slate-200 text-slate-900")
-      }
-    >
-      <div
-        className={
-          "text-xs uppercase tracking-wider " +
-          (highlight ? "text-blue-100" : "text-slate-500")
+    <>
+      {/* Style global du document — appliqué seulement à ce render. */}
+      <style>{`
+        :root {
+          color-scheme: light;
         }
+        body, html {
+          background: ${THEME.paper};
+          color: ${THEME.ink};
+          font-family: ${FONT_BODY};
+          font-feature-settings: "ss01", "cv11", "tnum" off;
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
+          margin: 0;
+        }
+        .mrd-display { font-family: ${FONT_DISPLAY}; font-feature-settings: "ss01", "ss03"; }
+        .mrd-body    { font-family: ${FONT_BODY}; }
+        .mrd-mono    { font-family: ${FONT_MONO}; font-feature-settings: "tnum"; }
+        .mrd-eyebrow {
+          font-family: ${FONT_BODY};
+          font-size: 10px;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          font-weight: 500;
+          color: ${THEME.copper};
+        }
+        .mrd-rule {
+          border: 0;
+          border-top: 1px solid ${THEME.hair};
+          margin: 0;
+        }
+        .mrd-rule-strong {
+          border: 0;
+          border-top: 2px solid ${THEME.ink};
+          margin: 0;
+        }
+        @page { size: Letter; margin: 0; }
+        @media print {
+          body { background: ${THEME.paper}; }
+        }
+      `}</style>
+
+      <div
+        className="mrd-body"
+        style={{
+          background: THEME.paper,
+          color: THEME.ink,
+          minHeight: "100vh",
+          fontSize: "11.5px",
+          lineHeight: 1.55,
+        }}
       >
+        <CoverPage payload={payload} logoSrc={logoSrc} summary={summary} />
+        <ExecutiveSummary payload={payload} />
+        <AgentBreakdownSection byAgent={byAgent} totals={totals} />
+        {byRequester.length > 0 && <RequesterSection byRequester={byRequester} />}
+        <TripsSection trips={trips} />
+        <TicketsSection tickets={tickets} />
+        <FinancialSummary totals={totals} trips={trips} />
+      </div>
+    </>
+  );
+}
+
+// ===========================================================================
+// COVER — première page éditoriale, asymétrique, période en hero
+// ===========================================================================
+function CoverPage({
+  payload,
+  logoSrc,
+  summary,
+}: {
+  payload: MonthlyReportPayload;
+  logoSrc: string;
+  summary: string;
+}) {
+  const { organization, period } = payload;
+  return (
+    <section
+      className="break-after-page"
+      style={{
+        padding: "60px 60px 40px",
+        minHeight: "100vh",
+        display: "grid",
+        gridTemplateRows: "auto 1fr auto",
+      }}
+    >
+      {/* Top bar — eyebrow + logo */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="mrd-eyebrow">Rapport mensuel · Service géré</div>
+        <img src={logoSrc} alt="Cetix" style={{ height: "32px", objectFit: "contain" }} />
+      </div>
+
+      {/* Hero — période en très grand serif + bandeau client */}
+      <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr",
+            gap: "32px",
+            paddingTop: "40px",
+          }}
+        >
+          {/* Eyebrow et période */}
+          <div>
+            <div
+              className="mrd-eyebrow"
+              style={{ marginBottom: "16px", color: THEME.stone }}
+            >
+              Période
+            </div>
+            <h1
+              className="mrd-display"
+              style={{
+                fontSize: "76px",
+                lineHeight: 0.98,
+                fontWeight: 600,
+                letterSpacing: "-0.025em",
+                color: THEME.ink,
+                margin: 0,
+                fontVariationSettings: "'opsz' 144, 'SOFT' 30, 'WONK' 1",
+              }}
+            >
+              {capitalize(period.label)}
+            </h1>
+          </div>
+
+          {/* Bande client */}
+          <div
+            style={{
+              borderTop: `1px solid ${THEME.hair}`,
+              paddingTop: "20px",
+              display: "grid",
+              gridTemplateColumns: "1fr auto",
+              alignItems: "baseline",
+              gap: "24px",
+            }}
+          >
+            <div>
+              <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "6px" }}>
+                Préparé pour
+              </div>
+              <div
+                className="mrd-display"
+                style={{
+                  fontSize: "32px",
+                  lineHeight: 1.1,
+                  fontWeight: 500,
+                  color: THEME.blue,
+                  letterSpacing: "-0.015em",
+                }}
+              >
+                {organization.name}
+              </div>
+              {organization.clientCode ? (
+                <div
+                  className="mrd-mono"
+                  style={{ fontSize: "11px", color: THEME.stone, marginTop: "6px" }}
+                >
+                  {organization.clientCode}
+                </div>
+              ) : null}
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "6px" }}>
+                Couverture
+              </div>
+              <div className="mrd-mono" style={{ fontSize: "12px" }}>
+                {fmtDateShort(period.startDate)} — {fmtDateShort(period.endDate)}
+              </div>
+            </div>
+          </div>
+
+          {/* Synthèse exécutive */}
+          <div
+            style={{
+              background: THEME.cream,
+              borderLeft: `3px solid ${THEME.copper}`,
+              padding: "20px 24px",
+              marginTop: "12px",
+            }}
+          >
+            <div
+              className="mrd-eyebrow"
+              style={{ color: THEME.copper, marginBottom: "10px" }}
+            >
+              Synthèse du mois
+            </div>
+            <p
+              className="mrd-display"
+              style={{
+                fontSize: "16px",
+                lineHeight: 1.55,
+                fontWeight: 400,
+                color: THEME.inkSoft,
+                margin: 0,
+                fontVariationSettings: "'opsz' 14",
+              }}
+            >
+              {summary}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer — meta */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: "24px",
+          fontSize: "10px",
+          color: THEME.stone,
+          paddingTop: "32px",
+          borderTop: `1px solid ${THEME.hair}`,
+        }}
+      >
+        <Meta label="Émis le" value={fmtDateFR(payload.generatedAt.slice(0, 10))} />
+        <Meta
+          label="Contrats actifs"
+          value={
+            payload.activeContracts.length > 0
+              ? payload.activeContracts.map((c) => c.name).join(" · ")
+              : "—"
+          }
+        />
+        <Meta label="Document" value="Confidentiel · Indicatif" align="right" />
+      </div>
+    </section>
+  );
+}
+
+function Meta({ label, value, align }: { label: string; value: string; align?: "right" }) {
+  return (
+    <div style={{ textAlign: align ?? "left" }}>
+      <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "4px" }}>
         {label}
       </div>
-      <div className="text-2xl font-bold mt-1">{value}</div>
-      {sub ? (
-        <div
-          className={
-            "text-xs mt-1 " + (highlight ? "text-blue-100" : "text-slate-500")
-          }
-        >
-          {sub}
+      <div style={{ color: THEME.ink, fontSize: "11px" }}>{value}</div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// SECTION HEADERS
+// ===========================================================================
+function SectionTitle({ children, eyebrow }: { children: React.ReactNode; eyebrow?: string }) {
+  return (
+    <div style={{ marginBottom: "24px" }}>
+      {eyebrow ? (
+        <div className="mrd-eyebrow" style={{ marginBottom: "8px" }}>
+          {eyebrow}
         </div>
       ) : null}
+      <h2
+        className="mrd-display"
+        style={{
+          fontSize: "30px",
+          fontWeight: 500,
+          letterSpacing: "-0.018em",
+          margin: 0,
+          color: THEME.ink,
+          fontVariationSettings: "'opsz' 60, 'SOFT' 50",
+        }}
+      >
+        {children}
+      </h2>
+      <hr className="mrd-rule" style={{ marginTop: "16px" }} />
     </div>
   );
 }
 
-function EmptyNote({ children }: { children: React.ReactNode }) {
+function PageSection({
+  children,
+  breakAfter,
+  breakBefore,
+}: {
+  children: React.ReactNode;
+  breakAfter?: boolean;
+  breakBefore?: boolean;
+}) {
   return (
-    <div className="mt-6 text-sm text-slate-500 italic">{children}</div>
+    <section
+      className={[breakAfter ? "break-after-page" : "", breakBefore ? "break-before-page" : ""].join(" ")}
+      style={{ padding: "56px 60px" }}
+    >
+      {children}
+    </section>
   );
 }
 
-function FinancialRow({
-  label,
-  value,
-  muted,
-}: {
-  label: string;
-  value: string;
-  muted?: boolean;
-}) {
+// ===========================================================================
+// EXECUTIVE SUMMARY — KPIs avec hiérarchie : un héros + secondaires
+// ===========================================================================
+function ExecutiveSummary({ payload }: { payload: MonthlyReportPayload }) {
+  const { totals, trips } = payload;
+  const billableShare = totals.totalHours > 0 ? Math.round((totals.billableHours / totals.totalHours) * 100) : 0;
+  return (
+    <PageSection breakAfter>
+      <SectionTitle eyebrow="01 — En un coup d'œil">Sommaire exécutif</SectionTitle>
+
+      {/* Hero KPI : montant total */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.4fr 1fr",
+          gap: "32px",
+          alignItems: "stretch",
+          marginBottom: "32px",
+        }}
+      >
+        <HeroKpi
+          label="Total du mois"
+          value={fmtMoneyShort(totals.totalAmount)}
+          sub={`${fmtMoney(totals.hoursAmount)} heures + ${fmtMoney(totals.tripsAmount)} déplacements`}
+        />
+        <SideKpiStack
+          items={[
+            { label: "Heures totales", value: fmtHours(totals.totalHours), sub: `${fmtHours(totals.billableHours)} facturables` },
+            { label: "Taux facturable", value: `${billableShare}%`, sub: "du temps livré" },
+            { label: "Heures couvertes", value: fmtHours(totals.coveredHours), sub: "Contrat / banque", muted: true },
+          ]}
+        />
+      </div>
+
+      {/* Stats secondaires en bande horizontale */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: "0",
+          borderTop: `1px solid ${THEME.hair}`,
+          borderBottom: `1px solid ${THEME.hair}`,
+          padding: "20px 0",
+        }}
+      >
+        <StatBand label="Tickets créés" value={String(totals.ticketsOpenedCount)} />
+        <StatBand label="Tickets résolus" value={String(totals.ticketsResolvedCount)} positive />
+        <StatBand label="Tickets touchés" value={String(totals.ticketsTouchedCount)} />
+        <StatBand label="Déplacements" value={String(trips.count)} />
+      </div>
+    </PageSection>
+  );
+}
+
+function HeroKpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div
-      className={
-        "flex justify-between py-2 text-sm " +
-        (muted ? "text-slate-500" : "text-slate-900")
-      }
+      style={{
+        background: THEME.ink,
+        color: THEME.paper,
+        padding: "32px 32px 28px",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        position: "relative",
+        overflow: "hidden",
+      }}
     >
-      <span>{label}</span>
-      <span className="tabular-nums">{value}</span>
+      <div>
+        <div
+          className="mrd-eyebrow"
+          style={{ color: THEME.creamLine, marginBottom: "12px" }}
+        >
+          {label}
+        </div>
+      </div>
+      <div>
+        <div
+          className="mrd-display"
+          style={{
+            fontSize: "64px",
+            lineHeight: 1,
+            fontWeight: 500,
+            letterSpacing: "-0.03em",
+            color: THEME.cream,
+            fontVariationSettings: "'opsz' 144, 'SOFT' 30",
+          }}
+        >
+          {value}
+        </div>
+        {sub ? (
+          <div style={{ fontSize: "11px", color: THEME.creamLine, marginTop: "10px", opacity: 0.85 }}>
+            {sub}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-function TicketBlock({
-  ticket,
+function SideKpiStack({
+  items,
 }: {
-  ticket: import("@/lib/reports/monthly/types").MonthlyReportTicketBlock;
+  items: Array<{ label: string; value: string; sub?: string; muted?: boolean }>;
 }) {
   return (
-    <article className="border border-slate-200 rounded-lg p-5 break-inside-avoid">
-      <div className="flex items-baseline justify-between gap-4">
-        <div className="flex items-baseline gap-3 flex-1 min-w-0">
-          <span className="font-mono text-sm font-bold text-blue-700 whitespace-nowrap">
+    <div style={{ display: "grid", gap: "12px" }}>
+      {items.map((it, i) => (
+        <div
+          key={i}
+          style={{
+            background: it.muted ? THEME.cream : "transparent",
+            border: it.muted ? "none" : `1px solid ${THEME.hair}`,
+            padding: "16px 20px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            gap: "20px",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "4px" }}>
+              {it.label}
+            </div>
+            {it.sub ? (
+              <div style={{ fontSize: "10.5px", color: THEME.stone }}>{it.sub}</div>
+            ) : null}
+          </div>
+          <div
+            className="mrd-display"
+            style={{
+              fontSize: "26px",
+              fontWeight: 500,
+              color: THEME.ink,
+              letterSpacing: "-0.02em",
+              fontVariationSettings: "'opsz' 36",
+            }}
+          >
+            {it.value}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StatBand({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
+  return (
+    <div style={{ padding: "0 20px", borderRight: `1px solid ${THEME.hair}` }}>
+      <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "6px" }}>
+        {label}
+      </div>
+      <div
+        className="mrd-display"
+        style={{
+          fontSize: "26px",
+          fontWeight: 500,
+          color: positive ? THEME.sage : THEME.ink,
+          letterSpacing: "-0.02em",
+          fontVariationSettings: "'opsz' 36",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// AGENT BREAKDOWN
+// ===========================================================================
+function AgentBreakdownSection({
+  byAgent,
+  totals,
+}: {
+  byAgent: MonthlyReportPayload["byAgent"];
+  totals: MonthlyReportPayload["totals"];
+}) {
+  return (
+    <PageSection breakAfter>
+      <SectionTitle eyebrow="02 — Équipe">Répartition par technicien</SectionTitle>
+      {byAgent.length === 0 ? (
+        <EmptyNote>Aucune heure saisie pour ce mois.</EmptyNote>
+      ) : (
+        <EditorialTable
+          columns={[
+            { key: "name", label: "Technicien", width: "30%" },
+            { key: "hours", label: "Heures", align: "right" },
+            { key: "share", label: "Part", align: "right", muted: true },
+            { key: "billable", label: "Facturables", align: "right" },
+            { key: "rate", label: "Taux moy.", align: "right", muted: true },
+            { key: "billed", label: "Facturé", align: "right", emphasis: true },
+          ]}
+          rows={byAgent.map((a) => ({
+            id: a.agent.id,
+            name: a.agent.fullName,
+            hours: fmtHours(a.hours),
+            share: `${(a.share * 100).toLocaleString("fr-CA", { maximumFractionDigits: 0 })}%`,
+            billable: fmtHours(a.billableHours),
+            rate: a.averageRate != null ? fmtMoney(a.averageRate) : "—",
+            billed: fmtMoney(a.billedAmount),
+          }))}
+          totalRow={{
+            name: "Total",
+            hours: fmtHours(totals.totalHours),
+            share: "—",
+            billable: fmtHours(totals.billableHours),
+            rate: "—",
+            billed: fmtMoney(totals.hoursAmount),
+          }}
+        />
+      )}
+    </PageSection>
+  );
+}
+
+// ===========================================================================
+// REQUESTERS
+// ===========================================================================
+function RequesterSection({ byRequester }: { byRequester: MonthlyReportPayload["byRequester"] }) {
+  return (
+    <PageSection breakAfter>
+      <SectionTitle eyebrow="03 — Demandeurs">Tickets par demandeur</SectionTitle>
+      <EditorialTable
+        columns={[
+          { key: "name", label: "Demandeur", width: "32%" },
+          { key: "title", label: "Fonction", width: "30%", muted: true },
+          { key: "opened", label: "Créés", align: "right" },
+          { key: "resolved", label: "Résolus", align: "right" },
+          { key: "time", label: "Temps total", align: "right", emphasis: true },
+        ]}
+        rows={byRequester.map((r) => ({
+          id: r.requester.id,
+          name: r.requester.fullName,
+          title: r.requester.jobTitle ?? "—",
+          opened: String(r.ticketsOpenedThisMonth),
+          resolved: String(r.ticketsResolvedThisMonth),
+          time: fmtMinutesAsHours(r.totalMinutes),
+        }))}
+      />
+    </PageSection>
+  );
+}
+
+// ===========================================================================
+// TRIPS
+// ===========================================================================
+function TripsSection({ trips }: { trips: MonthlyReportPayload["trips"] }) {
+  return (
+    <PageSection breakAfter>
+      <SectionTitle eyebrow="04 — Mobilité">Déplacements</SectionTitle>
+
+      {!trips.billable && trips.nonBillableReason ? (
+        <div
+          style={{
+            background: THEME.cream,
+            borderLeft: `3px solid ${THEME.blue}`,
+            padding: "14px 18px",
+            marginBottom: "20px",
+            fontSize: "12px",
+            color: THEME.inkSoft,
+          }}
+        >
+          {trips.nonBillableReason}
+        </div>
+      ) : null}
+
+      {trips.count === 0 ? (
+        <EmptyNote>Aucun déplacement enregistré ce mois.</EmptyNote>
+      ) : (
+        <EditorialTable
+          columns={[
+            { key: "date", label: "Date", width: "12%" },
+            { key: "agent", label: "Technicien", width: "22%" },
+            { key: "ticket", label: "Ticket", width: "16%", mono: true },
+            { key: "subject", label: "Sujet", muted: true },
+            ...(trips.billable
+              ? [{ key: "billed", label: "Facturé", align: "right" as const, emphasis: true }]
+              : []),
+          ]}
+          rows={trips.lines.map((t, i) => ({
+            id: `t${i}`,
+            date: fmtDateShort(t.date),
+            agent: t.agentName,
+            ticket: t.ticketDisplayId ?? "—",
+            subject: t.ticketSubject ?? "—",
+            ...(trips.billable
+              ? { billed: t.billedAmount != null ? fmtMoney(t.billedAmount) : "—" }
+              : {}),
+          }))}
+        />
+      )}
+    </PageSection>
+  );
+}
+
+// ===========================================================================
+// TICKETS DETAIL
+// ===========================================================================
+function TicketsSection({ tickets }: { tickets: MonthlyReportTicketBlock[] }) {
+  return (
+    <PageSection>
+      <SectionTitle eyebrow="05 — Détail des interventions">Tickets traités</SectionTitle>
+      {tickets.length === 0 ? (
+        <EmptyNote>Aucun ticket à afficher.</EmptyNote>
+      ) : (
+        <div style={{ display: "grid", gap: "20px" }}>
+          {tickets.map((t) => <TicketBlock key={t.ticketId} ticket={t} />)}
+        </div>
+      )}
+    </PageSection>
+  );
+}
+
+function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
+  return (
+    <article
+      className="break-inside-avoid"
+      style={{
+        border: `1px solid ${THEME.hair}`,
+        borderTop: `2px solid ${THEME.blue}`,
+        padding: "20px 24px",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "16px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "12px", minWidth: 0 }}>
+          <span
+            className="mrd-mono"
+            style={{
+              fontSize: "11px",
+              fontWeight: 700,
+              color: THEME.blue,
+              whiteSpace: "nowrap",
+              letterSpacing: "0.02em",
+            }}
+          >
             {ticket.displayId}
           </span>
-          <h3 className="font-semibold text-slate-900 truncate">
+          <h3
+            className="mrd-display"
+            style={{
+              fontSize: "16px",
+              fontWeight: 500,
+              color: THEME.ink,
+              margin: 0,
+              letterSpacing: "-0.01em",
+              fontVariationSettings: "'opsz' 14",
+            }}
+          >
             {ticket.subject}
           </h3>
         </div>
-        <span className="text-xs uppercase tracking-wider text-slate-500 whitespace-nowrap">
+        <span className="mrd-eyebrow" style={{ color: THEME.stone, whiteSpace: "nowrap" }}>
           {ticket.status}
         </span>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-600">
+      <div
+        style={{
+          marginTop: "12px",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "20px",
+          fontSize: "11px",
+          color: THEME.stone,
+        }}
+      >
         {ticket.requesterName ? (
-          <span>
-            Demandeur&nbsp;: <span className="text-slate-900">{ticket.requesterName}</span>
-          </span>
+          <Meta2 label="Demandeur" value={ticket.requesterName} />
         ) : null}
-        <span>
-          Temps total&nbsp;:{" "}
-          <span className="text-slate-900 font-medium tabular-nums">
-            {fmtMinutesAsHours(ticket.totalMinutes)}
-          </span>
-        </span>
-        {ticket.totalAmount > 0 ? (
-          <span>
-            Facturé&nbsp;:{" "}
-            <span className="text-slate-900 font-medium tabular-nums">
-              {fmtMoney(ticket.totalAmount)}
-            </span>
-          </span>
-        ) : null}
-        {ticket.resolvedAt ? (
-          <span>
-            Résolu le&nbsp;:{" "}
-            <span className="text-slate-900">
-              {fmtDateShort(ticket.resolvedAt.slice(0, 10))}
-            </span>
-          </span>
-        ) : null}
+        <Meta2 label="Temps total" value={fmtMinutesAsHours(ticket.totalMinutes)} mono />
+        {ticket.totalAmount > 0 ? <Meta2 label="Facturé" value={fmtMoney(ticket.totalAmount)} mono /> : null}
+        {ticket.resolvedAt ? <Meta2 label="Résolu le" value={fmtDateShort(ticket.resolvedAt.slice(0, 10))} /> : null}
       </div>
 
       {ticket.agents.length > 0 ? (
-        <div className="mt-2 text-xs text-slate-600">
-          Techniciens&nbsp;:{" "}
+        <div style={{ marginTop: "8px", fontSize: "11px", color: THEME.stone }}>
+          <span className="mrd-eyebrow" style={{ color: THEME.stone }}>Techniciens · </span>
           {ticket.agents.map((a, i) => (
             <span key={a.name}>
-              {i > 0 ? ", " : ""}
-              <span className="text-slate-900">{a.name}</span>
-              <span className="text-slate-500">
-                {" "}
-                ({fmtMinutesAsHours(a.minutes)})
-              </span>
+              {i > 0 ? " · " : ""}
+              <span style={{ color: THEME.ink }}>{a.name}</span>
+              <span style={{ color: THEME.stone }}> ({fmtMinutesAsHours(a.minutes)})</span>
             </span>
           ))}
         </div>
       ) : null}
 
       {ticket.resolutionNote ? (
-        <div className="mt-3 text-sm bg-emerald-50 border-l-4 border-emerald-400 px-3 py-2">
-          <div className="text-xs uppercase tracking-wider text-emerald-700 font-semibold mb-1">
+        <div
+          style={{
+            marginTop: "16px",
+            background: "#F1F8F2",
+            borderLeft: `3px solid ${THEME.sage}`,
+            padding: "12px 16px",
+          }}
+        >
+          <div className="mrd-eyebrow" style={{ color: THEME.sage, marginBottom: "6px" }}>
             Note de résolution
           </div>
-          <p className="whitespace-pre-wrap text-slate-800">
+          <p
+            style={{
+              margin: 0,
+              fontSize: "12px",
+              color: THEME.inkSoft,
+              whiteSpace: "pre-wrap",
+              lineHeight: 1.5,
+            }}
+          >
             {ticket.resolutionNote}
           </p>
         </div>
       ) : null}
 
       {ticket.timeEntries.length > 0 ? (
-        <div className="mt-3">
-          <div className="text-xs uppercase tracking-wider text-slate-500 mb-2">
+        <div style={{ marginTop: "16px" }}>
+          <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "8px" }}>
             Interventions
           </div>
-          <table className="w-full text-xs border-collapse">
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
             <tbody>
               {ticket.timeEntries.map((e) => (
-                <tr key={e.id} className="border-b border-slate-100 align-top">
-                  <td className="py-1 pr-3 text-slate-500 tabular-nums whitespace-nowrap w-20">
+                <tr key={e.id} style={{ borderBottom: `1px solid ${THEME.hair}`, verticalAlign: "top" }}>
+                  <td className="mrd-mono" style={{ padding: "6px 12px 6px 0", color: THEME.stone, whiteSpace: "nowrap", width: "60px" }}>
                     {fmtDateShort(e.date)}
                   </td>
-                  <td className="py-1 pr-3 text-slate-700 whitespace-nowrap w-32 truncate">
+                  <td style={{ padding: "6px 12px 6px 0", color: THEME.inkSoft, whiteSpace: "nowrap", width: "120px" }}>
                     {e.agentName}
                   </td>
-                  <td className="py-1 pr-3 tabular-nums whitespace-nowrap w-14 text-right text-slate-600">
+                  <td className="mrd-mono" style={{ padding: "6px 12px 6px 0", textAlign: "right", whiteSpace: "nowrap", width: "55px", color: THEME.ink }}>
                     {fmtMinutesAsHours(e.durationMinutes)}
                   </td>
-                  <td className="py-1 pr-3 text-slate-500 text-[10px] uppercase tracking-wider whitespace-nowrap w-24">
+                  <td className="mrd-eyebrow" style={{ padding: "6px 12px 6px 0", color: THEME.stone, whiteSpace: "nowrap", width: "80px" }}>
                     {coverageLabel(e.coverageStatus)}
                   </td>
-                  <td className="py-1 text-slate-700">
-                    {e.description || (
-                      <span className="italic text-slate-400">
-                        Aucune note
-                      </span>
-                    )}
+                  <td style={{ padding: "6px 0", color: THEME.inkSoft }}>
+                    {e.description || <span style={{ fontStyle: "italic", color: THEME.stone }}>Aucune note</span>}
                   </td>
                 </tr>
               ))}
@@ -576,5 +856,205 @@ function TicketBlock({
         </div>
       ) : null}
     </article>
+  );
+}
+
+function Meta2({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <span>
+      <span className="mrd-eyebrow" style={{ color: THEME.stone }}>{label} · </span>
+      <span className={mono ? "mrd-mono" : ""} style={{ color: THEME.ink, fontSize: "11px" }}>{value}</span>
+    </span>
+  );
+}
+
+// ===========================================================================
+// FINANCIAL SUMMARY
+// ===========================================================================
+function FinancialSummary({
+  totals,
+  trips,
+}: {
+  totals: MonthlyReportPayload["totals"];
+  trips: MonthlyReportPayload["trips"];
+}) {
+  return (
+    <PageSection breakBefore>
+      <SectionTitle eyebrow="06 — Récapitulatif">Récapitulatif financier</SectionTitle>
+      <div style={{ maxWidth: "440px", marginLeft: "auto" }}>
+        <FinancialRow label="Heures facturées" value={fmtMoney(totals.hoursAmount)} />
+        {trips.billable ? (
+          <FinancialRow label={`Déplacements (${trips.count})`} value={fmtMoney(totals.tripsAmount)} />
+        ) : (
+          <FinancialRow label={`Déplacements (${trips.count})`} value="Inclus au contrat" muted />
+        )}
+        <hr className="mrd-rule-strong" style={{ margin: "12px 0" }} />
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            padding: "8px 0",
+          }}
+        >
+          <span
+            className="mrd-display"
+            style={{ fontSize: "16px", fontWeight: 500, color: THEME.ink }}
+          >
+            Total
+          </span>
+          <span
+            className="mrd-display"
+            style={{
+              fontSize: "32px",
+              fontWeight: 600,
+              color: THEME.blue,
+              letterSpacing: "-0.02em",
+              fontVariationSettings: "'opsz' 36",
+            }}
+          >
+            {fmtMoneyShort(totals.totalAmount)}
+          </span>
+        </div>
+        <div
+          style={{
+            fontSize: "10px",
+            color: THEME.stone,
+            fontStyle: "italic",
+            marginTop: "20px",
+            paddingTop: "16px",
+            borderTop: `1px solid ${THEME.hair}`,
+          }}
+        >
+          Montants indicatifs — document généré automatiquement à partir des données saisies.
+          La facture officielle peut différer légèrement après réconciliation comptable.
+        </div>
+      </div>
+    </PageSection>
+  );
+}
+
+function FinancialRow({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        padding: "10px 0",
+        fontSize: "13px",
+        color: muted ? THEME.stone : THEME.ink,
+        borderBottom: `1px solid ${THEME.hair}`,
+      }}
+    >
+      <span>{label}</span>
+      <span className="mrd-mono" style={{ fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    </div>
+  );
+}
+
+// ===========================================================================
+// SHARED — table éditoriale réutilisable
+// ===========================================================================
+interface EditorialColumn {
+  key: string;
+  label: string;
+  width?: string;
+  align?: "left" | "right";
+  muted?: boolean;
+  emphasis?: boolean;
+  mono?: boolean;
+}
+function EditorialTable({
+  columns,
+  rows,
+  totalRow,
+}: {
+  columns: EditorialColumn[];
+  rows: Record<string, string>[];
+  totalRow?: Record<string, string>;
+}) {
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+      <thead>
+        <tr style={{ borderBottom: `2px solid ${THEME.ink}` }}>
+          {columns.map((c) => (
+            <th
+              key={c.key}
+              className="mrd-eyebrow"
+              style={{
+                textAlign: c.align ?? "left",
+                padding: "10px 12px 10px 0",
+                color: THEME.ink,
+                fontSize: "10px",
+                fontWeight: 600,
+                width: c.width,
+              }}
+            >
+              {c.label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.id} className="break-inside-avoid" style={{ borderBottom: `1px solid ${THEME.hair}` }}>
+            {columns.map((c) => (
+              <td
+                key={c.key}
+                className={c.mono ? "mrd-mono" : ""}
+                style={{
+                  padding: "12px 12px 12px 0",
+                  textAlign: c.align ?? "left",
+                  color: c.muted ? THEME.stone : THEME.ink,
+                  fontWeight: c.emphasis ? 600 : 400,
+                  fontVariantNumeric: c.align === "right" ? "tabular-nums" : "normal",
+                }}
+              >
+                {r[c.key]}
+              </td>
+            ))}
+          </tr>
+        ))}
+        {totalRow ? (
+          <tr style={{ background: THEME.cream, borderTop: `1px solid ${THEME.creamLine}` }}>
+            {columns.map((c) => (
+              <td
+                key={c.key}
+                style={{
+                  padding: "14px 12px 14px 0",
+                  textAlign: c.align ?? "left",
+                  color: THEME.ink,
+                  fontWeight: 600,
+                  fontVariantNumeric: c.align === "right" ? "tabular-nums" : "normal",
+                }}
+              >
+                {totalRow[c.key]}
+              </td>
+            ))}
+          </tr>
+        ) : null}
+      </tbody>
+    </table>
+  );
+}
+
+// ===========================================================================
+// SHARED — empty state stylisé
+// ===========================================================================
+function EmptyNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        padding: "24px",
+        textAlign: "center",
+        color: THEME.stone,
+        fontStyle: "italic",
+        fontSize: "12px",
+        background: THEME.cream,
+        border: `1px dashed ${THEME.creamLine}`,
+      }}
+    >
+      {children}
+    </div>
   );
 }

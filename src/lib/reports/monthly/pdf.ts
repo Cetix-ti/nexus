@@ -98,9 +98,11 @@ export async function renderReportToPdf(reportId: string): Promise<Buffer> {
       displayHeaderFooter: true,
       headerTemplate: `<div></div>`,
       footerTemplate: `
-        <div style="width:100%;font-family:'Helvetica',sans-serif;font-size:8px;color:#64748b;padding:0 10mm;display:flex;justify-content:space-between;">
-          <span>Rapport mensuel — Cetix</span>
-          <span>Page <span class="pageNumber"></span> / <span class="totalPages"></span></span>
+        <div style="width:100%;font-size:8.5px;color:#78716c;padding:0 14mm;display:flex;justify-content:space-between;align-items:center;font-family:Georgia,serif;letter-spacing:0.06em;">
+          <span style="text-transform:uppercase;">Cetix · Rapport mensuel</span>
+          <span style="font-family:ui-monospace,monospace;letter-spacing:0;color:#0f172a;">
+            <span class="pageNumber"></span> / <span class="totalPages"></span>
+          </span>
         </div>`,
     });
     return Buffer.from(pdf);
