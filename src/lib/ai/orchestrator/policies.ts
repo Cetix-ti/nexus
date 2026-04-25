@@ -605,3 +605,32 @@ export const POLICY_COPILOT_CHAT: AiPolicy = {
   timeoutMs: 120_000,
   promptVersion: "copilot_chat-v2-rag",
 };
+
+// ---------------------------------------------------------------------------
+// Script reverse-engineering — extraction de variables depuis un script
+// déjà adapté à un client pour produire un template générique.
+// L'agent colle un script qui contient des paths/serveurs/IDs spécifiques,
+// l'IA identifie ces valeurs concrètes et propose une généralisation avec
+// des placeholders {{variable_name}}.
+// ---------------------------------------------------------------------------
+export const POLICY_SCRIPT_EXTRACT_VARS: AiPolicy = {
+  feature: "script_extract_vars",
+  // Le script peut contenir des hostnames/paths/IDs clients — on traite ça
+  // comme client_data même si techniquement c'est de la "config".
+  sensitivity: "client_data",
+  // Ollama-first : le script lui-même peut révéler beaucoup d'info infra.
+  // Anthropic en fallback car Claude est meilleur sur du raisonnement
+  // structuré (identifier ce qui est variable vs constante du langage).
+  allowedProviders: ["ollama", "anthropic", "openai"],
+  // On ne scrub PAS les hostnames/clientNames côté local : c'est exactement
+  // ce qu'on veut que l'IA repère pour les transformer en variables.
+  scrub: { pii: true, hostnames: false, clientNames: false },
+  // Cloud : pas le choix de scrub complet (Loi 25). L'IA va voir ORG_1
+  // au lieu de "HVAC", elle proposera quand même des variables génériques.
+  cloudScrubOverride: { pii: true, hostnames: true, clientNames: true },
+  temperature: 0.1, // déterministe, pas créatif
+  maxTokens: 4000,
+  humanApprovalRequired: true, // l'agent valide avant de créer le template
+  timeoutMs: 90_000,
+  promptVersion: "script_extract_vars-v1",
+};

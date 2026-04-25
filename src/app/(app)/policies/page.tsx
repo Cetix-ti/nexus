@@ -4,13 +4,15 @@ import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ShieldCheck, Library, Building2, FileCode2, FileText, Upload, Plus, Search, KeyRound, Globe, Lock, Database, Users,
+  ShieldCheck, Library, Building2, FileCode2, FileText, Upload, Plus, Search, KeyRound, Globe, Lock, Database, Users, Sparkles,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageLoader } from "@/components/ui/page-loader";
 import { NomenclatureSection } from "@/components/policies/nomenclature-section";
+import { ImportScriptFromInstanceModal } from "@/components/policies/import-script-from-instance-modal";
 
 type Tab = "gpo" | "scripts" | "documents" | "ad_groups";
 
@@ -33,11 +35,13 @@ const SUBCAT_LABELS: Record<string, { label: string; icon: typeof KeyRound }> = 
 
 function Content() {
   const params = useSearchParams();
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>((params.get("tab") as Tab) || "gpo");
   const [q, setQ] = useState("");
   const [gpo, setGpo] = useState<GpoRow[] | null>(null);
   const [scripts, setScripts] = useState<ScriptRow[] | null>(null);
   const [docs, setDocs] = useState<DocRow[] | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   async function load() {
     const sp = new URLSearchParams();
@@ -69,11 +73,25 @@ function Content() {
             <p className="mt-0.5 text-[12.5px] text-slate-500">GPO, scripts, politiques de mots de passe, accès privilégiés, rôles M365, coffres, sauvegardes.</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Link href="/policies/new?kind=gpo-import"><Button size="sm" variant="outline" className="gap-1.5"><Upload className="h-4 w-4" /> Importer GPO</Button></Link>
+          {tab === "scripts" && (
+            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="gap-1.5">
+              <Sparkles className="h-4 w-4" /> Importer depuis client (IA)
+            </Button>
+          )}
           <Link href="/policies/new"><Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nouveau</Button></Link>
         </div>
       </div>
+
+      <ImportScriptFromInstanceModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onCreated={({ templateId, organizationName }) => {
+          alert(`Template créé + déploiement chez ${organizationName}.`);
+          router.push(`/policies/scripts/${templateId}`);
+        }}
+      />
 
       <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto -mx-6 px-6 sm:-mx-0 sm:px-0">
         {[
