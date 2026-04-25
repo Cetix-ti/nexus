@@ -69,6 +69,7 @@ export interface MonthlyReportTimeEntryLine {
   /** Flags contextuels — utilisés par le document pour afficher des badges
    *  qui expliquent pourquoi le tarif horaire varie d'une entrée à l'autre
    *  (soir / weekend / urgent / sur place / déplacement facturé). */
+  timeType?: string;
   isAfterHours?: boolean;
   isWeekend?: boolean;
   isUrgent?: boolean;

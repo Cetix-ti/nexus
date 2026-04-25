@@ -93,6 +93,21 @@ function coverageLabel(status: string): string {
     default:                        return status;
   }
 }
+
+function timeTypeLabel(t: string): string {
+  switch (t) {
+    case "remote_work":     return "À distance";
+    case "onsite_work":     return "Sur place";
+    case "travel":          return "Déplacement";
+    case "preparation":     return "Préparation";
+    case "administration":  return "Administration";
+    case "waiting":         return "Attente";
+    case "follow_up":       return "Suivi";
+    case "internal":        return "Interne";
+    case "other":           return "Autre";
+    default:                return t;
+  }
+}
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
@@ -853,25 +868,26 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
           <div className="mrd-eyebrow" style={{ marginBottom: "12px" }}>
             Interventions ({ticket.timeEntries.length})
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {ticket.timeEntries.map((e, idx) => (
               <div
                 key={e.id}
                 className="break-inside-avoid"
                 style={{
                   background: idx % 2 === 0 ? THEME.blueIce : THEME.paper,
-                  borderLeft: `2px solid ${THEME.bluePale}`,
-                  padding: "10px 14px",
+                  border: `1px solid ${THEME.hair}`,
+                  borderLeft: `3px solid ${THEME.blue}`,
+                  padding: "12px 16px",
                 }}
               >
-                {/* Bandeau métadonnées : date + agent + durée + tarif + couverture */}
+                {/* Ligne 1 : date · agent · durée + couverture à droite. */}
                 <div
                   style={{
                     display: "flex",
                     alignItems: "baseline",
                     flexWrap: "wrap",
-                    gap: "12px",
-                    fontSize: "11px",
+                    gap: "10px",
+                    fontSize: "12px",
                   }}
                 >
                   <span
@@ -881,28 +897,16 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
                     {fmtDateShort(e.date)}
                   </span>
                   <span style={{ color: THEME.hair }}>·</span>
-                  <span style={{ color: THEME.ink, fontWeight: 500, whiteSpace: "nowrap" }}>
+                  <span style={{ color: THEME.ink, fontWeight: 600, whiteSpace: "nowrap" }}>
                     {e.agentName}
                   </span>
                   <span style={{ color: THEME.hair }}>·</span>
                   <span
                     className="mrd-mono"
-                    style={{ color: THEME.ink, fontWeight: 600, whiteSpace: "nowrap" }}
+                    style={{ color: THEME.ink, fontWeight: 700, whiteSpace: "nowrap" }}
                   >
                     {fmtMinutesAsHours(e.durationMinutes)}
                   </span>
-                  {e.hourlyRate != null && e.hourlyRate > 0 && (
-                    <>
-                      <span style={{ color: THEME.hair }}>·</span>
-                      <span
-                        className="mrd-mono"
-                        style={{ color: THEME.slate, whiteSpace: "nowrap", fontSize: "10.5px" }}
-                        title="Taux horaire appliqué — peut varier selon les flags soir/weekend/urgent"
-                      >
-                        {fmtMoney(e.hourlyRate)}/h
-                      </span>
-                    </>
-                  )}
                   <span
                     className="mrd-eyebrow"
                     style={{ color: THEME.accent, marginLeft: "auto", whiteSpace: "nowrap" }}
@@ -911,22 +915,29 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
                   </span>
                 </div>
 
-                {/* Badges contextuels — expliquent pourquoi le tarif est plus
-                    élevé que le taux de base (soir, weekend, urgent, etc.).
-                    Indispensable pour que le client comprenne ses montants. */}
-                {(e.isAfterHours || e.isWeekend || e.isUrgent || e.isOnsite || e.hasTravelBilled) && (
+                {/* Ligne 2 : badges contextuels obligatoirement visibles
+                    quand un modificateur de tarif s'applique (soir, weekend,
+                    urgent, sur place, déplacement). Sans cette ligne le
+                    client ne comprenait pas pourquoi le taux horaire varie
+                    d'une entrée à l'autre. */}
+                {(e.isAfterHours || e.isWeekend || e.isUrgent || e.isOnsite || e.hasTravelBilled || e.timeType) && (
                   <div
                     style={{
-                      marginTop: "6px",
+                      marginTop: "8px",
                       display: "flex",
                       flexWrap: "wrap",
-                      gap: "4px",
+                      gap: "5px",
+                      alignItems: "center",
                     }}
                   >
-                    {e.isAfterHours && <ContextBadge label="De soir" tone="indigo" />}
-                    {e.isWeekend && <ContextBadge label="Weekend" tone="purple" />}
-                    {e.isUrgent && <ContextBadge label="Urgent" tone="rose" />}
+                    {e.timeType && e.timeType !== "remote_work" && e.timeType !== "onsite_work" && (
+                      <ContextBadge label={timeTypeLabel(e.timeType)} tone="slate" />
+                    )}
                     {e.isOnsite && <ContextBadge label="Sur place" tone="amber" />}
+                    {!e.isOnsite && e.timeType === "remote_work" && <ContextBadge label="À distance" tone="slate" />}
+                    {e.isAfterHours && <ContextBadge label="Tarif soir" tone="indigo" />}
+                    {e.isWeekend && <ContextBadge label="Tarif weekend" tone="purple" />}
+                    {e.isUrgent && <ContextBadge label="Tarif urgent" tone="rose" />}
                     {e.hasTravelBilled && (
                       <ContextBadge
                         label={
@@ -939,6 +950,59 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
                     )}
                   </div>
                 )}
+
+                {/* Ligne 3 : tarif horaire + sous-total montant (toujours
+                    affiché si on a un montant). Mis EN ÉVIDENCE pour que
+                    le client voie immédiatement quel taux a été appliqué. */}
+                {(e.hourlyRate != null && e.hourlyRate > 0) || e.amount != null ? (
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      paddingTop: "8px",
+                      borderTop: `1px dashed ${THEME.hair}`,
+                      display: "flex",
+                      alignItems: "baseline",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      fontSize: "11.5px",
+                    }}
+                  >
+                    <div>
+                      {e.hourlyRate != null && e.hourlyRate > 0 ? (
+                        <>
+                          <span className="mrd-eyebrow" style={{ color: THEME.slate }}>Taux appliqué · </span>
+                          <span
+                            className="mrd-mono"
+                            style={{
+                              color: THEME.blueDeep,
+                              fontWeight: 700,
+                              fontSize: "13px",
+                            }}
+                          >
+                            {fmtMoney(e.hourlyRate)}/h
+                          </span>
+                        </>
+                      ) : (
+                        <span className="mrd-eyebrow" style={{ color: THEME.slate }}>Inclus / non facturable</span>
+                      )}
+                    </div>
+                    {e.amount != null && (
+                      <div>
+                        <span className="mrd-eyebrow" style={{ color: THEME.slate }}>Montant · </span>
+                        <span
+                          className="mrd-mono"
+                          style={{
+                            color: THEME.ink,
+                            fontWeight: 700,
+                            fontSize: "13px",
+                          }}
+                        >
+                          {fmtMoney(e.amount)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
                 {/* Note / description sur sa propre ligne pour respirer et
                     permettre le wrap multi-lignes naturellement. */}
                 <p
@@ -1000,7 +1064,7 @@ function ContextBadge({
   tone,
 }: {
   label: string;
-  tone: "indigo" | "purple" | "rose" | "amber" | "cyan";
+  tone: "indigo" | "purple" | "rose" | "amber" | "cyan" | "slate";
 }) {
   const tones: Record<string, { bg: string; fg: string }> = {
     indigo: { bg: "#EEF2FF", fg: "#4338CA" }, // soir
@@ -1008,6 +1072,7 @@ function ContextBadge({
     rose:   { bg: "#FFF1F2", fg: "#BE123C" }, // urgent
     amber:  { bg: "#FFFBEB", fg: "#B45309" }, // sur place
     cyan:   { bg: "#ECFEFF", fg: "#0E7490" }, // déplacement
+    slate:  { bg: "#F1F5F9", fg: "#475569" }, // type de travail / à distance
   };
   const c = tones[tone];
   return (

@@ -126,6 +126,7 @@ export async function buildMonthlyReportPayload(
       startedAt: true,
       durationMinutes: true,
       description: true,
+      timeType: true,
       isOnsite: true,
       isAfterHours: true,
       isWeekend: true,
@@ -321,6 +322,7 @@ export async function buildMonthlyReportPayload(
       // Flags contextuels — permettent au document de rendre des badges
       // (Soir / Weekend / Urgent / Sur place / Déplacement+durée) qui
       // expliquent les variations de tarif horaire visible côté client.
+      timeType: e.timeType,
       isAfterHours: e.isAfterHours,
       isWeekend: e.isWeekend,
       isUrgent: e.isUrgent,
