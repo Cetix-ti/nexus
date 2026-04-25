@@ -96,6 +96,7 @@ model Organization {
   persistenceWhitelists SecurityPersistenceWhitelist[]
   aiConsent             AiConsent?
   mileageRate           OrgMileageRate?
+  billingOverride       ClientBillingOverride?
   addons                OrganizationAddon[]
   publishedDashboards   PublishedDashboard[]
   monthlyReports        MonthlyClientReport[]
@@ -2139,6 +2140,41 @@ model OrganizationAddon {
   @@index([organizationId])
   @@index([addonId])
   @@map("organization_addons")
+}
+
+/// Override de facturation par client (org). Tous les champs numériques
+/// sont optionnels — quand non null ils remplacent le champ correspondant
+/// du `BillingProfile` de base. Un seul override par org (unique).
+model ClientBillingOverride {
+  id                       String       @id @default(cuid())
+  organizationId           String       @unique @map("organization_id")
+  organization             Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// ID du BillingProfile de base (ex. "bp_standard"). Pour l'instant on
+  /// stocke le slug textuel (mock-data.ts) — quand les profils seront
+  /// migrés en DB, ce sera une FK.
+  baseProfileId            String       @map("base_profile_id")
+  isActive                 Boolean      @default(true) @map("is_active")
+  effectiveFrom            DateTime     @default(now()) @map("effective_from")
+  effectiveTo              DateTime?    @map("effective_to")
+  // --- Taux numériques (null = hérite de la base) -----------------------
+  standardRate             Float?       @map("standard_rate")
+  onsiteRate               Float?       @map("onsite_rate")
+  remoteRate               Float?       @map("remote_rate")
+  urgentRate               Float?       @map("urgent_rate")
+  afterHoursRate           Float?       @map("after_hours_rate")
+  weekendRate              Float?       @map("weekend_rate")
+  travelRate               Float?       @map("travel_rate")
+  ratePerKm                Float?       @map("rate_per_km")
+  travelFlatFee            Float?       @map("travel_flat_fee")
+  hourBankOverageRate      Float?       @map("hour_bank_overage_rate")
+  mspExcludedRate          Float?       @map("msp_excluded_rate")
+  minimumBillableMinutes   Int?         @map("minimum_billable_minutes")
+  roundingIncrementMinutes Int?         @map("rounding_increment_minutes")
+  notes                    String?      @db.Text
+  createdAt                DateTime     @default(now()) @map("created_at")
+  updatedAt                DateTime     @updatedAt @map("updated_at")
+
+  @@map("client_billing_overrides")
 }
 
 model OrgMileageRate {

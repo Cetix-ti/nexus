@@ -15,10 +15,8 @@
 import prisma from "@/lib/prisma";
 import { decideBilling } from "./engine";
 import { resolveClientBillingProfile } from "./engine";
-import {
-  mockBillingProfiles,
-  getClientBillingOverride,
-} from "./mock-data";
+import { mockBillingProfiles } from "./mock-data";
+import { getClientBillingOverrideForOrg } from "./overrides-db";
 import { toEngineContract, pickActiveContract } from "./contract-mapper";
 import type { BillingDecision, Contract, TimeType } from "./types";
 
@@ -47,10 +45,11 @@ export interface ServerDecision {
  * le contrat choisi (utilisé par le caller pour déduire de la banque).
  */
 export async function resolveDecisionForEntry(input: DecideInput): Promise<ServerDecision> {
-  // 1. Profil de facturation (base + override éventuel, source actuelle = mocks
-  //    + localStorage côté serveur, futur = Prisma). En attendant une migration
-  //    complète, on utilise le même in-memory que /api/v1/organizations/[id]/billing.
-  const override = getClientBillingOverride(input.organizationId);
+  // 1. Profil de facturation (base + override éventuel). L'override est en
+  //    DB (model ClientBillingOverride). Les profils de base restent en
+  //    mock-data.ts pour l'instant.
+  const override =
+    (await getClientBillingOverrideForOrg(input.organizationId)) ?? undefined;
   const baseProfile =
     (override && mockBillingProfiles.find((p) => p.id === override.baseProfileId)) ||
     mockBillingProfiles.find((p) => p.isDefault) ||

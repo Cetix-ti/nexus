@@ -26,10 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { OrgAddonsSection } from "@/components/billing/org-addons-section";
-import {
-  mockBillingProfiles,
-  mockClientBillingOverrides,
-} from "@/lib/billing/mock-data";
+import { mockBillingProfiles } from "@/lib/billing/mock-data";
 import type {
   BillingProfile,
   ClientBillingOverride,
@@ -622,42 +619,45 @@ function ClientBillingOverridesSectionInner({
   if (typeof window !== "undefined") {
     console.log("[Facturation] section mounted", { organizationId, organizationName });
   }
-  // Find existing override
-  const existingOverride = useMemo(
-    () =>
-      mockClientBillingOverrides.find(
-        (o) => o.organizationId === organizationId
-      ),
-    [organizationId]
-  );
-
-  // Pick base profile (existing override → its base, otherwise default)
+  // Profil de base : profil "Standard MSP" par défaut. Une fois l'override
+  // chargé depuis l'API, baseProfileId peut pointer vers un autre profil.
   const baseProfile: BillingProfile = useMemo(() => {
-    if (existingOverride) {
-      const found = mockBillingProfiles.find(
-        (p) => p.id === existingOverride.baseProfileId
-      );
-      if (found) return found;
-    }
     return (
       mockBillingProfiles.find((p) => p.isDefault) || mockBillingProfiles[0]
     );
-  }, [existingOverride]);
+  }, []);
 
-  // Local mutable state for the override
+  // Local mutable state for the override (rempli par l'API au mount).
   const [overrideState, setOverrideState] = useState<ClientBillingOverride>(
-    () =>
-      existingOverride ?? {
-        id: `cbo_new_${organizationId}`,
-        organizationId,
-        organizationName,
-        baseProfileId: baseProfile.id,
-        isActive: true,
-        effectiveFrom: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }
+    () => ({
+      id: `cbo_new_${organizationId}`,
+      organizationId,
+      organizationName,
+      baseProfileId: baseProfile.id,
+      isActive: true,
+      effectiveFrom: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }),
   );
+
+  // Charge l'override existant depuis la DB au montage.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/v1/organizations/${organizationId}/billing`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const ov = data?.data?.override as ClientBillingOverride | null;
+        if (ov) {
+          setOverrideState((prev) => ({ ...prev, ...ov, organizationId, organizationName }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, organizationName]);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
@@ -782,13 +782,42 @@ function ClientBillingOverridesSectionInner({
   };
   const commitSave = async () => {
     setSaving(true);
-    // Flush localStorage — c'est la seule écriture disque de toute la
-    // session d'édition.
+    // Flush localStorage — config locale (banque d'heures, FTIG, types
+    // de travail) reste en localStorage pour le moment.
     saveClientBillingTypes(organizationId, billingTypes);
     saveHourBankConfig(organizationId, hourBankCfg);
     saveFtigConfig(organizationId, ftigCfg);
     saveWorkTypes(organizationId, workTypes);
-    await new Promise((r) => setTimeout(r, 200));
+
+    // Persiste les overrides de taux côté serveur (DB, table
+    // client_billing_overrides). Sans cette étape, les taux restaient
+    // ignorés par l'engine de facturation et n'apparaissaient pas dans
+    // les rapports mensuels.
+    try {
+      const ratePayload: Record<string, unknown> = {
+        baseProfileId: overrideState.baseProfileId,
+        isActive: overrideState.isActive ?? true,
+        notes: overrideState.notes ?? null,
+      };
+      // Champs numériques — null efface la surcharge, number la pose.
+      const numericKeys: NumericField[] = ALL_NUMERIC_FIELDS;
+      for (const k of numericKeys) {
+        const v = (overrideState as unknown as Record<string, unknown>)[k];
+        ratePayload[k] = v === undefined || v === null || v === "" ? null : Number(v);
+      }
+      const r = await fetch(`/api/v1/organizations/${organizationId}/billing`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ratePayload),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        console.error("Failed to save billing override:", d);
+      }
+    } catch (e) {
+      console.error("Failed to save billing override:", e);
+    }
+
     setSaving(false);
     setSavedAt(new Date().toLocaleTimeString("fr-CA"));
     setBaseline(null);
