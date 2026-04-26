@@ -714,6 +714,51 @@ function ClientBillingOverridesSectionInner({
   const [ftigCfg, setFtigCfg] = useState<FtigConfig>(
     () => loadFtigConfig(organizationId),
   );
+  // Phase 2B/2C — sync DB pour HourBankConfig + FtigConfig. Au mount,
+  // si la DB a une config non-vide, elle prime sur le localStorage.
+  // Sinon migration silencieuse (PUT) du localStorage vers DB.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetch(`/api/v1/organizations/${organizationId}/hour-bank`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null)),
+      fetch(`/api/v1/organizations/${organizationId}/ftig`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null)),
+    ])
+      .then(([hb, ft]) => {
+        if (cancelled) return;
+        const hbCfg = (hb?.data ?? {}) as HourBankConfig;
+        const ftCfg = (ft?.data ?? {}) as FtigConfig;
+        if (hbCfg && Object.keys(hbCfg).length > 0) {
+          setHourBankCfg(hbCfg);
+          saveHourBankConfig(organizationId, hbCfg);
+        } else {
+          const local = loadHourBankConfig(organizationId);
+          if (Object.keys(local).length > 0) {
+            fetch(`/api/v1/organizations/${organizationId}/hour-bank`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(local),
+            }).catch(() => {});
+          }
+        }
+        if (ftCfg && Object.keys(ftCfg).length > 0) {
+          setFtigCfg(ftCfg);
+          saveFtigConfig(organizationId, ftCfg);
+        } else {
+          const local = loadFtigConfig(organizationId);
+          if (Object.keys(local).length > 0) {
+            fetch(`/api/v1/organizations/${organizationId}/ftig`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(local),
+            }).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [organizationId]);
   const [workTypes, setWorkTypes] = useState<WorkTypeOption[]>(
     () => loadWorkTypes(organizationId),
   );
@@ -906,6 +951,17 @@ function ClientBillingOverridesSectionInner({
     }).catch(() => {});
     saveHourBankConfig(organizationId, hourBankCfg);
     saveFtigConfig(organizationId, ftigCfg);
+    // Phase 2B/2C — DB sync en arrière-plan.
+    fetch(`/api/v1/organizations/${organizationId}/hour-bank`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(hourBankCfg),
+    }).catch(() => {});
+    fetch(`/api/v1/organizations/${organizationId}/ftig`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ftigCfg),
+    }).catch(() => {});
     saveWorkTypes(organizationId, workTypes);
 
     // Persiste les overrides de taux côté serveur (DB, table

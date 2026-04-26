@@ -101,6 +101,8 @@ model Organization {
   rateTiers             OrgRateTier[]
   userScopes            UserOrganizationScope[]
   scheduledReports      ScheduledReport[]
+  hourBankConfig        OrgHourBankConfig?
+  ftigConfig            OrgFtigConfig?
   addons                OrganizationAddon[]
   publishedDashboards   PublishedDashboard[]
   monthlyReports        MonthlyClientReport[]
@@ -2230,6 +2232,43 @@ model ClientBillingOverride {
   updatedAt                DateTime     @updatedAt @map("updated_at")
 
   @@map("client_billing_overrides")
+}
+
+/// Configuration de banque d'heures pour un client (UI Phase 2B).
+///
+/// Avant : nexus:client-hour-bank:{orgId} en localStorage. Per-navigateur,
+/// non synchro entre agents. Maintenant : table DB unique pour le tenant.
+///
+/// IMPORTANT : ce modèle stocke le SHAPE D'UI (champs métier visibles
+/// dans la page Facturation : totalHours, payments, includedTravelCount,
+/// etc.). Le moteur de facturation continue de lire `Contract.settings.hourBank`
+/// (shape engine, plus restreint). Les deux shapes doivent être tenus
+/// alignés manuellement pour l'instant ; un futur refactor unifiera
+/// quand les besoins seront stabilisés.
+model OrgHourBankConfig {
+  id             String       @id @default(cuid())
+  organizationId String       @unique @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Shape complet du UI en JSON pour rester flexible face aux ajouts
+  /// (nouveaux champs payments[], inclusions, etc.) sans migration.
+  config         Json
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@map("org_hour_bank_configs")
+}
+
+/// Configuration FTIG (forfait tout inclus garantie) pour un client.
+/// Même pattern que OrgHourBankConfig — JSON pour la flexibilité.
+model OrgFtigConfig {
+  id             String       @id @default(cuid())
+  organizationId String       @unique @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  config         Json
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@map("org_ftig_configs")
 }
 
 /// Audit log d'une saisie de temps (Phase 10D).
