@@ -10,9 +10,10 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { readReportPdfOrGenerate } from "@/lib/reports/monthly/service";
+import { renderReportToPdf } from "@/lib/reports/monthly/pdf";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
   const me = await getCurrentUser();
@@ -22,6 +23,7 @@ export async function GET(
   }
 
   const { id } = await ctx.params;
+  const variant = new URL(req.url).searchParams.get("variant");
 
   const meta = await prisma.monthlyClientReport.findUnique({
     where: { id },
@@ -33,9 +35,16 @@ export async function GET(
   if (!meta) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   try {
-    const pdf = await readReportPdfOrGenerate(id);
+    // Variante "heures seulement" : toujours générée à la volée, pas
+    // persistée. Le fichier sur disque reste la version $ "officielle"
+    // pour ne pas dupliquer le stockage.
+    const pdf =
+      variant === "hours_only"
+        ? await renderReportToPdf(id, { hideRates: true })
+        : await readReportPdfOrGenerate(id);
     const periodStr = meta.period.toISOString().slice(0, 7);
-    const filename = `rapport-${meta.organization.slug}-${periodStr}.pdf`;
+    const suffix = variant === "hours_only" ? "-heures" : "";
+    const filename = `rapport-${meta.organization.slug}-${periodStr}${suffix}.pdf`;
 
     return new NextResponse(new Uint8Array(pdf), {
       status: 200,

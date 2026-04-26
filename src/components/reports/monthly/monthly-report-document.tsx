@@ -116,14 +116,26 @@ function capitalize(s: string): string {
 // Génère un court paragraphe synthèse pour la lettre exécutive — calculé
 // depuis les totaux. Pas d'IA, juste de la composition textuelle.
 // ---------------------------------------------------------------------------
-function executiveSummaryText(payload: MonthlyReportPayload): string {
+function executiveSummaryText(
+  payload: MonthlyReportPayload,
+  opts: { hideRates?: boolean } = {},
+): string {
   const t = payload.totals;
-  const billableShare = t.totalHours > 0
-    ? Math.round((t.billableHours / t.totalHours) * 100)
-    : 0;
   const tripsLine = payload.trips.count > 0
     ? `${payload.trips.count} déplacement${payload.trips.count > 1 ? "s" : ""}`
     : "aucun déplacement";
+  // En variante "heures seulement", on ne mentionne pas la part facturable
+  // (calcul tiré du rapport $) — on reste sur le décompte d'heures pur.
+  if (opts.hideRates) {
+    return `Au cours de ${payload.period.label}, l'équipe Cetix a livré `
+      + `${fmtHours(t.totalHours)} de service à ${payload.organization.name}. `
+      + `${t.ticketsResolvedCount} ticket${t.ticketsResolvedCount > 1 ? "s ont été résolus" : " a été résolu"} `
+      + `sur ${t.ticketsTouchedCount} pris en charge, et ${tripsLine} `
+      + `${payload.trips.count > 0 ? "a été" : "n'a été"} consigné${payload.trips.count !== 1 ? "s" : ""} sur la période.`;
+  }
+  const billableShare = t.totalHours > 0
+    ? Math.round((t.billableHours / t.totalHours) * 100)
+    : 0;
   return `Au cours de ${payload.period.label}, l'équipe Cetix a livré `
     + `${fmtHours(t.totalHours)} de service à ${payload.organization.name}, dont `
     + `${fmtHours(t.billableHours)} facturables (${billableShare}%) et `
@@ -139,12 +151,16 @@ function executiveSummaryText(payload: MonthlyReportPayload): string {
 export function MonthlyReportDocument({
   payload,
   logoSrc,
+  hideRates = false,
 }: {
   payload: MonthlyReportPayload;
   logoSrc: string;
+  /** Variante "heures seulement" : masque tous les montants et taux $.
+   *  Les libellés (palier, type) restent visibles, ainsi que les durées. */
+  hideRates?: boolean;
 }) {
   const { organization, period, totals, byAgent, byRequester, trips, tickets } = payload;
-  const summary = executiveSummaryText(payload);
+  const summary = executiveSummaryText(payload, { hideRates });
 
   return (
     <>
@@ -203,12 +219,12 @@ export function MonthlyReportDocument({
         }}
       >
         <CoverPage payload={payload} logoSrc={logoSrc} summary={summary} />
-        <ExecutiveSummary payload={payload} />
-        <AgentBreakdownSection byAgent={byAgent} totals={totals} />
+        <ExecutiveSummary payload={payload} hideRates={hideRates} />
+        <AgentBreakdownSection byAgent={byAgent} totals={totals} hideRates={hideRates} />
         {byRequester.length > 0 && <RequesterSection byRequester={byRequester} />}
-        <TripsSection trips={trips} />
-        <TicketsSection tickets={tickets} />
-        <FinancialSummary totals={totals} trips={trips} />
+        <TripsSection trips={trips} hideRates={hideRates} />
+        <TicketsSection tickets={tickets} hideRates={hideRates} />
+        {!hideRates && <FinancialSummary totals={totals} trips={trips} />}
       </div>
     </>
   );
@@ -451,14 +467,14 @@ function PageSection({
 // ===========================================================================
 // EXECUTIVE SUMMARY — KPIs avec hiérarchie : un héros + secondaires
 // ===========================================================================
-function ExecutiveSummary({ payload }: { payload: MonthlyReportPayload }) {
+function ExecutiveSummary({ payload, hideRates }: { payload: MonthlyReportPayload; hideRates?: boolean }) {
   const { totals, trips } = payload;
   const billableShare = totals.totalHours > 0 ? Math.round((totals.billableHours / totals.totalHours) * 100) : 0;
   return (
     <PageSection breakAfter>
       <SectionTitle eyebrow="01 — En un coup d'œil">Sommaire exécutif</SectionTitle>
 
-      {/* Hero KPI : montant total */}
+      {/* Hero KPI : en mode "$" → montant total ; en mode heures → heures totales */}
       <div
         style={{
           display: "grid",
@@ -468,11 +484,19 @@ function ExecutiveSummary({ payload }: { payload: MonthlyReportPayload }) {
           marginBottom: "32px",
         }}
       >
-        <HeroKpi
-          label="Total du mois"
-          value={fmtMoneyShort(totals.totalAmount)}
-          sub={`${fmtMoney(totals.hoursAmount)} heures + ${fmtMoney(totals.tripsAmount)} déplacements`}
-        />
+        {hideRates ? (
+          <HeroKpi
+            label="Heures totales du mois"
+            value={fmtHours(totals.totalHours)}
+            sub={`${fmtHours(totals.billableHours)} facturables · ${fmtHours(totals.coveredHours)} couvertes`}
+          />
+        ) : (
+          <HeroKpi
+            label="Total du mois"
+            value={fmtMoneyShort(totals.totalAmount)}
+            sub={`${fmtMoney(totals.hoursAmount)} heures + ${fmtMoney(totals.tripsAmount)} déplacements`}
+          />
+        )}
         <SideKpiStack
           items={[
             { label: "Heures totales", value: fmtHours(totals.totalHours), sub: `${fmtHours(totals.billableHours)} facturables` },
@@ -623,10 +647,20 @@ function StatBand({ label, value, positive }: { label: string; value: string; po
 function AgentBreakdownSection({
   byAgent,
   totals,
+  hideRates,
 }: {
   byAgent: MonthlyReportPayload["byAgent"];
   totals: MonthlyReportPayload["totals"];
+  hideRates?: boolean;
 }) {
+  // En variante "heures seulement", on retire les colonnes Taux moy. et
+  // Facturé pour ne pas exposer la facturation.
+  const moneyCols = hideRates
+    ? []
+    : [
+        { key: "rate", label: "Taux moy.", align: "right" as const, muted: true },
+        { key: "billed", label: "Facturé", align: "right" as const, emphasis: true },
+      ];
   return (
     <PageSection breakAfter>
       <SectionTitle eyebrow="02 — Équipe">Répartition par technicien</SectionTitle>
@@ -639,25 +673,28 @@ function AgentBreakdownSection({
             { key: "hours", label: "Heures", align: "right" },
             { key: "share", label: "Part", align: "right", muted: true },
             { key: "billable", label: "Facturables", align: "right" },
-            { key: "rate", label: "Taux moy.", align: "right", muted: true },
-            { key: "billed", label: "Facturé", align: "right", emphasis: true },
+            ...moneyCols,
           ]}
-          rows={byAgent.map((a) => ({
-            id: a.agent.id,
-            name: a.agent.fullName,
-            hours: fmtHours(a.hours),
-            share: `${(a.share * 100).toLocaleString("fr-CA", { maximumFractionDigits: 0 })}%`,
-            billable: fmtHours(a.billableHours),
-            rate: a.averageRate != null ? fmtMoney(a.averageRate) : "—",
-            billed: fmtMoney(a.billedAmount),
-          }))}
+          rows={byAgent.map((a) => {
+            const base: Record<string, string> = {
+              id: a.agent.id,
+              name: a.agent.fullName,
+              hours: fmtHours(a.hours),
+              share: `${(a.share * 100).toLocaleString("fr-CA", { maximumFractionDigits: 0 })}%`,
+              billable: fmtHours(a.billableHours),
+            };
+            if (!hideRates) {
+              base.rate = a.averageRate != null ? fmtMoney(a.averageRate) : "—";
+              base.billed = fmtMoney(a.billedAmount);
+            }
+            return base;
+          })}
           totalRow={{
             name: "Total",
             hours: fmtHours(totals.totalHours),
             share: "—",
             billable: fmtHours(totals.billableHours),
-            rate: "—",
-            billed: fmtMoney(totals.hoursAmount),
+            ...(hideRates ? {} : { rate: "—", billed: fmtMoney(totals.hoursAmount) }),
           }}
         />
       )}
@@ -696,12 +733,21 @@ function RequesterSection({ byRequester }: { byRequester: MonthlyReportPayload["
 // ===========================================================================
 // TRIPS
 // ===========================================================================
-function TripsSection({ trips }: { trips: MonthlyReportPayload["trips"] }) {
+function TripsSection({
+  trips,
+  hideRates,
+}: {
+  trips: MonthlyReportPayload["trips"];
+  hideRates?: boolean;
+}) {
+  // En mode "heures seulement", on masque les montants même si le client
+  // est facturable.
+  const showBilled = trips.billable && !hideRates;
   return (
     <PageSection breakAfter>
       <SectionTitle eyebrow="04 — Mobilité">Déplacements</SectionTitle>
 
-      {!trips.billable && trips.nonBillableReason ? (
+      {!trips.billable && trips.nonBillableReason && !hideRates ? (
         <div
           style={{
             background: THEME.blueIce,
@@ -725,7 +771,7 @@ function TripsSection({ trips }: { trips: MonthlyReportPayload["trips"] }) {
             { key: "agent", label: "Technicien", width: "22%" },
             { key: "ticket", label: "Ticket", width: "16%", mono: true },
             { key: "subject", label: "Sujet", muted: true },
-            ...(trips.billable
+            ...(showBilled
               ? [{ key: "billed", label: "Facturé", align: "right" as const, emphasis: true }]
               : []),
           ]}
@@ -735,7 +781,7 @@ function TripsSection({ trips }: { trips: MonthlyReportPayload["trips"] }) {
             agent: t.agentName,
             ticket: t.ticketDisplayId ?? "—",
             subject: t.ticketSubject ?? "—",
-            ...(trips.billable
+            ...(showBilled
               ? { billed: t.billedAmount != null ? fmtMoney(t.billedAmount) : "—" }
               : {}),
           }))}
@@ -748,7 +794,13 @@ function TripsSection({ trips }: { trips: MonthlyReportPayload["trips"] }) {
 // ===========================================================================
 // TICKETS DETAIL
 // ===========================================================================
-function TicketsSection({ tickets }: { tickets: MonthlyReportTicketBlock[] }) {
+function TicketsSection({
+  tickets,
+  hideRates,
+}: {
+  tickets: MonthlyReportTicketBlock[];
+  hideRates?: boolean;
+}) {
   return (
     <PageSection>
       <SectionTitle eyebrow="05 — Détail des interventions">Tickets traités</SectionTitle>
@@ -756,14 +808,14 @@ function TicketsSection({ tickets }: { tickets: MonthlyReportTicketBlock[] }) {
         <EmptyNote>Aucun ticket à afficher.</EmptyNote>
       ) : (
         <div style={{ display: "grid", gap: "20px" }}>
-          {tickets.map((t) => <TicketBlock key={t.ticketId} ticket={t} />)}
+          {tickets.map((t) => <TicketBlock key={t.ticketId} ticket={t} hideRates={hideRates} />)}
         </div>
       )}
     </PageSection>
   );
 }
 
-function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
+function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; hideRates?: boolean }) {
   return (
     <article
       className="break-inside-avoid"
@@ -834,7 +886,7 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
           <Meta2 label="Demandeur" value={ticket.requesterName} />
         ) : null}
         <Meta2 label="Temps total" value={fmtMinutesAsHours(ticket.totalMinutes)} mono />
-        {ticket.totalAmount > 0 ? <Meta2 label="Facturé" value={fmtMoney(ticket.totalAmount)} mono /> : null}
+        {!hideRates && ticket.totalAmount > 0 ? <Meta2 label="Facturé" value={fmtMoney(ticket.totalAmount)} mono /> : null}
         {ticket.resolvedAt ? <Meta2 label="Résolu le" value={fmtDateShort(ticket.resolvedAt.slice(0, 10))} /> : null}
       </div>
 
@@ -964,8 +1016,9 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
 
                 {/* Ligne 3 : tarif horaire + sous-total montant (toujours
                     affiché si on a un montant). Mis EN ÉVIDENCE pour que
-                    le client voie immédiatement quel taux a été appliqué. */}
-                {(e.hourlyRate != null && e.hourlyRate > 0) || e.amount != null ? (
+                    le client voie immédiatement quel taux a été appliqué.
+                    Masqué en variante "heures seulement". */}
+                {!hideRates && ((e.hourlyRate != null && e.hourlyRate > 0) || e.amount != null) ? (
                   <div
                     style={{
                       marginTop: "8px",
