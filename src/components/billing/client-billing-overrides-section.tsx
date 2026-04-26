@@ -678,6 +678,36 @@ function ClientBillingOverridesSectionInner({
   const [billingTypes, setBillingTypes] = useState<ClientBillingType[]>(
     () => loadClientBillingTypes(organizationId),
   );
+  // Phase 2D — billingTypes maintenant en DB sur Organization. Au mount,
+  // on fetch /api/v1/organizations/[id] et on remplace le state si la
+  // DB a une liste non-vide. Migration silencieuse : si DB vide ET
+  // localStorage non-vide, on PATCH pour seeder.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/v1/organizations/${organizationId}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((org) => {
+        if (cancelled) return;
+        const dbTypes = Array.isArray(org?.billingTypes) ? (org.billingTypes as ClientBillingType[]) : null;
+        if (!dbTypes) return;
+        if (dbTypes.length > 0) {
+          setBillingTypes(dbTypes);
+          saveClientBillingTypes(organizationId, dbTypes);
+        } else {
+          const local = loadClientBillingTypes(organizationId);
+          if (local.length > 0) {
+            // Seed DB depuis localStorage
+            fetch(`/api/v1/organizations/${organizationId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ billingTypes: local }),
+            }).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [organizationId]);
   const [hourBankCfg, setHourBankCfg] = useState<HourBankConfig>(
     () => loadHourBankConfig(organizationId),
   );
@@ -867,7 +897,13 @@ function ClientBillingOverridesSectionInner({
     setSaving(true);
     // Flush localStorage — config locale (banque d'heures, FTIG, types
     // de travail) reste en localStorage pour le moment.
+    // Phase 2D — write localStorage (cache rapide) ET PATCH DB.
     saveClientBillingTypes(organizationId, billingTypes);
+    fetch(`/api/v1/organizations/${organizationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ billingTypes }),
+    }).catch(() => {});
     saveHourBankConfig(organizationId, hourBankCfg);
     saveFtigConfig(organizationId, ftigCfg);
     saveWorkTypes(organizationId, workTypes);

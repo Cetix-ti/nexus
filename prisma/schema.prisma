@@ -137,6 +137,12 @@ model Organization {
   /// Côté agent : les deux variantes restent toujours accessibles peu
   /// importe ce paramètre.
   clientPortalReportVariant String @default("BOTH") @map("client_portal_report_variant")
+  /// Types de facturation actifs pour ce client : sous-ensemble de
+  /// "hour_bank" / "professional_services" / "ftig". Drive l'affichage
+  /// des onglets/sections dans la page Facturation. Avant Phase 2D :
+  /// localStorage par-navigateur, perdu au reset, non synchro entre
+  /// agents.
+  billingTypes              String[] @default([]) @map("billing_types")
 
   @@map("organizations")
 }

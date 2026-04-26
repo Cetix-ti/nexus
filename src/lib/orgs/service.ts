@@ -221,6 +221,8 @@ export async function updateOrganization(
     monthlyReportAutoPublish: boolean;
     /** Variante de rapport mensuel exposée au portail client (BOTH par défaut). */
     clientPortalReportVariant: "BOTH" | "WITH_RATES" | "HOURS_ONLY";
+    /** Types de facturation actifs ("hour_bank" / "professional_services" / "ftig"). */
+    billingTypes: string[];
   }>
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
