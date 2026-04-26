@@ -69,34 +69,69 @@ export function AddExpenseModal({
     setNotes("");
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const entry: ExpenseEntry = {
-      id: `ex_${Date.now()}`,
-      ticketId,
-      ticketNumber,
-      organizationId,
-      organizationName,
-      agentId: "usr_current",
-      agentName: currentUserName,
-      date: new Date(`${date}T00:00:00`).toISOString(),
-      expenseType,
-      description,
-      amount,
-      isReimbursable,
-      isRebillable,
-      hasReceipt,
-      coverageStatus: isRebillable ? "billable" : "non_billable",
-      coverageReason: isRebillable
-        ? "Frais refacturable au client"
-        : "Frais non refacturable",
-      approvalStatus: "draft",
-      notes,
-      createdAt: new Date().toISOString(),
-    };
-    onSave(entry);
-    reset();
-    onClose();
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      // Persiste via /api/v1/my-space/expense-entries qui auto-attache à
+      // un rapport DRAFT du mois courant (ou en crée un). Avant ce fix,
+      // la saisie ne quittait pas le state React → perdue au refresh.
+      const r = await fetch("/api/v1/my-space/expense-entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date,
+          category: expenseType,
+          description: description || EXPENSE_TYPE_LABELS[expenseType],
+          amount,
+          vendor: null,
+          isBillable: isRebillable,
+          organizationId,
+          ticketId,
+        }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error ?? `Erreur HTTP ${r.status}`);
+      }
+      const created = await r.json();
+      // Conserve la signature publique onSave(ExpenseEntry) pour le UI
+      // optimiste de la section ticket-billing.
+      const entry: ExpenseEntry = {
+        id: created.id ?? `ex_${Date.now()}`,
+        ticketId,
+        ticketNumber,
+        organizationId,
+        organizationName,
+        agentId: "usr_current",
+        agentName: currentUserName,
+        date: new Date(`${date}T00:00:00`).toISOString(),
+        expenseType,
+        description,
+        amount,
+        isReimbursable,
+        isRebillable,
+        hasReceipt,
+        coverageStatus: isRebillable ? "billable" : "non_billable",
+        coverageReason: isRebillable
+          ? "Frais refacturable au client"
+          : "Frais non refacturable",
+        approvalStatus: "draft",
+        notes,
+        createdAt: new Date().toISOString(),
+      };
+      onSave(entry);
+      reset();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -125,12 +160,10 @@ export function AddExpenseModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 leading-relaxed">
-            <strong>Limitation temporaire :</strong> les dépenses saisies depuis un
-            ticket ne sont pas encore persistées en base. Pour une dépense facturable
-            au client, passe par <em>Mes dépenses → Nouveau rapport</em> (l&apos;entrée
-            sera rattachable à ce ticket). Cette modale sera connectée à la DB
-            dans la prochaine itération.
+          <div className="rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2 text-[11.5px] text-blue-900 leading-relaxed">
+            La dépense sera rattachée automatiquement à ton rapport de dépenses
+            du mois courant (créé si nécessaire). Tu peux la retrouver et la
+            soumettre depuis <em>Mes dépenses</em>.
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -206,13 +239,22 @@ export function AddExpenseModal({
             />
           </div>
 
+          {error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-800">
+              {error}
+            </div>
+          ) : null}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
               Annuler
             </Button>
-            <Button type="submit" variant="primary" disabled={!description.trim() || amount <= 0}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!description.trim() || amount <= 0 || submitting}
+            >
               <Save className="h-4 w-4" strokeWidth={2.5} />
-              Enregistrer
+              {submitting ? "Enregistrement…" : "Enregistrer"}
             </Button>
           </div>
         </form>
