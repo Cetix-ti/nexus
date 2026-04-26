@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser, hasCapability } from "@/lib/auth-utils";
+import { getAllowedOrgIds } from "@/lib/auth/org-scope";
 import { runQboQuery } from "@/lib/analytics/qbo-handler";
 import { resolveLabels } from "@/lib/analytics/label-resolver";
 
@@ -749,6 +750,8 @@ interface SingleQueryInput {
   dateField?: string;
   dateFrom?: string;
   dateTo?: string;
+  /** Phase 9 — restriction d'accès par org. "all" = pas de filtre. */
+  allowedOrgIds?: "all" | string[];
 }
 
 interface SingleQueryResult {
@@ -789,6 +792,19 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
     where[df] = {};
     if (dateFrom) (where[df] as Record<string, unknown>).gte = new Date(dateFrom);
     if (dateTo) (where[df] as Record<string, unknown>).lte = new Date(dateTo);
+  }
+  // Phase 9 — applique le scope par org si le dataset a un champ
+  // organizationId (tickets, time_entries, contracts, monitoring_alerts,
+  // calendar_events, etc.). Skipped si "all" ou si le dataset n'a pas
+  // d'org (ex: organizations elle-même est filtrée par id).
+  if (input.allowedOrgIds && input.allowedOrgIds !== "all") {
+    const hasOrgField = def.fields.some((f) => f.name === "organizationId");
+    if (hasOrgField) {
+      where.organizationId = { in: input.allowedOrgIds };
+    } else if (dataset === "organizations") {
+      // Cas spécial : le dataset "organizations" lui-même → on filtre par id.
+      where.id = { in: input.allowedOrgIds };
+    }
   }
   // Map champ → type pour coercer les valeurs correctement (date, number, bool).
   const fieldTypes = new Map<string, string>();
@@ -1167,9 +1183,11 @@ export async function POST(req: Request) {
       );
     }
 
+    const allowedOrgIds = await getAllowedOrgIds(me.id, me.role);
     const primaryResult = await executeSingleQuery({
       dataset, filters, groupBy, aggregate, aggregateField,
       sortBy, sortDir, limit, dateField, dateFrom, dateTo,
+      allowedOrgIds,
     });
     if (primaryResult.error) {
       return NextResponse.json({ error: primaryResult.error }, { status: primaryResult.status ?? 500 });
@@ -1194,6 +1212,7 @@ export async function POST(req: Request) {
       sortBy, sortDir, limit,
       dateField: secondaryDateField,
       dateFrom, dateTo,
+      allowedOrgIds,
     });
     if (secondaryResult.error) {
       return NextResponse.json({ error: `Secondaire: ${secondaryResult.error}` }, { status: secondaryResult.status ?? 500 });
