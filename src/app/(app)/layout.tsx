@@ -6,6 +6,7 @@ import { Menu, X } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { AiChatWidget } from "@/components/ai/ai-chat-widget";
 import { NotificationToasts } from "@/components/layout/notification-toasts";
+import { OrgScopeBanner } from "@/components/layout/org-scope-banner";
 import { Topbar } from "@/components/layout/topbar";
 import { UserMenu } from "@/components/layout/user-menu";
 import { NotificationsDropdown } from "@/components/layout/notifications-dropdown";
@@ -63,6 +64,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
         <div className="flex flex-col h-screen min-w-0 overflow-hidden">
           <Topbar />
+          <OrgScopeBanner />
           <main className="flex-1 overflow-y-auto overflow-x-hidden">
             <div className="px-4 lg:px-8 py-5 lg:py-7 min-w-0 max-w-[1800px] mx-auto">
               {children}
@@ -94,6 +96,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <UserMenu />
           </div>
         </header>
+
+        <OrgScopeBanner />
 
         {/* Mobile content */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50">
