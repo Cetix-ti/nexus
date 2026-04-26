@@ -73,6 +73,28 @@ export const POLICY_TRIAGE: AiPolicy = {
 };
 
 // ---------------------------------------------------------------------------
+// Résumé court d'un ticket (1-2 phrases) pour les livrables clients —
+// rapport mensuel notamment. Ollama local en premier (privacy-first,
+// Loi 25, gratuit). Claude Haiku en fallback quand Ollama échoue/timeout
+// (auto-évaluation de confidence plus juste sur cette tâche). OpenAI en
+// dernier recours.
+// ---------------------------------------------------------------------------
+export const POLICY_TICKET_SUMMARY: AiPolicy = {
+  feature: "ticket_summary",
+  sensitivity: "client_data",
+  allowedProviders: ["ollama", "anthropic", "openai"],
+  scrub: { pii: true, hostnames: false, clientNames: true },
+  temperature: 0.2,
+  maxTokens: 250,
+  responseFormat: "json_object",
+  humanApprovalRequired: false, // affichage seulement, pas d'action auto
+  timeoutMs: 30_000,
+  preferAnthropic: false, // ollama d'abord, anthropic en fallback
+  enablePromptCaching: false,
+  promptVersion: "ticket_summary-v1",
+};
+
+// ---------------------------------------------------------------------------
 // Notes de résolution (Phase 1 #4) — note technique + note client à la fermeture
 // Input = historique complet du ticket → scrub complet obligatoire.
 // ---------------------------------------------------------------------------

@@ -8,7 +8,8 @@
 // document remis au client.
 // ============================================================================
 
-import { chatCompletion } from "@/lib/ai/service";
+import { runAiTask } from "@/lib/ai/orchestrator";
+import { POLICY_TICKET_SUMMARY } from "@/lib/ai/orchestrator/policies";
 import prisma from "@/lib/prisma";
 
 export interface TicketSummaryResult {
@@ -68,8 +69,10 @@ export async function generateTicketSummary(
     .join("\n\n");
 
   try {
-    const response = await chatCompletion(
-      [
+    const result = await runAiTask({
+      policy: POLICY_TICKET_SUMMARY,
+      taskKind: "generation",
+      messages: [
         {
           role: "system",
           content: `Tu rédiges un résumé COURT (1 à 2 phrases, ${MAX_SUMMARY_CHARS} caractères max) d'un ticket de support IT, destiné à apparaître dans un rapport mensuel remis au CLIENT.
@@ -90,10 +93,10 @@ Retourne UNIQUEMENT du JSON valide (sans markdown, sans backticks) :
         },
         { role: "user", content: userContent },
       ],
-      { temperature: 0.2, maxTokens: 200 },
-    );
+    });
+    if (!result.ok || !result.content) return { summary: null, confidence: 0 };
 
-    const cleaned = response
+    const cleaned = result.content
       .trim()
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```$/i, "")
