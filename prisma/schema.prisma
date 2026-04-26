@@ -99,6 +99,7 @@ model Organization {
   billingOverride       ClientBillingOverride?
   workTypes             OrgWorkType[]
   rateTiers             OrgRateTier[]
+  userScopes            UserOrganizationScope[]
   addons                OrganizationAddon[]
   publishedDashboards   PublishedDashboard[]
   monthlyReports        MonthlyClientReport[]
@@ -238,6 +239,9 @@ model User {
   supervisedAgents        AgentSupervision[]    @relation("Supervisor")
   supervisedBy            AgentSupervision[]    @relation("SupervisedAgent")
   billingLocks            BillingPeriodLock[]   @relation("BillingPeriodLockUser")
+  /// Restrictions d'accès par org (Phase 9 : scoping technicien).
+  organizationScopes      UserOrganizationScope[] @relation("UserOrgScopeUser")
+  organizationScopesGranted UserOrganizationScope[] @relation("UserOrgScopeGranter")
   generatedMonthlyReports MonthlyClientReport[] @relation("MonthlyReportGenerator")
 
   // Socle nouveaux modules
@@ -2202,6 +2206,32 @@ model ClientBillingOverride {
   updatedAt                DateTime     @updatedAt @map("updated_at")
 
   @@map("client_billing_overrides")
+}
+
+/// Limite d'accès d'un user à un sous-ensemble d'organisations clients.
+/// AUCUNE row pour un user = accès complet (comportement par défaut).
+/// 1+ rows = restreint à ces orgs uniquement, peu importe le rôle. Le
+/// SUPER_ADMIN bypass automatiquement (voir getAllowedOrgIds).
+///
+/// Cas d'usage : technicien dédié à un client (HVAC, par exemple) qui ne
+/// doit pas voir les tickets ni le contenu des autres clients.
+model UserOrganizationScope {
+  id             String       @id @default(cuid())
+  userId         String       @map("user_id")
+  user           User         @relation("UserOrgScopeUser", fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// READ = lecture seule sur les entités de cette org. WRITE = créer/modifier.
+  permission     String       @default("WRITE")
+  /// Audit trail : qui a accordé l'accès, et quand.
+  grantedById    String?      @map("granted_by_id")
+  grantedBy      User?        @relation("UserOrgScopeGranter", fields: [grantedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("user_organization_scopes")
 }
 
 /// Catégorie de base globale (per-tenant) : « À distance », « Sur place »,
