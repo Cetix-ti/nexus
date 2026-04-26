@@ -25,6 +25,7 @@ import { z } from "zod";
 import prisma from "@/lib/prisma";
 import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
 import { checkBillingLock } from "@/lib/billing/period-lock";
+import { writeTimeEntryAudit } from "@/lib/billing/time-entry-audit";
 
 const ALLOWED_STATUSES = ["draft", "submitted", "approved", "rejected", "invoiced"] as const;
 type Status = (typeof ALLOWED_STATUSES)[number];
@@ -143,11 +144,17 @@ export async function POST(
     data: {
       approvalStatus: to,
       // On stocke la note de rejet (ou autre commentaire de transition)
-      // dans coverageReason — pas idéal sémantiquement mais évite une
-      // nouvelle table. À migrer vers un model TimeEntryAuditLog si on
-      // veut un historique complet.
+      // dans coverageReason ET dans le log d'audit pour l'historique
+      // complet (Phase 10D).
       ...(note ? { coverageReason: note } : {}),
     },
+  });
+
+  // Audit log de la transition (Phase 10D).
+  await writeTimeEntryAudit(id, me.id, "transition", {
+    from: { approvalStatus: from },
+    to: { approvalStatus: to },
+    note: note ?? null,
   });
 
   return NextResponse.json({

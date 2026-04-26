@@ -2218,6 +2218,37 @@ model ClientBillingOverride {
   @@map("client_billing_overrides")
 }
 
+/// Audit log d'une saisie de temps (Phase 10D).
+///
+/// Pour chaque action significative sur un TimeEntry (création, modif,
+/// transition d'approbation, saisie au nom d'un autre, suppression), on
+/// trace : qui (actorUserId), quoi (action), avant/après (JSON optionnel),
+/// note libre. Particulièrement important pour les saisies au nom d'un
+/// autre agent (sinon le `agentId` final ne dit pas qui a réellement
+/// créé l'entrée).
+model TimeEntryAuditLog {
+  id           String    @id @default(cuid())
+  timeEntryId  String    @map("time_entry_id")
+  /// Qui a déclenché l'action. Null si l'action vient d'un système
+  /// (cron, recompute, migration). On NE PAS FK vers TimeEntry car les
+  /// entries peuvent être supprimées et on veut garder l'historique.
+  actorUserId  String?   @map("actor_user_id")
+  /// Type d'action : "create" | "update" | "transition" | "delete" |
+  /// "create_on_behalf_of"
+  action       String
+  /// Valeurs avant l'action (JSON), null pour "create".
+  fromValue    Json?     @map("from_value")
+  /// Valeurs après l'action (JSON), null pour "delete".
+  toValue      Json?     @map("to_value")
+  /// Note libre (raison du rejet, commentaire de transition, etc.).
+  note         String?   @db.Text
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([timeEntryId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("time_entry_audit_logs")
+}
+
 /// Dashboard / rapport personnalisé d'un utilisateur. Stocke la
 /// configuration (widgets, métadonnées, attribution org, balises) en
 /// JSON pour rester flexible face aux évolutions UI sans migration.

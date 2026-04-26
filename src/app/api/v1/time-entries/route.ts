@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAllowedOrgIds, userCanAccessOrg } from "@/lib/auth/org-scope";
+import { writeTimeEntryAudit } from "@/lib/billing/time-entry-audit";
 import {
   listTimeEntries,
   createTimeEntry,
@@ -149,6 +150,18 @@ export async function POST(req: Request) {
       workTypeId: d.workTypeId,
       rateTierId: d.rateTierId,
     });
+    // Audit log — action distincte selon que c'est pour soi ou pour un
+    // autre. Le agentId final ne dit pas qui a réellement saisi.
+    const action = effectiveAgentId !== me.id ? "create_on_behalf_of" : "create";
+    await writeTimeEntryAudit(created.id, me.id, action, {
+      to: {
+        agentId: effectiveAgentId,
+        durationMinutes: d.durationMinutes,
+        timeType: d.timeType,
+        ticketId: d.ticketId,
+      },
+      note: action === "create_on_behalf_of" ? `Saisi au nom de ${effectiveAgentId}` : null,
+    });
     return NextResponse.json(created, { status: 201 });
   } catch (e) {
     const isBillingLock = e instanceof Error && e.name === "BillingLockError";
@@ -188,6 +201,13 @@ export async function PATCH(req: Request) {
   try {
     const { updateTimeEntry } = await import("@/lib/billing/time-entries-service");
     const updated = await updateTimeEntry(id, body);
+    await writeTimeEntryAudit(id, me.id, "update", {
+      to: {
+        durationMinutes: body.durationMinutes,
+        timeType: body.timeType,
+        approvalStatus: body.approvalStatus,
+      },
+    });
     return NextResponse.json(updated);
   } catch (err) {
     const isBillingLock = err instanceof Error && err.name === "BillingLockError";
@@ -224,6 +244,11 @@ export async function DELETE(req: Request) {
   }
 
   try {
+    // Audit AVANT delete — sinon le timeEntryId ne référence plus rien
+    // mais ça reste valide (pas de FK).
+    await writeTimeEntryAudit(id, me.id, "delete", {
+      from: { agentId: entry.agentId, organizationId: entry.organizationId },
+    });
     await deleteTimeEntry(id);
     return NextResponse.json({ ok: true });
   } catch (err) {
