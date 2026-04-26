@@ -6,13 +6,19 @@
 
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth-utils";
+import { getCurrentUser, hasCapability } from "@/lib/auth-utils";
 import { assertUserOrgAccess, getAccessibleOrgIds } from "@/lib/auth/org-access";
 import { getCurrentFiscalYear } from "@/lib/budgets/fiscal-year";
 
 export async function GET(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Phase 10A — les budgets exposent des montants $ confidentiels.
+  // Réservé aux users avec la capability "finances" (admin / superviseur
+  // qui peut voir les coûts ; pas un technicien standard).
+  if (!hasCapability(me, "finances")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
   const status = searchParams.get("status");

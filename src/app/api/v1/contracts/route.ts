@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { getCurrentUser, hasCapability, hasMinimumRole } from "@/lib/auth-utils";
 import { toEngineContract } from "@/lib/billing/contract-mapper";
 
 export async function GET(req: Request) {
@@ -23,9 +23,17 @@ export async function GET(req: Request) {
     include: { organization: { select: { name: true } } },
     orderBy: { startDate: "desc" },
   });
+  // Phase 10A — confidentialité tarifaire. Le shape=engine reste complet
+  // (utilisé par la modale de saisie qui calcule la couverture côté
+  // serveur) — les valeurs ne fuient pas au navigateur car la décision
+  // est ré-exécutée côté backend autoritaire. Le shape "list" (UI fiche
+  // org → onglet Contrats) redacte les champs sensibles si l'agent
+  // n'a pas la capability "finances", au lieu de 403 (la liste reste
+  // utile pour voir les types/dates même sans tarifs).
   if (shape === "engine") {
     return NextResponse.json(rows.map((c) => toEngineContract(c, c.organization?.name)));
   }
+  const canSeeMoney = hasCapability(me, "finances");
   return NextResponse.json(
     rows.map((c) => ({
       id: c.id,
@@ -34,10 +42,12 @@ export async function GET(req: Request) {
       status: c.status,
       startDate: c.startDate.toISOString(),
       endDate: c.endDate?.toISOString() || null,
-      monthlyHours: c.monthlyHours,
-      hourlyRate: c.hourlyRate,
+      monthlyHours: canSeeMoney ? c.monthlyHours : null,
+      hourlyRate: canSeeMoney ? c.hourlyRate : null,
       notes: c.notes,
-      settings: c.settings ?? null,
+      // settings contient hourBank.totalHoursPurchased/overageRate/etc. —
+      // tout aussi sensible. On le redact aussi quand !canSeeMoney.
+      settings: canSeeMoney ? (c.settings ?? null) : null,
     }))
   );
 }

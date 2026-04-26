@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth-utils";
+import { getCurrentUser, hasCapability } from "@/lib/auth-utils";
 
 export async function GET(req: Request) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Phase 10A — un user sans capability "finances" ne voit QUE ses
+  // propres rapports de dépense (vue Mes dépenses). Les admins/sups avec
+  // la cap voient tous les rapports pour l'approbation/remboursement.
+  const canSeeAll = hasCapability(me, "finances");
 
   const url = new URL(req.url);
   const status = url.searchParams.get("status") || undefined;
@@ -13,6 +18,8 @@ export async function GET(req: Request) {
   const where: Record<string, unknown> = {};
   if (status) where.status = status;
   if (submitterId) where.submitterId = submitterId;
+  // Sans cap finances : force submitterId=me.id (peu importe le param URL).
+  if (!canSeeAll) where.submitterId = me.id;
 
   const reports = await prisma.expenseReport.findMany({
     where,

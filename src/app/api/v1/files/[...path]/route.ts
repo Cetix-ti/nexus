@@ -1,27 +1,44 @@
 // ============================================================================
 // GET /api/v1/files/[...path]
 //
-// Proxy public read-only vers les fichiers stockés dans MinIO. Pourquoi :
+// Proxy read-only vers les fichiers stockés dans MinIO. Pourquoi :
 // MinIO tourne en interne sur http://localhost:9000 — inaccessible depuis
-// le navigateur des agents/clients. On résout ça en servant les objets via
-// le même domaine que l'app (https://nexus.cetix.ca/api/v1/files/...).
+// le navigateur. On sert les objets via le même domaine que l'app
+// (https://nexus.cetix.ca/api/v1/files/...).
 //
-// Utilisé par :
-//   - les descriptions de tickets (images inline email)
-//   - les logos d'organisation
-//   - les pièces jointes KB
+// SÉCURITÉ (Phase 10B) :
+//   - Tous les uploads sont en ACL "public-read" côté MinIO. Si quelqu'un
+//     connaît l'URL UUID, il peut bypass le proxy et taper MinIO direct
+//     (le port reste interne en prod, mais le ferait depuis l'intérieur
+//     du réseau de l'infra).
+//   - Le proxy AUTHENTIFIE désormais l'appelant pour les préfixes privés
+//     (uploads/, attachments/, ...). Les préfixes "publics nécessaires"
+//     (logos/, email-images/) restent accessibles sans cookie pour ne
+//     pas casser l'affichage des logos dans les emails sortants ni les
+//     images inline d'un ticket transféré par email externe.
 //
-// Pas d'authentification : les objets MinIO sont stockés avec ACL "public-read"
-// via `uploadFile` (lib/storage/minio.ts). Le proxy se contente de relayer
-// — l'ACL côté MinIO reste la source de vérité. Pour les fichiers privés,
-// utiliser getPresignedDownloadUrl à la place.
+// Pour fichiers strictement privés (rapports, exports paie...), utiliser
+// getPresignedDownloadUrl à la place et ne pas passer par ce proxy.
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { s3 } from "@/lib/storage/minio";
+import { getCurrentUser } from "@/lib/auth-utils";
+import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
 
 const BUCKET = process.env.S3_BUCKET || "nexus";
+
+/** Préfixes accessibles sans authentification — nécessaires pour
+ *  l'affichage dans des contextes hors-session (emails sortants, images
+ *  inline reçues par email, signatures email, logos affichés sur la
+ *  page de connexion / login). Toute clé hors de cette liste exige
+ *  une session valide (agent OU portail client). */
+const PUBLIC_PREFIXES = ["logos/", "email-images/", "public/"];
+
+function isPublicKey(key: string): boolean {
+  return PUBLIC_PREFIXES.some((p) => key.startsWith(p));
+}
 
 export async function GET(
   req: NextRequest,
@@ -41,6 +58,17 @@ export async function GET(
     return NextResponse.json({ error: "Missing key" }, { status: 400 });
   }
   const key = keySegments.join("/");
+
+  // Auth gate (Phase 10B). Préfixes publics whitelistés (logos, images
+  // emails). Tout le reste exige une session — accepte agent OU portail
+  // client (les contacts ont besoin de leurs pièces jointes ticket).
+  if (!isPublicKey(key)) {
+    const agent = await getCurrentUser();
+    const portal = agent ? null : await getCurrentPortalUser();
+    if (!agent && !portal) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
 
   try {
     const result = await s3.send(
