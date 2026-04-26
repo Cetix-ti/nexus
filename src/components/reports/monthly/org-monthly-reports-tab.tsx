@@ -11,6 +11,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { usePermission } from "@/components/auth/permission-gate";
 import { ScheduledReportsSection } from "./scheduled-reports-section";
 import {
   Calendar,
@@ -107,18 +108,8 @@ export function OrgMonthlyReportsTab({
   const [autoSaving, setAutoSaving] = useState(false);
   const [portalVariant, setPortalVariant] = useState<PortalVariant>(initialPortalVariant);
   const [variantSaving, setVariantSaving] = useState(false);
-  const [canEditSchedules, setCanEditSchedules] = useState(false);
-  useEffect(() => {
-    fetch("/api/v1/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        const role = d?.role;
-        setCanEditSchedules(
-          role === "SUPER_ADMIN" || role === "MSP_ADMIN" || role === "SUPERVISOR",
-        );
-      })
-      .catch(() => {});
-  }, []);
+  // Phase 10G — hook standardisé.
+  const { allowed: canEditSchedules } = usePermission({ minRole: "SUPERVISOR" });
 
   const reload = useCallback(async () => {
     setLoading(true);

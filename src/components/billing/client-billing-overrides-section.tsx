@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { OrgAddonsSection } from "@/components/billing/org-addons-section";
 import { mockBillingProfiles } from "@/lib/billing/mock-data";
+import { usePermission } from "@/components/auth/permission-gate";
 import type {
   BillingProfile,
   ClientBillingOverride,
@@ -668,23 +669,8 @@ function ClientBillingOverridesSectionInner({
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
-  // Phase 10E — gate UX : seul un MSP_ADMIN+ peut basculer en mode
-  // édition. Le backend re-vérifie déjà (PUT renvoie 403 sinon), mais
-  // afficher le bouton "Modifier" à un technicien crée un faux espoir
-  // de pouvoir éditer puis le 403 surprise.
-  const [canEditPolicy, setCanEditPolicy] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/v1/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (cancelled) return;
-        const role = d?.role;
-        setCanEditPolicy(role === "SUPER_ADMIN" || role === "MSP_ADMIN");
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+  // Phase 10E + 10G — utilise le hook standardisé usePermission.
+  const { allowed: canEditPolicy } = usePermission({ minRole: "MSP_ADMIN" });
 
   // Type(s) de facturation applicable(s) au client (multi-sélection).
   // Persisté en localStorage — quand on aura un vrai modèle DB, remplacer
