@@ -15,7 +15,10 @@
 import prisma from "@/lib/prisma";
 import { decideBilling } from "./engine";
 import { resolveClientBillingProfile } from "./engine";
-import { mockBillingProfiles } from "./mock-data";
+import {
+  getBillingProfileBySlug,
+  getDefaultBillingProfile,
+} from "./profiles-db";
 import { getClientBillingOverrideForOrg } from "./overrides-db";
 import { toEngineContract, pickActiveContract } from "./contract-mapper";
 import type { BillingDecision, Contract, TimeType } from "./types";
@@ -51,15 +54,14 @@ export interface ServerDecision {
  * le contrat choisi (utilisé par le caller pour déduire de la banque).
  */
 export async function resolveDecisionForEntry(input: DecideInput): Promise<ServerDecision> {
-  // 1. Profil de facturation (base + override éventuel). L'override est en
-  //    DB (model ClientBillingOverride). Les profils de base restent en
-  //    mock-data.ts pour l'instant.
+  // 1. Profil de facturation (base + override éventuel). Phase 11B :
+  //    profils de base désormais en DB (table billing_profiles), seed
+  //    avec les 3 profils historiques.
   const override =
     (await getClientBillingOverrideForOrg(input.organizationId)) ?? undefined;
   const baseProfile =
-    (override && mockBillingProfiles.find((p) => p.id === override.baseProfileId)) ||
-    mockBillingProfiles.find((p) => p.isDefault) ||
-    mockBillingProfiles[0];
+    (override && (await getBillingProfileBySlug(override.baseProfileId))) ||
+    (await getDefaultBillingProfile());
   if (!baseProfile) {
     // Ultime fallback : aucun profil configuré → non facturable.
     return {

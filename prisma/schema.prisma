@@ -2234,6 +2234,41 @@ model ClientBillingOverride {
   @@map("client_billing_overrides")
 }
 
+/// Profil de facturation de base (Phase 11B). Référencé par
+/// ClientBillingOverride.baseProfileId pour les surcharges par client.
+/// Avant : 3 profils hardcodés dans mock-data.ts (Standard MSP, Premium
+/// 24/7, Enterprise négocié) — impossible de créer un 4ème profil sans
+/// modifier le code.
+model BillingProfile {
+  id                       String   @id @default(cuid())
+  /// Slug stable (ex. "bp_standard") utilisé par les overrides.
+  slug                     String   @unique
+  name                     String
+  description              String   @default("") @db.Text
+  isDefault                Boolean  @default(false) @map("is_default")
+  isActive                 Boolean  @default(true) @map("is_active")
+  // --- Taux de base ----------------------------------------------------
+  standardRate             Float    @default(0) @map("standard_rate")
+  onsiteRate               Float    @default(0) @map("onsite_rate")
+  remoteRate               Float    @default(0) @map("remote_rate")
+  urgentRate               Float    @default(0) @map("urgent_rate")
+  afterHoursRate           Float    @default(0) @map("after_hours_rate")
+  weekendRate              Float    @default(0) @map("weekend_rate")
+  travelRate               Float    @default(0) @map("travel_rate")
+  ratePerKm                Float    @default(0) @map("rate_per_km")
+  travelFlatFee            Float    @default(0) @map("travel_flat_fee")
+  hourBankOverageRate      Float    @default(0) @map("hour_bank_overage_rate")
+  mspExcludedRate          Float    @default(0) @map("msp_excluded_rate")
+  minimumBillableMinutes   Int      @default(15) @map("minimum_billable_minutes")
+  roundingIncrementMinutes Int      @default(15) @map("rounding_increment_minutes")
+  /// TimeType qui sont facturables sous ce profil (sinon non_billable).
+  billableTimeTypes        String[] @default([]) @map("billable_time_types")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  @@map("billing_profiles")
+}
+
 /// Configuration de banque d'heures pour un client (UI Phase 2B).
 ///
 /// Avant : nexus:client-hour-bank:{orgId} en localStorage. Per-navigateur,

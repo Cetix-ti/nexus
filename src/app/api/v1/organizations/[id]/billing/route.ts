@@ -1,19 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { mockBillingProfiles } from "@/lib/billing/mock-data";
 import { resolveClientBillingProfile } from "@/lib/billing/engine";
 import {
   getClientBillingOverrideForOrg,
   upsertClientBillingOverride,
 } from "@/lib/billing/overrides-db";
+import {
+  getBillingProfileBySlug,
+  getDefaultBillingProfile,
+} from "@/lib/billing/profiles-db";
 import type { ClientBillingOverride } from "@/lib/billing/types";
 import { getCurrentUser } from "@/lib/auth-utils";
 
 async function findBaseProfileForOrg(orgId: string) {
   const override = (await getClientBillingOverrideForOrg(orgId)) ?? undefined;
   const baseProfile =
-    (override && mockBillingProfiles.find((p) => p.id === override.baseProfileId)) ||
-    mockBillingProfiles.find((p) => p.isDefault) ||
-    mockBillingProfiles[0];
+    (override && (await getBillingProfileBySlug(override.baseProfileId))) ||
+    (await getDefaultBillingProfile());
   return { override, baseProfile };
 }
 
