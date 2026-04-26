@@ -420,7 +420,13 @@ export function TicketBillingSection({
         ticketNumber={ticketNumber}
         organizationId={organizationId}
         organizationName={organizationName}
-        onSave={(entry) => setTravelEntries((prev) => [...prev, entry])}
+        onSave={() => {
+          // La saisie est maintenant persistée via /api/v1/time-entries
+          // (timeType=travel + hasTravelBilled). Recharger la liste des
+          // saisies plutôt que d'ajouter en local — la TimeEntry produite
+          // est déjà comptée dans timeEntries.filter(hasTravelBilled).
+          setReloadTime((k) => k + 1);
+        }}
       />
       <AddExpenseModal
         open={showExpenseModal}

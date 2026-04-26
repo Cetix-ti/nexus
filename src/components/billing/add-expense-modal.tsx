@@ -125,6 +125,13 @@ export function AddExpenseModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 leading-relaxed">
+            <strong>Limitation temporaire :</strong> les dépenses saisies depuis un
+            ticket ne sont pas encore persistées en base. Pour une dépense facturable
+            au client, passe par <em>Mes dépenses → Nouveau rapport</em> (l&apos;entrée
+            sera rattachable à ce ticket). Cette modale sera connectée à la DB
+            dans la prochaine itération.
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Date</label>

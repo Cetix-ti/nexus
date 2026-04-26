@@ -75,29 +75,67 @@ export function AddTravelModal({
     setNotes("");
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const entry: TravelEntry = {
-      id: `tv_${Date.now()}`,
-      ticketId,
-      ticketNumber,
-      organizationId,
-      organizationName,
-      agentId: "usr_current",
-      agentName: currentUserName,
-      date: new Date(`${date}T00:00:00`).toISOString(),
-      durationMinutes: typeof durationMinutes === "number" && durationMinutes > 0 ? durationMinutes : undefined,
-      coverageStatus,
-      coverageReason,
-      ratePerKm: profile.ratePerKm,
-      flatFee: profile.travelFlatFee,
-      notes,
-      approvalStatus: "draft",
-      createdAt: new Date().toISOString(),
-    };
-    onSave(entry);
-    reset();
-    onClose();
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      // Persiste comme TimeEntry timeType="travel" + hasTravelBilled=true.
+      // Avant ce fix, la saisie ne quittait pas le state React → perdue
+      // au refresh. Le serveur revalide tout via resolveDecisionForEntry.
+      const startedAt = new Date(`${date}T08:00:00`).toISOString();
+      const dur = typeof durationMinutes === "number" && durationMinutes > 0 ? durationMinutes : 1;
+      const r = await fetch("/api/v1/time-entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticketId,
+          organizationId,
+          timeType: "travel",
+          startedAt,
+          durationMinutes: dur,
+          description: notes || "Déplacement",
+          isOnsite: true,
+          hasTravelBilled: true,
+          travelDurationMinutes: typeof durationMinutes === "number" && durationMinutes > 0 ? durationMinutes : null,
+        }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error ?? `Erreur HTTP ${r.status}`);
+      }
+      const created = await r.json();
+      // Conserve la signature publique onSave(TravelEntry) pour ne pas
+      // casser le composant parent qui pourrait afficher une UI optimiste.
+      const entry: TravelEntry = {
+        id: created.id ?? `tv_${Date.now()}`,
+        ticketId,
+        ticketNumber,
+        organizationId,
+        organizationName,
+        agentId: created.agentId ?? "usr_current",
+        agentName: currentUserName,
+        date: new Date(`${date}T00:00:00`).toISOString(),
+        durationMinutes: typeof durationMinutes === "number" && durationMinutes > 0 ? durationMinutes : undefined,
+        coverageStatus,
+        coverageReason,
+        ratePerKm: profile.ratePerKm,
+        flatFee: profile.travelFlatFee,
+        notes,
+        approvalStatus: "draft",
+        createdAt: new Date().toISOString(),
+      };
+      onSave(entry);
+      reset();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -184,13 +222,18 @@ export function AddTravelModal({
             <p className="text-[12.5px] text-slate-600 leading-relaxed">{coverageReason}</p>
           </div>
 
+          {error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-800">
+              {error}
+            </div>
+          ) : null}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
               Annuler
             </Button>
-            <Button type="submit" variant="primary">
+            <Button type="submit" variant="primary" disabled={submitting}>
               <Save className="h-4 w-4" strokeWidth={2.5} />
-              Enregistrer
+              {submitting ? "Enregistrement…" : "Enregistrer"}
             </Button>
           </div>
         </form>
