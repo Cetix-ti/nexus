@@ -738,14 +738,38 @@ function ClientBillingOverridesSectionInner({
     () => loadBaseCategories(),
   );
   useEffect(() => {
+    // Source de vérité : DB via /api/v1/billing/base-categories. Le
+    // localStorage reste comme cache pour les composants sync (modales).
+    let cancelled = false;
+    fetch("/api/v1/billing/base-categories", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data?.data) ? data.data : null;
+        if (!rows || rows.length === 0) return;
+        const mapped: BaseCategory[] = rows.map((r: { id: string; label: string; systemTimeType: BaseCategory["systemTimeType"] }) => ({
+          id: r.id,
+          label: r.label,
+          systemTimeType: r.systemTimeType,
+        }));
+        setBaseCategories(mapped);
+        // Synchro le cache localStorage pour les autres composants qui
+        // consomment via loadBaseCategories() en sync.
+        saveBaseCategories(mapped);
+      })
+      .catch(() => {});
     function onStorage(e: StorageEvent) {
       if (e.key !== BASE_CATEGORIES_KEY) return;
       setBaseCategories(loadBaseCategories());
     }
     if (typeof window !== "undefined") {
       window.addEventListener("storage", onStorage);
-      return () => window.removeEventListener("storage", onStorage);
+      return () => {
+        cancelled = true;
+        window.removeEventListener("storage", onStorage);
+      };
     }
+    return () => { cancelled = true; };
   }, []);
   // Rafraîchit l'affichage de la banque d'heures quand une saisie de temps
   // l'a incrémentée (la modale de saisie dispatche un `storage` synthétique

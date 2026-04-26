@@ -49,9 +49,24 @@ export function WorkTypeCategoriesSection() {
   const [newSysMapsTo, setNewSysMapsTo] = useState<TimeType>("other");
 
   useEffect(() => {
+    // Source de vérité DB. Fallback localStorage si l'API ne répond pas
+    // (mode dégradé pendant un restart serveur, par exemple).
     setCategories(loadBaseCategories());
     setSystemLabels(loadSystemTypeLabels());
     setCustomSystemTypes(loadCustomSystemTypes());
+    fetch("/api/v1/billing/base-categories", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const rows = Array.isArray(data?.data) ? data.data : null;
+        if (!rows || rows.length === 0) return;
+        const mapped: BaseCategory[] = rows.map((r: { id: string; label: string; systemTimeType: TimeType }) => ({
+          id: r.id,
+          label: r.label,
+          systemTimeType: r.systemTimeType,
+        }));
+        setCategories(mapped);
+      })
+      .catch(() => {});
   }, []);
 
   function updateLabel(id: string, label: string) {
@@ -111,8 +126,45 @@ export function WorkTypeCategoriesSection() {
     setDirty(true);
   }
 
-  function handleSave() {
-    saveBaseCategories(categories);
+  async function handleSave() {
+    // Persiste DB d'abord (source de vérité), puis cache localStorage
+    // pour les composants sync (modales). Si la DB échoue, on garde au
+    // moins le cache local — meilleur que rien.
+    try {
+      const r = await fetch("/api/v1/billing/base-categories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categories: categories.map((c, idx) => ({
+            // ID DB seulement (pas les "cat_…" UI-générés)
+            ...(c.id && !c.id.startsWith("cat_") ? { id: c.id } : {}),
+            label: c.label,
+            systemTimeType: c.systemTimeType,
+            sortOrder: idx,
+          })),
+        }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        const mapped: BaseCategory[] = rows.map((r: { id: string; label: string; systemTimeType: TimeType }) => ({
+          id: r.id,
+          label: r.label,
+          systemTimeType: r.systemTimeType,
+        }));
+        setCategories(mapped);
+        saveBaseCategories(mapped);
+      } else {
+        // En cas de 403 (non admin) ou erreur, on garde le state local
+        // pour ne pas perdre les modifications en cours d'édition.
+        const d = await r.json().catch(() => ({}));
+        console.error("Failed to save categories:", d);
+        saveBaseCategories(categories);
+      }
+    } catch (e) {
+      console.error("Failed to save categories:", e);
+      saveBaseCategories(categories);
+    }
     saveSystemTypeLabels(systemLabels);
     saveCustomSystemTypes(customSystemTypes);
     setDirty(false);

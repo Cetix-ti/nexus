@@ -2204,6 +2204,24 @@ model ClientBillingOverride {
   @@map("client_billing_overrides")
 }
 
+/// Catégorie de base globale (per-tenant) : « À distance », « Sur place »,
+/// etc. Le `systemTimeType` lie la catégorie à l'enum technique utilisé
+/// par le moteur de facturation. Avant : stocké en localStorage global du
+/// navigateur — partagé entre tous les utilisateurs d'un même device,
+/// perdu au reset. Maintenant : table DB unique pour le tenant.
+model BillingBaseCategory {
+  id             String   @id @default(cuid())
+  label          String
+  systemTimeType String   @map("system_time_type")
+  sortOrder      Int      @default(0) @map("sort_order")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([label])
+  @@map("billing_base_categories")
+}
+
 /// Type de prestation configuré pour un client : libellé personnalisable
 /// (ex. "À distance", "Sur place", "Déplacement", "Préparation"). C'est
 /// l'axe "QU'EST-CE QUE FAIT L'AGENT". Le `timeType` enum lu par l'engine
