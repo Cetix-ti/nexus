@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { getAllowedOrgIds } from "@/lib/auth/org-scope";
 
 export async function GET() {
   const me = await getCurrentUser();
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Phase 9 — filtre org appliqué à tous les selects de tickets/time
+  // entries. Composé avec les contraintes de propriété (assigneeId/me.id,
+  // creatorId, etc.) déjà en place.
+  const allowedOrgIds = await getAllowedOrgIds(me.id, me.role);
+  const orgScope =
+    allowedOrgIds === "all" ? {} : { organizationId: { in: allowedOrgIds } };
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -44,6 +52,7 @@ export async function GET() {
     // 1. Tickets I created today (hors monitoring)
     prisma.ticket.findMany({
       where: {
+        ...orgScope,
         creatorId: me.id,
         createdAt: { gte: todayStart, lte: todayEnd },
         ...excludeMonitoring,
@@ -55,6 +64,7 @@ export async function GET() {
     // 2. My tickets due today (hors monitoring)
     prisma.ticket.findMany({
       where: {
+        ...orgScope,
         assigneeId: me.id,
         dueAt: { gte: todayStart, lte: todayEnd },
         status: {
@@ -69,6 +79,7 @@ export async function GET() {
     // 3. Tickets I planned / scheduled (hors monitoring)
     prisma.ticket.findMany({
       where: {
+        ...orgScope,
         assigneeId: me.id,
         status: "SCHEDULED",
         ...excludeMonitoring,
@@ -81,6 +92,7 @@ export async function GET() {
     //    légitimement saisir du temps sur un ticket monitoring)
     prisma.timeEntry.findMany({
       where: {
+        ...orgScope,
         agentId: me.id,
         startedAt: { gte: todayStart, lte: todayEnd },
       },
@@ -91,6 +103,7 @@ export async function GET() {
     //    (les alertes monitoring sont gérées dans leur propre dashboard)
     prisma.ticket.findMany({
       where: {
+        ...orgScope,
         assigneeId: me.id,
         status: { notIn: ["CLOSED", "RESOLVED", "CANCELLED"] },
         OR: [
@@ -104,8 +117,11 @@ export async function GET() {
     }),
 
     // 6. Tous les onsite du jour (tous agents). Sert la modale de coordination.
+    //    Restreint aux orgs accessibles : un tech limité à HVAC ne voit pas
+    //    les onsite des autres clients dans cette modale.
     prisma.timeEntry.findMany({
       where: {
+        ...orgScope,
         isOnsite: true,
         startedAt: { gte: todayStart, lte: todayEnd },
       },
