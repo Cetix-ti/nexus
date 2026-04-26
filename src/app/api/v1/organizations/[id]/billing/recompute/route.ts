@@ -62,10 +62,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     );
   }
 
+  // Exclut les entries déjà facturées : leur tarif est figé
+  // contractuellement, pas de recompute autorisé.
   const entries = await prisma.timeEntry.findMany({
     where: {
       organizationId: id,
       startedAt: { gte: start, lte: end },
+      approvalStatus: { not: "invoiced" },
     },
     select: {
       id: true,

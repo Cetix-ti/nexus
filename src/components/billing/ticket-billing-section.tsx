@@ -242,6 +242,7 @@ export function TicketBillingSection({
               amount: e.amount,
               coverageStatus: e.coverageStatus,
               coverageReason: e.coverageReason,
+              approvalStatus: e.approvalStatus,
             }))}
             onEdit={(id) => {
               setEditingTimeEntryId(id);
@@ -254,6 +255,22 @@ export function TicketBillingSection({
                 { method: "DELETE" }
               );
               if (res.ok) setReloadTime((k) => k + 1);
+            }}
+            onTransition={async (id, to, note) => {
+              const res = await fetch(
+                `/api/v1/time-entries/${id}/transition`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ to, note: note ?? null }),
+                },
+              );
+              if (res.ok) {
+                setReloadTime((k) => k + 1);
+              } else {
+                const d = await res.json().catch(() => ({}));
+                alert(d.error ?? "Échec de la transition");
+              }
             }}
             hideDescription
           />
@@ -452,6 +469,9 @@ interface EntryRow {
   amount?: number;
   coverageStatus: import("@/lib/billing/types").CoverageStatus;
   coverageReason: string;
+  /** Statut d'approbation — pilote l'affichage du badge et des actions
+   *  disponibles (Soumettre / Approuver / Rejeter / Facturer). */
+  approvalStatus?: "draft" | "submitted" | "approved" | "rejected" | "invoiced";
   /**
    * Si défini, la ligne est dérivée d'une saisie de temps (déplacement
    * synchronisé). Les actions Modifier/Supprimer reviennent à éditer
@@ -460,17 +480,32 @@ interface EntryRow {
   _sourceTimeEntryId?: string;
 }
 
+const APPROVAL_LABELS: Record<NonNullable<EntryRow["approvalStatus"]>, { label: string; cls: string }> = {
+  draft:     { label: "Brouillon",   cls: "bg-slate-100 text-slate-600 ring-slate-200" },
+  submitted: { label: "Soumise",     cls: "bg-amber-50 text-amber-700 ring-amber-200" },
+  approved:  { label: "Approuvée",   cls: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
+  rejected:  { label: "Rejetée",     cls: "bg-red-50 text-red-700 ring-red-200" },
+  invoiced:  { label: "Facturée",    cls: "bg-blue-50 text-blue-700 ring-blue-200" },
+};
+
 function EntryList({
   rows,
   empty,
   onEdit,
   onDelete,
+  onTransition,
   hideDescription,
 }: {
   rows: EntryRow[];
   empty: string;
   onEdit?: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Trigger une transition d'approval (Soumettre/Approuver/Rejeter...). */
+  onTransition?: (
+    id: string,
+    to: "draft" | "submitted" | "approved" | "rejected" | "invoiced",
+    note?: string,
+  ) => void;
   /** Masque la colonne/section Description (vue bureau et mobile). */
   hideDescription?: boolean;
 }) {
@@ -509,6 +544,16 @@ function EntryList({
               <CoverageBadge status={r.coverageStatus} reason={r.coverageReason} />
             </div>
           </div>
+          {r.approvalStatus && (
+            <div className="mt-1.5 flex items-center justify-between gap-2">
+              <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset", APPROVAL_LABELS[r.approvalStatus].cls)}>
+                {APPROVAL_LABELS[r.approvalStatus].label}
+              </span>
+              {onTransition && (
+                <ApprovalActions row={r} onTransition={onTransition} variant="mobile" />
+              )}
+            </div>
+          )}
           <div className="flex items-center justify-end gap-1 mt-2 pt-2 border-t border-slate-100">
             {onEdit && (
               <button onClick={() => onEdit(r.id)} className="text-[11px] text-slate-500 hover:text-blue-600 px-2 py-0.5">
@@ -534,6 +579,7 @@ function EntryList({
             <th className="px-3 py-2.5">Agent</th>
             <th className="px-3 py-2.5 text-right">Temps</th>
             <th className="px-3 py-2.5">Couverture</th>
+            <th className="px-3 py-2.5">Statut</th>
             <th className="px-3 py-2.5"></th>
           </tr>
         </thead>
@@ -568,6 +614,20 @@ function EntryList({
               <td className="px-3 py-3">
                 <CoverageBadge status={r.coverageStatus} reason={r.coverageReason} />
               </td>
+              <td className="px-3 py-3">
+                {r.approvalStatus ? (
+                  <div className="flex items-center gap-2">
+                    <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[10.5px] font-medium ring-1 ring-inset whitespace-nowrap", APPROVAL_LABELS[r.approvalStatus].cls)}>
+                      {APPROVAL_LABELS[r.approvalStatus].label}
+                    </span>
+                    {onTransition && (
+                      <ApprovalActions row={r} onTransition={onTransition} variant="desktop" />
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-slate-400">—</span>
+                )}
+              </td>
               {/* Colonne Montant retirée volontairement : confidentialité tarifaire */}
               <td className="px-3 py-3">
                 <div className="flex items-center justify-end gap-1">
@@ -595,5 +655,61 @@ function EntryList({
       </table></div>
     </div>
     </>
+  );
+}
+
+
+function ApprovalActions({
+  row,
+  onTransition,
+  variant,
+}: {
+  row: EntryRow;
+  onTransition: (
+    id: string,
+    to: "draft" | "submitted" | "approved" | "rejected" | "invoiced",
+    note?: string,
+  ) => void;
+  variant: "mobile" | "desktop";
+}) {
+  // Détermine les actions disponibles selon le statut courant. Le serveur
+  // revalide les rôles — le bouton apparaît même pour un user sans droit,
+  // dans ce cas le POST renverra 403 et l'alert s'affiche.
+  const status = row.approvalStatus ?? "draft";
+  const actions: { label: string; to: Parameters<typeof onTransition>[1]; promptNote?: boolean; cls: string }[] = [];
+  if (status === "draft") {
+    actions.push({ label: "Soumettre", to: "submitted", cls: "text-amber-700 hover:bg-amber-50" });
+  }
+  if (status === "submitted") {
+    actions.push({ label: "Approuver", to: "approved", cls: "text-emerald-700 hover:bg-emerald-50" });
+    actions.push({ label: "Rejeter", to: "rejected", promptNote: true, cls: "text-red-700 hover:bg-red-50" });
+  }
+  if (status === "rejected") {
+    actions.push({ label: "Rebrouillon", to: "draft", cls: "text-slate-700 hover:bg-slate-50" });
+  }
+  if (status === "approved") {
+    actions.push({ label: "Facturer", to: "invoiced", cls: "text-blue-700 hover:bg-blue-50" });
+  }
+  if (actions.length === 0) return null;
+  const sizing = variant === "desktop" ? "text-[10.5px] px-1.5 py-0.5" : "text-[10.5px] px-2 py-0.5";
+  return (
+    <span className="inline-flex items-center gap-1">
+      {actions.map((a) => (
+        <button
+          key={a.to}
+          type="button"
+          onClick={() => {
+            const note = a.promptNote
+              ? prompt("Raison du rejet ?", "")
+              : undefined;
+            if (a.promptNote && (note === null || (note ?? "").trim() === "")) return;
+            onTransition(row.id, a.to, note ?? undefined);
+          }}
+          className={"rounded ring-1 ring-inset ring-slate-200 font-medium " + sizing + " " + a.cls}
+        >
+          {a.label}
+        </button>
+      ))}
+    </span>
   );
 }
