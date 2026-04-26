@@ -668,6 +668,24 @@ function ClientBillingOverridesSectionInner({
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
+  // Phase 10E — gate UX : seul un MSP_ADMIN+ peut basculer en mode
+  // édition. Le backend re-vérifie déjà (PUT renvoie 403 sinon), mais
+  // afficher le bouton "Modifier" à un technicien crée un faux espoir
+  // de pouvoir éditer puis le 403 surprise.
+  const [canEditPolicy, setCanEditPolicy] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        const role = d?.role;
+        setCanEditPolicy(role === "SUPER_ADMIN" || role === "MSP_ADMIN");
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Type(s) de facturation applicable(s) au client (multi-sélection).
   // Persisté en localStorage — quand on aura un vrai modèle DB, remplacer
   // ces loaders par un appel API.
@@ -1105,10 +1123,16 @@ function ClientBillingOverridesSectionInner({
                   garde-fou, un clic malheureux écrasait un tarif négocié
                   sans possibilité de rollback. */}
               {!editing ? (
-                <Button onClick={enterEdit} className="gap-1.5">
-                  <Edit3 className="h-3.5 w-3.5" />
-                  Modifier
-                </Button>
+                canEditPolicy ? (
+                  <Button onClick={enterEdit} className="gap-1.5">
+                    <Edit3 className="h-3.5 w-3.5" />
+                    Modifier
+                  </Button>
+                ) : (
+                  <span className="text-[11.5px] italic text-slate-400">
+                    Lecture seule — seul un admin MSP peut modifier la facturation.
+                  </span>
+                )
               ) : (
                 <>
                   <div className="flex items-center rounded-lg border border-slate-200 bg-white shadow-sm">
