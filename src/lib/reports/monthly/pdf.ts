@@ -94,7 +94,7 @@ export async function renderReportToPdf(reportId: string): Promise<Buffer> {
       format: "Letter",
       printBackground: true,
       preferCSSPageSize: true,
-      margin: { top: "12mm", right: "12mm", bottom: "14mm", left: "12mm" },
+      margin: { top: "12mm", right: "12mm", bottom: "20mm", left: "12mm" },
       displayHeaderFooter: true,
       headerTemplate: `<div></div>`,
       footerTemplate: `
