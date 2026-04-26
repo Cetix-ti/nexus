@@ -21,6 +21,8 @@ export async function GET() {
         mfaEnabled: true,
         signature: true,
         signatureHtml: true,
+        // Phase 11D — niveau technicien pour auto-sélection du palier.
+        level: true,
       },
     });
 

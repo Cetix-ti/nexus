@@ -37,6 +37,9 @@ interface IncomingRateTier {
   id?: string;
   label: string;
   hourlyRate: number;
+  /** Niveau associé (1, 2, 3...) — drive l'auto-sélection du palier
+   *  selon le User.level de l'agent. Null/absent = palier ouvert à tous. */
+  linkedLevel?: number | null;
   isActive?: boolean;
   sortOrder?: number;
 }
@@ -98,6 +101,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         organizationId: id,
         label: t.label.trim(),
         hourlyRate: t.hourlyRate,
+        linkedLevel: t.linkedLevel ?? null,
         isActive: t.isActive ?? true,
         sortOrder: t.sortOrder ?? 0,
       };

@@ -306,24 +306,14 @@ export interface ResolvedBillingProfile extends BillingProfile {
 }
 
 // ----------------------------------------------------------------------------
-// SUPPORT TIERS (per-client, "à la carte")
+// SUPPORT TIERS — DEPRECATED (Phase 11C)
 // ----------------------------------------------------------------------------
+// Cette structure était l'ancien modèle de "niveaux de support per-client".
+// Remplacée par OrgRateTier (Phase 9) qui est en DB et câblé à l'engine
+// via TimeEntry.rateTierId. Le composant UI <SupportTiersSection> et les
+// mocks ont été supprimés. Les types ci-dessous restent uniquement pour
+// la rétrocompat des imports legacy — ne pas utiliser pour du nouveau code.
 
-/**
- * A support tier defines a level of expertise (e.g. Niveau 1, Niveau 2,
- * Niveau 3, Senior, Architecte) with its own hourly rate. Tiers are
- * configured PER CLIENT and only apply when the client has at least one
- * "à la carte" billing component (T&M, hour bank, or hybrid plan).
- *
- * A client can have multiple billing modes simultaneously — for instance:
- * - À la carte + banque d'heures (the bank covers up to N hours, overage
- *   uses the support tier rate)
- * - À la carte + forfait MSP mensuel (the MSP plan covers managed services,
- *   anything excluded falls back to support tier rate)
- *
- * The tier of a ticket is set on the ticket itself and the engine resolves
- * the matching tier for the client to compute the rate.
- */
 export interface SupportTier {
   id: string;
   organizationId: string;        // owner of the tier

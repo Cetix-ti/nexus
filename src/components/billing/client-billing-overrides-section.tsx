@@ -268,6 +268,8 @@ export interface RateTierOption {
   id: string;
   label: string;
   hourlyRate: number;
+  /** Niveau associé (Phase 11D) — drive l'auto-sélection selon User.level. */
+  linkedLevel?: number | null;
 }
 // Catégories de base — gérables globalement dans Paramètres → Facturation
 // → Catégories de base. Le `systemTimeType` conserve le lien vers l'enum

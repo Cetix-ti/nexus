@@ -112,13 +112,26 @@ export function AddTimeModal({
       if (rtRes.ok) {
         const json = await rtRes.json();
         const rows = Array.isArray(json?.data) ? json.data : [];
-        const mapped: RateTierOption[] = rows.map((t: { id: string; label: string; hourlyRate: number }) => ({
+        const mapped: RateTierOption[] = rows.map((t: { id: string; label: string; hourlyRate: number; linkedLevel?: number | null }) => ({
           id: t.id,
           label: t.label,
           hourlyRate: t.hourlyRate,
+          linkedLevel: t.linkedLevel ?? null,
         }));
         setRateTiers(mapped);
-        setRateTierId((prev) => (mapped.find((t) => t.id === prev) ? prev : mapped[0]?.id ?? ""));
+        // Phase 11D — auto-sélection : si l'agent connecté a un User.level
+        // défini ET qu'un palier a linkedLevel correspondant, on présélectionne.
+        // Sinon : 1ère option ou prev sélection si toujours valide.
+        const meRes = await fetch("/api/v1/me", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null));
+        const userLevel = typeof meRes?.level === "number" ? meRes.level : null;
+        setRateTierId((prev) => {
+          if (mapped.find((t) => t.id === prev)) return prev;
+          if (userLevel != null) {
+            const matched = mapped.find((t) => t.linkedLevel === userLevel);
+            if (matched) return matched.id;
+          }
+          return mapped[0]?.id ?? "";
+        });
       }
     } catch {
       // ignore

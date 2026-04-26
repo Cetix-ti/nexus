@@ -45,6 +45,8 @@ const userUpdateSchema = z
     signature: z.string().max(5000).nullable().optional(),
     signatureHtml: z.string().max(20000).nullable().optional(),
     capabilities: z.array(z.string().max(50)).optional(),
+    /** Niveau technicien (Phase 11D). null pour effacer. */
+    level: z.number().int().min(1).max(10).nullable().optional(),
   })
   .refine((d) => Object.keys(d).length > 1, {
     message: "no fields to update",
@@ -131,6 +133,7 @@ export async function GET(req: Request) {
       phone: true,
       isActive: true,
       mileageAllocationEnabled: true,
+      level: true,
       capabilities: true,
       lastLoginAt: true,
       ...(includeAvatar ? { avatar: true } : {}),
@@ -152,6 +155,7 @@ export async function GET(req: Request) {
       phone: u.phone,
       isActive: u.isActive,
       mileageAllocationEnabled: (u as any).mileageAllocationEnabled !== false,
+      level: (u as any).level ?? null,
       capabilities: (u as any).capabilities ?? [],
       lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
       ...(includeSignature
@@ -241,13 +245,21 @@ export async function PATCH(req: Request) {
       { status: 400 }
     );
   }
-  const { id, password, role, isActive, email, avatar, capabilities, mileageAllocationEnabled, ...rest } = parsed.data;
+  const { id, password, role, isActive, email, avatar, capabilities, mileageAllocationEnabled, level, ...rest } = parsed.data;
   const isSelf = id === me.id;
   const isAdmin = hasMinimumRole(me.role, "MSP_ADMIN");
   if (!isSelf && !isAdmin) return forbidden();
   // Only admins can change role / activation / email / capabilities /
-  // allocation km (affecte la paie — pas de self-edit possible).
-  if ((role !== undefined || isActive !== undefined || capabilities !== undefined || mileageAllocationEnabled !== undefined) && !isAdmin) {
+  // allocation km / niveau (Phase 11D — drive l'auto-palier facturation,
+  // un agent ne peut pas s'auto-promouvoir).
+  if (
+    (role !== undefined ||
+      isActive !== undefined ||
+      capabilities !== undefined ||
+      mileageAllocationEnabled !== undefined ||
+      level !== undefined) &&
+    !isAdmin
+  ) {
     return forbidden();
   }
 
@@ -284,6 +296,7 @@ export async function PATCH(req: Request) {
         ...(customRoleKeyWrite !== undefined ? { customRoleKey: customRoleKeyWrite } : {}),
         ...(isActive !== undefined ? { isActive } : {}),
         ...(mileageAllocationEnabled !== undefined ? { mileageAllocationEnabled } : {}),
+        ...(level !== undefined ? { level } : {}),
         ...(capabilities !== undefined ? { capabilities } : {}),
         ...(avatar !== undefined ? { avatar: avatar ? await optimizeAvatar(avatar) : null } : {}),
         ...(password

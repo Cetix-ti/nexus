@@ -218,6 +218,10 @@ model User {
   /// le CLIENT soit correctement facturé — seul le remboursement
   /// personnel est désactivé.
   mileageAllocationEnabled Boolean @default(true) @map("mileage_allocation_enabled")
+  /// Niveau technicien (1, 2, 3...). Utilisé par l'auto-sélection du
+  /// palier tarifaire à la saisie de temps. Null = pas de niveau défini,
+  /// l'agent choisit manuellement son palier.
+  level                    Int?     @map("agent_level")
   signature      String?  @db.Text
   signatureHtml  String?  @map("signature_html") @db.Text
 
@@ -2487,6 +2491,10 @@ model OrgRateTier {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   label          String
   hourlyRate     Float        @map("hourly_rate")
+  /// Niveau auquel ce palier est associé (Phase 11D). Quand un agent
+  /// avec User.level=N saisit du temps sur ce client, on présélectionne
+  /// le tier ayant linkedLevel=N. Null = palier ouvert à tous.
+  linkedLevel    Int?         @map("linked_level")
   isActive       Boolean      @default(true) @map("is_active")
   sortOrder      Int          @default(0) @map("sort_order")
   createdAt      DateTime     @default(now()) @map("created_at")

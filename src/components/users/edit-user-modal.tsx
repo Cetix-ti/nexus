@@ -109,6 +109,9 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
   // lu depuis la liste /api/v1/users (background fetch plus bas) pour
   // couvrir le cas où le parent ne le fournit pas.
   const [mileageAllocationEnabled, setMileageAllocationEnabled] = useState<boolean>(true);
+  // Phase 11D — niveau technicien. Drive l'auto-sélection du palier
+  // tarifaire à la saisie de temps. Null/undefined = pas de niveau défini.
+  const [level, setLevel] = useState<number | "">("");
   // `capabilities` lu depuis le user pour compat (certains appels lisent
   // encore ce champ), mais plus d'UI pour le modifier — voir Rôles & Permissions.
   // Avatar : optionnel sur le props (l'UI parente peut ne pas l'avoir
@@ -130,7 +133,7 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
       `/api/v1/users?includeAvatar=true&role=${encodeURIComponent(safeUser.role)}`,
     )
       .then((r) => (r.ok ? r.json() : []))
-      .then((arr: Array<{ id: string; avatar: string | null; mileageAllocationEnabled?: boolean }>) => {
+      .then((arr: Array<{ id: string; avatar: string | null; mileageAllocationEnabled?: boolean; level?: number | null }>) => {
         if (cancelled) return;
         const hit = Array.isArray(arr) ? arr.find((u) => u.id === safeUser.id) : null;
         if (hit) {
@@ -138,6 +141,7 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
           if (typeof hit.mileageAllocationEnabled === "boolean") {
             setMileageAllocationEnabled(hit.mileageAllocationEnabled);
           }
+          if (typeof hit.level === "number") setLevel(hit.level);
         }
       })
       .catch(() => {});
@@ -228,6 +232,7 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
           role,
           isActive: status === "Actif",
           mileageAllocationEnabled,
+          level: level === "" ? null : Number(level),
           // `capabilities` n'est plus géré via l'UI utilisateur — les
           // accès passent maintenant par Rôles & Permissions. On ne
           // transmet PAS le champ, le backend laisse les valeurs
@@ -422,6 +427,34 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* Niveau technicien (Phase 11D) — drive l'auto-sélection du
+              palier tarifaire à la saisie de temps. Optionnel. */}
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+            <label className="text-[13px] font-medium text-slate-900 block mb-1">
+              Niveau technicien
+            </label>
+            <p className="mb-2 text-[11.5px] text-slate-600 leading-relaxed">
+              Optionnel. Si défini, à la saisie de temps sur un client qui a
+              configuré ses paliers tarifaires avec un niveau associé,
+              l&apos;agent verra son palier présélectionné automatiquement.
+            </p>
+            <select
+              value={level === "" ? "" : String(level)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setLevel(v === "" ? "" : Number(v));
+              }}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            >
+              <option value="">— Non défini —</option>
+              <option value="1">Niveau 1</option>
+              <option value="2">Niveau 2</option>
+              <option value="3">Niveau 3</option>
+              <option value="4">Niveau 4</option>
+              <option value="5">Niveau 5</option>
+            </select>
           </div>
 
           {/* Allocation kilométrique — désactiver pour les agents qui
