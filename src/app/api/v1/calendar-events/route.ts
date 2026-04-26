@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { getAllowedOrgIds, userCanAccessOrg } from "@/lib/auth/org-scope";
 import { stripHtmlToText } from "@/lib/calendar/description-utils";
 
 /**
@@ -31,6 +32,21 @@ export async function GET(req: Request) {
     const ids = calendarIdsStr.split(",").filter(Boolean);
     if (ids.length > 0) baseWhere.calendarId = { in: ids };
   }
+  // Phase 9 — scope par org. Un event sans organizationId (rencontre
+  // interne, déplacement non rattaché) reste visible pour tous ; un
+  // event sur une org hors scope est filtré. On ne peut pas mettre OR
+  // directement sur baseWhere car finalWhere ajoute déjà un OR (date
+  // overlap + recurrence) — on combine via AND.
+  const allowedOrgIds = await getAllowedOrgIds(me.id, me.role);
+  const orgScopeWhere =
+    allowedOrgIds === "all"
+      ? null
+      : {
+          OR: [
+            { organizationId: { in: allowedOrgIds } },
+            { organizationId: null },
+          ],
+        };
 
   // Deux cas d'inclusion :
   //   (a) event classique qui chevauche la fenêtre
@@ -43,6 +59,7 @@ export async function GET(req: Request) {
   // calendarIds) sur chaque branche.
   const finalWhere = {
     ...baseWhere,
+    ...(orgScopeWhere ? { AND: [orgScopeWhere] } : {}),
     OR: [
       { AND: [{ startsAt: { lte: toDate } }, { endsAt: { gte: fromDate } }] },
       {
@@ -234,6 +251,13 @@ export async function POST(req: Request) {
   const endsAt = new Date(body.endsAt);
   if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
     return NextResponse.json({ error: "Dates invalides" }, { status: 400 });
+  }
+  // Phase 9 — refuse de créer un event sur une org hors scope.
+  if (body.organizationId && !(await userCanAccessOrg(me.id, me.role, body.organizationId))) {
+    return NextResponse.json(
+      { error: "Vous n'avez pas accès à cette organisation." },
+      { status: 403 },
+    );
   }
   if (endsAt <= startsAt) {
     return NextResponse.json(

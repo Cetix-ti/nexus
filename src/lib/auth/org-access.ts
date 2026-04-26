@@ -19,6 +19,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { isStaffRole, type AuthUser } from "@/lib/auth-utils";
+import { getAllowedOrgIds } from "@/lib/auth/org-scope";
 
 export type AccessDenied = { ok: false; res: Response; reason: "unauth" | "forbidden" | "notfound" };
 export type AccessGranted = { ok: true };
@@ -40,7 +41,16 @@ export async function assertUserOrgAccess(
   organizationId: string | null | undefined,
 ): Promise<AccessResult> {
   if (!organizationId) return forbidden("Organisation manquante");
-  if (isStaffRole(me.role)) return { ok: true };
+  if (isStaffRole(me.role)) {
+    // Phase 9 — un staff peut être limité à un sous-ensemble d'orgs
+    // (technicien dédié à HVAC, par exemple). Sans row dans
+    // UserOrganizationScope = accès complet (rétrocompat).
+    const allowed = await getAllowedOrgIds(me.id, me.role);
+    if (allowed === "all" || allowed.includes(organizationId)) {
+      return { ok: true };
+    }
+    return forbidden();
+  }
   const membership = await prisma.userOrganization.findFirst({
     where: { userId: me.id, organizationId },
     select: { id: true },
@@ -87,7 +97,12 @@ export async function requireOrgAccess(
  * Pour client : array d'orgIds (peut être vide).
  */
 export async function getAccessibleOrgIds(me: AuthUser): Promise<string[] | null> {
-  if (isStaffRole(me.role)) return null;
+  if (isStaffRole(me.role)) {
+    // Phase 9 — un staff peut être restreint à des orgs spécifiques.
+    // null = pas de filtre (rétrocompat). Tableau = orgs autorisées.
+    const allowed = await getAllowedOrgIds(me.id, me.role);
+    return allowed === "all" ? null : allowed;
+  }
   const rows = await prisma.userOrganization.findMany({
     where: { userId: me.id },
     select: { organizationId: true },
