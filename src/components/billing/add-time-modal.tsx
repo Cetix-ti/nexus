@@ -19,7 +19,7 @@ import {
   type TimeEntry,
 } from "@/lib/billing/types";
 import { decideBilling } from "@/lib/billing/engine";
-import { mockBillingProfiles, mockContracts } from "@/lib/billing/mock-data";
+import { mockBillingProfiles } from "@/lib/billing/mock-data";
 import { CoverageBadge } from "./coverage-badge";
 import {
   loadWorkTypes,
@@ -292,10 +292,17 @@ export function AddTimeModal({
     ? manualMinutes
     : diffMinutes(date, startTime, endTime);
 
+  // Pendant le chargement de billingData (~50-200ms), on retombe sur le
+  // profil par défaut "Standard MSP" pour ne pas casser l'UI. Le serveur
+  // revalide tout via resolveDecisionForEntry au POST — la valeur preview
+  // ne fuit pas en DB. Avant Phase 6 on importait aussi mockContracts ;
+  // les ids mock ("org_acme"...) ne matchent jamais nos orgs réelles donc
+  // le fallback était inutile et trompeur. On retourne juste undefined si
+  // l'API contracts n'a pas encore répondu.
   const billingProfile = billingData?.resolved ?? billingData?.baseProfile ?? mockBillingProfiles[0];
   const contract = useMemo(
-    () => orgContracts.length > 0 ? orgContracts[0] : mockContracts.find((c) => c.organizationId === organizationId),
-    [organizationId, orgContracts]
+    () => (orgContracts.length > 0 ? orgContracts[0] : undefined),
+    [orgContracts]
   );
 
   const decision = useMemo(() => {

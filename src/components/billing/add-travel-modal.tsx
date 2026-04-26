@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { X, Car, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { mockBillingProfiles, mockContracts } from "@/lib/billing/mock-data";
+import { mockBillingProfiles } from "@/lib/billing/mock-data";
 import type { TravelEntry, CoverageStatus } from "@/lib/billing/types";
 import { CoverageBadge } from "./coverage-badge";
 
@@ -41,11 +41,13 @@ export function AddTravelModal({
     }).catch(() => {});
   }, []);
 
+  // Phase 6 : on retire le mockContracts.find() qui retournait toujours
+  // undefined (les ids mock ne matchent jamais les orgs réelles). Le
+  // profil par défaut reste mockBillingProfiles[0] pour le preview UI ;
+  // le serveur revalide tout via resolveDecisionForEntry au POST.
   const profile = mockBillingProfiles[0];
-  const contract = useMemo(
-    () => mockContracts.find((c) => c.organizationId === organizationId),
-    [organizationId]
-  );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const contract = undefined as { type?: string; mspPlan?: { includesTravel?: boolean }; hourBank?: { includesTravel?: boolean } } | undefined;
 
   // Le taux facturé est unique par client (OrgMileageRate.kmRoundTrip
   // × taux $/km global) — pas dépendant du site visité. On affiche
