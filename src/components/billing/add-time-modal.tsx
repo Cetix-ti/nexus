@@ -24,6 +24,7 @@ import { CoverageBadge } from "./coverage-badge";
 import {
   loadWorkTypes,
   type WorkTypeOption,
+  type RateTierOption,
 } from "./client-billing-overrides-section";
 
 interface AddTimeModalProps {
@@ -85,26 +86,40 @@ export function AddTimeModal({
     () => loadWorkTypes(organizationId)[0]?.id ?? "",
   );
 
+  // Paliers tarifaires — axe "combien". Chargés depuis la DB.
+  const [rateTiers, setRateTiers] = useState<RateTierOption[]>([]);
+  const [rateTierId, setRateTierId] = useState<string>("");
+
   /** Charge la liste des libellés via l'API DB. Fallback silencieux sur le
    *  cache localStorage si l'API échoue (mode offline / restart serveur). */
   const reloadWorkTypes = React.useCallback(async () => {
     try {
-      const r = await fetch(
-        `/api/v1/organizations/${organizationId}/work-types`,
-        { cache: "no-store" },
-      );
-      if (!r.ok) return;
-      const json = await r.json();
-      const rows = Array.isArray(json?.data) ? json.data : [];
-      const mapped: WorkTypeOption[] = rows.map((w: { id: string; label: string; timeType: WorkTypeOption["timeType"]; hourlyRate: number | null }) => ({
-        id: w.id,
-        label: w.label,
-        timeType: w.timeType,
-        hourlyRateOverride: w.hourlyRate ?? undefined,
-      }));
-      setWorkTypesState(mapped);
-      // Garde la sélection si elle existe toujours, sinon prend la 1ère.
-      setWorkTypeId((prev) => (mapped.find((w) => w.id === prev) ? prev : mapped[0]?.id ?? ""));
+      const [wtRes, rtRes] = await Promise.all([
+        fetch(`/api/v1/organizations/${organizationId}/work-types`, { cache: "no-store" }),
+        fetch(`/api/v1/organizations/${organizationId}/rate-tiers`, { cache: "no-store" }),
+      ]);
+      if (wtRes.ok) {
+        const json = await wtRes.json();
+        const rows = Array.isArray(json?.data) ? json.data : [];
+        const mapped: WorkTypeOption[] = rows.map((w: { id: string; label: string; timeType: WorkTypeOption["timeType"] }) => ({
+          id: w.id,
+          label: w.label,
+          timeType: w.timeType,
+        }));
+        setWorkTypesState(mapped);
+        setWorkTypeId((prev) => (mapped.find((w) => w.id === prev) ? prev : mapped[0]?.id ?? ""));
+      }
+      if (rtRes.ok) {
+        const json = await rtRes.json();
+        const rows = Array.isArray(json?.data) ? json.data : [];
+        const mapped: RateTierOption[] = rows.map((t: { id: string; label: string; hourlyRate: number }) => ({
+          id: t.id,
+          label: t.label,
+          hourlyRate: t.hourlyRate,
+        }));
+        setRateTiers(mapped);
+        setRateTierId((prev) => (mapped.find((t) => t.id === prev) ? prev : mapped[0]?.id ?? ""));
+      }
     } catch {
       // ignore
     }
@@ -348,9 +363,10 @@ export function AddTimeModal({
         // Flag transmis au serveur pour qu'il honore le toggle "Forcer non
         // facturable" dans sa revalidation.
         ...(forceNonBillable ? { forceNonBillable: true } as any : {}),
-        // Libellé client choisi — utilisé par le serveur pour appliquer
-        // le bon taux horaire de base (table OrgWorkType).
+        // Type de prestation choisi (axe "quoi" — drive isOnsite/coverage).
         ...(workTypeId ? { workTypeId } as any : {}),
+        // Palier tarifaire choisi (axe "combien" — drive le taux horaire).
+        ...(rateTierId ? { rateTierId } as any : {}),
       };
       // Awaité : sans await, on fermait la modale avant que le POST ait
       // rendu, et l'utilisateur pouvait ré-ouvrir puis re-poster.
@@ -414,6 +430,26 @@ export function AddTimeModal({
               </Select>
             )}
           </div>
+
+          {rateTiers.length > 0 ? (
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+                Palier tarifaire
+              </label>
+              <Select value={rateTierId} onValueChange={setRateTierId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {rateTiers.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.label} — {t.hourlyRate.toFixed(2)} $/h
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

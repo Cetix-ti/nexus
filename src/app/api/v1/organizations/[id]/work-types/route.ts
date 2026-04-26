@@ -52,7 +52,6 @@ interface IncomingWorkType {
   id?: string;
   label: string;
   timeType: string;
-  hourlyRate?: number | null;
   isActive?: boolean;
   sortOrder?: number;
 }
@@ -86,9 +85,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         { error: `timeType invalide: ${w.timeType}` },
         { status: 400 },
       );
-    }
-    if (w.hourlyRate != null && (!Number.isFinite(w.hourlyRate) || w.hourlyRate < 0)) {
-      return NextResponse.json({ error: "hourlyRate invalide" }, { status: 400 });
     }
   }
 
@@ -124,7 +120,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         organizationId: id,
         label: w.label.trim(),
         timeType: w.timeType,
-        hourlyRate: w.hourlyRate ?? null,
         isActive: w.isActive ?? true,
         sortOrder: w.sortOrder ?? 0,
       };

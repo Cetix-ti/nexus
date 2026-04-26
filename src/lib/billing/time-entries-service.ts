@@ -150,9 +150,10 @@ export async function createTimeEntry(input: {
   hourlyRate?: number | null;
   amount?: number | null;
   forceNonBillable?: boolean;
-  /** Libellé client choisi par l'agent (id de OrgWorkType). Utilisé par
-   *  l'engine pour récupérer le tarif horaire de base spécifique au client. */
+  /** Type de prestation choisi par l'agent (id de OrgWorkType, axe "quoi"). */
   workTypeId?: string | null;
+  /** Palier tarifaire choisi par l'agent (id de OrgRateTier, axe "combien"). */
+  rateTierId?: string | null;
 }) {
   // Invariant métier : on ne peut pas facturer un déplacement sans avoir
   // été physiquement sur place. `hasTravelBilled=true` requiert `isOnsite=true`.
@@ -188,6 +189,7 @@ export async function createTimeEntry(input: {
     ticketCategoryId: ticket?.categoryId ?? undefined,
     forceNonBillable: input.forceNonBillable,
     workTypeId: input.workTypeId ?? null,
+    rateTierId: input.rateTierId ?? null,
   });
 
   const created = await prisma.timeEntry.create({
@@ -211,6 +213,7 @@ export async function createTimeEntry(input: {
       hourlyRate: decision.rate ?? null,
       amount: decision.amount ?? null,
       workTypeId: input.workTypeId ?? null,
+      rateTierId: input.rateTierId ?? null,
     },
   });
 

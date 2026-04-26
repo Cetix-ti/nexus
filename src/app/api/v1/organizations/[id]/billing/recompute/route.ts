@@ -78,6 +78,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       isWeekend: true,
       isUrgent: true,
       workTypeId: true,
+      rateTierId: true,
     },
   });
 
@@ -99,6 +100,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       isUrgent: e.isUrgent,
       ticketCategoryId: ticket?.categoryId ?? undefined,
       workTypeId: e.workTypeId,
+      rateTierId: e.rateTierId,
     });
     const next = {
       coverageStatus: decision.status,

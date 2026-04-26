@@ -98,6 +98,7 @@ model Organization {
   mileageRate           OrgMileageRate?
   billingOverride       ClientBillingOverride?
   workTypes             OrgWorkType[]
+  rateTiers             OrgRateTier[]
   addons                OrganizationAddon[]
   publishedDashboards   PublishedDashboard[]
   monthlyReports        MonthlyClientReport[]
@@ -1522,11 +1523,14 @@ model TimeEntry {
   hourlyRate      Float?    @map("hourly_rate")
   amount          Float?
   approvalStatus  String    @default("draft") @map("approval_status")
-  /// Libellé client choisi par l'agent au moment de la saisie. Donne le
-  /// taux horaire de base (avant multiplicateurs soir/weekend). Null si
-  /// l'agent a sélectionné un type système au lieu d'un libellé custom.
+  /// Type de prestation choisi par l'agent (axe "quoi"). Drive timeType,
+  /// isOnsite et la couverture FREE/INCLUDED. Null si type système direct.
   workTypeId      String?      @map("work_type_id")
   workType        OrgWorkType? @relation(fields: [workTypeId], references: [id], onDelete: SetNull)
+  /// Palier tarifaire choisi par l'agent (axe "combien"). Donne le taux
+  /// horaire de base. Null = retombe sur le taux scalaire du profil.
+  rateTierId      String?      @map("rate_tier_id")
+  rateTier        OrgRateTier? @relation(fields: [rateTierId], references: [id], onDelete: SetNull)
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
@@ -2200,22 +2204,17 @@ model ClientBillingOverride {
   @@map("client_billing_overrides")
 }
 
-/// Type de travail configuré pour un client : libellé personnalisable
-/// (ex. "Sysadmin à distance", "Tech L1 sur place") avec un taux horaire
-/// propre. Quand l'agent saisit du temps, il choisit un libellé : son
-/// `hourlyRate` devient la base, à laquelle l'engine ajoute les
-/// multiplicateurs soir/weekend du client.
-///
-/// `timeType` reste un enum technique (remote_work / onsite_work / travel /
-/// ...) lu par l'engine pour décider la couverture (FREE/INCLUDED/BILLABLE)
-/// et appliquer la sémantique de déplacement.
+/// Type de prestation configuré pour un client : libellé personnalisable
+/// (ex. "À distance", "Sur place", "Déplacement", "Préparation"). C'est
+/// l'axe "QU'EST-CE QUE FAIT L'AGENT". Le `timeType` enum lu par l'engine
+/// décide la couverture (FREE/INCLUDED/BILLABLE) et la sémantique de
+/// déplacement. Le tarif vient d'un `OrgRateTier` séparé.
 model OrgWorkType {
   id             String       @id @default(cuid())
   organizationId String       @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   label          String
   timeType       String       @map("time_type")
-  hourlyRate     Float?       @map("hourly_rate")
   isActive       Boolean      @default(true) @map("is_active")
   sortOrder      Int          @default(0) @map("sort_order")
   createdAt      DateTime     @default(now()) @map("created_at")
@@ -2226,6 +2225,29 @@ model OrgWorkType {
   @@unique([organizationId, label])
   @@index([organizationId, isActive])
   @@map("org_work_types")
+}
+
+/// Tarif horaire configuré pour un client : libellé + taux. C'est l'axe
+/// "À QUEL TARIF". L'agent le choisit indépendamment du type de prestation
+/// (ex. "Niveau 1 — 87$", "Niveau 3 — 95$", "Sysadmin Sr — 110$").
+/// Le client peut ne définir aucun tier → l'engine retombe sur le taux
+/// scalaire de `ClientBillingOverride` (standardRate / onsiteRate).
+model OrgRateTier {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  label          String
+  hourlyRate     Float        @map("hourly_rate")
+  isActive       Boolean      @default(true) @map("is_active")
+  sortOrder      Int          @default(0) @map("sort_order")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  timeEntries    TimeEntry[]
+
+  @@unique([organizationId, label])
+  @@index([organizationId, isActive])
+  @@map("org_rate_tiers")
 }
 
 model OrgMileageRate {
