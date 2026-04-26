@@ -223,6 +223,8 @@ export async function updateOrganization(
     clientPortalReportVariant: "BOTH" | "WITH_RATES" | "HOURS_ONLY";
     /** Types de facturation actifs ("hour_bank" / "professional_services" / "ftig"). */
     billingTypes: string[];
+    /** Modules activés (Phase 10F). Vide = tous actifs (rétrocompat). */
+    enabledModules: string[];
   }>
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -143,6 +143,14 @@ model Organization {
   /// localStorage par-navigateur, perdu au reset, non synchro entre
   /// agents.
   billingTypes              String[] @default([]) @map("billing_types")
+  /// Modules activés pour ce client (Phase 10F). Sous-ensemble de :
+  /// "monitoring", "backups", "security_center", "kb", "assets",
+  /// "billing_reports", "tickets". Si vide ou null, on considère
+  /// que tous les modules sont actifs (rétrocompat). Drive l'affichage
+  /// des sections portail client — un client sans contrat monitoring
+  /// ne verra pas la section Veeam/alertes même si la permission est
+  /// accordée par défaut sur ses contacts.
+  enabledModules            String[] @default([]) @map("enabled_modules")
 
   @@map("organizations")
 }

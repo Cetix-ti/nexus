@@ -21,9 +21,16 @@ export async function GET() {
   // l'UI : afficher 1 ou 2 boutons de téléchargement par rapport.
   const org = await prisma.organization.findUnique({
     where: { id: user.organizationId },
-    select: { clientPortalReportVariant: true },
+    select: { clientPortalReportVariant: true, enabledModules: true },
   });
   const variantPolicy = org?.clientPortalReportVariant ?? "BOTH";
+  // Phase 10F : module billing_reports désactivé pour cette org → 403,
+  // l'UI portail traite ça comme "section non disponible".
+  const modules = Array.isArray(org?.enabledModules) ? org!.enabledModules : [];
+  const moduleEnabled = modules.length === 0 || modules.includes("billing_reports");
+  if (!moduleEnabled) {
+    return NextResponse.json({ error: "Module non activé" }, { status: 403 });
+  }
 
   const rows = await prisma.monthlyClientReport.findMany({
     where: {

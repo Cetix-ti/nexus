@@ -55,6 +55,7 @@ import { OrgAssetsTab } from "@/components/assets/org-assets-tab";
 import { OrgAssetsTabWrapper } from "@/components/assets/org-assets-tab-wrapper";
 import { OrgSlaSection } from "@/components/sla/org-sla-section";
 import { OrgPortalSection } from "@/components/portal/org-portal-section";
+import { OrgModulesSection } from "@/components/orgs/org-modules-section";
 import { OrgReportsTab } from "@/components/organizations/org-reports-tab";
 import { OrgAnalyticsWorkbench } from "@/components/organizations/org-analytics-workbench";
 import { OrgHistorySection } from "@/components/organizations/org-history-section";
@@ -944,6 +945,7 @@ export default function OrganizationDetailPage() {
     logo: string | null;
     monthlyReportAutoPublish?: boolean;
     clientPortalReportVariant?: "BOTH" | "WITH_RATES" | "HOURS_ONLY";
+    enabledModules?: string[];
   } | null>(null);
 
   useEffect(() => {
@@ -1810,10 +1812,16 @@ export default function OrganizationDetailPage() {
 
       {/* Portal Access Tab */}
       {activeTab === "portal_access" && (
-        <OrgPortalSection
-          organizationId={orgId}
-          organizationName={o.name}
-        />
+        <div className="space-y-5">
+          <OrgPortalSection
+            organizationId={orgId}
+            organizationName={o.name}
+          />
+          <OrgModulesSection
+            organizationId={orgId}
+            initialEnabledModules={dbOrg?.enabledModules ?? []}
+          />
+        </div>
       )}
 
       {/* Assets Tab — sous-onglets Matériel / Logiciels (redirect) / Engagements */}
