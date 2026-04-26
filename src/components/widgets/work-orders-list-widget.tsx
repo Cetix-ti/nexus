@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Clock, Loader2, Download, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink,
+  Clock, Loader2, Download, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -185,6 +185,29 @@ export function WorkOrdersListWidget({
     else { setSortKey(key); setSortDir(key === "date" ? "desc" : "asc"); }
   }
 
+  function exportXlsx() {
+    const params = new URLSearchParams();
+    if (orgContextId) params.set("organizationId", orgContextId);
+    if (agentId) params.set("agentId", agentId);
+    if (dashboardDays > 0) {
+      const to = new Date();
+      const from = new Date();
+      from.setDate(to.getDate() - dashboardDays);
+      params.set("from", from.toISOString());
+      params.set("to", to.toISOString());
+    } else if (customFrom && customTo) {
+      const fromDate = new Date(customFrom);
+      const toDate = new Date(customTo);
+      toDate.setHours(23, 59, 59, 999);
+      params.set("from", fromDate.toISOString());
+      params.set("to", toDate.toISOString());
+    }
+    // Le navigateur récupère le binaire via une nav directe (Content-Disposition
+    // attachment force le download). Pas besoin de blob côté client.
+    const url = `/api/v1/time-entries/export.xlsx?${params.toString()}`;
+    window.location.href = url;
+  }
+
   function exportCsv() {
     const header = ["Date", "Ticket #", "Sujet ticket", "Technicien", "Type", "Durée (min)", "Description", "Couverture", "Montant", "Sur place", "Déplacement facturé", "Trajet (min)"];
     const lines = [header.map(csvEscape).join(",")];
@@ -235,16 +258,26 @@ export function WorkOrdersListWidget({
                 : `${sorted.length} entrée${sorted.length > 1 ? "s" : ""} · ${fmtDuration(totalMinutes)} · ${fmtMoney(totalAmount)}`}
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={exportCsv}
-            disabled={loading || sorted.length === 0}
-            className="print-export-hide"
-            title="Export CSV — pour PDF, utilise le bouton Exporter du dashboard."
-          >
-            <Download className="h-3.5 w-3.5" /> CSV
-          </Button>
+          <div className="flex items-center gap-2 print-export-hide">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportXlsx}
+              disabled={loading || sorted.length === 0}
+              title="Export Excel formaté (header gelé, totaux, synthèse pivot, formats natifs)"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" /> Excel
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCsv}
+              disabled={loading || sorted.length === 0}
+              title="Export CSV brut"
+            >
+              <Download className="h-3.5 w-3.5" /> CSV
+            </Button>
+          </div>
         </div>
 
         {loading ? (

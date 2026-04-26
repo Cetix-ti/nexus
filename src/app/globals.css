@@ -195,3 +195,14 @@ body[data-hide-floating-ui="1"] [data-floating-ui] {
   }
   @page { margin: 10mm; size: landscape; }
 }
+
+/* ============================================================================
+ * Export dashboard (html-to-image) — affiche les éléments [data-export-show]
+ * uniquement quand body.exporting-dashboard est appliqué (par
+ * dashboard-export.ts). Utilisé pour le bandeau Cetix qui ne doit
+ * apparaître que dans le PDF/PNG/JPG exporté, pas dans la navigation
+ * normale.
+ * ============================================================================ */
+body.exporting-dashboard [data-export-show] {
+  display: block !important;
+}

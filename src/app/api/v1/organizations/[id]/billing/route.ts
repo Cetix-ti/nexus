@@ -1,15 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
-import {
-  mockBillingProfiles,
-  mockClientBillingOverrides,
-  getClientBillingOverride,
-} from "@/lib/billing/mock-data";
+import { mockBillingProfiles } from "@/lib/billing/mock-data";
 import { resolveClientBillingProfile } from "@/lib/billing/engine";
+import {
+  getClientBillingOverrideForOrg,
+  upsertClientBillingOverride,
+} from "@/lib/billing/overrides-db";
 import type { ClientBillingOverride } from "@/lib/billing/types";
 import { getCurrentUser } from "@/lib/auth-utils";
 
-function findBaseProfileForOrg(orgId: string) {
-  const override = getClientBillingOverride(orgId);
+async function findBaseProfileForOrg(orgId: string) {
+  const override = (await getClientBillingOverrideForOrg(orgId)) ?? undefined;
   const baseProfile =
     (override && mockBillingProfiles.find((p) => p.id === override.baseProfileId)) ||
     mockBillingProfiles.find((p) => p.isDefault) ||
@@ -25,7 +25,7 @@ export async function GET(
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { id } = await params;
-    const { override, baseProfile } = findBaseProfileForOrg(id);
+    const { override, baseProfile } = await findBaseProfileForOrg(id);
     if (!baseProfile) {
       return NextResponse.json(
         { success: false, error: "Aucun profil de facturation disponible" },
@@ -56,10 +56,13 @@ export async function PATCH(
 ) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (me.role !== "SUPER_ADMIN" && me.role !== "MSP_ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const { id } = await params;
     const body = (await req.json()) as Partial<ClientBillingOverride>;
-    const { baseProfile } = findBaseProfileForOrg(id);
+    const { baseProfile } = await findBaseProfileForOrg(id);
     if (!baseProfile) {
       return NextResponse.json(
         { success: false, error: "Profil de base introuvable" },
@@ -67,34 +70,10 @@ export async function PATCH(
       );
     }
 
-    const existingIdx = mockClientBillingOverrides.findIndex(
-      (o) => o.organizationId === id
-    );
-    const nowIso = new Date().toISOString();
-
-    let updated: ClientBillingOverride;
-    if (existingIdx >= 0) {
-      updated = {
-        ...mockClientBillingOverrides[existingIdx],
-        ...body,
-        organizationId: id,
-        updatedAt: nowIso,
-      };
-      mockClientBillingOverrides[existingIdx] = updated;
-    } else {
-      updated = {
-        id: `cbo_${id}_${Date.now()}`,
-        organizationId: id,
-        organizationName: body.organizationName ?? id,
-        baseProfileId: body.baseProfileId ?? baseProfile.id,
-        isActive: body.isActive ?? true,
-        effectiveFrom: body.effectiveFrom ?? nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        ...body,
-      } as ClientBillingOverride;
-      mockClientBillingOverrides.push(updated);
-    }
+    const updated = await upsertClientBillingOverride(id, {
+      ...body,
+      baseProfileId: body.baseProfileId ?? baseProfile.id,
+    });
 
     const resolved = resolveClientBillingProfile(baseProfile, updated);
     return NextResponse.json({
@@ -106,7 +85,8 @@ export async function PATCH(
         resolved,
       },
     });
-  } catch {
+  } catch (e) {
+    console.error("PATCH /organizations/[id]/billing error:", e);
     return NextResponse.json(
       { success: false, error: "Échec de la mise à jour du profil de facturation" },
       { status: 500 }

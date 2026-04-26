@@ -96,6 +96,9 @@ model Organization {
   persistenceWhitelists SecurityPersistenceWhitelist[]
   aiConsent             AiConsent?
   mileageRate           OrgMileageRate?
+  billingOverride       ClientBillingOverride?
+  workTypes             OrgWorkType[]
+  rateTiers             OrgRateTier[]
   addons                OrganizationAddon[]
   publishedDashboards   PublishedDashboard[]
   monthlyReports        MonthlyClientReport[]
@@ -501,6 +504,12 @@ model Ticket {
   /// Confidence (0-1) de l'IA au moment de l'application auto — affichée
   /// dans l'UI à côté de la catégorie.
   categoryConfidence Float?         @map("category_confidence")
+  /// Résumé court (1-2 phrases) généré par l'IA pour clarifier le sujet
+  /// dans les livrables (ex. rapport mensuel client) quand le titre seul
+  /// est insuffisant. Null si pas encore généré ou confidence trop basse.
+  aiSummary           String?        @map("ai_summary") @db.Text
+  aiSummaryConfidence Float?         @map("ai_summary_confidence")
+  aiSummaryGeneratedAt DateTime?     @map("ai_summary_generated_at")
   urgency            TicketUrgency  @default(MEDIUM)
   impact             TicketImpact   @default(MEDIUM)
   type               TicketType     @default(INCIDENT)
@@ -1514,6 +1523,14 @@ model TimeEntry {
   hourlyRate      Float?    @map("hourly_rate")
   amount          Float?
   approvalStatus  String    @default("draft") @map("approval_status")
+  /// Type de prestation choisi par l'agent (axe "quoi"). Drive timeType,
+  /// isOnsite et la couverture FREE/INCLUDED. Null si type système direct.
+  workTypeId      String?      @map("work_type_id")
+  workType        OrgWorkType? @relation(fields: [workTypeId], references: [id], onDelete: SetNull)
+  /// Palier tarifaire choisi par l'agent (axe "combien"). Donne le taux
+  /// horaire de base. Null = retombe sur le taux scalaire du profil.
+  rateTierId      String?      @map("rate_tier_id")
+  rateTier        OrgRateTier? @relation(fields: [rateTierId], references: [id], onDelete: SetNull)
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
@@ -2133,6 +2150,104 @@ model OrganizationAddon {
   @@index([organizationId])
   @@index([addonId])
   @@map("organization_addons")
+}
+
+/// Comment un mode de prestation est couvert pour un client donné.
+enum BillingCoverageMode {
+  /// Facturable au taux applicable.
+  BILLABLE
+  /// Gratuit pour le client (saisie de temps non facturable).
+  FREE
+  /// Inclus au contrat (déduit de la couverture, pas facturé en plus).
+  INCLUDED
+}
+
+/// Override de facturation par client (org). Tous les champs numériques
+/// sont optionnels — quand non null ils remplacent le champ correspondant
+/// du `BillingProfile` de base. Un seul override par org (unique).
+model ClientBillingOverride {
+  id                       String       @id @default(cuid())
+  organizationId           String       @unique @map("organization_id")
+  organization             Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// ID du BillingProfile de base (ex. "bp_standard"). Pour l'instant on
+  /// stocke le slug textuel (mock-data.ts) — quand les profils seront
+  /// migrés en DB, ce sera une FK.
+  baseProfileId            String       @map("base_profile_id")
+  isActive                 Boolean      @default(true) @map("is_active")
+  effectiveFrom            DateTime     @default(now()) @map("effective_from")
+  effectiveTo              DateTime?    @map("effective_to")
+  // --- Couverture par mode (par client) --------------------------------
+  remoteCoverage           BillingCoverageMode @default(BILLABLE) @map("remote_coverage")
+  onsiteCoverage           BillingCoverageMode @default(BILLABLE) @map("onsite_coverage")
+  /// Multiplicateur appliqué sur le taux pour les saisies marquées "soir".
+  afterHoursMultiplier     Float        @default(1.5) @map("after_hours_multiplier")
+  /// Multiplicateur appliqué sur le taux pour les saisies en weekend.
+  weekendMultiplier        Float        @default(2.0) @map("weekend_multiplier")
+  // --- Taux numériques (null = hérite de la base) -----------------------
+  standardRate             Float?       @map("standard_rate")
+  onsiteRate               Float?       @map("onsite_rate")
+  remoteRate               Float?       @map("remote_rate")
+  urgentRate               Float?       @map("urgent_rate")
+  afterHoursRate           Float?       @map("after_hours_rate")
+  weekendRate              Float?       @map("weekend_rate")
+  travelRate               Float?       @map("travel_rate")
+  ratePerKm                Float?       @map("rate_per_km")
+  travelFlatFee            Float?       @map("travel_flat_fee")
+  hourBankOverageRate      Float?       @map("hour_bank_overage_rate")
+  mspExcludedRate          Float?       @map("msp_excluded_rate")
+  minimumBillableMinutes   Int?         @map("minimum_billable_minutes")
+  roundingIncrementMinutes Int?         @map("rounding_increment_minutes")
+  notes                    String?      @db.Text
+  createdAt                DateTime     @default(now()) @map("created_at")
+  updatedAt                DateTime     @updatedAt @map("updated_at")
+
+  @@map("client_billing_overrides")
+}
+
+/// Type de prestation configuré pour un client : libellé personnalisable
+/// (ex. "À distance", "Sur place", "Déplacement", "Préparation"). C'est
+/// l'axe "QU'EST-CE QUE FAIT L'AGENT". Le `timeType` enum lu par l'engine
+/// décide la couverture (FREE/INCLUDED/BILLABLE) et la sémantique de
+/// déplacement. Le tarif vient d'un `OrgRateTier` séparé.
+model OrgWorkType {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  label          String
+  timeType       String       @map("time_type")
+  isActive       Boolean      @default(true) @map("is_active")
+  sortOrder      Int          @default(0) @map("sort_order")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  timeEntries    TimeEntry[]
+
+  @@unique([organizationId, label])
+  @@index([organizationId, isActive])
+  @@map("org_work_types")
+}
+
+/// Tarif horaire configuré pour un client : libellé + taux. C'est l'axe
+/// "À QUEL TARIF". L'agent le choisit indépendamment du type de prestation
+/// (ex. "Niveau 1 — 87$", "Niveau 3 — 95$", "Sysadmin Sr — 110$").
+/// Le client peut ne définir aucun tier → l'engine retombe sur le taux
+/// scalaire de `ClientBillingOverride` (standardRate / onsiteRate).
+model OrgRateTier {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  label          String
+  hourlyRate     Float        @map("hourly_rate")
+  isActive       Boolean      @default(true) @map("is_active")
+  sortOrder      Int          @default(0) @map("sort_order")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  timeEntries    TimeEntry[]
+
+  @@unique([organizationId, label])
+  @@index([organizationId, isActive])
+  @@map("org_rate_tiers")
 }
 
 model OrgMileageRate {

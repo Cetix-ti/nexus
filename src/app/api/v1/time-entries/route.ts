@@ -36,6 +36,10 @@ const createSchema = z.object({
   hourlyRate: z.number().optional().nullable(),
   amount: z.number().optional().nullable(),
   forceNonBillable: z.boolean().optional(),
+  /** Type de prestation choisi (axe "quoi" — drive isOnsite/coverage). */
+  workTypeId: z.string().optional().nullable(),
+  /** Palier tarifaire choisi (axe "combien" — drive le taux horaire). */
+  rateTierId: z.string().optional().nullable(),
 });
 
 export async function GET(req: Request) {
@@ -104,6 +108,8 @@ export async function POST(req: Request) {
       hasTravelBilled: d.hasTravelBilled,
       travelDurationMinutes: d.travelDurationMinutes,
       forceNonBillable: d.forceNonBillable,
+      workTypeId: d.workTypeId,
+      rateTierId: d.rateTierId,
     });
     return NextResponse.json(created, { status: 201 });
   } catch (e) {

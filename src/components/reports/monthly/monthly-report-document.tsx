@@ -21,24 +21,36 @@ import type { MonthlyReportPayload, MonthlyReportTicketBlock } from "@/lib/repor
 
 // ---------------------------------------------------------------------------
 // Palette + tokens — exposés en CSS vars pour cohérence sur tout le doc.
+// Direction « tech IT moderne » : blue-forward, accents cyan, neutres slate,
+// pas de chaleur cream/copper. Look Vercel/Linear/Stripe.
 // ---------------------------------------------------------------------------
 const THEME = {
-  paper:      "#FAFAF6",
-  ink:        "#0F172A",
-  inkSoft:    "#1A2236",
-  blue:       "#1E40AF",
-  blueBright: "#3B82F6",
-  cream:      "#F5EFDF",
-  creamLine:  "#E8DEC2",
-  copper:     "#9A4A1F",
-  sage:       "#5A7D5E",
-  stone:      "#78716C",
-  hair:       "#D6D3CB",
+  paper:       "#FFFFFF",
+  paperSubtle: "#F8FAFC",  // slate-50, très léger fond pour cards
+  ink:         "#0F172A",
+  inkSoft:     "#1E293B",
+  // Spectre Cetix Blue
+  blueDeep:    "#1E3A8A",  // navy 800 — titres, brand fort
+  blue:        "#2563EB",  // blue 600 — primary action
+  blueBright:  "#3B82F6",  // blue 500 — accents lumineux
+  bluePale:    "#DBEAFE",  // blue 100 — fonds doux
+  blueIce:     "#EFF6FF",  // blue 50  — sidebars, blocs synthèse
+  // Accent tech (cyan/teal) — replace l'ancien copper
+  accent:      "#0891B2",  // cyan 600 — eyebrows, mentions techniques
+  accentBright:"#22D3EE",  // cyan 400 — highlights
+  // Sémantique
+  positive:    "#059669",  // emerald 600 — KPI verts, notes résolution
+  warning:     "#D97706",  // amber 600 — warnings (sparingly)
+  // Neutres
+  slate:       "#64748B",  // slate 500 — texte secondaire
+  slateLight:  "#94A3B8",  // slate 400 — meta
+  hair:        "#E2E8F0",  // slate 200 — séparateurs
+  hairLight:   "#F1F5F9",  // slate 100 — alt rows
 };
 
-const FONT_DISPLAY = "var(--font-fraunces), Georgia, serif";
-const FONT_BODY    = "var(--font-dm-sans), -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
-const FONT_MONO    = "var(--font-jetbrains), ui-monospace, monospace";
+const FONT_DISPLAY = "var(--font-geist), -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+const FONT_BODY    = "var(--font-geist), -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+const FONT_MONO    = "var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace";
 
 // ---------------------------------------------------------------------------
 // Format helpers
@@ -79,6 +91,21 @@ function coverageLabel(status: string): string {
     case "non_billable":            return "Non facturable";
     case "pending":                 return "En attente";
     default:                        return status;
+  }
+}
+
+function timeTypeLabel(t: string): string {
+  switch (t) {
+    case "remote_work":     return "À distance";
+    case "onsite_work":     return "Sur place";
+    case "travel":          return "Déplacement";
+    case "preparation":     return "Préparation";
+    case "administration":  return "Administration";
+    case "waiting":         return "Attente";
+    case "follow_up":       return "Suivi";
+    case "internal":        return "Interne";
+    case "other":           return "Autre";
+    default:                return t;
   }
 }
 function capitalize(s: string): string {
@@ -144,7 +171,7 @@ export function MonthlyReportDocument({
           letter-spacing: 0.18em;
           text-transform: uppercase;
           font-weight: 500;
-          color: ${THEME.copper};
+          color: ${THEME.accent};
         }
         .mrd-rule {
           border: 0;
@@ -156,7 +183,10 @@ export function MonthlyReportDocument({
           border-top: 2px solid ${THEME.ink};
           margin: 0;
         }
-        @page { size: Letter; margin: 0; }
+        /* IMPORTANT : on laisse Puppeteer (page.pdf({ margin: ... }))
+           contrôler les marges. Pas de @page margin override ici, sinon
+           la footer template overlaperait le contenu. */
+        @page { size: Letter; }
         @media print {
           body { background: ${THEME.paper}; }
         }
@@ -201,8 +231,12 @@ function CoverPage({
     <section
       className="break-after-page"
       style={{
-        padding: "60px 60px 40px",
-        minHeight: "100vh",
+        // Puppeteer applique 18mm sur les bords. Pas de padding latéral
+        // interne (sinon double). Vertical : un peu de respiration pour
+        // que la grille top/middle/bottom n'embrasse pas exactement les
+        // bords de la zone imprimable.
+        padding: "0 0 16px",
+        minHeight: "calc(100vh - 38mm)",
         display: "grid",
         gridTemplateRows: "auto 1fr auto",
       }}
@@ -227,7 +261,7 @@ function CoverPage({
           <div>
             <div
               className="mrd-eyebrow"
-              style={{ marginBottom: "16px", color: THEME.stone }}
+              style={{ marginBottom: "16px", color: THEME.slate }}
             >
               Période
             </div>
@@ -259,7 +293,7 @@ function CoverPage({
             }}
           >
             <div>
-              <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "6px" }}>
+              <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "6px" }}>
                 Préparé pour
               </div>
               <div
@@ -277,14 +311,14 @@ function CoverPage({
               {organization.clientCode ? (
                 <div
                   className="mrd-mono"
-                  style={{ fontSize: "11px", color: THEME.stone, marginTop: "6px" }}
+                  style={{ fontSize: "11px", color: THEME.slate, marginTop: "6px" }}
                 >
                   {organization.clientCode}
                 </div>
               ) : null}
             </div>
             <div style={{ textAlign: "right" }}>
-              <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "6px" }}>
+              <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "6px" }}>
                 Couverture
               </div>
               <div className="mrd-mono" style={{ fontSize: "12px" }}>
@@ -296,15 +330,15 @@ function CoverPage({
           {/* Synthèse exécutive */}
           <div
             style={{
-              background: THEME.cream,
-              borderLeft: `3px solid ${THEME.copper}`,
+              background: THEME.blueIce,
+              borderLeft: `3px solid ${THEME.accent}`,
               padding: "20px 24px",
               marginTop: "12px",
             }}
           >
             <div
               className="mrd-eyebrow"
-              style={{ color: THEME.copper, marginBottom: "10px" }}
+              style={{ color: THEME.accent, marginBottom: "10px" }}
             >
               Synthèse du mois
             </div>
@@ -332,7 +366,7 @@ function CoverPage({
           gridTemplateColumns: "1fr 1fr 1fr",
           gap: "24px",
           fontSize: "10px",
-          color: THEME.stone,
+          color: THEME.slate,
           paddingTop: "32px",
           borderTop: `1px solid ${THEME.hair}`,
         }}
@@ -355,7 +389,7 @@ function CoverPage({
 function Meta({ label, value, align }: { label: string; value: string; align?: "right" }) {
   return (
     <div style={{ textAlign: align ?? "left" }}>
-      <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "4px" }}>
+      <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "4px" }}>
         {label}
       </div>
       <div style={{ color: THEME.ink, fontSize: "11px" }}>{value}</div>
@@ -404,7 +438,10 @@ function PageSection({
   return (
     <section
       className={[breakAfter ? "break-after-page" : "", breakBefore ? "break-before-page" : ""].join(" ")}
-      style={{ padding: "56px 60px" }}
+      // Puppeteer applique déjà 18mm sur les 4 bords via page.pdf({ margin }).
+      // Padding interne réduit à 8px vertical seulement pour aérer entre
+      // sections sans empiler avec la marge externe.
+      style={{ padding: "8px 0" }}
     >
       {children}
     </section>
@@ -469,7 +506,8 @@ function HeroKpi({ label, value, sub }: { label: string; value: string; sub?: st
   return (
     <div
       style={{
-        background: THEME.ink,
+        // Gradient subtil navy → bleu Cetix : profondeur sans noir mort.
+        background: `linear-gradient(135deg, ${THEME.ink} 0%, ${THEME.blueDeep} 100%)`,
         color: THEME.paper,
         padding: "32px 32px 28px",
         display: "flex",
@@ -482,7 +520,7 @@ function HeroKpi({ label, value, sub }: { label: string; value: string; sub?: st
       <div>
         <div
           className="mrd-eyebrow"
-          style={{ color: THEME.creamLine, marginBottom: "12px" }}
+          style={{ color: THEME.bluePale, marginBottom: "12px" }}
         >
           {label}
         </div>
@@ -495,14 +533,14 @@ function HeroKpi({ label, value, sub }: { label: string; value: string; sub?: st
             lineHeight: 1,
             fontWeight: 500,
             letterSpacing: "-0.03em",
-            color: THEME.cream,
+            color: THEME.blueIce,
             fontVariationSettings: "'opsz' 144, 'SOFT' 30",
           }}
         >
           {value}
         </div>
         {sub ? (
-          <div style={{ fontSize: "11px", color: THEME.creamLine, marginTop: "10px", opacity: 0.85 }}>
+          <div style={{ fontSize: "11px", color: THEME.bluePale, marginTop: "10px", opacity: 0.85 }}>
             {sub}
           </div>
         ) : null}
@@ -522,7 +560,7 @@ function SideKpiStack({
         <div
           key={i}
           style={{
-            background: it.muted ? THEME.cream : "transparent",
+            background: it.muted ? THEME.blueIce : "transparent",
             border: it.muted ? "none" : `1px solid ${THEME.hair}`,
             padding: "16px 20px",
             display: "flex",
@@ -532,11 +570,11 @@ function SideKpiStack({
           }}
         >
           <div style={{ minWidth: 0 }}>
-            <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "4px" }}>
+            <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "4px" }}>
               {it.label}
             </div>
             {it.sub ? (
-              <div style={{ fontSize: "10.5px", color: THEME.stone }}>{it.sub}</div>
+              <div style={{ fontSize: "10.5px", color: THEME.slate }}>{it.sub}</div>
             ) : null}
           </div>
           <div
@@ -560,7 +598,7 @@ function SideKpiStack({
 function StatBand({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
   return (
     <div style={{ padding: "0 20px", borderRight: `1px solid ${THEME.hair}` }}>
-      <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "6px" }}>
+      <div className="mrd-eyebrow" style={{ color: THEME.slate, marginBottom: "6px" }}>
         {label}
       </div>
       <div
@@ -568,7 +606,7 @@ function StatBand({ label, value, positive }: { label: string; value: string; po
         style={{
           fontSize: "26px",
           fontWeight: 500,
-          color: positive ? THEME.sage : THEME.ink,
+          color: positive ? THEME.positive : THEME.ink,
           letterSpacing: "-0.02em",
           fontVariationSettings: "'opsz' 36",
         }}
@@ -636,8 +674,8 @@ function RequesterSection({ byRequester }: { byRequester: MonthlyReportPayload["
       <SectionTitle eyebrow="03 — Demandeurs">Tickets par demandeur</SectionTitle>
       <EditorialTable
         columns={[
-          { key: "name", label: "Demandeur", width: "32%" },
-          { key: "title", label: "Fonction", width: "30%", muted: true },
+          { key: "name", label: "Demandeur", width: "30%" },
+          { key: "email", label: "Courriel", width: "32%", muted: true },
           { key: "opened", label: "Créés", align: "right" },
           { key: "resolved", label: "Résolus", align: "right" },
           { key: "time", label: "Temps total", align: "right", emphasis: true },
@@ -645,7 +683,7 @@ function RequesterSection({ byRequester }: { byRequester: MonthlyReportPayload["
         rows={byRequester.map((r) => ({
           id: r.requester.id,
           name: r.requester.fullName,
-          title: r.requester.jobTitle ?? "—",
+          email: r.requester.email || "—",
           opened: String(r.ticketsOpenedThisMonth),
           resolved: String(r.ticketsResolvedThisMonth),
           time: fmtMinutesAsHours(r.totalMinutes),
@@ -666,7 +704,7 @@ function TripsSection({ trips }: { trips: MonthlyReportPayload["trips"] }) {
       {!trips.billable && trips.nonBillableReason ? (
         <div
           style={{
-            background: THEME.cream,
+            background: THEME.blueIce,
             borderLeft: `3px solid ${THEME.blue}`,
             padding: "14px 18px",
             marginBottom: "20px",
@@ -763,10 +801,24 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
             {ticket.subject}
           </h3>
         </div>
-        <span className="mrd-eyebrow" style={{ color: THEME.stone, whiteSpace: "nowrap" }}>
+        <span className="mrd-eyebrow" style={{ color: THEME.slate, whiteSpace: "nowrap" }}>
           {ticket.status}
         </span>
       </div>
+
+      {ticket.aiSummary ? (
+        <p
+          style={{
+            margin: "10px 0 0 0",
+            fontSize: "12px",
+            lineHeight: 1.55,
+            color: THEME.inkSoft,
+            fontStyle: "italic",
+          }}
+        >
+          {ticket.aiSummary}
+        </p>
+      ) : null}
 
       <div
         style={{
@@ -775,7 +827,7 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
           flexWrap: "wrap",
           gap: "20px",
           fontSize: "11px",
-          color: THEME.stone,
+          color: THEME.slate,
         }}
       >
         {ticket.requesterName ? (
@@ -787,13 +839,13 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
       </div>
 
       {ticket.agents.length > 0 ? (
-        <div style={{ marginTop: "8px", fontSize: "11px", color: THEME.stone }}>
-          <span className="mrd-eyebrow" style={{ color: THEME.stone }}>Techniciens · </span>
+        <div style={{ marginTop: "8px", fontSize: "11px", color: THEME.slate }}>
+          <span className="mrd-eyebrow" style={{ color: THEME.slate }}>Techniciens · </span>
           {ticket.agents.map((a, i) => (
             <span key={a.name}>
               {i > 0 ? " · " : ""}
               <span style={{ color: THEME.ink }}>{a.name}</span>
-              <span style={{ color: THEME.stone }}> ({fmtMinutesAsHours(a.minutes)})</span>
+              <span style={{ color: THEME.slate }}> ({fmtMinutesAsHours(a.minutes)})</span>
             </span>
           ))}
         </div>
@@ -803,12 +855,12 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
         <div
           style={{
             marginTop: "16px",
-            background: "#F1F8F2",
-            borderLeft: `3px solid ${THEME.sage}`,
+            background: "#ECFDF5",
+            borderLeft: `3px solid ${THEME.positive}`,
             padding: "12px 16px",
           }}
         >
-          <div className="mrd-eyebrow" style={{ color: THEME.sage, marginBottom: "6px" }}>
+          <div className="mrd-eyebrow" style={{ color: THEME.positive, marginBottom: "6px" }}>
             Note de résolution
           </div>
           <p
@@ -826,43 +878,237 @@ function TicketBlock({ ticket }: { ticket: MonthlyReportTicketBlock }) {
       ) : null}
 
       {ticket.timeEntries.length > 0 ? (
-        <div style={{ marginTop: "16px" }}>
-          <div className="mrd-eyebrow" style={{ color: THEME.stone, marginBottom: "8px" }}>
-            Interventions
+        <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: `1px solid ${THEME.hair}` }}>
+          <div className="mrd-eyebrow" style={{ marginBottom: "12px" }}>
+            Interventions ({ticket.timeEntries.length})
           </div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
-            <tbody>
-              {ticket.timeEntries.map((e) => (
-                <tr key={e.id} style={{ borderBottom: `1px solid ${THEME.hair}`, verticalAlign: "top" }}>
-                  <td className="mrd-mono" style={{ padding: "6px 12px 6px 0", color: THEME.stone, whiteSpace: "nowrap", width: "60px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            {ticket.timeEntries.map((e, idx) => (
+              <div
+                key={e.id}
+                className="break-inside-avoid"
+                style={{
+                  background: idx % 2 === 0 ? THEME.blueIce : THEME.paper,
+                  border: `1px solid ${THEME.hair}`,
+                  borderLeft: `3px solid ${THEME.blue}`,
+                  padding: "12px 16px",
+                }}
+              >
+                {/* Ligne 1 : date · agent · durée + couverture à droite. */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    flexWrap: "wrap",
+                    gap: "10px",
+                    fontSize: "12px",
+                  }}
+                >
+                  <span
+                    className="mrd-mono"
+                    style={{ color: THEME.blue, fontWeight: 600, whiteSpace: "nowrap", letterSpacing: "0.02em" }}
+                  >
                     {fmtDateShort(e.date)}
-                  </td>
-                  <td style={{ padding: "6px 12px 6px 0", color: THEME.inkSoft, whiteSpace: "nowrap", width: "120px" }}>
+                  </span>
+                  <span style={{ color: THEME.hair }}>·</span>
+                  <span style={{ color: THEME.ink, fontWeight: 600, whiteSpace: "nowrap" }}>
                     {e.agentName}
-                  </td>
-                  <td className="mrd-mono" style={{ padding: "6px 12px 6px 0", textAlign: "right", whiteSpace: "nowrap", width: "55px", color: THEME.ink }}>
+                  </span>
+                  <span style={{ color: THEME.hair }}>·</span>
+                  <span
+                    className="mrd-mono"
+                    style={{ color: THEME.ink, fontWeight: 700, whiteSpace: "nowrap" }}
+                  >
                     {fmtMinutesAsHours(e.durationMinutes)}
-                  </td>
-                  <td className="mrd-eyebrow" style={{ padding: "6px 12px 6px 0", color: THEME.stone, whiteSpace: "nowrap", width: "80px" }}>
+                  </span>
+                  <span
+                    className="mrd-eyebrow"
+                    style={{ color: THEME.accent, marginLeft: "auto", whiteSpace: "nowrap" }}
+                  >
                     {coverageLabel(e.coverageStatus)}
-                  </td>
-                  <td style={{ padding: "6px 0", color: THEME.inkSoft }}>
-                    {e.description || <span style={{ fontStyle: "italic", color: THEME.stone }}>Aucune note</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </span>
+                </div>
+
+                {/* Ligne 2 : badges contextuels obligatoirement visibles
+                    quand un modificateur de tarif s'applique (soir, weekend,
+                    urgent, sur place, déplacement). Sans cette ligne le
+                    client ne comprenait pas pourquoi le taux horaire varie
+                    d'une entrée à l'autre. */}
+                {(e.isAfterHours || e.isWeekend || e.isUrgent || e.isOnsite || e.hasTravelBilled || e.timeType) && (
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "5px",
+                      alignItems: "center",
+                    }}
+                  >
+                    {e.timeType && e.timeType !== "remote_work" && e.timeType !== "onsite_work" && (
+                      <ContextBadge label={timeTypeLabel(e.timeType)} tone="slate" />
+                    )}
+                    {e.isOnsite && <ContextBadge label="Sur place" tone="amber" />}
+                    {!e.isOnsite && e.timeType === "remote_work" && <ContextBadge label="À distance" tone="slate" />}
+                    {e.isAfterHours && <ContextBadge label="Tarif soir" tone="indigo" />}
+                    {e.isWeekend && <ContextBadge label="Tarif weekend" tone="purple" />}
+                    {e.isUrgent && <ContextBadge label="Tarif urgent" tone="rose" />}
+                    {e.hasTravelBilled && (
+                      // Note : la durée de trajet (travelDurationMinutes) est
+                      // une donnée interne (paie agent) — on ne l'affiche pas
+                      // au client. Juste le fait qu'un déplacement a été
+                      // facturé.
+                      <ContextBadge label="Déplacement facturé" tone="cyan" />
+                    )}
+                  </div>
+                )}
+
+                {/* Ligne 3 : tarif horaire + sous-total montant (toujours
+                    affiché si on a un montant). Mis EN ÉVIDENCE pour que
+                    le client voie immédiatement quel taux a été appliqué. */}
+                {(e.hourlyRate != null && e.hourlyRate > 0) || e.amount != null ? (
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      paddingTop: "8px",
+                      borderTop: `1px dashed ${THEME.hair}`,
+                      display: "flex",
+                      alignItems: "baseline",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      fontSize: "11.5px",
+                    }}
+                  >
+                    <div>
+                      {e.hourlyRate != null && e.hourlyRate > 0 ? (
+                        <>
+                          <span className="mrd-eyebrow" style={{ color: THEME.slate }}>Taux appliqué · </span>
+                          <span
+                            className="mrd-mono"
+                            style={{
+                              color: THEME.blueDeep,
+                              fontWeight: 700,
+                              fontSize: "13px",
+                            }}
+                          >
+                            {fmtMoney(e.hourlyRate)}/h
+                          </span>
+                        </>
+                      ) : (
+                        <span className="mrd-eyebrow" style={{ color: THEME.slate }}>Inclus / non facturable</span>
+                      )}
+                    </div>
+                    {e.amount != null && (
+                      <div>
+                        <span className="mrd-eyebrow" style={{ color: THEME.slate }}>Montant · </span>
+                        <span
+                          className="mrd-mono"
+                          style={{
+                            color: THEME.ink,
+                            fontWeight: 700,
+                            fontSize: "13px",
+                          }}
+                        >
+                          {fmtMoney(e.amount)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+                {/* Note / description sur sa propre ligne pour respirer et
+                    permettre le wrap multi-lignes naturellement. */}
+                <p
+                  style={{
+                    marginTop: "6px",
+                    marginBottom: 0,
+                    fontSize: "11.5px",
+                    lineHeight: 1.5,
+                    color: e.description ? THEME.inkSoft : THEME.slate,
+                    fontStyle: e.description ? "normal" : "italic",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {e.description || "Aucune note saisie"}
+                </p>
+              </div>
+            ))}
+          </div>
+          {/* Total */}
+          <div
+            style={{
+              marginTop: "10px",
+              paddingTop: "10px",
+              borderTop: `1px solid ${THEME.hair}`,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              fontSize: "11.5px",
+            }}
+          >
+            <span className="mrd-eyebrow" style={{ color: THEME.slate }}>
+              Total ticket
+            </span>
+            <span
+              className="mrd-mono"
+              style={{
+                color: THEME.ink,
+                fontWeight: 600,
+                fontSize: "13px",
+              }}
+            >
+              {fmtMinutesAsHours(ticket.totalMinutes)}
+            </span>
+          </div>
         </div>
       ) : null}
     </article>
   );
 }
 
+/**
+ * Petit badge tinté pour signaler un flag contextuel sur une intervention
+ * (Soir, Weekend, Urgent, Sur place, Déplacement). Utilise le même
+ * vocabulaire visuel que les eyebrows mais en pastille fermée pour
+ * pouvoir en aligner plusieurs côte-à-côte.
+ */
+function ContextBadge({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "indigo" | "purple" | "rose" | "amber" | "cyan" | "slate";
+}) {
+  const tones: Record<string, { bg: string; fg: string }> = {
+    indigo: { bg: "#EEF2FF", fg: "#4338CA" }, // soir
+    purple: { bg: "#F5F3FF", fg: "#6D28D9" }, // weekend
+    rose:   { bg: "#FFF1F2", fg: "#BE123C" }, // urgent
+    amber:  { bg: "#FFFBEB", fg: "#B45309" }, // sur place
+    cyan:   { bg: "#ECFEFF", fg: "#0E7490" }, // déplacement
+    slate:  { bg: "#F1F5F9", fg: "#475569" }, // type de travail / à distance
+  };
+  const c = tones[tone];
+  return (
+    <span
+      style={{
+        background: c.bg,
+        color: c.fg,
+        fontSize: "9.5px",
+        fontWeight: 500,
+        letterSpacing: "0.04em",
+        textTransform: "uppercase",
+        padding: "2px 7px",
+        borderRadius: "999px",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 function Meta2({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <span>
-      <span className="mrd-eyebrow" style={{ color: THEME.stone }}>{label} · </span>
+      <span className="mrd-eyebrow" style={{ color: THEME.slate }}>{label} · </span>
       <span className={mono ? "mrd-mono" : ""} style={{ color: THEME.ink, fontSize: "11px" }}>{value}</span>
     </span>
   );
@@ -919,7 +1165,7 @@ function FinancialSummary({
         <div
           style={{
             fontSize: "10px",
-            color: THEME.stone,
+            color: THEME.slate,
             fontStyle: "italic",
             marginTop: "20px",
             paddingTop: "16px",
@@ -942,7 +1188,7 @@ function FinancialRow({ label, value, muted }: { label: string; value: string; m
         justifyContent: "space-between",
         padding: "10px 0",
         fontSize: "13px",
-        color: muted ? THEME.stone : THEME.ink,
+        color: muted ? THEME.slate : THEME.ink,
         borderBottom: `1px solid ${THEME.hair}`,
       }}
     >
@@ -1005,7 +1251,7 @@ function EditorialTable({
                 style={{
                   padding: "12px 12px 12px 0",
                   textAlign: c.align ?? "left",
-                  color: c.muted ? THEME.stone : THEME.ink,
+                  color: c.muted ? THEME.slate : THEME.ink,
                   fontWeight: c.emphasis ? 600 : 400,
                   fontVariantNumeric: c.align === "right" ? "tabular-nums" : "normal",
                 }}
@@ -1016,7 +1262,7 @@ function EditorialTable({
           </tr>
         ))}
         {totalRow ? (
-          <tr style={{ background: THEME.cream, borderTop: `1px solid ${THEME.creamLine}` }}>
+          <tr style={{ background: THEME.blueIce, borderTop: `1px solid ${THEME.bluePale}` }}>
             {columns.map((c) => (
               <td
                 key={c.key}
@@ -1047,11 +1293,11 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
       style={{
         padding: "24px",
         textAlign: "center",
-        color: THEME.stone,
+        color: THEME.slate,
         fontStyle: "italic",
         fontSize: "12px",
-        background: THEME.cream,
-        border: `1px dashed ${THEME.creamLine}`,
+        background: THEME.blueIce,
+        border: `1px dashed ${THEME.bluePale}`,
       }}
     >
       {children}

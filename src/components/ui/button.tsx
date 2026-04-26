@@ -47,6 +47,12 @@ export interface ButtonProps
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, loading = false, children, disabled, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
+    // Quand asChild=true, Radix Slot exige UN SEUL enfant React valide.
+    // Si on insère un spinner conditionnel à côté de `children`, JSX génère
+    // un array `[false, <a/>]` qui fait planter React.Children.only.
+    // → On ne peut injecter le spinner que sur le mode `<button>` natif.
+    // Le caller en mode asChild gère lui-même l'état "loading" sur son
+    // élément (ce qui est plus propre car il choisit où placer l'indicateur).
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
@@ -54,8 +60,14 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || loading}
         {...props}
       >
-        {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-        {children}
+        {asChild ? (
+          children
+        ) : (
+          <>
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            {children}
+          </>
+        )}
       </Comp>
     );
   }

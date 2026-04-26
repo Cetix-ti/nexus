@@ -26,10 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { OrgAddonsSection } from "@/components/billing/org-addons-section";
-import {
-  mockBillingProfiles,
-  mockClientBillingOverrides,
-} from "@/lib/billing/mock-data";
+import { mockBillingProfiles } from "@/lib/billing/mock-data";
 import type {
   BillingProfile,
   ClientBillingOverride,
@@ -259,10 +256,17 @@ export interface WorkTypeOption {
     | "follow_up"
     | "internal"
     | "other";
-  /** Taux horaire spécifique à ce client pour ce type de travail.
-   *  Si défini, prime sur le taux du profil de facturation de base.
-   *  undefined = on hérite du taux par défaut (selon timeType + profil). */
+  /** @deprecated Le tarif est maintenant porté par les paliers (RateTierOption).
+   *  Le champ reste pour compat de signature mais n'est plus exploité. */
   hourlyRateOverride?: number;
+}
+
+/** Palier tarifaire d'un client : libellé + taux horaire. Choisi par l'agent
+ *  à la saisie pour donner le taux de base utilisé par le moteur. */
+export interface RateTierOption {
+  id: string;
+  label: string;
+  hourlyRate: number;
 }
 // Catégories de base — gérables globalement dans Paramètres → Facturation
 // → Catégories de base. Le `systemTimeType` conserve le lien vers l'enum
@@ -537,33 +541,66 @@ function RateField({
 // silencieusement toute la page Facturation. Affiche un message avec les
 // détails pour qu'on puisse diagnostiquer les régressions sur certains
 // clients (données localStorage corrompues, mock absent, etc.).
-interface BillingBoundaryState { hasError: boolean; message?: string }
+interface BillingBoundaryState { hasError: boolean; message?: string; stack?: string; componentStack?: string }
 class BillingErrorBoundary extends React.Component<
   { children: React.ReactNode; organizationName: string },
   BillingBoundaryState
 > {
   state: BillingBoundaryState = { hasError: false };
   static getDerivedStateFromError(err: Error): BillingBoundaryState {
-    return { hasError: true, message: err?.message ?? String(err) };
+    return { hasError: true, message: err?.message ?? String(err), stack: err?.stack };
   }
-  componentDidCatch(err: unknown, info: unknown) {
+  componentDidCatch(err: unknown, info: { componentStack?: string }) {
     console.error("[ClientBillingOverridesSection]", err, info);
+    this.setState({ componentStack: info?.componentStack });
   }
+  handleResetLocalStorage = () => {
+    if (typeof window === "undefined") return;
+    if (!confirm("Réinitialiser la configuration locale (localStorage) pour ce client ? Les widgets et préférences spécifiques à ce client seront perdus. Les données serveur restent intactes.")) return;
+    const keys = Object.keys(localStorage);
+    for (const k of keys) {
+      if (k.startsWith("nexus:client-")) localStorage.removeItem(k);
+    }
+    location.reload();
+  };
   render() {
     if (this.state.hasError) {
       return (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-[13px] text-amber-900">
-          <p className="font-semibold">Impossible d&apos;afficher la facturation de {this.props.organizationName}</p>
-          <p className="mt-1 text-[12px] text-amber-800">
-            Une erreur s&apos;est produite lors du rendu de cette section
-            pour cette organisation. Détail : <code>{this.state.message}</code>
+          <p className="font-semibold text-[14px]">⚠ Impossible d&apos;afficher la facturation de {this.props.organizationName}</p>
+          <p className="mt-2 text-[12px] text-amber-800">
+            Erreur capturée — l&apos;équipe technique va l&apos;analyser à partir du détail ci-dessous.
           </p>
-          <p className="mt-2 text-[11.5px] text-amber-800">
-            Astuce : tu peux essayer de recharger la page (Ctrl+Shift+R).
-            Si l&apos;erreur persiste sur un client précis, c&apos;est
-            souvent dû à des données de configuration locales
-            (<code>localStorage</code>) corrompues.
-          </p>
+          <details className="mt-3" open>
+            <summary className="cursor-pointer text-[11.5px] font-medium">Détails techniques</summary>
+            <div className="mt-2 rounded bg-white border border-amber-200 p-2.5 text-[11px] text-slate-800 font-mono">
+              <div><strong>Message :</strong> {this.state.message}</div>
+              {this.state.componentStack && (
+                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[10px] text-slate-700">{this.state.componentStack.trim()}</pre>
+              )}
+              {this.state.stack && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-[10.5px] text-slate-600">Stack trace</summary>
+                  <pre className="mt-1 max-h-60 overflow-auto whitespace-pre-wrap text-[10px] text-slate-600">{this.state.stack.trim()}</pre>
+                </details>
+              )}
+            </div>
+          </details>
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => location.reload()}
+              className="text-[11.5px] rounded bg-amber-700 text-white px-3 py-1.5 hover:bg-amber-800"
+            >
+              Recharger la page
+            </button>
+            <button
+              onClick={this.handleResetLocalStorage}
+              className="text-[11.5px] rounded border border-amber-400 bg-white text-amber-900 px-3 py-1.5 hover:bg-amber-100"
+              title="Supprime toutes les clés nexus:client-* du localStorage"
+            >
+              Réinitialiser la config locale (localStorage)
+            </button>
+          </div>
         </div>
       );
     }
@@ -589,42 +626,45 @@ function ClientBillingOverridesSectionInner({
   if (typeof window !== "undefined") {
     console.log("[Facturation] section mounted", { organizationId, organizationName });
   }
-  // Find existing override
-  const existingOverride = useMemo(
-    () =>
-      mockClientBillingOverrides.find(
-        (o) => o.organizationId === organizationId
-      ),
-    [organizationId]
-  );
-
-  // Pick base profile (existing override → its base, otherwise default)
+  // Profil de base : profil "Standard MSP" par défaut. Une fois l'override
+  // chargé depuis l'API, baseProfileId peut pointer vers un autre profil.
   const baseProfile: BillingProfile = useMemo(() => {
-    if (existingOverride) {
-      const found = mockBillingProfiles.find(
-        (p) => p.id === existingOverride.baseProfileId
-      );
-      if (found) return found;
-    }
     return (
       mockBillingProfiles.find((p) => p.isDefault) || mockBillingProfiles[0]
     );
-  }, [existingOverride]);
+  }, []);
 
-  // Local mutable state for the override
+  // Local mutable state for the override (rempli par l'API au mount).
   const [overrideState, setOverrideState] = useState<ClientBillingOverride>(
-    () =>
-      existingOverride ?? {
-        id: `cbo_new_${organizationId}`,
-        organizationId,
-        organizationName,
-        baseProfileId: baseProfile.id,
-        isActive: true,
-        effectiveFrom: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }
+    () => ({
+      id: `cbo_new_${organizationId}`,
+      organizationId,
+      organizationName,
+      baseProfileId: baseProfile.id,
+      isActive: true,
+      effectiveFrom: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }),
   );
+
+  // Charge l'override existant depuis la DB au montage.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/v1/organizations/${organizationId}/billing`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const ov = data?.data?.override as ClientBillingOverride | null;
+        if (ov) {
+          setOverrideState((prev) => ({ ...prev, ...ov, organizationId, organizationName }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, organizationName]);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
@@ -643,6 +683,54 @@ function ClientBillingOverridesSectionInner({
   const [workTypes, setWorkTypes] = useState<WorkTypeOption[]>(
     () => loadWorkTypes(organizationId),
   );
+  // Charge la liste des libellés depuis la DB au mount. Avant : seulement
+  // localStorage → invisible côté serveur, donc le moteur de facturation
+  // ne pouvait pas appliquer le hourlyRate spécifique. Maintenant l'API
+  // est la source de vérité (table OrgWorkType).
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/v1/organizations/${organizationId}/work-types`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data?.data) ? data.data : null;
+        if (!rows) return;
+        const mapped: WorkTypeOption[] = rows.map((w: { id: string; label: string; timeType: WorkTypeOption["timeType"]; hourlyRate: number | null }) => ({
+          id: w.id,
+          label: w.label,
+          timeType: w.timeType,
+          hourlyRateOverride: w.hourlyRate ?? undefined,
+        }));
+        // Ne remplace que si le serveur a effectivement des données. Sinon
+        // on garde le snapshot localStorage pour que l'éditeur ne se vide pas
+        // tant que l'utilisateur n'a pas explicitement sauvegardé.
+        if (mapped.length > 0) setWorkTypes(mapped);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [organizationId]);
+
+  // Paliers tarifaires — axe "combien", indépendant des types de travail.
+  // Source de vérité : table OrgRateTier (DB), exposée via /rate-tiers.
+  const [rateTiers, setRateTiers] = useState<RateTierOption[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/v1/organizations/${organizationId}/rate-tiers`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        const mapped: RateTierOption[] = rows.map((t: { id: string; label: string; hourlyRate: number }) => ({
+          id: t.id,
+          label: t.label,
+          hourlyRate: t.hourlyRate,
+        }));
+        setRateTiers(mapped);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [organizationId]);
+
   // Catégories de base gérables globalement dans Paramètres → Facturation.
   // On s'y abonne via l'event storage pour refléter les ajouts/renommages
   // sans rechargement de page.
@@ -749,13 +837,97 @@ function ClientBillingOverridesSectionInner({
   };
   const commitSave = async () => {
     setSaving(true);
-    // Flush localStorage — c'est la seule écriture disque de toute la
-    // session d'édition.
+    // Flush localStorage — config locale (banque d'heures, FTIG, types
+    // de travail) reste en localStorage pour le moment.
     saveClientBillingTypes(organizationId, billingTypes);
     saveHourBankConfig(organizationId, hourBankCfg);
     saveFtigConfig(organizationId, ftigCfg);
     saveWorkTypes(organizationId, workTypes);
-    await new Promise((r) => setTimeout(r, 200));
+
+    // Persiste les overrides de taux côté serveur (DB, table
+    // client_billing_overrides). Sans cette étape, les taux restaient
+    // ignorés par l'engine de facturation et n'apparaissaient pas dans
+    // les rapports mensuels.
+    try {
+      const ratePayload: Record<string, unknown> = {
+        baseProfileId: overrideState.baseProfileId,
+        isActive: overrideState.isActive ?? true,
+        notes: overrideState.notes ?? null,
+      };
+      // Champs numériques — null efface la surcharge, number la pose.
+      const numericKeys: NumericField[] = ALL_NUMERIC_FIELDS;
+      for (const k of numericKeys) {
+        const v = (overrideState as unknown as Record<string, unknown>)[k];
+        ratePayload[k] = v === undefined || v === null || v === "" ? null : Number(v);
+      }
+      const r = await fetch(`/api/v1/organizations/${organizationId}/billing`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ratePayload),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        console.error("Failed to save billing override:", d);
+      }
+    } catch (e) {
+      console.error("Failed to save billing override:", e);
+    }
+
+    // Persiste les types de prestation (axe "quoi" — table OrgWorkType).
+    // Le tarif est géré séparément via les paliers (cf. plus bas).
+    try {
+      const workTypesPayload = workTypes.map((w, idx) => ({
+        ...(w.id && !w.id.startsWith("wt_") ? { id: w.id } : {}),
+        label: w.label,
+        timeType: w.timeType,
+        sortOrder: idx,
+      }));
+      const r = await fetch(`/api/v1/organizations/${organizationId}/work-types`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workTypes: workTypesPayload }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        const mapped: WorkTypeOption[] = rows.map((w: { id: string; label: string; timeType: WorkTypeOption["timeType"] }) => ({
+          id: w.id,
+          label: w.label,
+          timeType: w.timeType,
+        }));
+        setWorkTypes(mapped);
+      }
+    } catch (e) {
+      console.error("Failed to save work types:", e);
+    }
+
+    // Persiste les paliers tarifaires (axe "combien" — table OrgRateTier).
+    try {
+      const rateTiersPayload = rateTiers.map((t, idx) => ({
+        ...(t.id && !t.id.startsWith("rt_") ? { id: t.id } : {}),
+        label: t.label,
+        hourlyRate: t.hourlyRate,
+        sortOrder: idx,
+      }));
+      const r = await fetch(`/api/v1/organizations/${organizationId}/rate-tiers`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rateTiers: rateTiersPayload }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        const mapped: RateTierOption[] = rows.map((t: { id: string; label: string; hourlyRate: number }) => ({
+          id: t.id,
+          label: t.label,
+          hourlyRate: t.hourlyRate,
+        }));
+        setRateTiers(mapped);
+      }
+    } catch (e) {
+      console.error("Failed to save rate tiers:", e);
+    }
+
     setSaving(false);
     setSavedAt(new Date().toLocaleTimeString("fr-CA"));
     setBaseline(null);
@@ -1128,45 +1300,6 @@ function ClientBillingOverridesSectionInner({
                       }
                     </p>
                   </div>
-                  {/* Taux horaire spécifique à ce client pour ce type.
-                      Vide = hérite du taux standard. Coin visuel bleu
-                      quand personnalisé. */}
-                  <div className="shrink-0 flex items-center gap-1.5">
-                    <label
-                      className="text-[10.5px] uppercase tracking-wider text-slate-400 font-medium"
-                      title="Taux horaire spécifique à ce client (optionnel)"
-                    >
-                      Taux
-                    </label>
-                    <div className="relative">
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        step="0.01"
-                        min={0}
-                        placeholder="Hérité"
-                        value={w.hourlyRateOverride ?? ""}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          const parsed = v === "" ? undefined : parseFloat(v);
-                          updateWorkType(w.id, {
-                            hourlyRateOverride:
-                              parsed !== undefined && !Number.isNaN(parsed)
-                                ? parsed
-                                : undefined,
-                          });
-                        }}
-                        className={cn(
-                          "w-24 pr-8 h-8 text-[12.5px] tabular-nums text-right",
-                          w.hourlyRateOverride !== undefined &&
-                            "border-blue-400 bg-blue-50/40 ring-1 ring-blue-300/60",
-                        )}
-                      />
-                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10.5px] font-medium text-slate-400">
-                        $/h
-                      </span>
-                    </div>
-                  </div>
                   <button
                     type="button"
                     onClick={() => removeWorkType(w.id)}
@@ -1222,6 +1355,105 @@ function ClientBillingOverridesSectionInner({
               + Ajouter
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Paliers tarifaires — axe "combien". L'agent en choisit un à la
+          saisie pour donner le taux horaire de base. Indépendant du type
+          de prestation. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-[14px]">
+            <Wallet className="h-4 w-4 text-blue-600" />
+            Paliers tarifaires
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-[12px] text-slate-500">
+            Le palier choisi à la saisie donne le taux horaire de base. Les
+            multiplicateurs soir/weekend du client s&apos;appliquent par-dessus.
+            Sans aucun palier défini, le moteur retombe sur le taux standard.
+          </p>
+          <div className="space-y-1.5">
+            {rateTiers.length === 0 ? (
+              <p className="text-[12px] italic text-slate-400">
+                Aucun palier — la saisie utilisera le taux standard du client.
+              </p>
+            ) : (
+              rateTiers.map((t, idx) => (
+                <div
+                  key={t.id}
+                  className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                >
+                  <Input
+                    value={t.label}
+                    placeholder="Ex : Niveau 1, Sysadmin Sr…"
+                    onChange={(e) => {
+                      pushHistory();
+                      const v = e.target.value;
+                      setRateTiers((prev) =>
+                        prev.map((x, i) => (i === idx ? { ...x, label: v } : x)),
+                      );
+                    }}
+                    className="flex-1 h-8 text-[12.5px]"
+                  />
+                  <div className="relative shrink-0">
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min={0}
+                      value={t.hourlyRate}
+                      onChange={(e) => {
+                        pushHistory();
+                        const v = parseFloat(e.target.value);
+                        setRateTiers((prev) =>
+                          prev.map((x, i) =>
+                            i === idx
+                              ? { ...x, hourlyRate: Number.isNaN(v) ? 0 : v }
+                              : x,
+                          ),
+                        );
+                      }}
+                      className="w-28 pr-8 h-8 text-[12.5px] tabular-nums text-right"
+                    />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10.5px] font-medium text-slate-400">
+                      $/h
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      pushHistory();
+                      setRateTiers((prev) => prev.filter((_, i) => i !== idx));
+                    }}
+                    className="h-7 w-7 rounded-md flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 shrink-0 transition-colors"
+                    title="Retirer"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              pushHistory();
+              setRateTiers((prev) => [
+                ...prev,
+                {
+                  id: `rt_${Date.now()}`,
+                  label: "",
+                  hourlyRate: 0,
+                },
+              ]);
+            }}
+          >
+            + Ajouter un palier
+          </Button>
         </CardContent>
       </Card>
       </>)}

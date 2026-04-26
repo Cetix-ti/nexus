@@ -219,7 +219,7 @@ export function TicketListView({ tickets }: TicketListViewProps) {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-mono text-[11px] font-medium text-slate-400 tabular-nums shrink-0">#{ticket.number}</span>
+                    <span className="font-mono text-[11px] font-semibold text-blue-700 tabular-nums tracking-[0.02em] shrink-0">#{ticket.number}</span>
                     <Badge variant={priorityBadgeVariant[ticket.priority]} className="text-[10px] shrink-0">
                       <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", priorityCfg.dotClass)} />
                       {priorityCfg.label}
@@ -355,7 +355,7 @@ export function TicketListView({ tickets }: TicketListViewProps) {
                       />
                     </td>
                     <td className="px-3 py-3">
-                      <span className="font-mono text-[11px] font-medium text-slate-400 tabular-nums">#{ticket.number}</span>
+                      <span className="font-mono text-[11.5px] font-semibold text-blue-700 tabular-nums tracking-[0.02em]">#{ticket.number}</span>
                     </td>
                     <td className="px-3 py-3">
                       <div>

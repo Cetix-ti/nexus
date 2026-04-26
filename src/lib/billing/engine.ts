@@ -13,6 +13,7 @@ import type {
   HourBankSettings,
   MSPPlanSettings,
   ClientBillingOverride,
+  BillingCoverageMode,
   ResolvedBillingProfile,
 } from "./types";
 
@@ -66,6 +67,19 @@ interface BillingContext {
   billingProfile: BillingProfile;
   forceNonBillable?: boolean;
   forceBillable?: boolean;
+  // --- Stratégie tarifaire client ----------------------------------------
+  /** Couverture du télétravail pour ce client. */
+  remoteCoverage?: BillingCoverageMode;
+  /** Couverture du sur-place pour ce client. */
+  onsiteCoverage?: BillingCoverageMode;
+  /** Multiplicateur soir (default 1.5). */
+  afterHoursMultiplier?: number;
+  /** Multiplicateur weekend (default 2.0). */
+  weekendMultiplier?: number;
+  /** Taux du libellé de travail choisi par l'agent (si défini, sert de
+   *  base au lieu de standardRate/onsiteRate/remoteRate). Les multiplicateurs
+   *  soir/weekend s'appliquent par-dessus. */
+  workTypeRate?: number | null;
 }
 
 /**
@@ -89,10 +103,21 @@ function computeRate(ctx: BillingContext): number {
   const p = ctx.billingProfile;
   if (ctx.timeType === "travel") return p.travelRate;
   if (ctx.isUrgent) return p.urgentRate;
-  if (ctx.isWeekend) return p.standardRate * 2;
-  if (ctx.isAfterHours) return p.standardRate * 1.5;
-  if (ctx.isOnsite) return p.onsiteRate;
-  return p.remoteRate;
+  // Multiplicateurs configurables par client (défauts 1.5x soir, 2x weekend).
+  const ahMult = ctx.afterHoursMultiplier ?? 1.5;
+  const weMult = ctx.weekendMultiplier ?? 2.0;
+  // Taux de base : libellé client choisi à la saisie (`workTypeRate`),
+  // sinon scalaire du profil selon onsite/remote.
+  const baseRate =
+    (ctx.workTypeRate ?? null) != null
+      ? (ctx.workTypeRate as number)
+      : ctx.isOnsite
+        ? p.onsiteRate
+        : p.remoteRate;
+  // Weekend prime sur after-hours si les deux sont cochés.
+  if (ctx.isWeekend) return baseRate * weMult;
+  if (ctx.isAfterHours) return baseRate * ahMult;
+  return baseRate;
 }
 
 function applyMinimumAndRounding(
@@ -417,6 +442,36 @@ export function decideBilling(ctx: BillingContext): BillingDecision {
       reason: "Temps interne — jamais facturé au client",
       appliedRule: "auto.internal_time",
     };
+  }
+
+  // Couverture par mode — règle client. Le télétravail ou le sur-place
+  // peuvent être marqués FREE (gratuit) ou INCLUDED (couvert au contrat)
+  // au niveau de l'override client. Cette règle prime sur la logique
+  // contractuelle (les déplacements gardent leur traitement propre car
+  // ils ne sont ni "remote" ni "onsite" au sens de la couverture).
+  if (ctx.timeType !== "travel" && !ctx.forceBillable) {
+    const mode = ctx.isOnsite
+      ? (ctx.onsiteCoverage ?? "BILLABLE")
+      : (ctx.remoteCoverage ?? "BILLABLE");
+    if (mode === "FREE") {
+      return {
+        status: "non_billable",
+        reason: ctx.isOnsite
+          ? "Sur place gratuit pour ce client"
+          : "Télétravail gratuit pour ce client",
+        appliedRule: "client_coverage.free",
+      };
+    }
+    if (mode === "INCLUDED") {
+      return {
+        status: "included_in_contract",
+        reason: ctx.isOnsite
+          ? "Sur place inclus dans le forfait du client"
+          : "Télétravail inclus dans le forfait du client",
+        contractId: ctx.contract?.id,
+        appliedRule: "client_coverage.included",
+      };
+    }
   }
 
   // No contract → time and materials at standard rate

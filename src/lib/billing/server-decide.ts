@@ -15,10 +15,8 @@
 import prisma from "@/lib/prisma";
 import { decideBilling } from "./engine";
 import { resolveClientBillingProfile } from "./engine";
-import {
-  mockBillingProfiles,
-  getClientBillingOverride,
-} from "./mock-data";
+import { mockBillingProfiles } from "./mock-data";
+import { getClientBillingOverrideForOrg } from "./overrides-db";
 import { toEngineContract, pickActiveContract } from "./contract-mapper";
 import type { BillingDecision, Contract, TimeType } from "./types";
 
@@ -34,6 +32,12 @@ interface DecideInput {
   ticketCategoryId?: string;
   forceNonBillable?: boolean;
   forceBillable?: boolean;
+  /** Type de prestation choisi par l'agent (axe "quoi"). Utilisé pour
+   *  les flags isOnsite/coverage côté UI ; pas exploité ici. */
+  workTypeId?: string | null;
+  /** Palier tarifaire choisi par l'agent (axe "combien"). Utilisé pour
+   *  récupérer son hourlyRate (taux de base avant multiplicateurs). */
+  rateTierId?: string | null;
 }
 
 export interface ServerDecision {
@@ -47,10 +51,11 @@ export interface ServerDecision {
  * le contrat choisi (utilisé par le caller pour déduire de la banque).
  */
 export async function resolveDecisionForEntry(input: DecideInput): Promise<ServerDecision> {
-  // 1. Profil de facturation (base + override éventuel, source actuelle = mocks
-  //    + localStorage côté serveur, futur = Prisma). En attendant une migration
-  //    complète, on utilise le même in-memory que /api/v1/organizations/[id]/billing.
-  const override = getClientBillingOverride(input.organizationId);
+  // 1. Profil de facturation (base + override éventuel). L'override est en
+  //    DB (model ClientBillingOverride). Les profils de base restent en
+  //    mock-data.ts pour l'instant.
+  const override =
+    (await getClientBillingOverrideForOrg(input.organizationId)) ?? undefined;
   const baseProfile =
     (override && mockBillingProfiles.find((p) => p.id === override.baseProfileId)) ||
     mockBillingProfiles.find((p) => p.isDefault) ||
@@ -75,7 +80,24 @@ export async function resolveDecisionForEntry(input: DecideInput): Promise<Serve
   const activeRow = pickActiveContract(contractRows, input.startedAt);
   const contract = activeRow ? toEngineContract(activeRow) : null;
 
-  // 3. Décision.
+  // 3. Palier tarifaire choisi par l'agent → taux de base. Si absent ou
+  //    invalide, l'engine retombe sur le scalaire du profil.
+  let workTypeRate: number | null = null;
+  if (input.rateTierId) {
+    const tier = await prisma.orgRateTier.findUnique({
+      where: { id: input.rateTierId },
+      select: { hourlyRate: true, organizationId: true, isActive: true },
+    });
+    if (
+      tier &&
+      tier.isActive &&
+      tier.organizationId === input.organizationId
+    ) {
+      workTypeRate = tier.hourlyRate;
+    }
+  }
+
+  // 4. Décision.
   const decision = decideBilling({
     timeType: input.timeType as TimeType,
     durationMinutes: input.durationMinutes,
@@ -89,6 +111,12 @@ export async function resolveDecisionForEntry(input: DecideInput): Promise<Serve
     billingProfile,
     forceNonBillable: input.forceNonBillable,
     forceBillable: input.forceBillable,
+    // Couverture par mode + multiplicateurs viennent de l'override client.
+    remoteCoverage: override?.remoteCoverage,
+    onsiteCoverage: override?.onsiteCoverage,
+    afterHoursMultiplier: override?.afterHoursMultiplier,
+    weekendMultiplier: override?.weekendMultiplier,
+    workTypeRate,
   });
 
   return { decision, contract };

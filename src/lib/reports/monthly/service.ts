@@ -15,6 +15,7 @@ import {
   writeReportPdf,
 } from "./storage";
 import type { MonthlyReportPayload } from "./types";
+import { ensureTicketSummary } from "@/lib/ai/ticket-summary";
 
 export interface GenerateParams {
   organizationId: string;
@@ -116,7 +117,33 @@ export async function generateMonthlyReport(params: GenerateParams) {
     },
   });
 
+  // Warmup IA en arrière-plan : pour chaque ticket du rapport sans résumé
+  // suffisamment confiant, on lance une génération asynchrone. La requête
+  // utilisateur retourne immédiatement ; le prochain regen affichera les
+  // résumés. Concurrency = 1 car Ollama local sérialise de toute façon.
+  void warmReportSummaries(payload.tickets.map((t) => t.ticketId));
+
   return { id: record.id, ...stored };
+}
+
+/**
+ * Génère en arrière-plan les résumés IA manquants pour la liste de tickets.
+ * Best-effort : toute erreur est silencieuse. Concurrence 1 (Ollama local
+ * sérialise) avec budget de temps total pour éviter qu'un long pipeline
+ * laisse traîner pendant des heures.
+ */
+async function warmReportSummaries(ticketIds: string[]): Promise<void> {
+  if (ticketIds.length === 0) return;
+  const startedAt = Date.now();
+  const BUDGET_MS = 30 * 60 * 1000; // 30 min max — large mais borné
+  for (const id of ticketIds) {
+    if (Date.now() - startedAt > BUDGET_MS) return;
+    try {
+      await ensureTicketSummary(id);
+    } catch {
+      // ignore et continue avec le suivant
+    }
+  }
 }
 
 /** Regénère uniquement le PDF à partir du payload existant. Utile quand le

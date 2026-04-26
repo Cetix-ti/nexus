@@ -144,9 +144,9 @@ const priorityBadgeVariant: Record<TicketPriority, "danger" | "warning" | "defau
 
 function SidebarSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="mb-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">{title}</h3>
-      <div className="space-y-2.5">{children}</div>
+    <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+      <h3 className="mb-3.5 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">{title}</h3>
+      <div className="space-y-3">{children}</div>
     </div>
   );
 }
@@ -154,8 +154,8 @@ function SidebarSection({ title, children }: { title: string; children: React.Re
 function SidebarRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-gray-500 whitespace-nowrap pt-0.5 shrink-0">{label}</span>
-      <div className="text-right min-w-0 flex-1">{children}</div>
+      <span className="text-[11px] text-slate-500 whitespace-nowrap pt-0.5 shrink-0">{label}</span>
+      <div className="text-right min-w-0 flex-1 text-[12.5px] text-slate-800">{children}</div>
     </div>
   );
 }
@@ -663,16 +663,18 @@ export default function TicketDetailPage() {
   return (
     <div className="flex flex-col gap-0">
       {/* Top bar */}
-      <div className="flex items-center gap-3 border-b border-gray-200 bg-white px-6 py-3">
+      <div className="flex items-center gap-3 border-b border-slate-200/80 bg-white px-6 py-3">
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          className="group flex items-center gap-1.5 text-[12.5px] text-slate-500 hover:text-slate-900 transition-colors"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
           Retour
         </button>
-        <ChevronRight className="h-3.5 w-3.5 text-gray-300" />
-        <span className="text-sm font-mono text-gray-500">{ticket.number}</span>
+        <span className="h-3.5 w-px bg-slate-200" aria-hidden="true" />
+        <span className="font-mono text-[12px] font-semibold tracking-[0.02em] text-blue-700">
+          {ticket.number}
+        </span>
 
         <div className="flex-1" />
 
@@ -726,32 +728,22 @@ export default function TicketDetailPage() {
         <div className="flex-1 overflow-y-auto border-r border-gray-200">
           <div className="p-6">
             {/* Header */}
-            <div className="mb-6">
-              <div className="flex items-start gap-3 mb-3">
-                <span className="mt-0.5 font-mono text-sm text-gray-400">{ticket.number}</span>
-                <Badge variant={statusBadgeVariant[ticket.status]}>
-                  <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
-                  {statusCfg.label}
-                </Badge>
-                <Badge variant={priorityBadgeVariant[ticket.priority]}>
-                  <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", priorityCfg.dotClass)} />
-                  {priorityCfg.label}
-                </Badge>
-                {ticket.slaBreached && (
-                  <Badge variant="danger" className="gap-1">
-                    <AlertTriangle className="h-3 w-3" />
-                    SLA dépassé
-                  </Badge>
-                )}
+            <div className="mb-7">
+              {/* Eyebrow : numéro de ticket en mono signature, distincte du
+                  topbar pour rappeler l'identité du ticket même si la barre
+                  est scrollée hors vue. */}
+              <div className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.16em] text-blue-700/80">
+                Ticket {ticket.number}
               </div>
+
               {editingSubject ? (
-                <div className="flex items-center gap-2">
+                <div className="mt-2 flex items-center gap-2">
                   <input
                     type="text"
                     value={subjectDraft}
                     onChange={(e) => setSubjectDraft(e.target.value)}
                     autoFocus
-                    className="flex-1 text-xl font-bold text-gray-900 border border-blue-300 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="flex-1 text-[24px] font-semibold tracking-[-0.02em] text-slate-900 border border-blue-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     onKeyDown={async (e) => {
                       if (e.key === "Enter") {
                         await updateTicket(ticket!.id, { subject: subjectDraft });
@@ -767,26 +759,45 @@ export default function TicketDetailPage() {
                       ticket.subject = subjectDraft;
                       setEditingSubject(false);
                     }}
-                    className="px-3 py-1.5 text-[12px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                    className="px-3 py-2 text-[12px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
                   >
                     OK
                   </button>
                 </div>
               ) : (
                 <h1
-                  className="text-xl font-bold text-gray-900 cursor-pointer hover:text-blue-700 transition-colors"
+                  className="mt-1.5 text-[24px] font-semibold tracking-[-0.02em] text-slate-900 leading-[1.2] cursor-pointer hover:text-blue-700 transition-colors"
                   onClick={() => { setEditingSubject(true); setSubjectDraft(ticket.subject); }}
                   title="Cliquer pour modifier le titre"
                 >
                   {ticket.subject}
                 </h1>
               )}
+
+              {/* Statut + priorité + SLA breached — barrette discrète sous le
+                  titre, alignée sur le rythme typographique. */}
+              <div className="mt-3.5 flex items-center gap-2 flex-wrap">
+                <Badge variant={statusBadgeVariant[ticket.status]} className="gap-1.5">
+                  <span className={cn("inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
+                  {statusCfg.label}
+                </Badge>
+                <Badge variant={priorityBadgeVariant[ticket.priority]} className="gap-1.5">
+                  <span className={cn("inline-block h-1.5 w-1.5 rounded-full", priorityCfg.dotClass)} />
+                  {priorityCfg.label}
+                </Badge>
+                {ticket.slaBreached && (
+                  <Badge variant="danger" className="gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    SLA dépassé
+                  </Badge>
+                )}
+              </div>
             </div>
 
             {/* Description */}
-            <div className="mb-8 rounded-lg border border-gray-200 bg-white p-5">
+            <div className="mb-8 rounded-xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Description</h2>
+                <h2 className="text-[10.5px] font-medium uppercase tracking-[0.16em] text-slate-500">Description</h2>
                 {!editingDescription && (
                   <button
                     onClick={() => {

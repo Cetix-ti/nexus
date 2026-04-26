@@ -162,13 +162,17 @@ function TicketsPageInner() {
       {/* Page header */}
       <div className="flex items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">Tickets</h1>
-            <span className="inline-flex h-6 items-center rounded-md bg-slate-100 px-2 text-[11.5px] font-semibold text-slate-600 tabular-nums ring-1 ring-inset ring-slate-200/60">
-              {filtered.length}
+          <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400">
+            Service Desk
+          </div>
+          <div className="mt-1.5 flex items-baseline gap-3">
+            <h1 className="text-[28px] font-semibold tracking-[-0.022em] text-slate-900 leading-none">
+              Tickets
+            </h1>
+            <span className="text-[13px] font-medium tabular-nums text-slate-400">
+              {filtered.length.toLocaleString("fr-CA")}
             </span>
           </div>
-          <p className="mt-1 text-[13px] text-slate-500">Gérez tous les tickets de vos clients</p>
         </div>
         <Link href="/tickets/new">
           <Button variant="primary" size="md">

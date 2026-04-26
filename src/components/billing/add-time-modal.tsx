@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { X, Clock, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import { CoverageBadge } from "./coverage-badge";
 import {
   loadWorkTypes,
   type WorkTypeOption,
+  type RateTierOption,
 } from "./client-billing-overrides-section";
 
 interface AddTimeModalProps {
@@ -74,39 +75,68 @@ export function AddTimeModal({
   // sinon une config faite dans un autre onglet n'est pas reflétée ici
   // tant que la page n'est pas rechargée (la modale reste montée entre
   // deux ouvertures).
+  // Les libellés client viennent maintenant de la DB via /api/v1/organizations/[id]/work-types.
+  // On garde un fallback localStorage pour ne pas casser l'UX si l'API
+  // tarde à répondre, mais le serveur source de vérité est la table
+  // OrgWorkType.
   const [workTypes, setWorkTypesState] = useState<WorkTypeOption[]>(() =>
     loadWorkTypes(organizationId),
   );
   const [workTypeId, setWorkTypeId] = useState<string>(
     () => loadWorkTypes(organizationId)[0]?.id ?? "",
   );
+
+  // Paliers tarifaires — axe "combien". Chargés depuis la DB.
+  const [rateTiers, setRateTiers] = useState<RateTierOption[]>([]);
+  const [rateTierId, setRateTierId] = useState<string>("");
+
+  /** Charge la liste des libellés via l'API DB. Fallback silencieux sur le
+   *  cache localStorage si l'API échoue (mode offline / restart serveur). */
+  const reloadWorkTypes = React.useCallback(async () => {
+    try {
+      const [wtRes, rtRes] = await Promise.all([
+        fetch(`/api/v1/organizations/${organizationId}/work-types`, { cache: "no-store" }),
+        fetch(`/api/v1/organizations/${organizationId}/rate-tiers`, { cache: "no-store" }),
+      ]);
+      if (wtRes.ok) {
+        const json = await wtRes.json();
+        const rows = Array.isArray(json?.data) ? json.data : [];
+        const mapped: WorkTypeOption[] = rows.map((w: { id: string; label: string; timeType: WorkTypeOption["timeType"] }) => ({
+          id: w.id,
+          label: w.label,
+          timeType: w.timeType,
+        }));
+        setWorkTypesState(mapped);
+        setWorkTypeId((prev) => (mapped.find((w) => w.id === prev) ? prev : mapped[0]?.id ?? ""));
+      }
+      if (rtRes.ok) {
+        const json = await rtRes.json();
+        const rows = Array.isArray(json?.data) ? json.data : [];
+        const mapped: RateTierOption[] = rows.map((t: { id: string; label: string; hourlyRate: number }) => ({
+          id: t.id,
+          label: t.label,
+          hourlyRate: t.hourlyRate,
+        }));
+        setRateTiers(mapped);
+        setRateTierId((prev) => (mapped.find((t) => t.id === prev) ? prev : mapped[0]?.id ?? ""));
+      }
+    } catch {
+      // ignore
+    }
+  }, [organizationId]);
+
   useEffect(() => {
     if (!open) return;
-    const list = loadWorkTypes(organizationId);
-    setWorkTypesState(list);
-    // En édition, on restaure le type de travail de la saisie. Sinon on
-    // garde la sélection courante si elle est encore valide, sinon on
-    // prend le premier type disponible.
+    reloadWorkTypes();
+    // En édition, on restaure le type de travail de la saisie au sein de
+    // la liste fraîche.
     if (editingEntry) {
+      // Sera ajusté quand reloadWorkTypes() résout.
+      const list = loadWorkTypes(organizationId);
       const match = list.find((w) => w.timeType === editingEntry.timeType);
       if (match) setWorkTypeId(match.id);
-      else setWorkTypeId(list[0]?.id ?? "");
-    } else {
-      setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
     }
-  }, [open, organizationId, editingEntry]);
-  // Cross-tab : si l'utilisateur modifie la liste dans un autre onglet,
-  // reflète le changement dès que le storage émet l'event.
-  useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (!e.key || !e.key.startsWith("nexus:client-work-types:")) return;
-      const list = loadWorkTypes(organizationId);
-      setWorkTypesState(list);
-      setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [organizationId]);
+  }, [open, organizationId, editingEntry, reloadWorkTypes]);
   const selectedWorkType =
     workTypes.find((w) => w.id === workTypeId) ?? workTypes[0];
   const timeType: TimeType = selectedWorkType?.timeType ?? "remote_work";
@@ -333,6 +363,10 @@ export function AddTimeModal({
         // Flag transmis au serveur pour qu'il honore le toggle "Forcer non
         // facturable" dans sa revalidation.
         ...(forceNonBillable ? { forceNonBillable: true } as any : {}),
+        // Type de prestation choisi (axe "quoi" — drive isOnsite/coverage).
+        ...(workTypeId ? { workTypeId } as any : {}),
+        // Palier tarifaire choisi (axe "combien" — drive le taux horaire).
+        ...(rateTierId ? { rateTierId } as any : {}),
       };
       // Awaité : sans await, on fermait la modale avant que le POST ait
       // rendu, et l'utilisateur pouvait ré-ouvrir puis re-poster.
@@ -396,6 +430,26 @@ export function AddTimeModal({
               </Select>
             )}
           </div>
+
+          {rateTiers.length > 0 ? (
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+                Palier tarifaire
+              </label>
+              <Select value={rateTierId} onValueChange={setRateTierId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {rateTiers.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.label} — {t.hourlyRate.toFixed(2)} $/h
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

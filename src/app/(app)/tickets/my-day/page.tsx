@@ -284,42 +284,53 @@ export default function MyDayPage() {
       {/* Les tuiles se calent à droite sur desktop, sous le titre en       */}
       {/* mobile. Plus de grid 50/50 qui les rendait énormes.               */}
       {/* ================================================================ */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-900">
+          <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400">
+            {today}
+          </div>
+          <h1 className="mt-1.5 text-[28px] font-semibold tracking-[-0.022em] text-slate-900 leading-none">
             Ma journée
           </h1>
-          <p className="mt-1 text-[13px] text-slate-500 capitalize">{today}</p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Déplacements — compact, cliquable, ouvre la modale */}
+        {/* KPI rail — chiffres dominants, labels small caps copper-tinted */}
+        <div className="flex items-stretch divide-x divide-slate-200 rounded-xl border border-slate-200 bg-white">
           <button
             type="button"
             onClick={() => setOnsiteModalOpen(true)}
-            className="group inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50"
+            className="group flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-slate-50 first:rounded-l-xl last:rounded-r-xl"
             title="Voir les déplacements du jour (tous agents)"
           >
-            <Car className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-            <span className="text-[11.5px] text-slate-500">Déplacements</span>
-            <span className="text-[13px] font-semibold tabular-nums text-slate-900">
-              {data.stats.onsiteCount}
-            </span>
-            {data.allOnsiteToday && data.allOnsiteToday.length > data.stats.onsiteCount && (
-              <span className="text-[10.5px] font-medium text-slate-400">
-                +{data.allOnsiteToday.length - data.stats.onsiteCount}
-              </span>
-            )}
-            <ArrowRight className="h-3 w-3 text-slate-300 transition-colors group-hover:text-slate-600 shrink-0" />
+            <Car className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            <div>
+              <div className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-slate-400">
+                Déplacements
+              </div>
+              <div className="mt-0.5 flex items-baseline gap-1">
+                <span className="text-[18px] font-semibold tabular-nums tracking-[-0.02em] text-slate-900 leading-none">
+                  {data.stats.onsiteCount}
+                </span>
+                {data.allOnsiteToday && data.allOnsiteToday.length > data.stats.onsiteCount && (
+                  <span className="text-[10.5px] font-medium text-slate-400 tabular-nums">
+                    +{data.allOnsiteToday.length - data.stats.onsiteCount}
+                  </span>
+                )}
+              </div>
+            </div>
+            <ArrowRight className="h-3 w-3 text-slate-300 transition-all group-hover:text-slate-600 group-hover:translate-x-0.5 shrink-0" />
           </button>
 
-          {/* Temps saisi — compact, read-only */}
-          <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
-            <Clock className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-            <span className="text-[11.5px] text-slate-500">Temps saisi</span>
-            <span className="text-[13px] font-semibold tabular-nums text-slate-900">
-              {fmtDuration(todayTotals.totalMinutes)}
-            </span>
+          <div className="flex items-center gap-3 px-4 py-2.5">
+            <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            <div>
+              <div className="text-[9.5px] font-medium uppercase tracking-[0.14em] text-slate-400">
+                Temps saisi
+              </div>
+              <div className="mt-0.5 text-[18px] font-semibold tabular-nums tracking-[-0.02em] text-slate-900 leading-none">
+                {fmtDuration(todayTotals.totalMinutes)}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -581,25 +592,23 @@ function Section({
 }) {
   return (
     <div className="flex flex-col">
-      <div className="flex items-center gap-2.5 mb-3">
-        <div
-          className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-lg",
-            accentBg,
-            accentClass,
-          )}
-        >
-          {icon}
-        </div>
-        <div className="flex items-center gap-2 min-w-0">
-          <h2 className="text-[15px] font-semibold text-slate-900">{title}</h2>
-          <span className="inline-flex h-5 items-center rounded-md bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-500 tabular-nums">
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <div className="flex items-baseline gap-3 min-w-0">
+          <span className={cn("inline-flex h-4 w-4 items-center justify-center", accentClass)}>
+            {icon}
+          </span>
+          <h2 className="text-[14px] font-semibold tracking-[-0.01em] text-slate-900">
+            {title}
+          </h2>
+          <span className="text-[11px] text-slate-400 tabular-nums">
             {count}
           </span>
         </div>
-        <span className="text-[12px] text-slate-400 truncate">{subtitle}</span>
+        <span className="text-[11px] text-slate-400 truncate hidden sm:block">
+          {subtitle}
+        </span>
       </div>
-      <Card className="flex-1">
+      <Card className="flex-1 border-slate-200/80">
         <CardContent className="p-0">{children}</CardContent>
       </Card>
     </div>
@@ -626,39 +635,37 @@ function WorkedTicketRow({
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50/80 group"
+      className="relative flex w-full items-center gap-3 px-4 py-3.5 text-left transition-all hover:bg-slate-50/60 group"
     >
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 shrink-0">
-        <Clock className="h-4 w-4 text-slate-600" />
-      </div>
+      <PriorityRail priority={wt.ticketPriority} />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] font-mono text-slate-400">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-[11px] font-semibold tracking-[0.02em] text-blue-700">
             {wt.ticketNumber}
           </span>
-          <Badge variant={status.variant} className="text-[10.5px]">
+          <Badge variant={status.variant} className="text-[10px] font-medium">
             {status.label}
           </Badge>
-          <span className={cn("text-[11px] font-medium", priority.className)}>
+          <span className={cn("text-[10.5px] font-medium uppercase tracking-[0.06em]", priority.className)}>
             {priority.label}
           </span>
         </div>
-        <p className="mt-0.5 text-[13px] font-medium text-slate-900 truncate">
+        <p className="mt-1 text-[13.5px] font-medium text-slate-900 truncate leading-snug">
           {wt.ticketSubject}
         </p>
-        <p className="mt-0.5 text-[11.5px] text-slate-400">
+        <p className="mt-0.5 text-[11.5px] text-slate-500">
           {wt.organizationName}
         </p>
       </div>
-      <div className="text-right shrink-0">
-        <p className="text-[13px] font-bold tabular-nums text-slate-800">
+      <div className="text-right shrink-0 pl-3 border-l border-slate-200/60">
+        <p className="text-[15px] font-semibold tabular-nums tracking-[-0.01em] text-slate-900 leading-none">
           {fmtDuration(wt.totalMinutes)}
         </p>
-        <p className="text-[11px] text-slate-400">
+        <p className="mt-1 text-[10.5px] text-slate-400 tabular-nums">
           {wt.entryCount} saisie{wt.entryCount > 1 ? "s" : ""}
         </p>
       </div>
-      <ArrowRight className="h-3.5 w-3.5 text-slate-300 opacity-0 transition-opacity group-hover:opacity-100" />
+      <ArrowRight className="h-3.5 w-3.5 text-slate-300 opacity-0 transition-all group-hover:opacity-100 group-hover:translate-x-0.5" />
     </button>
   );
 }
@@ -683,50 +690,74 @@ function TicketRow({
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50/80 group"
+      className="relative flex w-full items-center gap-3 px-4 py-3.5 text-left transition-all hover:bg-slate-50/60 group"
     >
+      <PriorityRail priority={t.priority} />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] font-mono text-slate-400">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-[11px] font-semibold tracking-[0.02em] text-blue-700">
             {t.number}
           </span>
-          <Badge variant={status.variant} className="text-[10.5px]">
+          <Badge variant={status.variant} className="text-[10px] font-medium">
             {status.label}
           </Badge>
-          <span className={cn("text-[11px] font-medium", priority.className)}>
+          <span className={cn("text-[10.5px] font-medium uppercase tracking-[0.06em]", priority.className)}>
             {priority.label}
           </span>
           {t.slaBreached && (
-            <AlertTriangle className="h-3 w-3 text-red-500" />
+            <AlertTriangle className="h-3 w-3 text-rose-500" />
           )}
         </div>
-        <p className="mt-0.5 text-[13px] font-medium text-slate-900 truncate">
+        <p className="mt-1 text-[13.5px] font-medium text-slate-900 truncate leading-snug">
           {t.subject}
         </p>
-        <div className="mt-0.5 flex items-center gap-2 text-[11.5px] text-slate-400">
+        <div className="mt-0.5 flex items-center gap-2 text-[11.5px] text-slate-500">
           <span>{t.organizationName}</span>
-          <span>·</span>
+          <span className="text-slate-300">·</span>
           <span>{t.requesterName}</span>
         </div>
       </div>
       {t.dueAt && (
-        <div className="text-right shrink-0">
-          <p className="text-[11px] text-slate-400">Échéance</p>
-          <p className="text-[12px] font-medium tabular-nums text-slate-600">
+        <div className="text-right shrink-0 pl-3 border-l border-slate-200/60">
+          <p className="text-[9.5px] uppercase tracking-[0.14em] text-slate-400">Échéance</p>
+          <p className="mt-1 text-[13px] font-semibold tabular-nums text-slate-700 leading-none">
             {fmtTime(t.dueAt)}
           </p>
         </div>
       )}
-      <ArrowRight className="h-3.5 w-3.5 text-slate-300 opacity-0 transition-opacity group-hover:opacity-100" />
+      <ArrowRight className="h-3.5 w-3.5 text-slate-300 opacity-0 transition-all group-hover:opacity-100 group-hover:translate-x-0.5" />
     </button>
+  );
+}
+
+/**
+ * Petit rail vertical de couleur sur le côté gauche d'une row qui code la
+ * priorité visuellement (sans saturer la ligne avec une couleur de fond).
+ * 2 px de large, 70% de hauteur de la row, accenté juste assez pour
+ * scanner rapidement la liste sans détourner l'attention du contenu.
+ */
+function PriorityRail({ priority }: { priority: string }) {
+  const color =
+    priority === "CRITICAL" ? "bg-rose-500"
+    : priority === "HIGH"   ? "bg-orange-500"
+    : priority === "MEDIUM" ? "bg-blue-400"
+    : "bg-slate-300";
+  return (
+    <span
+      className={cn("absolute left-0 top-[15%] bottom-[15%] w-[2px] rounded-r", color)}
+      aria-hidden="true"
+    />
   );
 }
 
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="flex items-center justify-center py-10 text-[13px] text-slate-400">
-      {message}
+    <div className="flex flex-col items-center justify-center gap-1.5 py-12 text-center">
+      <span className="block h-px w-8 bg-slate-200" />
+      <p className="text-[12px] text-slate-400">{message}</p>
+      {/* Garde le slot ci-dessous pour les usages ancien-style qui passent
+          des children à EmptyState. */}
     </div>
   );
 }

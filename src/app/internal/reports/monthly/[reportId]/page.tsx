@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { notFound } from "next/navigation";
-import { Fraunces, DM_Sans, JetBrains_Mono } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import prisma from "@/lib/prisma";
 import { verifyReportToken } from "@/lib/reports/monthly/token";
 import { MonthlyReportDocument } from "@/components/reports/monthly/monthly-report-document";
@@ -17,26 +17,21 @@ import type { MonthlyReportPayload } from "@/lib/reports/monthly/types";
 
 export const dynamic = "force-dynamic";
 
-// Pairing éditorial pour le rapport mensuel client : Fraunces (serif
-// expressif, variable) en display + DM Sans (sans-serif géométrique
-// raffiné) en body + JetBrains Mono pour les chiffres techniques.
-// Choix volontairement distincts des polices "AI génériques" (Inter,
-// Roboto) — le rapport doit avoir une présence éditoriale.
-const fraunces = Fraunces({
+// Pairing tech moderne : Geist (display + body, Vercel-grade, géométrique
+// avec personnalité — référence du design tech actuel) + Geist Mono pour
+// les chiffres techniques. Un seul shipping de famille pour cohérence
+// type Apple SF Pro, peak « young + modern + IT ».
+const geist = Geist({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-fraunces",
-  axes: ["opsz", "SOFT", "WONK"],
+  variable: "--font-geist",
+  weight: ["300", "400", "500", "600", "700", "800"],
 });
-const dmSans = DM_Sans({
+const geistMono = Geist_Mono({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-dm-sans",
-});
-const jetbrains = JetBrains_Mono({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-jetbrains",
+  variable: "--font-geist-mono",
+  weight: ["400", "500", "600"],
 });
 
 export default async function InternalMonthlyReportRenderPage({
@@ -65,7 +60,7 @@ export default async function InternalMonthlyReportRenderPage({
   const logoSrc = "/images/cetix-logo-bleu-horizontal-HD.png";
 
   return (
-    <div className={`${fraunces.variable} ${dmSans.variable} ${jetbrains.variable}`}>
+    <div className={`${geist.variable} ${geistMono.variable}`}>
       <MonthlyReportDocument payload={payload} logoSrc={logoSrc} />
     </div>
   );
