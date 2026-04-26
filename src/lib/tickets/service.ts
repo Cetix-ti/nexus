@@ -262,9 +262,25 @@ export async function listTickets(options?: {
    *     globale par sujet/numéro pour retrouver un ticket supprimé)
    */
   trash?: "only" | "include";
+  /**
+   * Restriction Phase 9 : si l'utilisateur courant n'a pas accès à toutes
+   * les orgs, la liste retournée est filtrée par ces IDs. "all" = pas de
+   * filtre. Tableau vide = aucun ticket retourné (user à 0 org).
+   */
+  allowedOrgIds?: "all" | string[];
 }): Promise<UiTicket[]> {
   const where: Prisma.TicketWhereInput = {};
   if (options?.organizationId) where.organizationId = options.organizationId;
+  // Scoping par org (Phase 9) : composé avec un éventuel organizationId
+  // déjà demandé. Si l'org demandée n'est pas dans les autorisées, on
+  // force un IN [] qui retourne 0 résultat — pas de fuite.
+  if (options?.allowedOrgIds && options.allowedOrgIds !== "all") {
+    if (options.organizationId && !options.allowedOrgIds.includes(options.organizationId)) {
+      where.organizationId = { in: [] };
+    } else if (!options.organizationId) {
+      where.organizationId = { in: options.allowedOrgIds };
+    }
+  }
   if (options?.status) where.status = options.status as any;
   if (options?.assigneeId) where.assigneeId = options.assigneeId;
   if (options?.projectId) where.projectId = options.projectId;

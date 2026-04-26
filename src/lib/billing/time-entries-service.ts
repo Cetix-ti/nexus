@@ -48,6 +48,8 @@ interface ListOpts {
   from?: Date;
   to?: Date;
   limit?: number;
+  /** Phase 9 — restriction d'accès par org. "all" = pas de filtre. */
+  allowedOrgIds?: "all" | string[];
 }
 
 export async function listTimeEntries(
@@ -57,6 +59,16 @@ export async function listTimeEntries(
   if (opts.ticketId) where.ticketId = opts.ticketId;
   if (opts.organizationId) where.organizationId = opts.organizationId;
   if (opts.agentId) where.agentId = opts.agentId;
+  // Phase 9 — applique le scope par org. Composé avec un éventuel
+  // organizationId déjà demandé : si l'org demandée n'est pas autorisée,
+  // on force IN [] qui retourne 0 résultat (pas de fuite).
+  if (opts.allowedOrgIds && opts.allowedOrgIds !== "all") {
+    if (opts.organizationId && !opts.allowedOrgIds.includes(opts.organizationId)) {
+      where.organizationId = { in: [] };
+    } else if (!opts.organizationId) {
+      where.organizationId = { in: opts.allowedOrgIds };
+    }
+  }
   if (opts.from || opts.to) {
     const range: Record<string, Date> = {};
     if (opts.from) range.gte = opts.from;

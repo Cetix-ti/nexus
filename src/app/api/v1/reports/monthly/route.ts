@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { getAllowedOrgIds, userCanAccessOrg } from "@/lib/auth/org-scope";
 import { generateMonthlyReport } from "@/lib/reports/monthly/service";
 
 export async function GET(req: NextRequest) {
@@ -19,9 +20,23 @@ export async function GET(req: NextRequest) {
   }
 
   const orgId = req.nextUrl.searchParams.get("organizationId");
+  const allowedOrgIds = await getAllowedOrgIds(me.id, me.role);
+
+  // Compose le filtre Phase 9 : si l'user est limité, on intersecte avec
+  // l'org demandée (s'il y en a une), sinon on liste les orgs autorisées.
+  let whereOrgFilter: { organizationId?: string | { in: string[] } } = {};
+  if (allowedOrgIds === "all") {
+    if (orgId) whereOrgFilter = { organizationId: orgId };
+  } else if (orgId && !allowedOrgIds.includes(orgId)) {
+    whereOrgFilter = { organizationId: { in: [] } };
+  } else if (orgId) {
+    whereOrgFilter = { organizationId: orgId };
+  } else {
+    whereOrgFilter = { organizationId: { in: allowedOrgIds } };
+  }
 
   const rows = await prisma.monthlyClientReport.findMany({
-    where: orgId ? { organizationId: orgId } : undefined,
+    where: whereOrgFilter,
     orderBy: [{ organizationId: "asc" }, { period: "desc" }],
     select: {
       id: true,
@@ -85,6 +100,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: "Invalid request", details: parsed.error.flatten() },
       { status: 400 },
+    );
+  }
+
+  // Scoping Phase 9 : pas de génération sur une org hors du périmètre.
+  if (!(await userCanAccessOrg(me.id, me.role, parsed.data.organizationId))) {
+    return NextResponse.json(
+      { error: "Vous n'avez pas accès à cette organisation." },
+      { status: 403 },
     );
   }
 

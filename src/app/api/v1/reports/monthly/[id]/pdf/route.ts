@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { userCanAccessOrg } from "@/lib/auth/org-scope";
 import { readReportPdfOrGenerate } from "@/lib/reports/monthly/service";
 import { renderReportToPdf } from "@/lib/reports/monthly/pdf";
 
@@ -30,11 +31,17 @@ export async function GET(
   const meta = await prisma.monthlyClientReport.findUnique({
     where: { id },
     select: {
+      organizationId: true,
       period: true,
       organization: { select: { slug: true, name: true } },
     },
   });
   if (!meta) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // Scoping Phase 9 : 404 (pas 403) si l'org n'est pas dans le périmètre,
+  // pour ne pas leak l'existence du rapport.
+  if (!(await userCanAccessOrg(me.id, me.role, meta.organizationId))) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   try {
     // Variante "heures seulement" : toujours générée à la volée, pas

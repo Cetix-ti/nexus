@@ -2,17 +2,23 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { listTickets, createTicket, typeToDb } from "@/lib/tickets/service";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { getAllowedOrgIds, userCanAccessOrg } from "@/lib/auth/org-scope";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const me = await getCurrentUser();
 
   // Resolve assignee=me to current user's ID
   let assigneeId = url.searchParams.get("assigneeId") || undefined;
   const assigneeParam = url.searchParams.get("assignee");
-  if (assigneeParam === "me") {
-    const me = await getCurrentUser();
-    if (me) assigneeId = me.id;
+  if (assigneeParam === "me" && me) {
+    assigneeId = me.id;
   }
+
+  // Scoping Phase 9 : un user limité à certaines orgs ne voit que celles-ci.
+  const allowedOrgIds = me
+    ? await getAllowedOrgIds(me.id, me.role)
+    : ("all" as const);
 
   const limitParam = url.searchParams.get("limit");
   const limit = limitParam ? parseInt(limitParam, 10) : undefined;
@@ -49,6 +55,7 @@ export async function GET(req: Request) {
         ? "all"
         : false,
     trash,
+    allowedOrgIds,
   });
   return NextResponse.json(tickets);
 }
@@ -99,6 +106,15 @@ export async function POST(req: Request) {
     }
     if (!organizationId) {
       return NextResponse.json({ error: "Organisation non trouvée" }, { status: 400 });
+    }
+
+    // Scoping Phase 9 : un user limité ne peut créer un ticket que sur
+    // les orgs auxquelles il a accès.
+    if (me && !(await userCanAccessOrg(me.id, me.role, organizationId))) {
+      return NextResponse.json(
+        { error: "Vous n'avez pas accès à cette organisation." },
+        { status: 403 },
+      );
     }
 
     // Auto-propagation du flag "interne" depuis l'organisation : si l'org

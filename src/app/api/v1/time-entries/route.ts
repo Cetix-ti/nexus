@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getAllowedOrgIds, userCanAccessOrg } from "@/lib/auth/org-scope";
 import {
   listTimeEntries,
   createTimeEntry,
@@ -57,12 +58,14 @@ export async function GET(req: Request) {
   const fromStr = url.searchParams.get("from");
   const toStr = url.searchParams.get("to");
 
+  const allowedOrgIds = await getAllowedOrgIds(me.id, me.role);
   const rows = await listTimeEntries({
     ticketId,
     organizationId,
     agentId,
     from: fromStr ? new Date(fromStr) : undefined,
     to: toStr ? new Date(toStr) : undefined,
+    allowedOrgIds,
   });
 
   // Les champs `hourlyRate` et `amount` sont sensibles (confidentialité
@@ -94,6 +97,13 @@ export async function POST(req: Request) {
     );
   }
   const d = parsed.data;
+  // Scoping Phase 9 : refuse de saisir sur une org hors du périmètre.
+  if (!(await userCanAccessOrg(me.id, me.role, d.organizationId))) {
+    return NextResponse.json(
+      { error: "Vous n'avez pas accès à cette organisation." },
+      { status: 403 },
+    );
+  }
   // Saisie au nom d'un autre agent : autorisée seulement pour SUPERVISOR+.
   // Sinon on force agentId = me.id (le serveur ignore la valeur du client).
   let effectiveAgentId = me.id;
@@ -164,12 +174,16 @@ export async function PATCH(req: Request) {
   const { default: prisma } = await import("@/lib/prisma");
   const entry = await prisma.timeEntry.findUnique({
     where: { id },
-    select: { agentId: true },
+    select: { agentId: true, organizationId: true },
   });
   if (!entry) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const isOwner = entry.agentId === me.id;
   const isSupervisor = hasMinimumRole(me.role, "SUPERVISOR");
   if (!isOwner && !isSupervisor) return forbidden();
+  // Scoping Phase 9 : pas de modification d'une saisie hors scope.
+  if (!(await userCanAccessOrg(me.id, me.role, entry.organizationId))) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   try {
     const { updateTimeEntry } = await import("@/lib/billing/time-entries-service");
@@ -198,12 +212,16 @@ export async function DELETE(req: Request) {
   const { default: prisma } = await import("@/lib/prisma");
   const entry = await prisma.timeEntry.findUnique({
     where: { id },
-    select: { agentId: true },
+    select: { agentId: true, organizationId: true },
   });
   if (!entry) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const isOwner = entry.agentId === me.id;
   const isSupervisor = hasMinimumRole(me.role, "SUPERVISOR");
   if (!isOwner && !isSupervisor) return forbidden();
+  // Scoping Phase 9 : pas de delete hors scope.
+  if (!(await userCanAccessOrg(me.id, me.role, entry.organizationId))) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   try {
     await deleteTimeEntry(id);

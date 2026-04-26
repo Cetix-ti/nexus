@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getTicket, updateTicket, deleteTicket, parseTicketIdentifier } from "@/lib/tickets/service";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { userCanAccessOrg } from "@/lib/auth/org-scope";
 import prisma from "@/lib/prisma";
 
 /**
@@ -38,6 +39,12 @@ export async function GET(
   if (!ticket) {
     return NextResponse.json({ error: "Ticket introuvable" }, { status: 404 });
   }
+  // Scoping Phase 9 : si l'user est limité à certaines orgs, vérifie que
+  // ce ticket appartient à l'une d'elles. Sinon 404 (et non 403) pour
+  // ne pas leak l'existence du ticket.
+  if (ticket.organizationId && !(await userCanAccessOrg(me.id, me.role, ticket.organizationId))) {
+    return NextResponse.json({ error: "Ticket introuvable" }, { status: 404 });
+  }
   return NextResponse.json(ticket);
 }
 
@@ -50,6 +57,14 @@ export async function PATCH(
   const { id: input } = await params;
   const cuid = await resolveCuid(input);
   if (!cuid) return NextResponse.json({ error: "Ticket introuvable" }, { status: 404 });
+  // Scoping Phase 9 : pas de modification d'un ticket hors scope.
+  const orgRow = await prisma.ticket.findUnique({
+    where: { id: cuid },
+    select: { organizationId: true },
+  });
+  if (orgRow && !(await userCanAccessOrg(me.id, me.role, orgRow.organizationId))) {
+    return NextResponse.json({ error: "Ticket introuvable" }, { status: 404 });
+  }
   const body = await req.json();
 
   // Blocage par dépendance : si on tente de faire avancer un ticket hors
@@ -95,6 +110,14 @@ export async function DELETE(
   const { id: input } = await params;
   const cuid = await resolveCuid(input);
   if (!cuid) return NextResponse.json({ error: "Ticket introuvable" }, { status: 404 });
+  // Scoping Phase 9 : pas de suppression d'un ticket hors scope.
+  const orgRow = await prisma.ticket.findUnique({
+    where: { id: cuid },
+    select: { organizationId: true },
+  });
+  if (orgRow && !(await userCanAccessOrg(me.id, me.role, orgRow.organizationId))) {
+    return NextResponse.json({ error: "Ticket introuvable" }, { status: 404 });
+  }
   await deleteTicket(cuid);
   return NextResponse.json({ ok: true });
 }
