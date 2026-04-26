@@ -7,12 +7,14 @@
 //              Cascade sur les dépendances (comments, activities…).
 
 import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
 import {
   softDeleteTickets,
   restoreTickets,
   purgeTickets,
 } from "@/lib/tickets/service";
 import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { getAllowedOrgIds } from "@/lib/auth/org-scope";
 
 export async function POST(req: Request) {
   const me = await getCurrentUser();
@@ -29,6 +31,29 @@ export async function POST(req: Request) {
 
   if (ids.length === 0) {
     return NextResponse.json({ error: "ids requis" }, { status: 400 });
+  }
+
+  // Phase 9D — scope par org. Si l'utilisateur est limité, vérifie que
+  // TOUS les tickets ciblés appartiennent à des orgs autorisées.
+  // Refus de l'opération entière si un seul est hors scope (plus sûr
+  // qu'un scope partiel silencieux).
+  const allowed = await getAllowedOrgIds(me.id, me.role);
+  if (allowed !== "all") {
+    const ticketsOrg = await prisma.ticket.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, organizationId: true },
+    });
+    const outOfScope = ticketsOrg.filter(
+      (t) => !allowed.includes(t.organizationId),
+    );
+    if (outOfScope.length > 0) {
+      return NextResponse.json(
+        {
+          error: `${outOfScope.length} ticket(s) hors de votre périmètre — opération refusée.`,
+        },
+        { status: 403 },
+      );
+    }
   }
 
   if (op === "delete") {

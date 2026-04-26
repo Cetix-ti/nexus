@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { getQboConfig, getAuthUrl } from "@/lib/quickbooks/client";
-import { getCurrentUser } from "@/lib/auth-utils";
+import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
 
-/** GET — connection status + auth URL */
+/** GET — connection status + auth URL. Phase 9D : MSP_ADMIN+ requis. */
 export async function GET() {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasMinimumRole(me.role, "MSP_ADMIN")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   try {
     const config = await getQboConfig();
