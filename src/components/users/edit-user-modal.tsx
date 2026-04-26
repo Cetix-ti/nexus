@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { UserOrgScopeSection } from "./user-org-scope-section";
 
 export interface EditUserModalUser {
   id: string;
@@ -453,6 +454,13 @@ function EditUserModalForm({ onClose, user, onSaved }: EditUserModalProps) {
               L'UI d'override par utilisateur a été retirée ; pour
               accorder un accès à un seul agent, crée un rôle custom
               dédié et assigne-le-lui via le champ Rôle ci-dessus. */}
+
+          {/* Périmètre par organisation (Phase 9) — pour les techniciens
+              dédiés à un sous-ensemble de clients. Section self-contained :
+              persiste indépendamment du formulaire principal. */}
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <UserOrgScopeSection userId={safeUser.id} userRole={safeUser.role} />
+          </div>
 
           {/* Password reset */}
           <PasswordResetSection userId={user?.id || ""} />
