@@ -32,6 +32,9 @@ interface DecideInput {
   ticketCategoryId?: string;
   forceNonBillable?: boolean;
   forceBillable?: boolean;
+  /** Libellé client choisi par l'agent à la saisie. Utilisé pour récupérer
+   *  son hourlyRate (taux de base avant multiplicateurs). */
+  workTypeId?: string | null;
 }
 
 export interface ServerDecision {
@@ -74,7 +77,26 @@ export async function resolveDecisionForEntry(input: DecideInput): Promise<Serve
   const activeRow = pickActiveContract(contractRows, input.startedAt);
   const contract = activeRow ? toEngineContract(activeRow) : null;
 
-  // 3. Décision.
+  // 3. Libellé client (workType) → taux de base.
+  let workTypeRate: number | null = null;
+  if (input.workTypeId) {
+    const wt = await prisma.orgWorkType.findUnique({
+      where: { id: input.workTypeId },
+      select: { hourlyRate: true, organizationId: true, isActive: true },
+    });
+    // Garde-fou : on n'applique le taux que si le libellé appartient bien
+    // à l'org de l'entrée et qu'il est actif.
+    if (
+      wt &&
+      wt.isActive &&
+      wt.organizationId === input.organizationId &&
+      wt.hourlyRate != null
+    ) {
+      workTypeRate = wt.hourlyRate;
+    }
+  }
+
+  // 4. Décision.
   const decision = decideBilling({
     timeType: input.timeType as TimeType,
     durationMinutes: input.durationMinutes,
@@ -88,6 +110,12 @@ export async function resolveDecisionForEntry(input: DecideInput): Promise<Serve
     billingProfile,
     forceNonBillable: input.forceNonBillable,
     forceBillable: input.forceBillable,
+    // Couverture par mode + multiplicateurs viennent de l'override client.
+    remoteCoverage: override?.remoteCoverage,
+    onsiteCoverage: override?.onsiteCoverage,
+    afterHoursMultiplier: override?.afterHoursMultiplier,
+    weekendMultiplier: override?.weekendMultiplier,
+    workTypeRate,
   });
 
   return { decision, contract };

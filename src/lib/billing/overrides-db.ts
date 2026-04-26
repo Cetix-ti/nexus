@@ -46,6 +46,10 @@ function rowToType(
     effectiveFrom: row.effectiveFrom.toISOString(),
     effectiveTo: row.effectiveTo?.toISOString(),
     notes: row.notes ?? undefined,
+    remoteCoverage: row.remoteCoverage as ClientBillingOverride["remoteCoverage"],
+    onsiteCoverage: row.onsiteCoverage as ClientBillingOverride["onsiteCoverage"],
+    afterHoursMultiplier: row.afterHoursMultiplier,
+    weekendMultiplier: row.weekendMultiplier,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -93,6 +97,12 @@ export async function upsertClientBillingOverride(
   if (patch.effectiveTo !== undefined)
     data.effectiveTo = patch.effectiveTo ? new Date(patch.effectiveTo) : null;
   if (patch.notes !== undefined) data.notes = patch.notes;
+  if (patch.remoteCoverage !== undefined) data.remoteCoverage = patch.remoteCoverage;
+  if (patch.onsiteCoverage !== undefined) data.onsiteCoverage = patch.onsiteCoverage;
+  if (patch.afterHoursMultiplier !== undefined)
+    data.afterHoursMultiplier = patch.afterHoursMultiplier;
+  if (patch.weekendMultiplier !== undefined)
+    data.weekendMultiplier = patch.weekendMultiplier;
   for (const f of NUMERIC_FIELDS) {
     if (f in patch) {
       const v = (patch as unknown as Record<string, unknown>)[f];

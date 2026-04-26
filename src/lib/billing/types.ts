@@ -242,6 +242,22 @@ export interface BillingProfile {
   createdAt: string;
 }
 
+/** Comment un mode de prestation est couvert (saisi côté client). */
+export type BillingCoverageMode = "BILLABLE" | "FREE" | "INCLUDED";
+
+/** Libellé personnalisable de type de travail pour un client donné.
+ *  Le `hourlyRate` (s'il est défini) sert de base au moment de la saisie,
+ *  les multiplicateurs soir/weekend du client s'appliquent par-dessus. */
+export interface OrgWorkType {
+  id: string;
+  organizationId: string;
+  label: string;
+  timeType: TimeType;
+  hourlyRate: number | null;
+  isActive: boolean;
+  sortOrder: number;
+}
+
 /**
  * Per-client overrides applied on top of a base BillingProfile.
  * Any field that's set will override the base profile's field.
@@ -252,6 +268,11 @@ export interface ClientBillingOverride {
   organizationId: string;
   organizationName: string;
   baseProfileId: string;       // The base BillingProfile this extends
+  // --- Couverture par mode (par client) ---------------------------------
+  remoteCoverage?: BillingCoverageMode; // default BILLABLE
+  onsiteCoverage?: BillingCoverageMode; // default BILLABLE
+  afterHoursMultiplier?: number; // default 1.5
+  weekendMultiplier?: number;    // default 2.0
   // All numeric fields are optional — if undefined, use the base
   standardRate?: number;
   onsiteRate?: number;

@@ -97,6 +97,7 @@ model Organization {
   aiConsent             AiConsent?
   mileageRate           OrgMileageRate?
   billingOverride       ClientBillingOverride?
+  workTypes             OrgWorkType[]
   addons                OrganizationAddon[]
   publishedDashboards   PublishedDashboard[]
   monthlyReports        MonthlyClientReport[]
@@ -1521,6 +1522,11 @@ model TimeEntry {
   hourlyRate      Float?    @map("hourly_rate")
   amount          Float?
   approvalStatus  String    @default("draft") @map("approval_status")
+  /// Libellé client choisi par l'agent au moment de la saisie. Donne le
+  /// taux horaire de base (avant multiplicateurs soir/weekend). Null si
+  /// l'agent a sélectionné un type système au lieu d'un libellé custom.
+  workTypeId      String?      @map("work_type_id")
+  workType        OrgWorkType? @relation(fields: [workTypeId], references: [id], onDelete: SetNull)
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
@@ -2142,6 +2148,16 @@ model OrganizationAddon {
   @@map("organization_addons")
 }
 
+/// Comment un mode de prestation est couvert pour un client donné.
+enum BillingCoverageMode {
+  /// Facturable au taux applicable.
+  BILLABLE
+  /// Gratuit pour le client (saisie de temps non facturable).
+  FREE
+  /// Inclus au contrat (déduit de la couverture, pas facturé en plus).
+  INCLUDED
+}
+
 /// Override de facturation par client (org). Tous les champs numériques
 /// sont optionnels — quand non null ils remplacent le champ correspondant
 /// du `BillingProfile` de base. Un seul override par org (unique).
@@ -2156,6 +2172,13 @@ model ClientBillingOverride {
   isActive                 Boolean      @default(true) @map("is_active")
   effectiveFrom            DateTime     @default(now()) @map("effective_from")
   effectiveTo              DateTime?    @map("effective_to")
+  // --- Couverture par mode (par client) --------------------------------
+  remoteCoverage           BillingCoverageMode @default(BILLABLE) @map("remote_coverage")
+  onsiteCoverage           BillingCoverageMode @default(BILLABLE) @map("onsite_coverage")
+  /// Multiplicateur appliqué sur le taux pour les saisies marquées "soir".
+  afterHoursMultiplier     Float        @default(1.5) @map("after_hours_multiplier")
+  /// Multiplicateur appliqué sur le taux pour les saisies en weekend.
+  weekendMultiplier        Float        @default(2.0) @map("weekend_multiplier")
   // --- Taux numériques (null = hérite de la base) -----------------------
   standardRate             Float?       @map("standard_rate")
   onsiteRate               Float?       @map("onsite_rate")
@@ -2175,6 +2198,34 @@ model ClientBillingOverride {
   updatedAt                DateTime     @updatedAt @map("updated_at")
 
   @@map("client_billing_overrides")
+}
+
+/// Type de travail configuré pour un client : libellé personnalisable
+/// (ex. "Sysadmin à distance", "Tech L1 sur place") avec un taux horaire
+/// propre. Quand l'agent saisit du temps, il choisit un libellé : son
+/// `hourlyRate` devient la base, à laquelle l'engine ajoute les
+/// multiplicateurs soir/weekend du client.
+///
+/// `timeType` reste un enum technique (remote_work / onsite_work / travel /
+/// ...) lu par l'engine pour décider la couverture (FREE/INCLUDED/BILLABLE)
+/// et appliquer la sémantique de déplacement.
+model OrgWorkType {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  label          String
+  timeType       String       @map("time_type")
+  hourlyRate     Float?       @map("hourly_rate")
+  isActive       Boolean      @default(true) @map("is_active")
+  sortOrder      Int          @default(0) @map("sort_order")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  timeEntries    TimeEntry[]
+
+  @@unique([organizationId, label])
+  @@index([organizationId, isActive])
+  @@map("org_work_types")
 }
 
 model OrgMileageRate {

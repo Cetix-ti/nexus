@@ -676,6 +676,32 @@ function ClientBillingOverridesSectionInner({
   const [workTypes, setWorkTypes] = useState<WorkTypeOption[]>(
     () => loadWorkTypes(organizationId),
   );
+  // Charge la liste des libellés depuis la DB au mount. Avant : seulement
+  // localStorage → invisible côté serveur, donc le moteur de facturation
+  // ne pouvait pas appliquer le hourlyRate spécifique. Maintenant l'API
+  // est la source de vérité (table OrgWorkType).
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/v1/organizations/${organizationId}/work-types`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data?.data) ? data.data : null;
+        if (!rows) return;
+        const mapped: WorkTypeOption[] = rows.map((w: { id: string; label: string; timeType: WorkTypeOption["timeType"]; hourlyRate: number | null }) => ({
+          id: w.id,
+          label: w.label,
+          timeType: w.timeType,
+          hourlyRateOverride: w.hourlyRate ?? undefined,
+        }));
+        // Ne remplace que si le serveur a effectivement des données. Sinon
+        // on garde le snapshot localStorage pour que l'éditeur ne se vide pas
+        // tant que l'utilisateur n'a pas explicitement sauvegardé.
+        if (mapped.length > 0) setWorkTypes(mapped);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [organizationId]);
   // Catégories de base gérables globalement dans Paramètres → Facturation.
   // On s'y abonne via l'event storage pour refléter les ajouts/renommages
   // sans rechargement de page.
@@ -816,6 +842,44 @@ function ClientBillingOverridesSectionInner({
       }
     } catch (e) {
       console.error("Failed to save billing override:", e);
+    }
+
+    // Persiste les libellés de type de travail (table OrgWorkType).
+    // C'est ce que le moteur de facturation lit pour appliquer le bon
+    // taux horaire de base par saisie.
+    try {
+      const workTypesPayload = workTypes.map((w, idx) => ({
+        // Si l'id est un cuid de la DB on le passe pour update ; sinon
+        // (id local "wt_…" généré côté UI) on l'omet pour création.
+        ...(w.id && !w.id.startsWith("wt_") ? { id: w.id } : {}),
+        label: w.label,
+        timeType: w.timeType,
+        hourlyRate: w.hourlyRateOverride ?? null,
+        sortOrder: idx,
+      }));
+      const r = await fetch(`/api/v1/organizations/${organizationId}/work-types`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workTypes: workTypesPayload }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        console.error("Failed to save work types:", d);
+      } else {
+        // Recharge avec les vrais ids DB, sinon les next saves créeraient
+        // des doublons (création au lieu d'update).
+        const data = await r.json();
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        const mapped: WorkTypeOption[] = rows.map((w: { id: string; label: string; timeType: WorkTypeOption["timeType"]; hourlyRate: number | null }) => ({
+          id: w.id,
+          label: w.label,
+          timeType: w.timeType,
+          hourlyRateOverride: w.hourlyRate ?? undefined,
+        }));
+        setWorkTypes(mapped);
+      }
+    } catch (e) {
+      console.error("Failed to save work types:", e);
     }
 
     setSaving(false);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { X, Clock, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,39 +74,54 @@ export function AddTimeModal({
   // sinon une config faite dans un autre onglet n'est pas reflétée ici
   // tant que la page n'est pas rechargée (la modale reste montée entre
   // deux ouvertures).
+  // Les libellés client viennent maintenant de la DB via /api/v1/organizations/[id]/work-types.
+  // On garde un fallback localStorage pour ne pas casser l'UX si l'API
+  // tarde à répondre, mais le serveur source de vérité est la table
+  // OrgWorkType.
   const [workTypes, setWorkTypesState] = useState<WorkTypeOption[]>(() =>
     loadWorkTypes(organizationId),
   );
   const [workTypeId, setWorkTypeId] = useState<string>(
     () => loadWorkTypes(organizationId)[0]?.id ?? "",
   );
+
+  /** Charge la liste des libellés via l'API DB. Fallback silencieux sur le
+   *  cache localStorage si l'API échoue (mode offline / restart serveur). */
+  const reloadWorkTypes = React.useCallback(async () => {
+    try {
+      const r = await fetch(
+        `/api/v1/organizations/${organizationId}/work-types`,
+        { cache: "no-store" },
+      );
+      if (!r.ok) return;
+      const json = await r.json();
+      const rows = Array.isArray(json?.data) ? json.data : [];
+      const mapped: WorkTypeOption[] = rows.map((w: { id: string; label: string; timeType: WorkTypeOption["timeType"]; hourlyRate: number | null }) => ({
+        id: w.id,
+        label: w.label,
+        timeType: w.timeType,
+        hourlyRateOverride: w.hourlyRate ?? undefined,
+      }));
+      setWorkTypesState(mapped);
+      // Garde la sélection si elle existe toujours, sinon prend la 1ère.
+      setWorkTypeId((prev) => (mapped.find((w) => w.id === prev) ? prev : mapped[0]?.id ?? ""));
+    } catch {
+      // ignore
+    }
+  }, [organizationId]);
+
   useEffect(() => {
     if (!open) return;
-    const list = loadWorkTypes(organizationId);
-    setWorkTypesState(list);
-    // En édition, on restaure le type de travail de la saisie. Sinon on
-    // garde la sélection courante si elle est encore valide, sinon on
-    // prend le premier type disponible.
+    reloadWorkTypes();
+    // En édition, on restaure le type de travail de la saisie au sein de
+    // la liste fraîche.
     if (editingEntry) {
+      // Sera ajusté quand reloadWorkTypes() résout.
+      const list = loadWorkTypes(organizationId);
       const match = list.find((w) => w.timeType === editingEntry.timeType);
       if (match) setWorkTypeId(match.id);
-      else setWorkTypeId(list[0]?.id ?? "");
-    } else {
-      setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
     }
-  }, [open, organizationId, editingEntry]);
-  // Cross-tab : si l'utilisateur modifie la liste dans un autre onglet,
-  // reflète le changement dès que le storage émet l'event.
-  useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (!e.key || !e.key.startsWith("nexus:client-work-types:")) return;
-      const list = loadWorkTypes(organizationId);
-      setWorkTypesState(list);
-      setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [organizationId]);
+  }, [open, organizationId, editingEntry, reloadWorkTypes]);
   const selectedWorkType =
     workTypes.find((w) => w.id === workTypeId) ?? workTypes[0];
   const timeType: TimeType = selectedWorkType?.timeType ?? "remote_work";
@@ -333,6 +348,9 @@ export function AddTimeModal({
         // Flag transmis au serveur pour qu'il honore le toggle "Forcer non
         // facturable" dans sa revalidation.
         ...(forceNonBillable ? { forceNonBillable: true } as any : {}),
+        // Libellé client choisi — utilisé par le serveur pour appliquer
+        // le bon taux horaire de base (table OrgWorkType).
+        ...(workTypeId ? { workTypeId } as any : {}),
       };
       // Awaité : sans await, on fermait la modale avant que le POST ait
       // rendu, et l'utilisateur pouvait ré-ouvrir puis re-poster.

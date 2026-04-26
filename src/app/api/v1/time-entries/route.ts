@@ -36,6 +36,10 @@ const createSchema = z.object({
   hourlyRate: z.number().optional().nullable(),
   amount: z.number().optional().nullable(),
   forceNonBillable: z.boolean().optional(),
+  /** Libellé de type de travail choisi par l'agent. Permet à l'engine
+   *  d'utiliser le tarif spécifique du libellé (avec multiplicateurs
+   *  soir/weekend appliqués par-dessus). */
+  workTypeId: z.string().optional().nullable(),
 });
 
 export async function GET(req: Request) {
@@ -104,6 +108,7 @@ export async function POST(req: Request) {
       hasTravelBilled: d.hasTravelBilled,
       travelDurationMinutes: d.travelDurationMinutes,
       forceNonBillable: d.forceNonBillable,
+      workTypeId: d.workTypeId,
     });
     return NextResponse.json(created, { status: 201 });
   } catch (e) {
