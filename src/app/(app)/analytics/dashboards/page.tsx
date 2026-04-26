@@ -406,7 +406,28 @@ function saveFavorites(ids: string[]) { try { localStorage.setItem(FAV_KEY, JSON
 function loadPrimary(): string { try { return localStorage.getItem(PRIMARY_KEY) || "full_report"; } catch { return "full_report"; } }
 function savePrimary(id: string) { try { localStorage.setItem(PRIMARY_KEY, id); } catch {} }
 function loadCustomReports(): ReportDef[] { try { const r = localStorage.getItem(CUSTOM_REPORTS_KEY); if (r) return JSON.parse(r); } catch {} return []; }
-function saveCustomReports(reports: ReportDef[]) { try { localStorage.setItem(CUSTOM_REPORTS_KEY, JSON.stringify(reports)); } catch {} }
+function saveCustomReports(reports: ReportDef[]) {
+  try { localStorage.setItem(CUSTOM_REPORTS_KEY, JSON.stringify(reports)); } catch {}
+  // Phase 5 — sync DB en arrière-plan. Le localStorage reste comme
+  // cache rapide pour l'affichage initial avant que la GET API revienne.
+  if (typeof window !== "undefined") {
+    const payload = reports.map((r) => ({
+      id: r.id,
+      label: r.label,
+      description: r.description,
+      category: r.category,
+      widgets: r.widgets,
+      organizationIds: r.organizationIds ?? [],
+      tags: r.tags ?? [],
+      parentId: r.parentId ?? null,
+    }));
+    fetch("/api/v1/me/dashboards", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reports: payload }),
+    }).catch(() => {});
+  }
+}
 
 // Set des IDs de dashboards built-in (REPORT_CATALOG) que l'user a
 // choisi de masquer. Persisté en localStorage ; restaurables via le
@@ -558,6 +579,33 @@ export default function ReportsPage() {
   const [editFuture, setEditFuture] = useState<DashboardItem[][]>([]);
   const [editBaseline, setEditBaseline] = useState<DashboardItem[] | null>(null);
   const [customReports, setCustomReports] = useState<ReportDef[]>(() => loadCustomReports());
+  // Phase 5 — sync DB au mount. Si DB a des données, c'est la source de
+  // vérité (multi-device). Sinon (DB vide ET localStorage non-vide), on
+  // pousse le localStorage vers la DB (migration silencieuse).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/me/dashboards", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data?.data) ? data.data : null;
+        if (!rows) return;
+        if (rows.length > 0) {
+          setCustomReports(rows);
+          try {
+            localStorage.setItem(CUSTOM_REPORTS_KEY, JSON.stringify(rows));
+          } catch {}
+        } else {
+          // DB vide — migrer le localStorage si non-vide.
+          const local = loadCustomReports();
+          if (local.length > 0) {
+            saveCustomReports(local);
+          }
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [showCreateReport, setShowCreateReport] = useState(false);
   // État de la modale "Publier au portail" — ouvre avec un dashboardId
   // ciblé, null = fermée.

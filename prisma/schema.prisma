@@ -251,6 +251,7 @@ model User {
   organizationScopes      UserOrganizationScope[] @relation("UserOrgScopeUser")
   organizationScopesGranted UserOrganizationScope[] @relation("UserOrgScopeGranter")
   scheduledReportsCreated ScheduledReport[]    @relation("ScheduledReportCreator")
+  dashboards              UserDashboard[]      @relation("UserDashboardOwner")
   generatedMonthlyReports MonthlyClientReport[] @relation("MonthlyReportGenerator")
 
   // Socle nouveaux modules
@@ -2215,6 +2216,34 @@ model ClientBillingOverride {
   updatedAt                DateTime     @updatedAt @map("updated_at")
 
   @@map("client_billing_overrides")
+}
+
+/// Dashboard / rapport personnalisé d'un utilisateur. Stocke la
+/// configuration (widgets, métadonnées, attribution org, balises) en
+/// JSON pour rester flexible face aux évolutions UI sans migration.
+///
+/// Avant Phase 5 : tout en localStorage du navigateur — perdu au reset,
+/// non synchro entre devices, pas partageable.
+model UserDashboard {
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  user           User     @relation("UserDashboardOwner", fields: [userId], references: [id], onDelete: Cascade)
+  /// Slug stable utilisé par l'UI pour les routes (?reportId=...) — peut
+  /// venir d'un id legacy localStorage. Si null, l'id DB sert de slug.
+  slug           String?
+  label          String
+  description    String   @default("") @db.Text
+  category       String   @default("complet")
+  /// `widgets`, `organizationIds`, `tags`, etc. en JSON pour ne pas
+  /// figer le shape Prisma au gré des évolutions UI.
+  config         Json
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, slug])
+  @@index([userId])
+  @@map("user_dashboards")
 }
 
 /// Rapport planifié — automatise l'envoi régulier d'un livrable
