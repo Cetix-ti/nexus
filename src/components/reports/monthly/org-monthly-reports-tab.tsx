@@ -84,12 +84,16 @@ function fmtDateTime(iso: string): string {
   });
 }
 
+type PortalVariant = "BOTH" | "WITH_RATES" | "HOURS_ONLY";
+
 export function OrgMonthlyReportsTab({
   organizationId,
   initialAutoPublish,
+  initialPortalVariant = "BOTH",
 }: {
   organizationId: string;
   initialAutoPublish: boolean;
+  initialPortalVariant?: PortalVariant;
 }) {
   const months = monthsAround();
   const [period, setPeriod] = useState<string>(months[1]?.value ?? months[0].value);
@@ -100,6 +104,8 @@ export function OrgMonthlyReportsTab({
   const [error, setError] = useState<string | null>(null);
   const [autoPublish, setAutoPublish] = useState(initialAutoPublish);
   const [autoSaving, setAutoSaving] = useState(false);
+  const [portalVariant, setPortalVariant] = useState<PortalVariant>(initialPortalVariant);
+  const [variantSaving, setVariantSaving] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -196,6 +202,23 @@ export function OrgMonthlyReportsTab({
     }
   };
 
+  const savePortalVariant = async (next: PortalVariant) => {
+    setVariantSaving(true);
+    try {
+      const r = await fetch(`/api/v1/organizations/${organizationId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientPortalReportVariant: next }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setPortalVariant(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setVariantSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card>
@@ -272,6 +295,40 @@ export function OrgMonthlyReportsTab({
               onCheckedChange={saveAutoPublish}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <FileText className="h-4 w-4 text-blue-600" />
+            Variantes du rapport sur le portail client
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-600 mb-3">
+            Détermine quelle{portalVariant === "BOTH" ? "s versions sont" : " version est"} accessible{portalVariant === "BOTH" ? "s" : ""} aux utilisateurs du portail client. Côté agent, les deux variantes restent toujours disponibles peu importe ce paramètre.
+          </p>
+          <Select
+            value={portalVariant}
+            onValueChange={(v) => savePortalVariant(v as PortalVariant)}
+            disabled={variantSaving}
+          >
+            <SelectTrigger className="max-w-md">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="BOTH">
+                Les deux versions (avec tarifs $ et heures seulement)
+              </SelectItem>
+              <SelectItem value="WITH_RATES">
+                Seulement avec tarifs $ (montants visibles)
+              </SelectItem>
+              <SelectItem value="HOURS_ONLY">
+                Seulement heures (sans montants $)
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </CardContent>
       </Card>
 

@@ -129,6 +129,13 @@ model Organization {
   /// agent doit les publier manuellement. Défaut false (publication
   /// manuelle, sécurité par défaut).
   monthlyReportAutoPublish Boolean @default(false) @map("monthly_report_auto_publish")
+  /// Variante de rapport mensuel exposée au portail client.
+  /// - BOTH : les deux versions (avec $ et heures-seulement) téléchargeables
+  /// - WITH_RATES : seulement la version complète avec montants $
+  /// - HOURS_ONLY : seulement la version sans tarifs (durées + libellés)
+  /// Côté agent : les deux variantes restent toujours accessibles peu
+  /// importe ce paramètre.
+  clientPortalReportVariant String @default("BOTH") @map("client_portal_report_variant")
 
   @@map("organizations")
 }

@@ -33,14 +33,22 @@ function fmtBytes(n: number | null): string {
   return `${(n / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
+type VariantPolicy = "BOTH" | "WITH_RATES" | "HOURS_ONLY";
+
 export function PortalMonthlyReportsSection() {
   const [items, setItems] = useState<PortalReportItem[]>([]);
+  const [variantPolicy, setVariantPolicy] = useState<VariantPolicy>("BOTH");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/v1/portal/reports/monthly")
       .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((d) => setItems(d.items ?? []))
+      .then((d) => {
+        setItems(d.items ?? []);
+        if (d.variantPolicy === "WITH_RATES" || d.variantPolicy === "HOURS_ONLY" || d.variantPolicy === "BOTH") {
+          setVariantPolicy(d.variantPolicy);
+        }
+      })
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, []);
@@ -79,32 +87,71 @@ export function PortalMonthlyReportsSection() {
         demandeurs. Cliquez sur un mois pour ouvrir le PDF.
       </p>
       <div className="divide-y divide-slate-100">
-        {items.map((r) => (
-          <a
-            key={r.id}
-            href={`/api/v1/portal/reports/monthly/${r.id}/pdf`}
-            target="_blank"
-            rel="noopener"
-            className="flex items-center justify-between py-3 group hover:bg-slate-50 -mx-3 px-3 rounded transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-blue-50 flex items-center justify-center group-hover:bg-blue-100">
-                <FileText className="h-4 w-4 text-blue-600" />
-              </div>
-              <div>
-                <div className="text-[14px] font-medium text-slate-900 group-hover:text-blue-700">
-                  {fmtMonth(r.period)}
+        {items.map((r) => {
+          // URL principale selon la politique :
+          //   - WITH_RATES → version $ (default)
+          //   - HOURS_ONLY → version heures (rendu à la volée)
+          //   - BOTH → version $ + lien secondaire vers heures
+          const primaryHref =
+            variantPolicy === "HOURS_ONLY"
+              ? `/api/v1/portal/reports/monthly/${r.id}/pdf?variant=hours_only`
+              : `/api/v1/portal/reports/monthly/${r.id}/pdf`;
+          return (
+            <div
+              key={r.id}
+              className="flex items-center justify-between py-3 hover:bg-slate-50 -mx-3 px-3 rounded transition-colors"
+            >
+              <a
+                href={primaryHref}
+                target="_blank"
+                rel="noopener"
+                className="flex items-center gap-3 flex-1 min-w-0 group"
+              >
+                <div className="h-9 w-9 rounded-lg bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 shrink-0">
+                  <FileText className="h-4 w-4 text-blue-600" />
                 </div>
-                <div className="text-[11px] text-slate-500">
-                  Publié le{" "}
-                  {(r.publishedAt ?? r.generatedAt).slice(0, 10)}
-                  {r.fileSizeBytes ? ` · ${fmtBytes(r.fileSizeBytes)}` : ""}
+                <div className="min-w-0">
+                  <div className="text-[14px] font-medium text-slate-900 group-hover:text-blue-700 truncate">
+                    {fmtMonth(r.period)}
+                  </div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    Publié le{" "}
+                    {(r.publishedAt ?? r.generatedAt).slice(0, 10)}
+                    {r.fileSizeBytes ? ` · ${fmtBytes(r.fileSizeBytes)}` : ""}
+                  </div>
                 </div>
+              </a>
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                <a
+                  href={primaryHref}
+                  target="_blank"
+                  rel="noopener"
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-[11.5px] font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-700 hover:border-blue-300 transition-colors"
+                  title={
+                    variantPolicy === "HOURS_ONLY"
+                      ? "Version heures (sans tarifs)"
+                      : "Version complète"
+                  }
+                >
+                  <Download className="h-3 w-3" />
+                  {variantPolicy === "HOURS_ONLY" ? "Heures" : "PDF"}
+                </a>
+                {variantPolicy === "BOTH" && (
+                  <a
+                    href={`/api/v1/portal/reports/monthly/${r.id}/pdf?variant=hours_only`}
+                    target="_blank"
+                    rel="noopener"
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-[11.5px] font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-700 hover:border-blue-300 transition-colors"
+                    title="Version heures uniquement (sans tarifs)"
+                  >
+                    <Download className="h-3 w-3" />
+                    Heures
+                  </a>
+                )}
               </div>
             </div>
-            <Download className="h-4 w-4 text-slate-400 group-hover:text-blue-600" />
-          </a>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

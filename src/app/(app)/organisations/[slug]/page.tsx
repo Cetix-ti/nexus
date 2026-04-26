@@ -943,6 +943,7 @@ export default function OrganizationDetailPage() {
     createdAt: string;
     logo: string | null;
     monthlyReportAutoPublish?: boolean;
+    clientPortalReportVariant?: "BOTH" | "WITH_RATES" | "HOURS_ONLY";
   } | null>(null);
 
   useEffect(() => {
@@ -1637,6 +1638,7 @@ export default function OrganizationDetailPage() {
               <OrgMonthlyReportsTab
                 organizationId={orgId}
                 initialAutoPublish={dbOrg?.monthlyReportAutoPublish ?? false}
+                initialPortalVariant={dbOrg?.clientPortalReportVariant ?? "BOTH"}
               />
             </SectionErrorBoundary>
           </div>

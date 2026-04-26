@@ -219,6 +219,8 @@ export async function updateOrganization(
     endpointPatterns: string[];
     /** Auto-publish des rapports mensuels au portail client. */
     monthlyReportAutoPublish: boolean;
+    /** Variante de rapport mensuel exposée au portail client (BOTH par défaut). */
+    clientPortalReportVariant: "BOTH" | "WITH_RATES" | "HOURS_ONLY";
   }>
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

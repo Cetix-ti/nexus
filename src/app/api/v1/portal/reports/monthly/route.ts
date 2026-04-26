@@ -17,6 +17,14 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Politique de variante exposée au portail client (Phase 7) — drive
+  // l'UI : afficher 1 ou 2 boutons de téléchargement par rapport.
+  const org = await prisma.organization.findUnique({
+    where: { id: user.organizationId },
+    select: { clientPortalReportVariant: true },
+  });
+  const variantPolicy = org?.clientPortalReportVariant ?? "BOTH";
+
   const rows = await prisma.monthlyClientReport.findMany({
     where: {
       organizationId: user.organizationId,
@@ -34,6 +42,7 @@ export async function GET() {
   });
 
   return NextResponse.json({
+    variantPolicy,
     items: rows.map((r) => ({
       id: r.id,
       period: r.period.toISOString().slice(0, 7),
