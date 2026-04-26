@@ -23,7 +23,9 @@ export async function GET(
   }
 
   const { id } = await ctx.params;
-  const variant = new URL(req.url).searchParams.get("variant");
+  const url = new URL(req.url);
+  const variant = url.searchParams.get("variant");
+  const forceDownload = url.searchParams.get("download") === "1";
 
   const meta = await prisma.monthlyClientReport.findUnique({
     where: { id },
@@ -46,11 +48,17 @@ export async function GET(
     const suffix = variant === "hours_only" ? "-heures" : "";
     const filename = `rapport-${meta.organization.slug}-${periodStr}${suffix}.pdf`;
 
+    // En PWA mobile, ouvrir un PDF inline dans un nouvel onglet sort du
+    // contexte standalone et l'utilisateur ne peut pas revenir à l'app.
+    // ?download=1 force l'attachment (sheet de partage native iOS/Android).
+    const disposition = forceDownload
+      ? `attachment; filename="${filename}"`
+      : `inline; filename="${filename}"`;
     return new NextResponse(new Uint8Array(pdf), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${filename}"`,
+        "Content-Disposition": disposition,
         "Content-Length": String(pdf.byteLength),
         "Cache-Control": "private, no-cache",
       },

@@ -189,14 +189,10 @@ export default function MonthlyReportsPage() {
                     <Badge variant="outline">Brouillon</Badge>
                   )}
                   <Button variant="outline" size="sm" asChild title="PDF complet avec tarifs">
-                    <a
-                      href={`/api/v1/reports/monthly/${r.id}/pdf`}
-                      target="_blank"
-                      rel="noopener"
-                    >
+                    <Link href={`/analytics/monthly-reports/${r.id}/preview`}>
                       <Download className="h-4 w-4 mr-1" />
                       PDF
-                    </a>
+                    </Link>
                   </Button>
                   <Button
                     variant="outline"
@@ -204,14 +200,12 @@ export default function MonthlyReportsPage() {
                     asChild
                     title="PDF heures seulement (sans montants $)"
                   >
-                    <a
-                      href={`/api/v1/reports/monthly/${r.id}/pdf?variant=hours_only`}
-                      target="_blank"
-                      rel="noopener"
+                    <Link
+                      href={`/analytics/monthly-reports/${r.id}/preview?variant=hours_only`}
                     >
                       <Download className="h-4 w-4 mr-1" />
                       Heures
-                    </a>
+                    </Link>
                   </Button>
                   <Button
                     variant="outline"

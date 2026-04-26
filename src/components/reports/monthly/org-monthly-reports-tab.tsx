@@ -9,6 +9,7 @@
 
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   Calendar,
@@ -315,15 +316,25 @@ export function OrgMonthlyReportsTab({
                     variant="outline"
                     size="sm"
                     asChild
+                    title="PDF complet avec tarifs"
                   >
-                    <a
-                      href={`/api/v1/reports/monthly/${r.id}/pdf`}
-                      target="_blank"
-                      rel="noopener"
-                    >
+                    <Link href={`/analytics/monthly-reports/${r.id}/preview`}>
                       <Download className="h-4 w-4 mr-1" />
                       PDF
-                    </a>
+                    </Link>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    asChild
+                    title="PDF heures seulement (sans montants $)"
+                  >
+                    <Link
+                      href={`/analytics/monthly-reports/${r.id}/preview?variant=hours_only`}
+                    >
+                      <Download className="h-4 w-4 mr-1" />
+                      Heures
+                    </Link>
                   </Button>
                   <Button
                     variant="outline"
