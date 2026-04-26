@@ -91,10 +91,14 @@ async function getBrowser(): Promise<Browser> {
   return launched;
 }
 
-export async function renderReportToPdf(reportId: string): Promise<Buffer> {
+export async function renderReportToPdf(
+  reportId: string,
+  opts: { hideRates?: boolean } = {},
+): Promise<Buffer> {
   const token = signReportToken(reportId);
   const base = getSelfBaseUrl();
-  const url = `${base}/internal/reports/monthly/${reportId}?token=${encodeURIComponent(token)}`;
+  const variantQs = opts.hideRates ? `&variant=hours_only` : "";
+  const url = `${base}/internal/reports/monthly/${reportId}?token=${encodeURIComponent(token)}${variantQs}`;
 
   // Récupère le label de période pour le footer (ex « Avril 2026 »).
   // Best-effort : si la lecture échoue, on tombe sur un footer générique.

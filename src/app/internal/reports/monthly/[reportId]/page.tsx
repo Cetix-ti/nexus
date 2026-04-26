@@ -39,10 +39,10 @@ export default async function InternalMonthlyReportRenderPage({
   searchParams,
 }: {
   params: Promise<{ reportId: string }>;
-  searchParams: Promise<{ token?: string }>;
+  searchParams: Promise<{ token?: string; variant?: string }>;
 }) {
   const { reportId } = await params;
-  const { token } = await searchParams;
+  const { token, variant } = await searchParams;
 
   if (!token) return notFound();
   const verified = verifyReportToken(token);
@@ -59,9 +59,13 @@ export default async function InternalMonthlyReportRenderPage({
   // Logo servi depuis /public. En dev + prod, même URL.
   const logoSrc = "/images/cetix-logo-bleu-horizontal-HD.png";
 
+  // Variante "heures seulement" demandée par l'utilisateur — masque tous
+  // les montants $ et taux horaires.
+  const hideRates = variant === "hours_only";
+
   return (
     <div className={`${geist.variable} ${geistMono.variable}`}>
-      <MonthlyReportDocument payload={payload} logoSrc={logoSrc} />
+      <MonthlyReportDocument payload={payload} logoSrc={logoSrc} hideRates={hideRates} />
     </div>
   );
 }
