@@ -230,13 +230,41 @@ export function AddTimeModal({
     return () => ctrl.abort();
   }, [organizationId, date]);
 
-  // Load current user name
+  // Load current user name + role (le rôle détermine si on peut saisir
+  // au nom d'un autre agent — réservé aux SUPERVISOR+).
   const [currentUserName, setCurrentUserName] = useState("—");
+  const [currentUserId, setCurrentUserId] = useState<string>("");
+  const [canSaisieOnBehalf, setCanSaisieOnBehalf] = useState(false);
   useEffect(() => {
     fetch("/api/v1/me").then((r) => r.ok ? r.json() : null).then((d) => {
       if (d?.firstName) setCurrentUserName(`${d.firstName} ${d.lastName}`);
+      if (d?.id) setCurrentUserId(d.id);
+      const r = d?.role as string | undefined;
+      setCanSaisieOnBehalf(r === "SUPER_ADMIN" || r === "MSP_ADMIN" || r === "SUPERVISOR");
     }).catch(() => {});
   }, []);
+
+  // Liste des agents (SUPERVISOR+ → on peut saisir pour eux). Chargée
+  // uniquement si l'utilisateur a le droit, pour ne pas faire un appel
+  // /users inutile aux techniciens standards.
+  const [assignableAgents, setAssignableAgents] = useState<{ id: string; firstName: string; lastName: string; email: string }[]>([]);
+  useEffect(() => {
+    if (!canSaisieOnBehalf) return;
+    fetch("/api/v1/users?role=SUPER_ADMIN,MSP_ADMIN,SUPERVISOR,TECHNICIAN")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (Array.isArray(d)) setAssignableAgents(d);
+      })
+      .catch(() => {});
+  }, [canSaisieOnBehalf]);
+
+  // Agent sur lequel on saisit le temps. Par défaut = soi-même. Quand le
+  // user a le droit de saisir au nom d'un autre, ce select prend le focus.
+  const [onBehalfOfAgentId, setOnBehalfOfAgentId] = useState<string>("");
+  useEffect(() => {
+    // Initialise sur soi-même quand l'id current est connu.
+    if (currentUserId && !onBehalfOfAgentId) setOnBehalfOfAgentId(currentUserId);
+  }, [currentUserId, onBehalfOfAgentId]);
 
   // Load billing profile for this org from API
   const [billingData, setBillingData] = useState<{ baseProfile: any; override: any; resolved: any } | null>(null);
@@ -335,8 +363,12 @@ export function AddTimeModal({
         organizationId,
         organizationName,
         contractId: contract?.id,
-        agentId: "usr_current",
-        agentName: currentUserName,
+        agentId: onBehalfOfAgentId || currentUserId || "usr_current",
+        agentName: (() => {
+          if (!onBehalfOfAgentId || onBehalfOfAgentId === currentUserId) return currentUserName;
+          const a = assignableAgents.find((u) => u.id === onBehalfOfAgentId);
+          return a ? `${a.firstName} ${a.lastName}` : currentUserName;
+        })(),
         timeType,
         startedAt,
         endedAt,
@@ -367,6 +399,10 @@ export function AddTimeModal({
         ...(workTypeId ? { workTypeId } as any : {}),
         // Palier tarifaire choisi (axe "combien" — drive le taux horaire).
         ...(rateTierId ? { rateTierId } as any : {}),
+        // Saisie au nom d'un autre agent — le serveur vérifie le rôle.
+        ...(onBehalfOfAgentId && onBehalfOfAgentId !== currentUserId
+          ? ({ onBehalfOfAgentId } as any)
+          : {}),
       };
       // Awaité : sans await, on fermait la modale avant que le POST ait
       // rendu, et l'utilisateur pouvait ré-ouvrir puis re-poster.
@@ -448,6 +484,32 @@ export function AddTimeModal({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          ) : null}
+
+          {canSaisieOnBehalf && assignableAgents.length > 0 ? (
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+                Saisir au nom de
+              </label>
+              <Select value={onBehalfOfAgentId} onValueChange={setOnBehalfOfAgentId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {assignableAgents.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.firstName} {a.lastName}
+                      {a.id === currentUserId ? " (moi)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {onBehalfOfAgentId && onBehalfOfAgentId !== currentUserId ? (
+                <p className="mt-1 text-[11.5px] text-amber-700">
+                  La saisie sera créée au nom de l&apos;agent sélectionné, pas le vôtre.
+                </p>
+              ) : null}
             </div>
           ) : null}
 

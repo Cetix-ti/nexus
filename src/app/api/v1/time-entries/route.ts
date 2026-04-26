@@ -40,6 +40,9 @@ const createSchema = z.object({
   workTypeId: z.string().optional().nullable(),
   /** Palier tarifaire choisi (axe "combien" — drive le taux horaire). */
   rateTierId: z.string().optional().nullable(),
+  /** Saisir au nom d'un autre agent. Réservé aux SUPER_ADMIN / MSP_ADMIN /
+   *  TEAM_LEAD. Si absent ou égal au caller, c'est une saisie pour soi. */
+  onBehalfOfAgentId: z.string().optional().nullable(),
 });
 
 export async function GET(req: Request) {
@@ -91,11 +94,36 @@ export async function POST(req: Request) {
     );
   }
   const d = parsed.data;
+  // Saisie au nom d'un autre agent : autorisée seulement pour SUPERVISOR+.
+  // Sinon on force agentId = me.id (le serveur ignore la valeur du client).
+  let effectiveAgentId = me.id;
+  if (d.onBehalfOfAgentId && d.onBehalfOfAgentId !== me.id) {
+    if (!hasMinimumRole(me.role, "SUPERVISOR")) {
+      return NextResponse.json(
+        { error: "Saisie au nom d'un autre agent réservée aux superviseurs et plus." },
+        { status: 403 },
+      );
+    }
+    // Vérifie que l'agent cible existe et est actif (sinon on saisit pour
+    // un compte inexistant ou désactivé — incohérence côté reporting).
+    const { default: prisma } = await import("@/lib/prisma");
+    const target = await prisma.user.findUnique({
+      where: { id: d.onBehalfOfAgentId },
+      select: { id: true, isActive: true },
+    });
+    if (!target || !target.isActive) {
+      return NextResponse.json(
+        { error: "Agent cible introuvable ou inactif." },
+        { status: 400 },
+      );
+    }
+    effectiveAgentId = target.id;
+  }
   try {
     const created = await createTimeEntry({
       ticketId: d.ticketId,
       organizationId: d.organizationId,
-      agentId: me.id,
+      agentId: effectiveAgentId,
       timeType: d.timeType,
       startedAt: new Date(d.startedAt),
       endedAt: d.endedAt ? new Date(d.endedAt) : null,
