@@ -1,0 +1,13 @@
+[Unit]
+Description=Nexus — exécute les rapports planifiés dus
+After=network.target nexus.service
+
+[Service]
+Type=oneshot
+User=cetix
+WorkingDirectory=/opt/nexus
+EnvironmentFile=/opt/nexus/.env
+ExecStart=/usr/bin/env npx tsx src/workers/scheduled-reports-worker.ts
+StandardOutput=append:/var/log/nexus-scheduled-reports.log
+StandardError=append:/var/log/nexus-scheduled-reports.log
+TimeoutStartSec=600

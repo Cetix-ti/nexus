@@ -100,6 +100,7 @@ model Organization {
   workTypes             OrgWorkType[]
   rateTiers             OrgRateTier[]
   userScopes            UserOrganizationScope[]
+  scheduledReports      ScheduledReport[]
   addons                OrganizationAddon[]
   publishedDashboards   PublishedDashboard[]
   monthlyReports        MonthlyClientReport[]
@@ -249,6 +250,7 @@ model User {
   /// Restrictions d'accès par org (Phase 9 : scoping technicien).
   organizationScopes      UserOrganizationScope[] @relation("UserOrgScopeUser")
   organizationScopesGranted UserOrganizationScope[] @relation("UserOrgScopeGranter")
+  scheduledReportsCreated ScheduledReport[]    @relation("ScheduledReportCreator")
   generatedMonthlyReports MonthlyClientReport[] @relation("MonthlyReportGenerator")
 
   // Socle nouveaux modules
@@ -2213,6 +2215,50 @@ model ClientBillingOverride {
   updatedAt                DateTime     @updatedAt @map("updated_at")
 
   @@map("client_billing_overrides")
+}
+
+/// Rapport planifié — automatise l'envoi régulier d'un livrable
+/// (rapport mensuel client, pour l'instant). Le worker
+/// `scheduled-reports-worker.ts` exécute tous les rapports dont
+/// `nextRunAt <= now()` et met à jour `lastRunAt` / `nextRunAt` selon
+/// la cadence.
+///
+/// Avant Phase 4 : la planification existait uniquement en localStorage,
+/// aucun job ne lisait jamais ces données — la case "envoyer chaque
+/// lundi" était un bouton décoratif.
+model ScheduledReport {
+  id              String       @id @default(cuid())
+  /// Étiquette libre (ex. "Rapport mensuel HVAC — Bruno + comptabilité").
+  name            String
+  /// Type de rapport. Pour l'instant uniquement "monthly_report".
+  kind            String       @default("monthly_report")
+  organizationId  String       @map("organization_id")
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Cadence d'exécution. Valeurs supportées :
+  ///   - "monthly_first_day_8am" : le 1er du mois à 8h, couvre le mois précédent
+  ///   - "weekly_monday_8am" : chaque lundi à 8h, couvre la semaine précédente
+  cadence         String
+  /// Variante du rapport à envoyer : WITH_RATES (avec montants $) ou
+  /// HOURS_ONLY (sans tarifs). BOTH = on attache les deux PDFs.
+  variant         String       @default("WITH_RATES")
+  /// Adresses email destinataires.
+  recipients      String[]     @default([])
+  isActive        Boolean      @default(true) @map("is_active")
+  lastRunAt       DateTime?    @map("last_run_at")
+  /// Prochaine exécution prévue. Le worker filtre sur ce champ.
+  nextRunAt       DateTime?    @map("next_run_at")
+  /// Compteur d'exécutions consécutives en échec — désactive la
+  /// planification après N tentatives pour ne pas spammer.
+  consecutiveFailures Int     @default(0) @map("consecutive_failures")
+  lastErrorMessage String?    @map("last_error_message") @db.Text
+  createdById     String?      @map("created_by_id")
+  createdBy       User?        @relation("ScheduledReportCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  @@index([nextRunAt, isActive])
+  @@index([organizationId])
+  @@map("scheduled_reports")
 }
 
 /// Limite d'accès d'un user à un sous-ensemble d'organisations clients.

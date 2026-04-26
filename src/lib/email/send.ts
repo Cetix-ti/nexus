@@ -30,6 +30,13 @@ export interface SendEmailOptions {
   extraHeaders?: Record<string, string>;
   /** Bypass le préfixe de sujet (ex: éviter de casser le threading). */
   skipSubjectPrefix?: boolean;
+  /** Pièces jointes (PDF, etc.). Chaque entry : nom de fichier visible
+   *  par le destinataire + contenu binaire + content-type. */
+  attachments?: Array<{
+    filename: string;
+    content: Buffer;
+    contentType?: string;
+  }>;
 }
 
 /**
@@ -96,6 +103,7 @@ export async function sendEmailWithMeta(
       inReplyTo: options.inReplyTo,
       references: options.references,
       headers: options.extraHeaders,
+      attachments: options.attachments,
     });
 
     return { ok: true, messageId: info.messageId };
