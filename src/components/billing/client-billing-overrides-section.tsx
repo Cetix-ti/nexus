@@ -1061,7 +1061,7 @@ function ClientBillingOverridesSectionInner({
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
                 <span className="text-[12px] font-medium text-slate-600">
                   Override actif
