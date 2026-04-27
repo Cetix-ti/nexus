@@ -57,6 +57,8 @@ import {
   MoreHorizontal,
   Copy,
   Tag as TagIcon,
+  Palette as PaletteIcon,
+  Shuffle,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -261,6 +263,54 @@ const CATEGORY_ACCENT: Record<string, { bar: string; bg: string; fg: string; rin
   contrats:    { bar: "#8B5CF6", bg: "#F5F3FF", fg: "#6D28D9", ring: "rgba(139,92,246,0.18)" },
   complet:     { bar: "#64748B", bg: "#F8FAFC", fg: "#334155", ring: "rgba(100,116,139,0.18)" },
 };
+
+// ===========================================================================
+// Palettes de fond du dashboard
+// ---------------------------------------------------------------------------
+// Une palette s'applique à l'ensemble du dashboard (le wrapper qui contient
+// la grille de widgets). On utilise un dégradé subtil pour donner du
+// caractère sans nuire à la lisibilité des cartes (qui restent blanches).
+// Les widgets gardent leurs couleurs propres — la palette ne fait que
+// teinter le fond entre les cartes.
+// ===========================================================================
+interface DashboardPalette {
+  /** Slug stable utilisé pour persister la sélection. */
+  slug: string;
+  /** Nom affiché dans le picker. */
+  name: string;
+  /** Couleur de départ du dégradé (haut-gauche). */
+  from: string;
+  /** Couleur d'arrivée (bas-droite). */
+  to: string;
+}
+
+const PRESET_PALETTES: DashboardPalette[] = [
+  { slug: "none",     name: "Aucune",          from: "transparent", to: "transparent" },
+  { slug: "cetix",    name: "Cetix",           from: "#EFF6FF", to: "#DBEAFE" },
+  { slug: "ocean",    name: "Océan",           from: "#ECFEFF", to: "#CFFAFE" },
+  { slug: "forest",   name: "Forêt",           from: "#ECFDF5", to: "#D1FAE5" },
+  { slug: "sunset",   name: "Coucher de soleil", from: "#FEF3C7", to: "#FED7AA" },
+  { slug: "rose",     name: "Rose poudré",     from: "#FCE7F3", to: "#FBCFE8" },
+  { slug: "lavender", name: "Lavande",         from: "#F5F3FF", to: "#EDE9FE" },
+  { slug: "midnight", name: "Minuit",          from: "#1E293B", to: "#0F172A" },
+  { slug: "graphite", name: "Graphite",        from: "#F8FAFC", to: "#E2E8F0" },
+];
+
+/** Palette aléatoire : tire deux teintes proches sur la roue HSL. */
+function randomPalette(): DashboardPalette {
+  const hue = Math.floor(Math.random() * 360);
+  const hue2 = (hue + 20 + Math.floor(Math.random() * 30)) % 360;
+  const from = `hsl(${hue}, 70%, 95%)`;
+  const to = `hsl(${hue2}, 65%, 88%)`;
+  return { slug: `random_${Date.now()}`, name: "Aléatoire", from, to };
+}
+
+function paletteStyle(p: DashboardPalette | null): React.CSSProperties {
+  if (!p || p.slug === "none") return {};
+  return {
+    background: `linear-gradient(135deg, ${p.from} 0%, ${p.to} 100%)`,
+  };
+}
 
 const REPORT_CATALOG: ReportDef[] = [
   {
@@ -685,7 +735,11 @@ export default function ReportsPage() {
   }
   const layoutReportId = findLayoutRoot(view);
   const layoutKey = `nexus:report-layout:${layoutReportId}`;
+  const paletteKey = `nexus:report-palette:${layoutReportId}`;
   const [dashItems, setDashItems] = useState<DashboardItem[]>([]);
+  const [palette, setPalette] = useState<DashboardPalette | null>(null);
+  const [paletteBaseline, setPaletteBaseline] = useState<DashboardPalette | null>(null);
+  const [showPalettePicker, setShowPalettePicker] = useState(false);
 
   // Build dashboard items from report widgets when view (or parent chain) changes.
   useEffect(() => {
@@ -719,6 +773,31 @@ export default function ReportsPage() {
 
   function persistDashLayout(items: DashboardItem[]) {
     try { localStorage.setItem(layoutKey, JSON.stringify(items)); } catch {}
+  }
+
+  // Charge la palette persistée pour ce dashboard à chaque changement
+  // de vue. Stocké sous forme JSON {slug, name, from, to} pour préserver
+  // les palettes aléatoires/personnalisées (sinon on ne pourrait restituer
+  // qu'un slug du catalogue).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(paletteKey);
+      if (saved) {
+        const parsed = JSON.parse(saved) as DashboardPalette;
+        if (parsed && typeof parsed.from === "string" && typeof parsed.to === "string") {
+          setPalette(parsed);
+          return;
+        }
+      }
+    } catch {}
+    setPalette(null);
+  }, [paletteKey]);
+
+  function persistPalette(p: DashboardPalette | null) {
+    try {
+      if (p && p.slug !== "none") localStorage.setItem(paletteKey, JSON.stringify(p));
+      else localStorage.removeItem(paletteKey);
+    } catch {}
   }
 
   /**
@@ -785,6 +864,7 @@ export default function ReportsPage() {
 
   function enterEditMode() {
     setEditBaseline(dashItems);
+    setPaletteBaseline(palette);
     setEditHistory([]);
     setEditFuture([]);
     setEditMode(true);
@@ -792,17 +872,23 @@ export default function ReportsPage() {
 
   function saveEdit() {
     persistDashLayout(dashItems);
+    persistPalette(palette);
     setEditHistory([]);
     setEditFuture([]);
     setEditBaseline(null);
+    setPaletteBaseline(null);
+    setShowPalettePicker(false);
     setEditMode(false);
   }
 
   function cancelEdit() {
     if (editBaseline) setDashItems(editBaseline);
+    setPalette(paletteBaseline);
     setEditHistory([]);
     setEditFuture([]);
     setEditBaseline(null);
+    setPaletteBaseline(null);
+    setShowPalettePicker(false);
     setEditMode(false);
   }
 
@@ -1535,6 +1621,26 @@ export default function ReportsPage() {
                         <Redo2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
+                    <div className="relative">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowPalettePicker((v) => !v)}
+                        title="Palette de couleurs du dashboard"
+                      >
+                        <PaletteIcon className="h-3.5 w-3.5" />
+                        Palette
+                      </Button>
+                      {showPalettePicker && (
+                        <PalettePickerPopover
+                          current={palette}
+                          onPick={(p) => {
+                            setPalette(p);
+                          }}
+                          onClose={() => setShowPalettePicker(false)}
+                        />
+                      )}
+                    </div>
                     <Button
                       variant="outline"
                       size="sm"
@@ -2204,7 +2310,13 @@ export default function ReportsPage() {
       {/* Dashboard / Report widgets — drag-and-drop grid */}
       {/* ============================================================ */}
       {activeReport && (
-        <div data-print-target>
+        <div
+          data-print-target
+          className={cn(
+            palette && palette.slug !== "none" && "rounded-2xl p-4 -mx-2 transition-colors",
+          )}
+          style={paletteStyle(palette)}
+        >
           {/* Bandeau d'en-tête Cetix — visible uniquement à l'export
               (PDF / PNG). Masqué en navigation normale via la classe
               `print-only`. Définit l'identité Cetix sur tous les
@@ -3184,6 +3296,147 @@ function WidgetAddPanel({
 // ===========================================================================
 // SUB-COMPONENTS
 // ===========================================================================
+
+/**
+ * PalettePickerPopover — popover affichant les palettes preset, le bouton
+ * aléatoire et un mode personnalisé (deux color inputs). Le résultat est
+ * propagé via onPick et la sélection est persistée par le flux de save
+ * habituel.
+ */
+function PalettePickerPopover({
+  current,
+  onPick,
+  onClose,
+}: {
+  current: DashboardPalette | null;
+  onPick: (p: DashboardPalette) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [mode, setMode] = useState<"presets" | "custom">("presets");
+  const [customFrom, setCustomFrom] = useState(current?.from && current.slug.startsWith("custom") ? current.from : "#EFF6FF");
+  const [customTo, setCustomTo] = useState(current?.to && current.slug.startsWith("custom") ? current.to : "#DBEAFE");
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="absolute right-0 top-9 z-50 w-80 rounded-xl border border-slate-200 bg-white shadow-xl p-3"
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[12px] font-semibold text-slate-700">Palette du dashboard</div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-6 w-6 inline-flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="flex gap-1 mb-3 p-0.5 bg-slate-100 rounded-md">
+        <button
+          type="button"
+          onClick={() => setMode("presets")}
+          className={cn(
+            "flex-1 px-2 py-1 text-[11px] font-medium rounded transition-colors",
+            mode === "presets" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+          )}
+        >
+          Palettes
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("custom")}
+          className={cn(
+            "flex-1 px-2 py-1 text-[11px] font-medium rounded transition-colors",
+            mode === "custom" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+          )}
+        >
+          Personnalisée
+        </button>
+      </div>
+
+      {mode === "presets" && (
+        <>
+          <div className="grid grid-cols-2 gap-1.5 mb-2">
+            {PRESET_PALETTES.map((p) => {
+              const active = current?.slug === p.slug;
+              return (
+                <button
+                  key={p.slug}
+                  type="button"
+                  onClick={() => onPick(p)}
+                  className={cn(
+                    "relative h-12 rounded-lg border text-left px-2.5 py-1.5 transition-all",
+                    active ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200 hover:border-slate-300"
+                  )}
+                  style={p.slug === "none" ? { background: "repeating-linear-gradient(45deg, #f8fafc, #f8fafc 4px, #e2e8f0 4px, #e2e8f0 8px)" } : { background: `linear-gradient(135deg, ${p.from} 0%, ${p.to} 100%)` }}
+                >
+                  <span className={cn(
+                    "text-[11px] font-medium drop-shadow-sm",
+                    p.slug === "midnight" ? "text-white" : "text-slate-800"
+                  )}>{p.name}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={() => onPick(randomPalette())}
+            className="w-full inline-flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] font-medium rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+          >
+            <Shuffle className="h-3.5 w-3.5" />
+            Aléatoire
+          </button>
+        </>
+      )}
+
+      {mode === "custom" && (
+        <div className="space-y-3">
+          <div
+            className="h-16 rounded-lg border border-slate-200"
+            style={{ background: `linear-gradient(135deg, ${customFrom} 0%, ${customTo} 100%)` }}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="text-[11px] text-slate-600 mb-1 block">Couleur 1</span>
+              <input
+                type="color"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="h-8 w-full rounded-md border border-slate-200 cursor-pointer"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-slate-600 mb-1 block">Couleur 2</span>
+              <input
+                type="color"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="h-8 w-full rounded-md border border-slate-200 cursor-pointer"
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={() => onPick({ slug: `custom_${Date.now()}`, name: "Personnalisée", from: customFrom, to: customTo })}
+            className="w-full inline-flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+          >
+            Appliquer
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * TextSectionWidget — bloc de texte libre dans un dashboard. Permet
