@@ -22,6 +22,7 @@ export async function GET() {
           number: true,
           subject: true,
           description: true,
+          descriptionHtml: true,
           status: true,
           priority: true,
           type: true,
@@ -36,6 +37,27 @@ export async function GET() {
 
   // Portail client : tickets toujours non-internes (filtre business).
   const clientPrefix = await getClientTicketPrefix();
+
+  // Strip basique du HTML pour produire un excerpt texte propre. La
+  // description peut contenir du HTML (emails ingérés, Tiptap), et la
+  // simple slice() précédente affichait les balises brutes côté UI.
+  // Pour un rendu riche, on expose aussi descriptionHtml.
+  function plainExcerpt(html: string | null, raw: string | null, max = 500): string {
+    const source = html || raw || "";
+    const stripped = source
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+    return stripped.slice(0, max);
+  }
 
   return NextResponse.json({
     success: true,
@@ -52,7 +74,11 @@ export async function GET() {
         number: a.ticket.number,
         displayNumber: formatTicketNumber(a.ticket.number, false, clientPrefix),
         subject: a.ticket.subject,
-        description: a.ticket.description.slice(0, 300),
+        // Texte propre (sans balises) — affiché dans la liste / aperçu
+        description: plainExcerpt(a.ticket.descriptionHtml, a.ticket.description, 500),
+        // HTML riche complet — pour un rendu fidèle dans une zone "Voir
+        // tout" (avec images inline base64, mise en forme, etc.)
+        descriptionHtml: a.ticket.descriptionHtml ?? null,
         status: a.ticket.status,
         priority: a.ticket.priority,
         type: a.ticket.type,

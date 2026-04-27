@@ -17,7 +17,10 @@ interface PortalApproval {
     number: number;
     displayNumber: string;
     subject: string;
+    /** Texte plain (HTML strippé) pour l'aperçu de liste. */
     description: string;
+    /** HTML riche complet (sanitizé en amont) — rendu via dangerouslySetInnerHTML quand "Voir tout" est cliqué. */
+    descriptionHtml: string | null;
     status: string;
     priority: string;
     type: string;
@@ -204,10 +207,11 @@ export default function PortalApprovalsPage() {
                   </Link>
                 </div>
 
-                {a.ticket.description && (
-                  <div className="mt-3 rounded-lg bg-slate-50 ring-1 ring-slate-200/60 px-4 py-3 text-[13px] text-slate-700 line-clamp-4 whitespace-pre-wrap">
-                    {a.ticket.description}
-                  </div>
+                {(a.ticket.description || a.ticket.descriptionHtml) && (
+                  <ApprovalDescription
+                    plain={a.ticket.description}
+                    html={a.ticket.descriptionHtml}
+                  />
                 )}
 
                 {a.status === "PENDING" ? (
@@ -258,6 +262,50 @@ export default function PortalApprovalsPage() {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Aperçu de la description d'un ticket en attente d'approbation.
+ *
+ * Mode par défaut : 4 lignes max de texte plain (extrait HTML strippé
+ * côté serveur). Suffit pour décider si le ticket est légitime.
+ *
+ * Mode "Voir tout" : rend le HTML riche complet (mise en forme + images
+ * inline base64 + liens) via dangerouslySetInnerHTML — le HTML a déjà
+ * été sanitizé par le pipeline d'ingestion email-to-ticket, donc safe.
+ */
+function ApprovalDescription({
+  plain,
+  html,
+}: {
+  plain: string;
+  html: string | null;
+}) {
+  const [showFull, setShowFull] = useState(false);
+  const hasMore = !!html && html.length > 0;
+  return (
+    <div className="mt-3 rounded-lg bg-slate-50 ring-1 ring-slate-200/60 px-4 py-3">
+      {showFull && hasMore ? (
+        <div
+          className="text-[13px] text-slate-800 leading-relaxed [&>p]:my-2 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded [&_img]:my-2 [&_a]:text-blue-700 [&_a]:underline [&_table]:my-2 [&_table]:text-[12.5px]"
+          dangerouslySetInnerHTML={{ __html: html! }}
+        />
+      ) : (
+        <p className="text-[13px] text-slate-700 line-clamp-4 whitespace-pre-wrap">
+          {plain}
+        </p>
+      )}
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => setShowFull((v) => !v)}
+          className="mt-2 text-[12px] font-medium text-blue-700 hover:underline"
+        >
+          {showFull ? "Replier" : "Voir tout (avec images)"}
+        </button>
       )}
     </div>
   );
