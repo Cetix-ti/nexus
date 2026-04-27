@@ -223,7 +223,7 @@ export function buildNexusEmail(opts: NexusEmailOptions): string {
         <!-- Footer -->
         <tr><td style="padding:18px 32px 26px;border-top:1px solid ${P.cardBorder};background:${P.softBg};">
           <p style="margin:0;font-size:12px;color:${P.textMuted};line-height:1.55;">
-            <strong style="color:${P.textSecondary};">Nexus</strong> — plateforme de gestion ${escapeHtml(COMPANY_NAME)}${COMPANY_WEBSITE ? ` · <a href="${COMPANY_WEBSITE}" style="color:${P.textMuted};text-decoration:none;">${escapeHtml(COMPANY_WEBSITE.replace(/^https?:\/\//, ""))}</a>` : ""}
+            <strong style="color:${P.textSecondary};">Nexus</strong> — plateforme de gestion informatique développée par ${escapeHtml(COMPANY_NAME.replace(/\s+Informatique$/i, ""))}${COMPANY_WEBSITE ? ` · <a href="${COMPANY_WEBSITE}" style="color:${P.textMuted};text-decoration:none;">${escapeHtml(COMPANY_WEBSITE.replace(/^https?:\/\//, ""))}</a>` : ""}
           </p>
           ${prefsFooter}
         </td></tr>

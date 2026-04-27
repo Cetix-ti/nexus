@@ -11,13 +11,15 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { updateMaintenanceSuggestionStatus } from "@/lib/ai/jobs/maintenance-suggester";
 import { createTicket } from "@/lib/tickets/service";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const __aiGuard = await requireAiPermission("ai.run_jobs");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   if (me.role !== "SUPER_ADMIN" && me.role !== "MSP_ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

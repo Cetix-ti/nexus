@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { listMemories, saveMemory, deleteMemory } from "@/lib/ai/service";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 export async function GET(req: Request) {
+  const __aiGuard = await requireAiPermission("ai.view");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   try {
-    const me = await getCurrentUser();
-    if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
     const { searchParams } = new URL(req.url);
     const scope = searchParams.get("scope") || undefined; // "global" or userId
 
@@ -18,10 +19,10 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const __aiGuard = await requireAiPermission("ai.run_jobs");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   try {
-    const me = await getCurrentUser();
-    if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
     const { content, category, scope } = await req.json();
     if (!content) return NextResponse.json({ error: "content required" }, { status: 422 });
 
@@ -38,10 +39,10 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const __aiGuard = await requireAiPermission("ai.run_jobs");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   try {
-    const me = await getCurrentUser();
-    if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "id required" }, { status: 422 });

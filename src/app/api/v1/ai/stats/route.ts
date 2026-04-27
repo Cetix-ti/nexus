@@ -21,6 +21,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 function percentile(sorted: number[], p: number): number | null {
   if (sorted.length === 0) return null;
@@ -29,12 +30,9 @@ function percentile(sorted: number[], p: number): number | null {
 }
 
 export async function GET(req: Request) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasMinimumRole(me.role, "SUPERVISOR")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
+  const __aiGuard = await requireAiPermission("ai.view");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  // me reste accessible si besoin via __aiGuard.me
   const url = new URL(req.url);
   const days = Math.min(
     Math.max(parseInt(url.searchParams.get("days") ?? "30", 10) || 30, 1),

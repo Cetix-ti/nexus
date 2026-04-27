@@ -8,14 +8,12 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { getSlaRisksForUser } from "@/lib/ai/jobs/sla-drift-predictor";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 export async function GET() {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (me.role.startsWith("CLIENT_")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
+  const __aiGuard = await requireAiPermission("ai.view");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   const risks = await getSlaRisksForUser(me.id);
   const relevant = risks.filter((r) => r.riskScore >= 0.6).slice(0, 10);
   return NextResponse.json({ risks: relevant });

@@ -10,16 +10,14 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { rewriteWithTone, type Tone } from "@/lib/ai/features/tone-rewrite";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 const VALID_TONES: Tone[] = ["brief", "detailed", "vulgarized", "executive"];
 
 export async function POST(req: Request) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (me.role.startsWith("CLIENT_")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
+  const __aiGuard = await requireAiPermission("ai.manage");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  // me reste accessible si besoin via __aiGuard.me
   const body = await req.json();
   const text = typeof body.text === "string" ? body.text : "";
   const toneRaw = body.tone as string;

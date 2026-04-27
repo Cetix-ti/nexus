@@ -3,12 +3,13 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { chatCompletion, buildSystemPrompt, saveMemory, ragSearch, deleteMemory } from "@/lib/ai/service";
 import { createAnonymizer, anonymizeText, deanonymize, seedFromDatabase } from "@/lib/ai/anonymizer";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 export async function POST(req: Request) {
+  const __aiGuard = await requireAiPermission("ai.run_jobs");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   try {
-    const me = await getCurrentUser();
-    if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
     const { message, conversationId } = await req.json();
     if (!message?.trim()) {
       return NextResponse.json({ error: "Message requis" }, { status: 422 });
@@ -131,10 +132,10 @@ export async function POST(req: Request) {
 
 /** GET — load conversation history */
 export async function GET(req: Request) {
+  const __aiGuard = await requireAiPermission("ai.view");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   try {
-    const me = await getCurrentUser();
-    if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
     const { searchParams } = new URL(req.url);
     const convoId = searchParams.get("conversationId");
 

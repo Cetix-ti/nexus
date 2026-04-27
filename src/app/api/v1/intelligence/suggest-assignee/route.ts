@@ -11,14 +11,12 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { suggestAssigneesForCategory } from "@/lib/ai/jobs/workload-optimizer";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 export async function GET(req: Request) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (me.role.startsWith("CLIENT_")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
+  const __aiGuard = await requireAiPermission("ai.view");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  // me reste accessible si besoin via __aiGuard.me
   const url = new URL(req.url);
   let categoryId = url.searchParams.get("categoryId");
   const categoryName = url.searchParams.get("categoryName");

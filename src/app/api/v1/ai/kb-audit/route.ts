@@ -12,13 +12,12 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
 import { auditKbTaxonomy } from "@/lib/ai/features/kb-audit";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 export async function POST() {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasMinimumRole(me.role, "SUPERVISOR")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const __aiGuard = await requireAiPermission("ai.manage");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  // me reste accessible si besoin via __aiGuard.me
   try {
     const report = await auditKbTaxonomy();
     return NextResponse.json(report);

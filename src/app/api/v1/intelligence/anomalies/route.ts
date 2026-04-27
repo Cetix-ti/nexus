@@ -9,10 +9,12 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { getRecentRequesterAnomalies } from "@/lib/ai/jobs/requester-anomaly";
 import prisma from "@/lib/prisma";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 export async function GET() {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const __aiGuard = await requireAiPermission("ai.view");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   if (me.role !== "SUPER_ADMIN" && me.role !== "MSP_ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

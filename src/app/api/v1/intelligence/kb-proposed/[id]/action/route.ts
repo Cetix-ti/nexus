@@ -15,17 +15,15 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasMinimumRole(me.role, "SUPERVISOR")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
+  const __aiGuard = await requireAiPermission("ai.run_jobs");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   const action = body.action as string;

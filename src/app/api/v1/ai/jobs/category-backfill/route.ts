@@ -1,3 +1,4 @@
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 // ============================================================================
 // /api/v1/ai/jobs/category-backfill
 //
@@ -22,8 +23,9 @@ function canRun(role: string): boolean {
 }
 
 export async function GET() {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const __aiGuard = await requireAiPermission("ai.view");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   if (!canRun(me.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const [remaining, totalTickets, withCategory] = await Promise.all([
@@ -43,8 +45,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const __aiGuard = await requireAiPermission("ai.run_jobs");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   if (!canRun(me.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const limitParam = req.nextUrl.searchParams.get("limit");

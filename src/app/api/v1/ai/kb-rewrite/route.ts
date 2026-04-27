@@ -1,3 +1,4 @@
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 // ============================================================================
 // POST /api/v1/ai/kb-rewrite
 //
@@ -26,12 +27,9 @@ const VALID_FOCUS: RewriteFocus[] = [
 ];
 
 export async function POST(req: Request) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasMinimumRole(me.role, "TECHNICIAN")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
+  const __aiGuard = await requireAiPermission("ai.manage");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  // me reste accessible si besoin via __aiGuard.me
   const body = await req.json().catch(() => ({}));
   const title = typeof body.title === "string" ? body.title : "";
   const articleBody = typeof body.body === "string" ? body.body : "";

@@ -170,6 +170,13 @@ export async function notifyApprovalDecided(opts: {
     if (ticket.creatorId) recipients.add(ticket.creatorId);
     for (const c of ticket.collaborators) recipients.add(c.userId);
 
+    const { buildTicketPayload } = await import("@/lib/email/payloads/ticket");
+    const emailPayload = await buildTicketPayload(ticket.id, {
+      actorName: opts.approverName,
+      approvalDecision: opts.decision,
+      approvalNote: opts.comment ?? "",
+    });
+
     await notifyUsers(Array.from(recipients), "ticket_approval_decided", {
       title: approved
         ? `Approbation accordée : ${ticket.subject}`
@@ -178,6 +185,7 @@ export async function notifyApprovalDecided(opts: {
       link: `/tickets/${ticket.id}`,
       metadata: { ticketId: ticket.id, decision: opts.decision },
       emailSubject: `[${displayNumber}] ${approved ? "Approuvé" : "Rejeté"} par ${opts.approverName}`,
+      emailPayload,
       email: {
         title: approved ? "Approbation accordée" : "Approbation refusée",
         intro: `${displayNumber} — ${ticket.subject}`,

@@ -96,11 +96,21 @@ export async function sendNewBugEmail(bugId: string): Promise<boolean> {
 
   const adminIds = await listBugAdminIds();
   if (adminIds.length > 0) {
+    const emailPayload: Record<string, string> = {
+      app_url: appUrl(),
+      company_name: process.env.COMPANY_NAME ?? "Cetix Informatique",
+      now: new Date().toLocaleString("fr-CA", { dateStyle: "long", timeStyle: "short" }),
+      bug_title: bug.title,
+      bug_severity: SEVERITY_LABEL[bug.severity] ?? bug.severity,
+      bug_url: detailUrl,
+      reporter_name: reporterName,
+    };
     await notifyUsers(adminIds, "bug_reported", {
       title: subject,
       body: `Signalé par ${reporterName}`,
       link: `/admin/bugs/${bug.id}`,
       emailSubject: subject,
+      emailPayload,
       email: {
         preheader: `Bug ${SEVERITY_LABEL[bug.severity] ?? bug.severity} – ${bug.title}`,
         title: bug.title,

@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { runAiTask } from "@/lib/ai/orchestrator";
 import { POLICY_ASSET_EOL } from "@/lib/ai/orchestrator/policies";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 export async function POST(req: Request) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+  const __aiGuard = await requireAiPermission("ai.run_jobs");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   const body = await req.json();
   const { manufacturer, model, type } = body as {
     manufacturer?: string;

@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { runContentAssist, type ContentCapability } from "@/lib/ai/content-assist";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 type Kind =
   | "software_instance" | "software_template"
@@ -133,8 +134,9 @@ async function loadCategoryHints(kind: Kind): Promise<string[] | undefined> {
 }
 
 export async function POST(req: Request) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const __aiGuard = await requireAiPermission("ai.run_jobs");
+  if (!__aiGuard.ok) return __aiGuard.res;
+  const me = __aiGuard.me;
   const body = await req.json();
   const kind = body?.kind as Kind;
   const id = String(body?.id ?? "");

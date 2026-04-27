@@ -178,21 +178,30 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
       const contactEmail = ticket.requester.email.trim().toLowerCase();
       const allowed = await isAllowedContactEmail(contactEmail);
       if (allowed) {
-        const html = buildNexusEmail({
-          event: "ticket_unassigned_pool",
-          title: "Votre demande est bien reçue",
-          intro: `Référence ${displayNumber}`,
-          metadata: [
-            { label: "Sujet", value: ticket.subject },
-            { label: "Priorité", value: ticket.priority.toLowerCase() },
-          ],
-          body: `<p style="margin:0;">Bonjour ${ticket.requester.firstName},</p><p style="margin:12px 0 0;">Nous avons bien enregistré votre demande. Un membre de notre équipe la prendra en charge dans les meilleurs délais et vous pourrez suivre son avancement directement depuis le portail.</p>`,
-          ctaUrl: portalUrl,
-          ctaLabel: "Voir ma demande",
+        // Passe par le renderer DB (event "ticket_creation_confirm" — le
+        // template peut être édité via Paramètres > Notifications).
+        const { renderTemplateForEvent } = await import("@/lib/email/template-renderer");
+        const contactPayload = await buildTicketPayload(ticket.id);
+        const rendered = await renderTemplateForEvent("ticket_creation_confirm", {
+          payload: { ...contactPayload, ticket_url: portalUrl },
+          fallback: {
+            event: "ticket_creation_confirm",
+            title: "Votre demande est bien reçue",
+            intro: `Référence ${displayNumber}`,
+            metadata: [
+              { label: "Sujet", value: ticket.subject },
+              { label: "Priorité", value: ticket.priority.toLowerCase() },
+            ],
+            body: `<p style="margin:0;">Bonjour ${ticket.requester.firstName},</p><p style="margin:12px 0 0;">Nous avons bien enregistré votre demande. Un membre de notre équipe la prendra en charge dans les meilleurs délais et vous pourrez suivre son avancement directement depuis le portail.</p>`,
+            ctaUrl: portalUrl,
+            ctaLabel: "Voir ma demande",
+          },
         });
-        sendEmail(contactEmail, `Confirmation — ${displayNumber} ${ticket.subject}`, html).catch(
-          (e) => console.warn("[dispatch] contact email failed", e),
-        );
+        sendEmail(
+          contactEmail,
+          rendered.subject || `Confirmation — ${displayNumber} ${ticket.subject}`,
+          rendered.html,
+        ).catch((e) => console.warn("[dispatch] contact email failed", e));
       } else {
         console.info(`[dispatch] contact email bloqué par allowlist : ${contactEmail}`);
       }
@@ -253,28 +262,35 @@ export async function dispatchTicketTakenOver(
     const displayNumber = await formatTicketDisplay(ticket);
     const portalUrl = await getPortalTicketUrl(ticket.id);
 
-    const html = buildNexusEmail({
-      event: "ticket_assigned",
-      preheader: `Votre demande ${displayNumber} est prise en charge par ${assigneeName}`,
-      title: "Votre demande est prise en charge",
-      intro: `Référence ${displayNumber}`,
-      metadata: [
-        { label: "Sujet", value: ticket.subject },
-        { label: "Prise en charge par", value: assigneeName },
-        { label: "Priorité", value: ticket.priority.toLowerCase() },
-        ...(ticket.organization?.name
-          ? [{ label: "Organisation", value: ticket.organization.name }]
-          : []),
-      ],
-      body: `<p style="margin:0;">Bonjour ${ticket.requester.firstName},</p><p style="margin:12px 0 0;">${assigneeName} vient d'être assigné(e) à votre demande et s'en occupe dès maintenant. Vous serez notifié de chaque mise à jour et pourrez suivre le traitement directement depuis le portail.</p>`,
-      ctaUrl: portalUrl,
-      ctaLabel: "Voir ma demande",
+    // Passe par le renderer DB (event "ticket_taken_over" — éditable
+    // via Paramètres > Notifications).
+    const { renderTemplateForEvent } = await import("@/lib/email/template-renderer");
+    const contactPayload = await buildTicketPayload(ticket.id, { actorName: assigneeName });
+    const rendered = await renderTemplateForEvent("ticket_taken_over", {
+      payload: { ...contactPayload, ticket_url: portalUrl },
+      fallback: {
+        event: "ticket_taken_over",
+        preheader: `Votre demande ${displayNumber} est prise en charge par ${assigneeName}`,
+        title: "Votre demande est prise en charge",
+        intro: `Référence ${displayNumber}`,
+        metadata: [
+          { label: "Sujet", value: ticket.subject },
+          { label: "Prise en charge par", value: assigneeName },
+          { label: "Priorité", value: ticket.priority.toLowerCase() },
+          ...(ticket.organization?.name
+            ? [{ label: "Organisation", value: ticket.organization.name }]
+            : []),
+        ],
+        body: `<p style="margin:0;">Bonjour ${ticket.requester.firstName},</p><p style="margin:12px 0 0;">${assigneeName} vient d'être assigné(e) à votre demande et s'en occupe dès maintenant. Vous serez notifié de chaque mise à jour et pourrez suivre le traitement directement depuis le portail.</p>`,
+        ctaUrl: portalUrl,
+        ctaLabel: "Voir ma demande",
+      },
     });
 
     sendEmail(
       contactEmail,
-      `Pris en charge — ${displayNumber} ${ticket.subject}`,
-      html,
+      rendered.subject || `Pris en charge — ${displayNumber} ${ticket.subject}`,
+      rendered.html,
     ).catch((e) => console.warn("[dispatch] takenover email failed", e));
   } catch (err) {
     console.error("[dispatchTicketTakenOver] erreur :", err);
@@ -318,6 +334,8 @@ export async function dispatchCollaboratorAdded(
       if (u) addedByName = `${u.firstName} ${u.lastName}`.trim() || addedByName;
     }
 
+    const emailPayload = await buildTicketPayload(ticket.id, { actorName: addedByName });
+
     await notifyUser(addedUserId, "ticket_collaborator_added", {
       title: `Vous avez été ajouté comme collaborateur : ${ticket.subject}`,
       body: `${displayNumber} · ${ticket.organization?.name ?? "—"} · par ${addedByName}`,
@@ -328,6 +346,7 @@ export async function dispatchCollaboratorAdded(
         organizationName: ticket.organization?.name ?? null,
       },
       emailSubject: `[${displayNumber}] Vous avez été ajouté en collaboration`,
+      emailPayload,
       email: {
         title: "Vous avez été ajouté comme collaborateur",
         intro: `${addedByName} vous a ajouté sur le ticket ${displayNumber}.`,
@@ -590,6 +609,8 @@ export async function dispatchTicketReminder(
     const displayNumber = await formatTicketDisplay(ticket);
     const agentUrl = await getAgentTicketUrl(displayNumber);
 
+    const emailPayload = await buildTicketPayload(ticket.id, { reminderMessage: note ?? "" });
+
     await notifyUser(forUserId, "ticket_reminder", {
       title: `Rappel : ${ticket.subject}`,
       body: `${displayNumber}${note ? ` · ${note}` : ""}`,
@@ -600,6 +621,7 @@ export async function dispatchTicketReminder(
         organizationName: ticket.organization?.name ?? null,
       },
       emailSubject: `[${displayNumber}] Rappel`,
+      emailPayload,
       email: {
         title: "Rappel de ticket",
         intro: `${displayNumber} — ${ticket.subject}`,
@@ -636,12 +658,39 @@ export async function dispatchProjectAssigned(
     const base = await getPortalTicketUrl(""); // piggyback for URL base
     const url = base.replace(/\/portal\/tickets\/$/, `/projects/${project.id}`);
 
+    let actorName = "";
+    if (assignedByUserId) {
+      const u = await prisma.user.findUnique({
+        where: { id: assignedByUserId },
+        select: { firstName: true, lastName: true },
+      });
+      if (u) actorName = `${u.firstName} ${u.lastName}`.trim();
+    }
+    const assignedUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true, email: true },
+    });
+    const appUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? "https://nexus.cetix.ca";
+    const emailPayload: Record<string, string> = {
+      app_url: appUrl,
+      company_name: process.env.COMPANY_NAME ?? "Cetix Informatique",
+      now: new Date().toLocaleString("fr-CA", { dateStyle: "long", timeStyle: "short" }),
+      project_name: project.name,
+      project_url: url,
+      org_name: project.organization?.name ?? "—",
+      org_id: project.organizationId,
+      assignee_name: assignedUser ? `${assignedUser.firstName} ${assignedUser.lastName}`.trim() : "",
+      assignee_email: assignedUser?.email ?? "",
+      actor_name: actorName,
+    };
+
     await notifyUser(userId, "project_assigned", {
       title: `Assigné au projet : ${project.name}`,
       body: `${project.code ?? project.name} · ${project.organization?.name ?? "—"}`,
       link: `/projects/${project.id}`,
       metadata: { projectId: project.id },
       emailSubject: `Projet : ${project.name}`,
+      emailPayload,
       email: {
         title: "Vous avez été assigné à un projet",
         intro: `${project.code ?? "Projet"} — ${project.name}`,
@@ -670,12 +719,25 @@ export async function dispatchBackupAlert(opts: {
     const recipients = await listActiveAgents();
     const base = await getPortalTicketUrl("");
     const url = base.replace(/\/portal\/tickets\/$/, "/backups");
+    const appUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? "https://nexus.cetix.ca";
+    const emailPayload: Record<string, string> = {
+      app_url: appUrl,
+      company_name: process.env.COMPANY_NAME ?? "Cetix Informatique",
+      now: new Date().toLocaleString("fr-CA", { dateStyle: "long", timeStyle: "short" }),
+      org_name: opts.organizationName,
+      org_id: "",
+      org_url: "",
+      backup_job_name: opts.jobName,
+      backup_failure_reason: opts.detail ?? "",
+    };
+
     await notifyUsers(recipients, "backup_failed", {
       title: `Échec de sauvegarde : ${opts.jobName}`,
       body: `${opts.organizationName}${opts.detail ? ` · ${opts.detail}` : ""}`,
       link: "/backups",
       metadata: { organizationName: opts.organizationName, jobName: opts.jobName },
       emailSubject: `Sauvegarde en échec : ${opts.jobName}`,
+      emailPayload,
       email: {
         title: "Échec de sauvegarde détecté",
         intro: `${opts.jobName} — ${opts.organizationName}`,
@@ -707,12 +769,27 @@ export async function dispatchMonitoringAlert(opts: {
     const recipients = await listActiveAgents();
     const base = await getPortalTicketUrl("");
     const url = base.replace(/\/portal\/tickets\/$/, "/monitoring");
+    const appUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? "https://nexus.cetix.ca";
+    const emailPayload: Record<string, string> = {
+      app_url: appUrl,
+      company_name: process.env.COMPANY_NAME ?? "Cetix Informatique",
+      now: new Date().toLocaleString("fr-CA", { dateStyle: "long", timeStyle: "short" }),
+      org_name: opts.organizationName,
+      org_id: "",
+      org_url: "",
+      alert_title: opts.alertTitle,
+      alert_severity: opts.severity ?? "",
+      alert_message: opts.body ?? "",
+      alert_source: "Nexus",
+    };
+
     await notifyUsers(recipients, "monitoring_alert", {
       title: `Alerte : ${opts.alertTitle}`,
       body: `${opts.organizationName}${opts.severity ? ` · ${opts.severity.toUpperCase()}` : ""}`,
       link: "/monitoring",
       metadata: { organizationName: opts.organizationName },
       emailSubject: `Alerte monitoring — ${opts.organizationName}`,
+      emailPayload,
       email: {
         title: opts.alertTitle,
         intro: opts.organizationName,
