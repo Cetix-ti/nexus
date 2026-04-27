@@ -59,7 +59,18 @@ interface TicketDetail {
   requiresApproval?: boolean;
   approvalStatus?: string | null;
   approvalLockOverride?: boolean;
-  approvers?: { id: string; name: string; email: string; status: string }[];
+  approvers?: {
+    id: string;
+    name: string;
+    email: string;
+    status: string;
+    /** ISO date — null tant que l'approbateur n'a pas tranché. */
+    decidedAt?: string | null;
+    /** Commentaire optionnel laissé par l'approbateur lors du refus. */
+    comment?: string | null;
+    /** ISO date de création de la demande d'approbation. */
+    createdAt?: string;
+  }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -276,33 +287,104 @@ export default function PortalTicketDetailPage() {
         {tr("portal.ticketDetail.backToTickets")}
       </Link>
 
-      {/* Bannière d'approbation : visible uniquement quand le ticket
-          attend une décision. Donne au demandeur l'info clé : qui doit
-          approuver et qu'il sera notifié au moment de la décision. */}
-      {isPendingApproval && ticket.approvers && ticket.approvers.length > 0 && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3.5 flex items-start gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-200 text-amber-900 shrink-0">
-            ⏳
-          </span>
-          <div className="flex-1 min-w-0">
-            <p className="text-[13.5px] font-semibold text-amber-900">
-              Ce ticket est en attente d&apos;approbation
-            </p>
-            <p className="mt-0.5 text-[12.5px] text-amber-800 leading-relaxed">
-              Avant que notre équipe puisse intervenir, votre demande doit être
-              approuvée par
-              {ticket.approvers.length === 1 ? (
-                <strong className="ml-1">{ticket.approvers[0].name}</strong>
-              ) : (
-                <strong className="ml-1">
-                  {ticket.approvers.map((a) => a.name).join(", ")}
-                </strong>
-              )}
-              . Vous serez notifié dès qu&apos;une décision sera rendue.
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Bannière d'approbation : 3 cas
+          - PENDING : "en attente, sera décidé par X"
+          - APPROVED : "approuvé le DATE par X" (visible aussi après pour
+            que le demandeur puisse mesurer le délai d'approbation)
+          - REJECTED : "refusé le DATE par X" + raison
+          On affiche toujours quand l'approbation existe (même décidée),
+          pour que le demandeur ait visibilité sur les délais —
+          notamment pour comprendre que si le ticket a traîné, c'est dû
+          à l'approbateur et non au MSP. */}
+      {ticket.requiresApproval && ticket.approvers && ticket.approvers.length > 0 && (() => {
+        const decided = ticket.approvers.find((a) => a.status === "approved" || a.status === "rejected");
+        const isApproved = decided?.status === "approved";
+        const isRejected = decided?.status === "rejected";
+        const fmtDate = (iso: string | null | undefined) =>
+          iso
+            ? new Date(iso).toLocaleString("fr-CA", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" } as never)
+            : "—";
+
+        if (isPendingApproval) {
+          // En attente — délai écoulé depuis la demande
+          const submitted = ticket.approvers[0].createdAt;
+          return (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3.5 flex items-start gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-200 text-amber-900 shrink-0">
+                ⏳
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13.5px] font-semibold text-amber-900">
+                  Ce ticket est en attente d&apos;approbation
+                </p>
+                <p className="mt-0.5 text-[12.5px] text-amber-800 leading-relaxed">
+                  Avant que notre équipe puisse intervenir, votre demande doit être
+                  approuvée par
+                  <strong className="ml-1">
+                    {ticket.approvers.map((a) => a.name).join(", ")}
+                  </strong>
+                  . Vous serez notifié dès qu&apos;une décision sera rendue.
+                </p>
+                {submitted && (
+                  <p className="mt-1 text-[11px] text-amber-700">
+                    Demande d&apos;approbation envoyée le {fmtDate(submitted)}.
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        }
+        if (isApproved && decided) {
+          return (
+            <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3.5 flex items-start gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-200 text-emerald-900 shrink-0">
+                ✓
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13.5px] font-semibold text-emerald-900">
+                  Approuvé par {decided.name}
+                </p>
+                <p className="mt-0.5 text-[12.5px] text-emerald-800 leading-relaxed">
+                  {decided.decidedAt
+                    ? `Décision rendue le ${fmtDate(decided.decidedAt)}. Notre équipe peut maintenant prendre en charge votre demande.`
+                    : "Notre équipe peut maintenant prendre en charge votre demande."}
+                </p>
+                {decided.comment && (
+                  <p className="mt-1.5 rounded-md bg-white/60 px-2.5 py-1.5 text-[12px] text-emerald-900 italic">
+                    « {decided.comment} »
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        }
+        if (isRejected && decided) {
+          return (
+            <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3.5 flex items-start gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-200 text-red-900 shrink-0">
+                ✕
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13.5px] font-semibold text-red-900">
+                  Refusé par {decided.name}
+                </p>
+                <p className="mt-0.5 text-[12.5px] text-red-800 leading-relaxed">
+                  {decided.decidedAt && (
+                    <>Décision rendue le {fmtDate(decided.decidedAt)}. </>
+                  )}
+                  Notre équipe ne traitera pas cette demande dans son état actuel.
+                </p>
+                {decided.comment && (
+                  <p className="mt-1.5 rounded-md bg-white/60 px-2.5 py-1.5 text-[12px] text-red-900 italic">
+                    « {decided.comment} »
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       {/* En-tête du billet */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">

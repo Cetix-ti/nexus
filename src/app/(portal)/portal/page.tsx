@@ -34,6 +34,10 @@ interface DashboardData {
     priority: string;
     updatedAt: string;
     createdAt: string;
+    /** Champs nécessaires pour l'overlay statut "En attente d'approbation". */
+    requiresApproval?: boolean;
+    approvalStatus?: string;
+    approvalLockOverride?: boolean;
   }[];
   userName: string;
   organizationName: string;
@@ -285,7 +289,20 @@ export default function PortalHomePage() {
           <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
             <div className="divide-y divide-slate-100">
               {data.recentTickets.map((ticket) => {
-                const st = STATUS_STYLES[ticket.status] ?? STATUS_STYLES.open;
+                // Overlay statut "En attente d'approbation" (cohérent
+                // avec /portal/tickets et /portal/tickets/[id]).
+                const isPending =
+                  !!ticket.requiresApproval &&
+                  String(ticket.approvalStatus ?? "").toLowerCase() === "pending" &&
+                  !ticket.approvalLockOverride;
+                const st = isPending
+                  ? {
+                      labelKey: "",
+                      label: "En attente d'approbation",
+                      bg: "bg-amber-100",
+                      text: "text-amber-900",
+                    }
+                  : STATUS_STYLES[ticket.status] ?? STATUS_STYLES.open;
                 return (
                   <Link
                     key={ticket.id}
@@ -304,7 +321,7 @@ export default function PortalHomePage() {
                             st.text,
                           )}
                         >
-                          {t(st.labelKey)}
+                          {st.labelKey ? t(st.labelKey) : (st as { label?: string }).label ?? ""}
                         </span>
                       </div>
                       <p className="text-[14px] font-medium text-slate-900 truncate">

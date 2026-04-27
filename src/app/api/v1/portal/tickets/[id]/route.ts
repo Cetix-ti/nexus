@@ -34,7 +34,19 @@ export async function GET(
       category: { select: { name: true } },
       queue: { select: { name: true } },
       approvals: {
-        select: { id: true, approverName: true, approverEmail: true, status: true },
+        // decidedAt + comment exposés au requester pour qu'il sache
+        // QUAND l'approbateur a tranché (visibilité sur le délai
+        // d'approbation — si ça a pris 3 jours, ce n'est pas Cetix qui
+        // a tardé, c'est l'approbateur).
+        select: {
+          id: true,
+          approverName: true,
+          approverEmail: true,
+          status: true,
+          decidedAt: true,
+          comment: true,
+          createdAt: true,
+        },
       },
       comments: {
         where: { isInternal: false },
@@ -104,6 +116,9 @@ export async function GET(
         name: a.approverName,
         email: a.approverEmail,
         status: a.status.toLowerCase(),
+        decidedAt: a.decidedAt?.toISOString() ?? null,
+        comment: a.comment ?? null,
+        createdAt: a.createdAt.toISOString(),
       })),
       createdAt: ticket.createdAt.toISOString(),
       updatedAt: ticket.updatedAt.toISOString(),

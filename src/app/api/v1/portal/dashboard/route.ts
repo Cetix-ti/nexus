@@ -37,6 +37,11 @@ export async function GET() {
           priority: true,
           updatedAt: true,
           createdAt: true,
+          // Pour overlay du statut "En attente d'approbation" sur la
+          // home portail (cohérent avec /portal/tickets et /portal/tickets/[id]).
+          requiresApproval: true,
+          approvalStatus: true,
+          approvalLockOverride: true,
         },
       }),
       prisma.asset.count({
@@ -73,6 +78,9 @@ export async function GET() {
       priority: t.priority.toLowerCase(),
       updatedAt: t.updatedAt.toISOString(),
       createdAt: t.createdAt.toISOString(),
+      requiresApproval: t.requiresApproval,
+      approvalStatus: t.approvalStatus?.toLowerCase() ?? "not_required",
+      approvalLockOverride: t.approvalLockOverride,
     })),
     userName: user.name,
     organizationName: user.organizationName,
