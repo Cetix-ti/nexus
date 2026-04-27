@@ -54,6 +54,12 @@ interface TicketDetail {
   resolvedAt: string | null;
   closedAt: string | null;
   comments: TicketComment[];
+  // Approval workflow — exposés par /api/v1/portal/tickets/[id]
+  // (lecture du ticket flatten qui inclut maintenant ces 3 champs).
+  requiresApproval?: boolean;
+  approvalStatus?: string | null;
+  approvalLockOverride?: boolean;
+  approvers?: { id: string; name: string; email: string; status: string }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -239,8 +245,20 @@ export default function PortalTicketDetailPage() {
     );
   }
 
-  const statusLabel = STATUS_KEY[ticket.status] ? tr(STATUS_KEY[ticket.status]) : ticket.status;
-  const statusVariant = STATUS_VARIANT[ticket.status] ?? "default";
+  // Overlay statut "En attente d'approbation" : si le ticket exige une
+  // approbation et n'a pas été déverrouillé, on remplace le label/variant
+  // standard. Le requester voit aussi une bannière dédiée plus bas.
+  const isPendingApproval =
+    !!ticket.requiresApproval &&
+    String(ticket.approvalStatus ?? "").toLowerCase() === "pending" &&
+    !ticket.approvalLockOverride;
+  const statusLabel = isPendingApproval
+    ? "En attente d'approbation"
+    : STATUS_KEY[ticket.status]
+      ? tr(STATUS_KEY[ticket.status])
+      : ticket.status;
+  const statusVariant: "default" | "primary" | "warning" | "success" | "danger" =
+    isPendingApproval ? "warning" : STATUS_VARIANT[ticket.status] ?? "default";
   const priorityLabel = PRIORITY_KEY[ticket.priority] ? tr(PRIORITY_KEY[ticket.priority]) : ticket.priority;
   const priorityVariant = PRIORITY_VARIANT[ticket.priority] ?? "default";
   const typeLabel = TYPE_KEY[ticket.type] ? tr(TYPE_KEY[ticket.type]) : ticket.type;
@@ -257,6 +275,34 @@ export default function PortalTicketDetailPage() {
         <ArrowLeft className="h-4 w-4" />
         {tr("portal.ticketDetail.backToTickets")}
       </Link>
+
+      {/* Bannière d'approbation : visible uniquement quand le ticket
+          attend une décision. Donne au demandeur l'info clé : qui doit
+          approuver et qu'il sera notifié au moment de la décision. */}
+      {isPendingApproval && ticket.approvers && ticket.approvers.length > 0 && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3.5 flex items-start gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-200 text-amber-900 shrink-0">
+            ⏳
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13.5px] font-semibold text-amber-900">
+              Ce ticket est en attente d&apos;approbation
+            </p>
+            <p className="mt-0.5 text-[12.5px] text-amber-800 leading-relaxed">
+              Avant que notre équipe puisse intervenir, votre demande doit être
+              approuvée par
+              {ticket.approvers.length === 1 ? (
+                <strong className="ml-1">{ticket.approvers[0].name}</strong>
+              ) : (
+                <strong className="ml-1">
+                  {ticket.approvers.map((a) => a.name).join(", ")}
+                </strong>
+              )}
+              . Vous serez notifié dès qu&apos;une décision sera rendue.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* En-tête du billet */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">

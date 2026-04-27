@@ -231,16 +231,40 @@ export function TicketListView({ tickets }: TicketListViewProps) {
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                  <Badge variant={statusBadgeVariant[ticket.status]} className="text-[10px]">
-                    <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
-                    {statusCfg.label}
-                  </Badge>
-                  <ApprovalLockBadge
-                    requiresApproval={(ticket as { requiresApproval?: boolean }).requiresApproval}
-                    approvalStatus={(ticket as { approvalStatus?: string }).approvalStatus}
-                    approvalLockOverride={(ticket as { approvalLockOverride?: boolean }).approvalLockOverride}
-                    size="xs"
-                  />
+                  {(() => {
+                    // Si le ticket est en attente d'approbation et non
+                    // déverrouillé, on remplace le badge de status par le
+                    // badge d'approbation (overlay d'affichage). Sinon,
+                    // status normal.
+                    const isPending =
+                      !!(ticket as { requiresApproval?: boolean }).requiresApproval &&
+                      String((ticket as { approvalStatus?: string }).approvalStatus ?? "").toLowerCase() === "pending" &&
+                      !(ticket as { approvalLockOverride?: boolean }).approvalLockOverride;
+                    if (isPending) {
+                      return (
+                        <ApprovalLockBadge
+                          requiresApproval
+                          approvalStatus="pending"
+                          approvalLockOverride={false}
+                          size="xs"
+                        />
+                      );
+                    }
+                    return (
+                      <>
+                        <Badge variant={statusBadgeVariant[ticket.status]} className="text-[10px]">
+                          <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
+                          {statusCfg.label}
+                        </Badge>
+                        <ApprovalLockBadge
+                          requiresApproval={(ticket as { requiresApproval?: boolean }).requiresApproval}
+                          approvalStatus={(ticket as { approvalStatus?: string }).approvalStatus}
+                          approvalLockOverride={(ticket as { approvalLockOverride?: boolean }).approvalLockOverride}
+                          size="xs"
+                        />
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-400">

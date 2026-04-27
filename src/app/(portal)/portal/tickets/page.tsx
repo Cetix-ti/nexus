@@ -390,14 +390,31 @@ export default function PortalTicketsPage() {
       {filtered.length > 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm divide-y divide-slate-100">
           {filtered.map((t) => {
-            const st = STATUS_MAP[t.status] ?? {
-              label: t.status,
-              labelKey: "",
-              bg: "bg-slate-50",
-              text: "text-slate-600",
-              color: "#94A3B8",
-              value: t.status,
-            };
+            // Overlay statut "En attente d'approbation" pour les tickets
+            // verrouillés en attente de décision. La valeur réelle de
+            // t.status reste NEW sous-jacent — on ne montre que le
+            // libellé d'attente côté UI.
+            const isPending =
+              !!(t as { requiresApproval?: boolean }).requiresApproval &&
+              String((t as { approvalStatus?: string }).approvalStatus ?? "").toLowerCase() === "pending" &&
+              !(t as { approvalLockOverride?: boolean }).approvalLockOverride;
+            const st = isPending
+              ? {
+                  label: "En attente d'approbation",
+                  labelKey: "",
+                  bg: "bg-amber-100",
+                  text: "text-amber-900",
+                  color: "#D97706",
+                  value: "pending_approval",
+                }
+              : STATUS_MAP[t.status] ?? {
+                  label: t.status,
+                  labelKey: "",
+                  bg: "bg-slate-50",
+                  text: "text-slate-600",
+                  color: "#94A3B8",
+                  value: t.status,
+                };
             const pr = PRIORITY_MAP[t.priority];
             const isResolved = ["resolved", "closed", "cancelled"].includes(
               t.status,

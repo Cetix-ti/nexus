@@ -83,12 +83,31 @@ export default function PortalLayout({
   const { user, organizationName, permissions } = usePortalUser();
   const t = useLocaleStore((s) => s.t);
   const isAdmin = permissions.portalRole === "admin";
+
+  // L'entrée "Approbations" n'apparaît que pour les vrais approbateurs
+  // (présents dans OrgApprover OU avec au moins une approbation en
+  // attente). Évite que tous les users portail voient un item vide.
+  const [isApprover, setIsApprover] = useState(false);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/v1/portal/me/is-approver", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { isApprover: false, pendingCount: 0 }))
+      .then((d) => {
+        setIsApprover(!!d.isApprover);
+        setPendingApprovalCount(typeof d.pendingCount === "number" ? d.pendingCount : 0);
+      })
+      .catch(() => {});
+  }, [user?.id]);
+
   const visibleNav = navItems.filter((item) => {
     if (item.adminOnly && !isAdmin) return false;
     if (item.requiresPermission) {
       const val = (permissions as unknown as Record<string, boolean>)[item.requiresPermission];
       if (!val) return false;
     }
+    // Approbations : visible uniquement aux approbateurs.
+    if (item.href === "/portal/approvals" && !isApprover) return false;
     return true;
   });
   const [userMenuOpen, setUserMenuOpen] = useState(false);

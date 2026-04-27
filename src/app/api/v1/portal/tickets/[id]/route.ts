@@ -33,6 +33,9 @@ export async function GET(
       },
       category: { select: { name: true } },
       queue: { select: { name: true } },
+      approvals: {
+        select: { id: true, approverName: true, approverEmail: true, status: true },
+      },
       comments: {
         where: { isInternal: false },
         include: {
@@ -91,6 +94,17 @@ export async function GET(
       assigneeAvatar: ticket.assignee?.avatar ?? null,
       categoryName: ticket.category?.name ?? "—",
       queueName: ticket.queue?.name ?? "—",
+      // Approval workflow — exposé pour la bannière "En attente
+      // d'approbation" + l'overlay statut côté portail.
+      requiresApproval: ticket.requiresApproval,
+      approvalStatus: ticket.approvalStatus?.toLowerCase() ?? "not_required",
+      approvalLockOverride: ticket.approvalLockOverride,
+      approvers: ticket.approvals.map((a) => ({
+        id: a.id,
+        name: a.approverName,
+        email: a.approverEmail,
+        status: a.status.toLowerCase(),
+      })),
       createdAt: ticket.createdAt.toISOString(),
       updatedAt: ticket.updatedAt.toISOString(),
       dueAt: ticket.dueAt?.toISOString() ?? null,

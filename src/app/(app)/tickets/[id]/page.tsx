@@ -778,10 +778,27 @@ export default function TicketDetailPage() {
               {/* Statut + priorité + SLA breached — barrette discrète sous le
                   titre, alignée sur le rythme typographique. */}
               <div className="mt-3.5 flex items-center gap-2 flex-wrap">
-                <Badge variant={statusBadgeVariant[ticket.status]} className="gap-1.5">
-                  <span className={cn("inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
-                  {statusCfg.label}
-                </Badge>
+                {(() => {
+                  const isPending =
+                    !!(ticket as { requiresApproval?: boolean }).requiresApproval &&
+                    String((ticket as { approvalStatus?: string }).approvalStatus ?? "").toLowerCase() === "pending" &&
+                    !(ticket as { approvalLockOverride?: boolean }).approvalLockOverride;
+                  if (isPending) {
+                    return (
+                      <ApprovalLockBadge
+                        requiresApproval
+                        approvalStatus="pending"
+                        approvalLockOverride={false}
+                      />
+                    );
+                  }
+                  return (
+                    <Badge variant={statusBadgeVariant[ticket.status]} className="gap-1.5">
+                      <span className={cn("inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
+                      {statusCfg.label}
+                    </Badge>
+                  );
+                })()}
                 <Badge variant={priorityBadgeVariant[ticket.priority]} className="gap-1.5">
                   <span className={cn("inline-block h-1.5 w-1.5 rounded-full", priorityCfg.dotClass)} />
                   {priorityCfg.label}
@@ -792,8 +809,16 @@ export default function TicketDetailPage() {
                     SLA dépassé
                   </Badge>
                 )}
+                {/* Si le ticket est déverrouillé manuellement OU
+                    déjà décidé, on garde le badge supplémentaire pour
+                    matérialiser l'état (pending → loud overlay déjà
+                    rendu plus haut). */}
                 <ApprovalLockBadge
-                  requiresApproval={(ticket as { requiresApproval?: boolean }).requiresApproval}
+                  requiresApproval={
+                    !!(ticket as { requiresApproval?: boolean }).requiresApproval &&
+                    (((ticket as { approvalStatus?: string }).approvalStatus ?? "").toLowerCase() !== "pending" ||
+                      !!(ticket as { approvalLockOverride?: boolean }).approvalLockOverride)
+                  }
                   approvalStatus={(ticket as { approvalStatus?: string }).approvalStatus}
                   approvalLockOverride={(ticket as { approvalLockOverride?: boolean }).approvalLockOverride}
                 />
