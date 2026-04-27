@@ -2,8 +2,10 @@
   "enabled": true,
   "allowedEmails": [
     "informatique@baie-durfe.qc.ca",
-    "informatique@hvac.ca"
+    "informatique@hvac.ca",
+    "informatique@sadb.qc.ca",
+    "test-cetix@sadb.qc.ca"
   ],
-  "updatedAt": "2026-04-16T10:34:39.354Z",
+  "updatedAt": "2026-04-27T15:46:53.214Z",
   "updatedBy": "Bruno Robert"
 }

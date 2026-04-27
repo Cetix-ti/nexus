@@ -401,7 +401,18 @@ export async function writeMappingResultToDb(
       stats.warnings.push(`Asset ${a.name}: pas d'org et pas de fallback`);
       continue;
     }
-    const existing = await prisma.asset.findUnique({ where: { externalId: a.externalId } });
+    // Lookup par clé composite (orgId, source, externalId) — externalId
+    // n'est plus globalement unique depuis la migration
+    // asset_composite_unique_external.
+    const existing = await prisma.asset.findUnique({
+      where: {
+        organizationId_externalSource_externalId: {
+          organizationId: orgId,
+          externalSource: "freshservice",
+          externalId: a.externalId,
+        },
+      },
+    });
     const data: any = {
       name: a.name,
       manufacturer: a.manufacturer,

@@ -919,7 +919,10 @@ enum ContractStatus {
 model Asset {
   id             String      @id @default(cuid())
   externalSource String?     @map("external_source")
-  externalId     String?     @unique @map("external_id")
+  /// Identifiant externe (ex: AgentID Atera). N'est plus globalement unique
+  /// — la vraie clé métier est `(organizationId, externalSource, externalId)`,
+  /// définie en `@@unique` plus bas. Garder un index pour les lookups rapides.
+  externalId     String?     @map("external_id")
   organizationId String      @map("organization_id")
   siteId         String?     @map("site_id")
   name           String
@@ -953,6 +956,14 @@ model Asset {
 
   @@index([organizationId, type])
   @@index([assignedContactId])
+  @@index([externalSource, externalId])
+  /// Clé métier d'unicité d'un actif synchronisé : un même externalId
+  /// peut exister dans plusieurs orgs (ID Atera réutilisé entre tenants),
+  /// mais pas deux fois dans la MÊME org pour la MÊME source. Empêche
+  /// définitivement la double-écriture qui a causé les 1272 doublons
+  /// d'avril 2026 (deux code paths utilisaient des formats d'externalId
+  /// différents `atera_<id>` vs `<id>`).
+  @@unique([organizationId, externalSource, externalId])
   @@map("assets")
 }
 

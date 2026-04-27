@@ -125,7 +125,7 @@ function isWarrantyExpiringSoon(iso?: string): boolean {
   return days >= 0 && days <= 90;
 }
 
-const PROVIDERS_TO_SHOW: AssetSource[] = ["atera", "other"];
+const PROVIDERS_TO_SHOW: AssetSource[] = ["atera"];
 
 export function OrgAssetsTab({ organizationId, organizationName }: OrgAssetsTabProps) {
   const [assets, setAssets] = useState<OrgAsset[]>([]);

@@ -83,14 +83,14 @@ export const mockOrgAssets: OrgAsset[] = [
     siteName: "Siège - Bureau direction", externalId: "ATERA-2010",
   }),
   asset({
-    id: "ast-c-11", organizationId: "org-1", name: "LAP-MARIE-01", type: "laptop", status: "active", source: "other",
+    id: "ast-c-11", organizationId: "org-1", name: "LAP-MARIE-01", type: "laptop", status: "active", source: "manual",
     manufacturer: "Lenovo", model: "ThinkPad X1 Carbon Gen 11", serialNumber: "LNVTPX1G11B",
     os: "Windows", osVersion: "11 Pro", cpuModel: "Intel Core i7-1365U", cpuCores: 10, ramGb: 16, storageGb: 512,
     assignedToContactName: "Marie Tremblay", lastLoggedUser: "CETIX\\mtremblay", siteName: "Télétravail",
     warrantyExpiry: "2026-08-20", externalId: "INT-LAP-101",
   }),
   asset({
-    id: "ast-c-12", organizationId: "org-1", name: "LAP-ALEX-01", type: "laptop", status: "active", source: "other",
+    id: "ast-c-12", organizationId: "org-1", name: "LAP-ALEX-01", type: "laptop", status: "active", source: "manual",
     manufacturer: "Apple", model: "MacBook Pro 14 M3", serialNumber: "C02MBPM3001",
     os: "macOS", osVersion: "14.4", cpuCores: 11, ramGb: 18, storageGb: 1000,
     assignedToContactName: "Alexandre Dubois", lastLoggedUser: "adubois", siteName: "Siège - Open space",
@@ -108,7 +108,7 @@ export const mockOrgAssets: OrgAsset[] = [
 
   // Acme - org-2 (6-8)
   asset({
-    id: "ast-a-01", organizationId: "org-2", name: "ACME-DC01", type: "windows_server", status: "active", source: "other",
+    id: "ast-a-01", organizationId: "org-2", name: "ACME-DC01", type: "windows_server", status: "active", source: "manual",
     manufacturer: "Dell", model: "PowerEdge R650", serialNumber: "DLLR650AC1",
     os: "Windows Server", osVersion: "2022", cpuCores: 16, ramGb: 96, storageGb: 2000,
     ipAddress: "192.168.1.10", siteName: "Acme - Datacenter", warrantyExpiry: "2027-04-30",
@@ -128,23 +128,23 @@ export const mockOrgAssets: OrgAsset[] = [
     siteName: "Acme - Datacenter",
   }),
   asset({
-    id: "ast-a-05", organizationId: "org-2", name: "ACME-VM-ERP", type: "server_virtual", status: "active", source: "other",
+    id: "ast-a-05", organizationId: "org-2", name: "ACME-VM-ERP", type: "server_virtual", status: "active", source: "manual",
     os: "Linux", osVersion: "RHEL 9", cpuCores: 12, ramGb: 64, storageGb: 1000, ipAddress: "192.168.10.20",
   }),
   asset({
-    id: "ast-a-06", organizationId: "org-2", name: "ACME-LAP-01", type: "laptop", status: "active", source: "other",
+    id: "ast-a-06", organizationId: "org-2", name: "ACME-LAP-01", type: "laptop", status: "active", source: "manual",
     manufacturer: "HP", model: "EliteBook 840 G10", os: "Windows", osVersion: "11 Pro",
     assignedToContactName: "Robert Martin", lastLoggedUser: "ACME\\rmartin",
   }),
   asset({
-    id: "ast-a-07", organizationId: "org-2", name: "ACME-WKS-01", type: "workstation", status: "active", source: "other",
+    id: "ast-a-07", organizationId: "org-2", name: "ACME-WKS-01", type: "workstation", status: "active", source: "manual",
     manufacturer: "Dell", model: "OptiPlex 5000", os: "Windows", osVersion: "11 Pro",
     assignedToContactName: "Sophie Lavoie", lastLoggedUser: "ACME\\slavoie",
   }),
 
   // org-4 (4-5)
   asset({
-    id: "ast-d-01", organizationId: "org-4", name: "GF-SRV01", type: "windows_server", status: "active", source: "other",
+    id: "ast-d-01", organizationId: "org-4", name: "GF-SRV01", type: "windows_server", status: "active", source: "manual",
     manufacturer: "HPE", model: "ProLiant DL380 Gen11", os: "Windows Server", osVersion: "2022",
     cpuCores: 24, ramGb: 192, ipAddress: "172.16.0.10", siteName: "Global Finance HQ",
   }),
@@ -157,12 +157,12 @@ export const mockOrgAssets: OrgAsset[] = [
     manufacturer: "Palo Alto", model: "PA-3220", ipAddress: "172.16.0.1", siteName: "Global Finance HQ",
   }),
   asset({
-    id: "ast-d-04", organizationId: "org-4", name: "GF-ESXI01", type: "hypervisor", status: "active", source: "other",
+    id: "ast-d-04", organizationId: "org-4", name: "GF-ESXI01", type: "hypervisor", status: "active", source: "manual",
     manufacturer: "Dell", model: "PowerEdge R750", os: "VMware ESXi", osVersion: "8.0",
     cpuCores: 64, ramGb: 512, siteName: "Global Finance HQ",
   }),
   asset({
-    id: "ast-d-05", organizationId: "org-4", name: "GF-LAP-CL01", type: "laptop", status: "inactive", source: "other",
+    id: "ast-d-05", organizationId: "org-4", name: "GF-LAP-CL01", type: "laptop", status: "inactive", source: "manual",
     manufacturer: "Lenovo", model: "ThinkPad T14", os: "Windows", osVersion: "11 Pro",
     assignedToContactName: "Catherine Lemieux", lastLoggedUser: "GF\\clemieux",
   }),
@@ -173,12 +173,7 @@ export const mockRmmIntegrations: RmmIntegration[] = [
     id: "rmm-1", organizationId: "org-1", provider: "atera", isConnected: true,
     lastSyncAt: "2026-04-06T08:30:00.000Z", syncedAssetCount: 8, apiKeyMasked: "atr_••••••a91f",
   },
-  {
-    id: "rmm-2", organizationId: "org-1", provider: "other", isConnected: false, syncedAssetCount: 0,
-  },
-  {
-    id: "rmm-3", organizationId: "org-1", provider: "other", isConnected: false, syncedAssetCount: 0,
-  },
+  // Connecteurs "other" retirés (ne sont plus dans AssetSource).
 ];
 
 export function getMockAssetsForOrg(organizationId: string): OrgAsset[] {

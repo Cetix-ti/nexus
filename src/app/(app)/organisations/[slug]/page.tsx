@@ -64,7 +64,6 @@ import { OrgBudgetTab } from "@/components/budgets/org-budget-tab";
 import { OrgMonthlyReportsTab } from "@/components/reports/monthly/org-monthly-reports-tab";
 import { SectionErrorBoundary } from "@/components/ui/error-boundary";
 import { OrgParticularitiesTab } from "@/components/particularities/org-particularities-tab";
-import { OrgSoftwareTab } from "@/components/software/org-software-tab";
 import { OrgPoliciesTab } from "@/components/policies/org-policies-tab";
 import { OrgChangesTab } from "@/components/changes/org-changes-tab";
 import { ChangesOverviewWidget } from "@/components/changes/overview-widget";
@@ -298,10 +297,12 @@ const TABS = [
   { key: "assets", label: "Actifs" },
   { key: "particularities", label: "Particularités" },
   { key: "policies", label: "Politiques" },
-  { key: "software", label: "Logiciels" },
+  // Logiciels retiré du top-level — accessible via Actifs > Logiciels
+  // (sous-onglet inline dans org-assets-tab-wrapper).
   { key: "changes", label: "Changements" },
   { key: "contracts", label: "Contrats" },
-  { key: "sla", label: "SLA" },
+  // L'onglet SLA top-level a été fusionné dans l'onglet Contrats —
+  // les politiques SLA s'attachent typiquement à un contrat client.
   { key: "billing", label: "Facturation" },
   { key: "budget", label: "Budget" },
   { key: "reports", label: "Rapports" },
@@ -1502,6 +1503,19 @@ export default function OrganizationDetailPage() {
         </Card>
       )}
 
+      {/* Politiques SLA — fusionnées dans l'onglet Contrats (les SLA
+          s'appliquent typiquement à un contrat, c'est cohérent de les
+          gérer côte à côte). L'ancien onglet "SLA" top-level a été
+          retiré du TABS. */}
+      {activeTab === "contracts" && canFinances && (
+        <div className="mt-6">
+          <OrgSlaSection
+            organizationId={orgId}
+            organizationName={(org || fallbackOrg).name}
+          />
+        </div>
+      )}
+
       {/* Rapports : fusion analytique ad-hoc (OrgReportsTab) + rapports
           mensuels (livrables client PDF). Un seul onglet, deux sections. */}
       {activeTab === "reports" && canFinances && (
@@ -1526,9 +1540,8 @@ export default function OrganizationDetailPage() {
       {activeTab === "policies" && (
         <OrgPoliciesTab organizationId={orgId} organizationName={o.name} />
       )}
-      {activeTab === "software" && (
-        <OrgSoftwareTab organizationId={orgId} organizationName={o.name} />
-      )}
+      {/* Onglet "software" retiré — Logiciels est désormais un
+          sous-onglet de Actifs (cf. org-assets-tab-wrapper). */}
       {activeTab === "changes" && (
         <OrgChangesTab organizationId={orgId} organizationName={o.name} />
       )}
@@ -1560,13 +1573,9 @@ export default function OrganizationDetailPage() {
         <OrgAssetsTabWrapper organizationId={orgId} organizationName={(org || fallbackOrg).name} />
       )}
 
-      {/* SLA Tab */}
-      {activeTab === "sla" && (
-        <OrgSlaSection
-          organizationId={orgId}
-          organizationName={o.name}
-        />
-      )}
+      {/* L'onglet SLA top-level a été retiré — la section SLA est
+          désormais affichée à la suite du tableau des contrats dans
+          l'onglet "Contrats" (cf. plus haut). */}
     </div>
   );
 }

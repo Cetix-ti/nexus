@@ -153,7 +153,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
           : asset.status?.toLowerCase() === "inactive"
             ? "INACTIVE"
             : "ACTIVE";
-      const externalKey = `atera_${asset.externalId || asset.id}`;
+      // Format CANONIQUE de externalId : ID Atera brut (pas de préfixe).
+      // Avant : on stockait `atera_${id}` ici alors que `lib/integrations/atera-sync.ts`
+      // stockait l'ID brut → la même machine apparaissait en deux rows distincts
+      // selon la route appelée (sync-all vs customer-detail). Bug de duplication
+      // visible côté UI. Maintenant les deux paths utilisent le même format.
+      const externalKey = String(asset.externalId || asset.id);
 
       const meta = {
         os: asset.os,
@@ -167,9 +172,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
         source: "atera",
       };
 
-      // Check if this asset already exists and has field overrides
+      // Check if this asset already exists and has field overrides.
+      // Lookup par la clé composite (orgId, source, externalId) — l'ancien
+      // `findUnique({ externalId })` ne fonctionne plus depuis qu'on a
+      // retiré la contrainte globale unique pour la remplacer par la
+      // composite (cf. migration asset_composite_unique_external).
       const existing = await prisma.asset.findUnique({
-        where: { externalId: externalKey },
+        where: {
+          organizationId_externalSource_externalId: {
+            organizationId: orgId,
+            externalSource: "atera",
+            externalId: externalKey,
+          },
+        },
         select: { fieldOverrides: true },
       });
 
@@ -198,7 +213,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
       update.lastSyncedAt = now;
 
       await prisma.asset.upsert({
-        where: { externalId: externalKey },
+        where: {
+          organizationId_externalSource_externalId: {
+            organizationId: orgId,
+            externalSource: "atera",
+            externalId: externalKey,
+          },
+        },
         update,
         create: {
           organizationId: orgId,

@@ -1,12 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { Monitor, Package, ExternalLink } from "lucide-react";
+import { Monitor, Package } from "lucide-react";
 import { OrgAssetsTab } from "@/components/assets/org-assets-tab";
 import { OrgAssetsEngagementsTab } from "@/components/assets/org-assets-engagements-tab";
+import { OrgSoftwareTab } from "@/components/software/org-software-tab";
 
-/** Wrapper avec sous-onglets internes : Matériel / Logiciels (→ redirect) / Engagements. */
+/**
+ * Wrapper avec 3 sous-onglets internes : Matériel / Logiciels / Engagements.
+ *
+ * Le sous-onglet "Logiciels" rend `OrgSoftwareTab` inline (pas de
+ * redirect vers /software) — l'utilisateur reste dans le contexte de
+ * l'organisation. Le composant `OrgSoftwareTab` consomme déjà les mêmes
+ * endpoints que la page standalone (`/api/v1/software/instances?orgId=…`),
+ * donc l'éditrion / création / suppression depuis ici est strictement
+ * équivalente à la page dédiée.
+ */
 export function OrgAssetsTabWrapper({
   organizationId,
   organizationName,
@@ -14,7 +23,7 @@ export function OrgAssetsTabWrapper({
   organizationId: string;
   organizationName: string;
 }) {
-  const [sub, setSub] = useState<"material" | "engagements">("material");
+  const [sub, setSub] = useState<"material" | "software" | "engagements">("material");
 
   return (
     <div className="space-y-4">
@@ -27,13 +36,14 @@ export function OrgAssetsTabWrapper({
         >
           <Monitor className="h-3.5 w-3.5" /> Matériel & inventaire
         </button>
-        <Link
-          href={`/software?orgId=${organizationId}`}
-          className="px-3 py-2 text-[13px] font-medium border-b-2 -mb-px inline-flex items-center gap-1.5 border-transparent text-slate-500 hover:text-slate-700"
+        <button
+          onClick={() => setSub("software")}
+          className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px inline-flex items-center gap-1.5 ${
+            sub === "software" ? "border-blue-500 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
         >
           <Package className="h-3.5 w-3.5" /> Logiciels
-          <ExternalLink className="h-3 w-3 opacity-50" />
-        </Link>
+        </button>
         <button
           onClick={() => setSub("engagements")}
           className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px inline-flex items-center gap-1.5 ${
@@ -46,6 +56,9 @@ export function OrgAssetsTabWrapper({
 
       {sub === "material" && (
         <OrgAssetsTab organizationId={organizationId} organizationName={organizationName} />
+      )}
+      {sub === "software" && (
+        <OrgSoftwareTab organizationId={organizationId} organizationName={organizationName} />
       )}
       {sub === "engagements" && (
         <OrgAssetsEngagementsTab organizationId={organizationId} />

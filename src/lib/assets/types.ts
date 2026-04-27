@@ -76,12 +76,11 @@ export const ASSET_STATUS_LABELS: Record<AssetStatus, string> = {
   decommissioned: "Mis hors service",
 };
 
-export type AssetSource = "manual" | "atera" | "other";
+export type AssetSource = "manual" | "atera";
 
 export const ASSET_SOURCE_LABELS: Record<AssetSource, string> = {
   manual: "Saisie manuelle",
   atera: "Atera RMM",
-  other: "Autre",
 };
 
 export interface OrgAsset {
