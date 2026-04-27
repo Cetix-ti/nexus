@@ -311,10 +311,26 @@ export async function listTickets(options?: {
     where.approvalStatus = "PENDING";
   }
   if (options?.search) {
-    where.OR = [
-      { subject: { contains: options.search, mode: "insensitive" } },
-      { description: { contains: options.search, mode: "insensitive" } },
+    const q = options.search.trim();
+    const orClauses: Prisma.TicketWhereInput[] = [
+      { subject: { contains: q, mode: "insensitive" } },
+      { description: { contains: q, mode: "insensitive" } },
     ];
+    // Recherche par numéro : l'utilisateur tape "TK-28641" ou "28641"
+    // ou "27641". On parse les chiffres ; si on a un nombre, on cherche
+    // à la fois sur la valeur brute ET sur la valeur "moins 1000"
+    // (= raw DB number quand le format affiché est en mode client
+    // préfixé +1000). Ça couvre les 3 cas de saisie utilisateur.
+    const digitsMatch = q.match(/(\d+)/);
+    if (digitsMatch) {
+      const typed = Number(digitsMatch[1]);
+      if (Number.isFinite(typed)) {
+        const candidates = new Set<number>([typed]);
+        if (typed > 1000) candidates.add(typed - 1000);
+        for (const n of candidates) orClauses.push({ number: n });
+      }
+    }
+    where.OR = orClauses;
   }
   // Filtre isInternal : par défaut cache les internes dans les vues client.
   if (options?.internal !== "all") {

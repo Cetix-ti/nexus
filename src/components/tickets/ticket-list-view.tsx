@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow, format } from "date-fns";
 import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Trash2, RotateCcw, X, Loader2 } from "lucide-react";
@@ -205,17 +206,19 @@ export function TicketListView({ tickets }: TicketListViewProps) {
         </div>
       )}
 
-      {/* Mobile card layout */}
+      {/* Mobile card layout — chaque card est un Link plutôt qu'un div
+          + onClick, pour permettre Cmd/Ctrl+clic et clic milieu = ouvrir
+          dans un nouvel onglet (browser-native). */}
       <div className="md:hidden space-y-2">
         {sorted.map((ticket) => {
           const statusCfg = STATUS_CONFIG[ticket.status];
           const priorityCfg = PRIORITY_CONFIG[ticket.priority];
 
           return (
-            <div
+            <Link
               key={ticket.id}
-              onClick={() => router.push(`/tickets/${ticket.id}`)}
-              className="cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3.5 active:bg-slate-50 transition-colors shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+              href={`/tickets/${ticket.id}`}
+              className="block cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3.5 active:bg-slate-50 transition-colors shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -298,7 +301,7 @@ export function TicketListView({ tickets }: TicketListViewProps) {
                   <span className="text-[11px] text-slate-500">{ticket.assigneeName}</span>
                 </div>
               )}
-            </div>
+            </Link>
           );
         })}
         {sorted.length === 0 && (
@@ -387,8 +390,20 @@ export function TicketListView({ tickets }: TicketListViewProps) {
                         className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
                     </td>
-                    <td className="px-3 py-3">
-                      <span className="font-mono text-[11.5px] font-semibold text-blue-700 tabular-nums tracking-[0.02em]">#{ticket.number}</span>
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      {/* Le numéro est un vrai <Link> → permet
+                          Cmd/Ctrl+clic et clic-milieu pour ouvrir
+                          dans un nouvel onglet. Sans ça, le row entier
+                          est piloté par onClick={router.push} qui
+                          n'expose pas l'intention de navigation au
+                          navigateur. stopPropagation pour éviter
+                          double-navigation. */}
+                      <Link
+                        href={`/tickets/${ticket.id}`}
+                        className="font-mono text-[11.5px] font-semibold text-blue-700 tabular-nums tracking-[0.02em] hover:underline"
+                      >
+                        #{ticket.number}
+                      </Link>
                     </td>
                     <td className="px-3 py-3">
                       <div>

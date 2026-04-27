@@ -13,6 +13,7 @@
 
 import prisma from "@/lib/prisma";
 import { isBillable as isBillableCoverage, isCovered as isCoveredCoverage, isNonBillable as isNonBillableCoverage, EXCLUDED_APPROVAL_STATUSES } from "@/lib/billing/coverage-statuses";
+import { getClientTicketPrefix, formatTicketNumber } from "@/lib/tenant-settings/service";
 import type {
   MonthlyReportPayload,
   MonthlyReportTicketBlock,
@@ -42,12 +43,28 @@ function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function displayTicketId(number: number): string {
-  return `TK-${number}`;
+/**
+ * Formate le numéro de ticket pour l'affichage client.
+ *
+ * AVANT : `TK-${number}` retournait le raw DB number → discordant
+ * avec l'affichage du portail / fiche ticket / sidebar qui appliquent
+ * `formatTicketNumber()` (= prefix + 1000 + number). Bug user signalé :
+ * "TK-28641" dans le portail apparaissait "TK-27641" dans le PDF.
+ *
+ * Maintenant : utilise `formatTicketNumber()` canonique. Le préfixe
+ * client est chargé une seule fois en début de build via
+ * `loadClientPrefix()` puis injecté dans cette fonction.
+ */
+function displayTicketId(number: number, isInternal: boolean, clientPrefix: string): string {
+  return formatTicketNumber(number, isInternal, clientPrefix);
 }
 
 function round1(n: number): number {
-  return Math.round(n * 10) / 10;
+  // 2 décimales (le nom historique est conservé pour ne pas toucher
+  // les call sites). Avant : 1 décimale → 0.25h s'affichait 0.3h ce
+  // qui mentait par rapport à l'unité de facturation. 0.25h doit
+  // rester visible tel quel.
+  return Math.round(n * 100) / 100;
 }
 
 function round2(n: number): number {
@@ -109,6 +126,11 @@ export async function buildMonthlyReportPayload(
   });
   if (!org) throw new Error(`Organization not found: ${organizationId}`);
 
+  // Charge une fois le préfixe client global (TK par défaut) pour formater
+  // les numéros de tickets de manière COHÉRENTE avec le portail/fiche
+  // (formatTicketNumber ajoute +1000 et applique le préfixe client).
+  const clientPrefix = await getClientTicketPrefix();
+
   // 1) Time entries du mois, scope org. Rejected exclus du PDF mensuel —
   // une saisie rejetée n'a rien à voir dans le rapport client (cf.
   // EXCLUDED_APPROVAL_STATUSES).
@@ -158,6 +180,7 @@ export async function buildMonthlyReportPayload(
     select: {
       id: true,
       number: true,
+      isInternal: true,
       subject: true,
       status: true,
       createdAt: true,
@@ -482,7 +505,7 @@ export async function buildMonthlyReportPayload(
       return {
         date: t.date,
         agentName: agentOf(t.agentId).fullName,
-        ticketDisplayId: ticket ? displayTicketId(ticket.number) : null,
+        ticketDisplayId: ticket ? displayTicketId(ticket.number, !!ticket.isInternal, clientPrefix) : null,
         ticketSubject: ticket?.subject ?? null,
         billedAmount: tripsBillable
           ? (tripFlatFee != null ? tripFlatFee : 0)
@@ -517,7 +540,7 @@ export async function buildMonthlyReportPayload(
       t.aiSummary && (t.aiSummaryConfidence ?? 0) >= 0.8 ? t.aiSummary : null;
 
     ticketsBlocks.push({
-      displayId: displayTicketId(t.number),
+      displayId: displayTicketId(t.number, !!t.isInternal, clientPrefix),
       ticketId: t.id,
       subject: t.subject,
       status: t.status,

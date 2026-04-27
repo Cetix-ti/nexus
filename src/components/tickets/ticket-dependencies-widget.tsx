@@ -47,7 +47,15 @@ function isDone(status: string): boolean {
   return s === "RESOLVED" || s === "CLOSED";
 }
 
-export function TicketDependenciesWidget({ ticketId }: { ticketId: string }) {
+export function TicketDependenciesWidget({
+  ticketId,
+  organizationId,
+}: {
+  ticketId: string;
+  /** Org du ticket courant — sert à scoper la recherche d'upstreams.
+   *  On ne peut pas créer une dépendance cross-org (sémantiquement non-sens). */
+  organizationId?: string | null;
+}) {
   const [upstreams, setUpstreams] = useState<DepTicket[]>([]);
   const [downstreams, setDownstreams] = useState<DepTicket[]>([]);
   const [blocked, setBlocked] = useState(false);
@@ -110,6 +118,7 @@ export function TicketDependenciesWidget({ ticketId }: { ticketId: string }) {
           <DepPickerModal
             ticketId={ticketId}
             excludeIds={[ticketId]}
+            organizationId={organizationId ?? null}
             onClose={() => setPickerOpen(false)}
             onPicked={(id) => addUpstream(id)}
           />
@@ -217,11 +226,13 @@ function DepRow({ t, onRemove, muted }: { t: DepTicket; onRemove?: () => void; m
 function DepPickerModal({
   ticketId,
   excludeIds,
+  organizationId,
   onClose,
   onPicked,
 }: {
   ticketId: string;
   excludeIds: string[];
+  organizationId?: string | null;
   onClose: () => void;
   onPicked: (id: string) => void;
 }) {
@@ -234,7 +245,14 @@ function DepPickerModal({
     let cancelled = false;
     const handle = setTimeout(() => {
       setSearching(true);
-      fetch(`/api/v1/tickets?search=${encodeURIComponent(query)}&limit=20`)
+      // Filtre par organisation : un ticket amont doit appartenir à
+      // la même org que le ticket courant. Dépendance cross-org = non-sens
+      // métier (ex: ticket SADB ne peut pas dépendre d'un ticket HVAC).
+      fetch(
+        `/api/v1/tickets?search=${encodeURIComponent(query)}&limit=20${
+          organizationId ? `&organizationId=${encodeURIComponent(organizationId)}` : ""
+        }`,
+      )
         .then((r) => (r.ok ? r.json() : []))
         .then((d) => {
           if (cancelled) return;

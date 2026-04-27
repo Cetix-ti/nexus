@@ -41,7 +41,6 @@ import { AiCloseAudit } from "@/components/tickets/ai-close-audit";
 import { AiEscalationBrief } from "@/components/tickets/ai-escalation-brief";
 import { AiToneSwitcher } from "@/components/tickets/ai-tone-switcher";
 import { AiInterventionChecklist } from "@/components/tickets/ai-intervention-checklist";
-import { AiClientContext } from "@/components/tickets/ai-client-context";
 import { AiCopilotChat } from "@/components/tickets/ai-copilot-chat";
 import { SimilarTicketsWidget } from "@/components/tickets/similar-tickets-widget";
 import { TicketSubtasksWidget } from "@/components/tickets/ticket-subtasks-widget";
@@ -203,10 +202,6 @@ export default function TicketDetailPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
-  // Rôle pour gating de features admin (Conventions client = SUPER_ADMIN
-  // uniquement — contient des préférences opérationnelles sensibles).
-  const isSuperAdmin =
-    (session?.user as { role?: string } | undefined)?.role === "SUPER_ADMIN";
   // Contexte interne vs client : la page détail est utilisée à la fois depuis
   // /tickets/[id] (clients) et /internal-tickets/[id] (Cetix). Le chemin
   // courant dicte le "Retour" par défaut et le breadcrumb pour rester
@@ -612,10 +607,14 @@ export default function TicketDetailPage() {
     if (!stripHtml(commentText) || sending) return;
     setSending(true);
     try {
-      // Build final content with optional signature
+      // Build final content with optional signature.
+      // Les notes internes ne reçoivent JAMAIS la signature — la
+      // signature est destinée aux clients (réponses publiques). Une
+      // note interne est lue uniquement par les agents Cetix qui ont
+      // déjà le nom de l'auteur dans le header du commentaire.
       let finalContent = commentText;
       const hasSig = userSignature.signatureHtml || userSignature.signature;
-      if (appendSignature && hasSig) {
+      if (appendSignature && hasSig && !isInternal) {
         const escapeHtml = (s: string) =>
           s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
         const sigHtml = userSignature.signatureHtml
@@ -1192,7 +1191,10 @@ export default function TicketDetailPage() {
                   écran < 500 px. */}
               <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div className="flex items-center gap-2 flex-wrap">
-                  {(userSignature.signature || userSignature.signatureHtml) && (
+                  {/* La signature est masquée pour les notes internes —
+                      elle ne sert qu'aux réponses publiques (visibles
+                      au client). Pas pertinent dans une note d'équipe. */}
+                  {(userSignature.signature || userSignature.signatureHtml) && !isInternal && (
                     <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
                       <input
                         type="checkbox"
@@ -2059,7 +2061,10 @@ export default function TicketDetailPage() {
                 Placés AVANT l'Assistance IA pour que le tech voie d'abord
                 ce qui est sous son contrôle direct. */}
             <TicketSubtasksWidget ticketId={ticket.id} />
-            <TicketDependenciesWidget ticketId={ticket.id} />
+            <TicketDependenciesWidget
+              ticketId={ticket.id}
+              organizationId={(ticket as { organizationId?: string | null }).organizationId ?? null}
+            />
 
             {/* ==============================================================
                 SECTION IA — tout en bas de la sidebar.
@@ -2118,22 +2123,10 @@ export default function TicketDetailPage() {
             {/* Copilote Q&A — question libre dans le contexte du ticket. */}
             <AiCopilotChat ticketId={ticket.id} />
 
-            {/* Conventions client — TOUT EN BAS. Contient les faits validés
-                de AiMemory (préférences opérationnelles sensibles). Visible
-                uniquement aux super-admins. Après les suggestions IA car
-                c'est de la ressource de référence, pas un input d'action. */}
-            {isSuperAdmin && (
-              <AiClientContext
-                organizationId={
-                  (ticket as { organizationId?: string | null }).organizationId ??
-                  null
-                }
-                organizationSlug={
-                  (ticket as { organization?: { slug?: string } | null })
-                    .organization?.slug ?? null
-                }
-              />
-            )}
+            {/* Conventions client retiré de la fiche ticket — il
+                encombrait la sidebar IA et était dupliqué avec
+                /intelligence. Accès via menu latéral principal >
+                Intelligence IA uniquement. */}
           </div>
         </div>
       </div>

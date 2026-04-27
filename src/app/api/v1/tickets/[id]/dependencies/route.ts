@@ -108,6 +108,25 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: "Dépendance cyclique interdite." }, { status: 400 });
   }
 
+  // Garde cross-org : un ticket ne peut pas dépendre d'un ticket d'une
+  // AUTRE organisation. Sémantiquement : un blocage est un workflow
+  // interne au client (un échange de matériel SADB ne dépend pas d'un
+  // ticket HVAC). Refus 422 explicite côté API même si le picker UI
+  // filtre déjà — défense en profondeur.
+  const [thisTicket, upstreamTicket] = await Promise.all([
+    prisma.ticket.findUnique({ where: { id }, select: { organizationId: true } }),
+    prisma.ticket.findUnique({ where: { id: String(body.upstreamId) }, select: { organizationId: true } }),
+  ]);
+  if (!thisTicket || !upstreamTicket) {
+    return NextResponse.json({ error: "Ticket introuvable" }, { status: 404 });
+  }
+  if (thisTicket.organizationId !== upstreamTicket.organizationId) {
+    return NextResponse.json(
+      { error: "Impossible de lier un ticket d'une autre organisation comme dépendance." },
+      { status: 422 },
+    );
+  }
+
   try {
     const row = await prisma.ticketDependency.create({
       data: { ticketId: id, upstreamId: String(body.upstreamId) },

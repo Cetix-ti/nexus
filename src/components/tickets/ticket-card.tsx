@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { createPortal } from "react-dom";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -75,9 +76,17 @@ export function TicketCard({ ticket, onClick }: TicketCardProps) {
         {/* Row 1: ticket number + badges */}
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="font-mono text-[10px] font-medium text-slate-400 tracking-wide">
+            {/* Numéro = vrai <Link> → permet Cmd/Ctrl+clic et clic
+                milieu pour ouvrir le ticket dans un nouvel onglet
+                directement (sans passer par la quickview). Le card
+                lui-même ouvre toujours la quickview au clic normal. */}
+            <Link
+              href={`/tickets/${ticket.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="font-mono text-[10px] font-medium text-slate-400 tracking-wide hover:text-blue-700 hover:underline"
+            >
               {ticket.number}
-            </span>
+            </Link>
             {isNew && (
               <span className="flex items-center gap-1 rounded-full bg-blue-500/10 px-1.5 py-px">
                 <span className="h-1 w-1 rounded-full bg-blue-500 animate-pulse" />

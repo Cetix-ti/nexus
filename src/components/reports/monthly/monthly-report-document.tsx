@@ -56,10 +56,15 @@ const FONT_MONO    = "var(--font-geist-mono), ui-monospace, SFMono-Regular, mono
 // Format helpers
 // ---------------------------------------------------------------------------
 function fmtHours(hours: number): string {
-  return `${hours.toLocaleString("fr-CA", { maximumFractionDigits: 1 })} h`;
+  // 2 décimales pour respecter les unités de facturation 0.25h (= 15 min).
+  // Avant : 1 décimale → 15 min (0.25h) s'arrondissait à "0.3 h" ce qui
+  // était trompeur pour le client (perception "facturé 0.3h pour 15 min").
+  return `${hours.toLocaleString("fr-CA", { maximumFractionDigits: 2 })} h`;
 }
 function fmtMinutesAsHours(minutes: number): string {
-  return fmtHours(Math.round((minutes / 60) * 10) / 10);
+  // Précision 2 décimales : 15 min = 0.25 h, pas 0.3 h. Cohérent avec
+  // les saisies de temps qui sont par tranches de 15 min (0.25h).
+  return fmtHours(Math.round((minutes / 60) * 100) / 100);
 }
 function fmtMoney(amount: number): string {
   return amount.toLocaleString("fr-CA", { style: "currency", currency: "CAD" });

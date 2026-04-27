@@ -1048,7 +1048,13 @@ export default function MySpacePage() {
                 <tbody className="divide-y divide-slate-100">
                   {(data?.expenseReports ?? []).map((r) => (
                     <tr key={r.id} className="hover:bg-blue-50/50 cursor-pointer transition-colors" onClick={() => router.push(`/my-space/expense/${r.id}`)}>
-                      <td className="px-4 py-3 font-medium text-blue-600 hover:underline">{r.title}</td>
+                      {/* Titre = vrai <Link> → Cmd/Ctrl+clic / clic-milieu
+                          ouvre dans un nouvel onglet. */}
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <Link href={`/my-space/expense/${r.id}`} className="font-medium text-blue-600 hover:underline">
+                          {r.title}
+                        </Link>
+                      </td>
                       <td className="px-4 py-3 text-[12px] text-slate-500 tabular-nums whitespace-nowrap">{r.periodStart ? fmtDate(r.periodStart) : "—"} — {r.periodEnd ? fmtDate(r.periodEnd) : "—"}</td>
                       <td className="px-4 py-3 text-center tabular-nums text-slate-600">{r.entryCount}</td>
                       <td className="px-4 py-3"><div className="flex gap-1 flex-wrap">{r.categories.slice(0, 3).map((c) => <Badge key={c} variant="default" className="text-[9px]">{c}</Badge>)}</div></td>
@@ -1166,8 +1172,17 @@ export default function MySpacePage() {
                 <tbody className="divide-y divide-slate-100">
                   {(data?.purchaseOrders ?? []).map((po) => (
                     <tr key={po.id} className="hover:bg-blue-50/50 cursor-pointer transition-colors" onClick={() => router.push(`/my-space/po/${po.id}`)}>
-                      <td className="px-4 py-3 font-medium text-blue-600 tabular-nums hover:underline">{po.poNumber}</td>
-                      <td className="px-4 py-3 font-medium text-blue-600 hover:underline">{po.title}</td>
+                      {/* Numéro PO + titre comme vrais Links pour Cmd-clic. */}
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <Link href={`/my-space/po/${po.id}`} className="font-medium text-blue-600 tabular-nums hover:underline">
+                          {po.poNumber}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <Link href={`/my-space/po/${po.id}`} className="font-medium text-blue-600 hover:underline">
+                          {po.title}
+                        </Link>
+                      </td>
                       <td className="px-4 py-3 text-[12px] text-slate-700">{po.vendorName}</td>
                       <td className="px-4 py-3 text-[12px] text-slate-600">{po.organizationName || "Interne"}</td>
                       <td className="px-4 py-3 text-center tabular-nums">{po.receivedCount}/{po.itemCount}</td>
