@@ -39,6 +39,11 @@ const STATUS_TABS: { key: string; label: string; filter: TicketStatus[] | null }
   { key: "new", label: "Nouveaux", filter: ["new", "open"] },
   { key: "in_progress", label: "En cours", filter: ["in_progress", "on_site"] },
   { key: "waiting", label: "En attente", filter: ["waiting_client", "pending", "waiting_vendor", "scheduled"] },
+  // Onglet dédié aux tickets verrouillés en attente d'approbation côté
+  // client. Filtrage côté client (le serveur ne sait pas filtrer un
+  // sous-ensemble par approvalStatus dans le STATUS_TABS — on le fait
+  // après le fetch sur la base de `requiresApproval && approvalStatus===PENDING`).
+  { key: "pending_approval", label: "En attente d'approbation", filter: null },
   { key: "resolved", label: "Résolus", filter: ["resolved", "closed", "cancelled"] },
   { key: "trash", label: "Corbeille", filter: ["deleted"] },
 ];
@@ -99,8 +104,25 @@ function TicketsPageInner() {
     const tab = STATUS_TABS.find((t) => t.key === activeTab);
     if (tab?.filter) {
       result = result.filter((t) => tab.filter!.includes(t.status));
+    } else if (activeTab === "pending_approval") {
+      // Onglet spécial : tickets en attente d'approbation. Lit
+      // requiresApproval + approvalStatus exposés par l'API tickets.
+      result = result.filter(
+        (t) =>
+          (t as { requiresApproval?: boolean }).requiresApproval &&
+          ((t as { approvalStatus?: string }).approvalStatus === "pending"),
+      );
     } else if (activeTab !== "trash") {
       result = result.filter((t) => t.status !== "deleted");
+      // Tous les autres onglets (sauf "all") masquent les pending-approval
+      // pour ne pas mélanger les tickets verrouillés avec les actifs.
+      if (activeTab !== "all") {
+        result = result.filter(
+          (t) =>
+            !((t as { requiresApproval?: boolean }).requiresApproval &&
+              (t as { approvalStatus?: string }).approvalStatus === "pending"),
+        );
+      }
     }
 
     // Search

@@ -27,6 +27,7 @@ import {
   GitCommit,
   CalendarClock,
   Wallet,
+  CheckCircle2,
 } from "lucide-react";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { PortalImpersonationBanner } from "@/components/portal/impersonation-banner";
@@ -46,6 +47,10 @@ interface NavItem {
 const navItems: NavItem[] = [
   { labelKey: "portal.nav.home", href: "/portal", icon: Home },
   { labelKey: "portal.nav.tickets", href: "/portal/tickets", icon: Ticket },
+  // Approbations : visible à tous les utilisateurs portail. La page filtre
+  // côté serveur sur l'email du contact connecté — un user qui n'a aucune
+  // approbation à traiter verra une page vide (pas un placeholder masqué).
+  { labelKey: "portal.nav.approvals", label: "Approbations", href: "/portal/approvals", icon: CheckCircle2 },
   { labelKey: "portal.nav.assets", href: "/portal/assets", icon: Monitor },
   { labelKey: "portal.nav.projects", href: "/portal/projects", icon: FolderKanban, adminOnly: true },
   { labelKey: "portal.nav.reports", href: "/portal/reports", icon: BarChart3, adminOnly: true },

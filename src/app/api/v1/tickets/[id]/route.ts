@@ -52,6 +52,36 @@ export async function PATCH(
   if (!cuid) return NextResponse.json({ error: "Ticket introuvable" }, { status: 404 });
   const body = await req.json();
 
+  // Verrouillage par approbation : si le ticket exige une approbation et
+  // qu'aucune décision n'est rendue, les modifications sont bloquées sauf
+  // pour la levée explicite du verrou (`approvalLockOverride: true`).
+  // Cas autorisés sans déverrouiller :
+  //   - Le payload qui DÉFINIT approvalLockOverride lui-même
+  //   - Un PATCH qui ne touche qu'à des champs internes (notes, tags) —
+  //     pour l'instant on bloque tout par sécurité, on lèvera au cas par cas.
+  {
+    const prisma = (await import("@/lib/prisma")).default;
+    const cur = await prisma.ticket.findUnique({
+      where: { id: cuid },
+      select: { requiresApproval: true, approvalStatus: true, approvalLockOverride: true },
+    });
+    const isLocked =
+      !!cur?.requiresApproval &&
+      cur.approvalStatus === "PENDING" &&
+      !cur.approvalLockOverride;
+    const isUnlockingNow = body && typeof body.approvalLockOverride === "boolean";
+    if (isLocked && !isUnlockingNow) {
+      return NextResponse.json(
+        {
+          error: "Ticket verrouillé en attente d'approbation. Déverrouillez manuellement pour modifier.",
+          locked: true,
+          approvalStatus: cur.approvalStatus,
+        },
+        { status: 423 }, // 423 Locked
+      );
+    }
+  }
+
   // Blocage par dépendance : si on tente de faire avancer un ticket hors
   // des statuts "parking" (NEW, OPEN, PENDING…) alors qu'un upstream n'est
   // pas RESOLVED/CLOSED, on refuse. L'utilisateur doit d'abord fermer le

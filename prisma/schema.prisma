@@ -565,6 +565,12 @@ model Ticket {
   // Approval workflow
   requiresApproval Boolean        @default(false) @map("requires_approval")
   approvalStatus   ApprovalStatus @default(NOT_REQUIRED) @map("approval_status")
+  /// Permet à un agent (staff) de "déverrouiller" manuellement un ticket
+  /// en attente d'approbation pour le traiter quand même (ex: urgence
+  /// avant que l'approbateur n'ait pu trancher). Sans ce flag, les
+  /// modifications PATCH (statut, assignee, etc.) sont bloquées tant que
+  /// requiresApproval=true && approvalStatus=PENDING.
+  approvalLockOverride Boolean @default(false) @map("approval_lock_override")
 
   comments             Comment[]
   attachments          Attachment[]

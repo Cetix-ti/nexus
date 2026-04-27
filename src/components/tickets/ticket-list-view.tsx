@@ -6,6 +6,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Trash2, RotateCcw, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { ApprovalLockBadge } from "@/components/tickets/approval-lock-badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
 import { useTicketsStore } from "@/stores/tickets-store";
@@ -229,10 +230,18 @@ export function TicketListView({ tickets }: TicketListViewProps) {
                     {ticket.subject}
                   </p>
                 </div>
-                <Badge variant={statusBadgeVariant[ticket.status]} className="text-[10px] shrink-0 mt-0.5">
-                  <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
-                  {statusCfg.label}
-                </Badge>
+                <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                  <Badge variant={statusBadgeVariant[ticket.status]} className="text-[10px]">
+                    <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", statusCfg.dotClass)} />
+                    {statusCfg.label}
+                  </Badge>
+                  <ApprovalLockBadge
+                    requiresApproval={(ticket as { requiresApproval?: boolean }).requiresApproval}
+                    approvalStatus={(ticket as { approvalStatus?: string }).approvalStatus}
+                    approvalLockOverride={(ticket as { approvalLockOverride?: boolean }).approvalLockOverride}
+                    size="xs"
+                  />
+                </div>
               </div>
               <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-400">
                 <span>{ticket.requesterName}</span>

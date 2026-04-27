@@ -99,6 +99,11 @@ export interface Ticket {
   // the MSP team can start working on it
   approvers?: TicketApprover[];
   approvalStatus?: "not_required" | "pending" | "approved" | "rejected";
+  /** True quand un approbateur est défini (= ticket peut être verrouillé). */
+  requiresApproval?: boolean;
+  /** Levée explicite du verrou par un staff. Si vrai, les agents peuvent
+   *  modifier le ticket même si l'approbation est encore PENDING. */
+  approvalLockOverride?: boolean;
 }
 
 export interface TicketApprover {

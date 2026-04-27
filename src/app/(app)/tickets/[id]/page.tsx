@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-editor";
 import { AdvancedRichEditor } from "@/components/ui/advanced-rich-editor";
+import { ApprovalLockBadge } from "@/components/tickets/approval-lock-badge";
 import { LinkAssetModal } from "@/components/tickets/link-asset-modal";
 import { LinkProjectModal } from "@/components/tickets/link-project-modal";
 import { TicketLinkedChanges } from "@/components/tickets/ticket-linked-changes";
@@ -791,6 +792,11 @@ export default function TicketDetailPage() {
                     SLA dépassé
                   </Badge>
                 )}
+                <ApprovalLockBadge
+                  requiresApproval={(ticket as { requiresApproval?: boolean }).requiresApproval}
+                  approvalStatus={(ticket as { approvalStatus?: string }).approvalStatus}
+                  approvalLockOverride={(ticket as { approvalLockOverride?: boolean }).approvalLockOverride}
+                />
               </div>
             </div>
 

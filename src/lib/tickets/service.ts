@@ -151,6 +151,8 @@ function flattenDetail(t: PrismaTicketDetail, clientPrefix: string): UiTicket {
     calendarEventId: t.calendarEventId ?? null,
     meetingId: t.meetingId ?? undefined,
     approvalStatus: (t.approvalStatus?.toLowerCase() as UiTicket["approvalStatus"]) ?? undefined,
+    requiresApproval: t.requiresApproval ?? false,
+    approvalLockOverride: t.approvalLockOverride ?? false,
     approvers: (t.approvals ?? []).map((a) => ({
       id: a.id,
       contactId: a.approverId,
@@ -205,6 +207,8 @@ function flattenList(t: PrismaTicketList, clientPrefix: string): UiTicket {
     calendarEventId: t.calendarEventId ?? null,
     meetingId: t.meetingId ?? undefined,
     approvalStatus: (t.approvalStatus?.toLowerCase() as UiTicket["approvalStatus"]) ?? undefined,
+    requiresApproval: t.requiresApproval ?? false,
+    approvalLockOverride: t.approvalLockOverride ?? false,
     approvers: (t.approvals ?? []).map((a) => ({
       id: a.id,
       contactId: a.approverId,
@@ -247,6 +251,13 @@ export async function listTickets(options?: {
    */
   requiresOnSiteOnly?: boolean;
   /**
+   * File "en attente d'approbation" : tickets avec requiresApproval=true
+   * + approvalStatus=PENDING. Utilisé par les vues kanban/liste pour
+   * que les agents voient ces tickets séparément (pas mêlés aux
+   * tickets ouverts normaux).
+   */
+  pendingApprovalOnly?: boolean;
+  /**
    * Par défaut, les tickets de monitoring (source=MONITORING ou type=ALERT)
    * sont EXCLUS des listes tickets classiques — ils vivent dans leur propre
    * dashboard "Alertes monitoring" pour ne pas polluer les vues utilisateur
@@ -285,6 +296,19 @@ export async function listTickets(options?: {
     where.status = {
       notIn: ["RESOLVED", "CLOSED", "CANCELLED", "DELETED"] as any,
     } as any;
+    // Tickets en attente d'approbation : EXCLUS des vues "ouverts /
+    // non assignés / en retard / sur place" tant qu'un approbateur n'a
+    // pas tranché. Ils vivent dans leur propre file (cf.
+    // `pendingApprovalOnly`). Évite que des agents reçoivent des tickets
+    // pas encore validés par le client.
+    where.OR = [
+      { requiresApproval: false },
+      { approvalStatus: "APPROVED" },
+    ];
+  }
+  if (options?.pendingApprovalOnly) {
+    where.requiresApproval = true;
+    where.approvalStatus = "PENDING";
   }
   if (options?.search) {
     where.OR = [
@@ -498,6 +522,7 @@ export async function updateTicket(
     projectId: string | null;
     requiresOnSite: boolean;
     calendarEventId: string | null;
+    approvalLockOverride: boolean;
   }>,
   userId?: string,
 ): Promise<UiTicket> {
@@ -530,6 +555,7 @@ export async function updateTicket(
   if (patch.source !== undefined) data.source = patch.source.toUpperCase() as any;
   if (patch.isEscalated !== undefined) data.isEscalated = patch.isEscalated;
   if (patch.requiresOnSite !== undefined) data.requiresOnSite = patch.requiresOnSite;
+  if (patch.approvalLockOverride !== undefined) data.approvalLockOverride = patch.approvalLockOverride;
   if (patch.dueAt !== undefined) {
     data.dueAt = patch.dueAt ? new Date(patch.dueAt) : null;
   }
