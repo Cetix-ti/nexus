@@ -25,12 +25,11 @@ function block(html: string): string {
 function quote(html: string, accent = "#2563EB"): string {
   return `<div style="border-left:3px solid ${accent};background:#F8FAFC;border-radius:0 8px 8px 0;padding:12px 16px;margin:0 0 18px;font-size:14px;color:#334155;line-height:1.6;">${html}</div>`;
 }
-/** Lien texte explicite vers le ticket — placé en bas du corps, en plus du bouton CTA du chrome.
- *  Le {{ticket_url}} est résolu côté agent (vers /tickets/[id]) ou côté contact (vers le portail)
- *  selon le payload fourni par le dispatcher. */
-function ticketLink(label: string = "Ouvrir le ticket"): string {
-  return `<p style="margin:18px 0 0;font-size:13px;color:#475569;">→ <a href="{{ticket_url}}" style="color:#2563EB;text-decoration:none;font-weight:500;">${label}</a></p>`;
-}
+// Note : le helper `ticketLink()` (lien texte explicite "Ouvrir le
+// ticket" placé en bas du corps) a été retiré — il créait un doublon
+// avec le bouton CTA du chrome. Le chrome rend déjà
+// "Ouvrir le ticket" comme gros bouton bleu via ctaUrl/ctaLabel passés
+// par chaque dispatcher. Pas besoin de répéter le lien dans le corps.
 function metaRow(label: string, value: string): string {
   return `<tr><td style="padding:6px 0;font-size:13px;color:#64748B;width:40%;">${label}</td><td style="padding:6px 0;font-size:13px;color:#0F172A;font-weight:500;">${value}</td></tr>`;
 }
@@ -60,7 +59,7 @@ const SEEDS: TemplateSeed[] = [
         { label: "Créé le", value: "{{ticket_created_at}}" },
       ]),
       block(`<p style="margin:0 0 8px;font-size:12px;color:#64748B;text-transform:uppercase;letter-spacing:0.6px;">Description</p>${quote("{{ticket_description_excerpt}}")}`),
-      ticketLink(),
+
     ].join(""),
   },
   {
@@ -76,7 +75,7 @@ const SEEDS: TemplateSeed[] = [
         { label: "Échéance SLA", value: "{{ticket_sla_deadline}}" },
       ]),
       block(`<p style="margin:0 0 8px;font-size:12px;color:#64748B;text-transform:uppercase;letter-spacing:0.6px;">Description</p>${quote("{{ticket_description_excerpt}}")}`),
-      ticketLink(),
+
     ].join(""),
   },
   {
@@ -91,7 +90,7 @@ const SEEDS: TemplateSeed[] = [
         { label: "Assigné", value: "{{assignee_name}}" },
         { label: "Statut", value: "{{ticket_status_label}}" },
       ]),
-      ticketLink(),
+
     ].join(""),
   },
   {
@@ -107,7 +106,7 @@ const SEEDS: TemplateSeed[] = [
         { label: "Ancien statut", value: "{{previous_status_label}}" },
         { label: "Nouveau statut", value: "{{ticket_status_label}}" },
       ]),
-      ticketLink(),
+
     ].join(""),
   },
   {
@@ -122,7 +121,7 @@ const SEEDS: TemplateSeed[] = [
         { label: "Client", value: "{{org_name}}" },
         { label: "Demandeur", value: "{{requester_name}}" },
       ]),
-      ticketLink(),
+
     ].join(""),
   },
   {
@@ -137,7 +136,7 @@ const SEEDS: TemplateSeed[] = [
         { label: "Client", value: "{{org_name}}" },
         { label: "Statut", value: "{{ticket_status_label}}" },
       ]),
-      ticketLink(),
+
     ].join(""),
   },
   {
@@ -151,7 +150,7 @@ const SEEDS: TemplateSeed[] = [
         { label: "Ticket", value: "{{ticket_display_number}} — {{ticket_subject}}" },
         { label: "Client", value: "{{org_name}}" },
       ]),
-      ticketLink(),
+
     ].join(""),
   },
   {
@@ -167,7 +166,7 @@ const SEEDS: TemplateSeed[] = [
         { label: "Client", value: "{{org_name}}" },
         { label: "Statut", value: "{{ticket_status_label}}" },
       ]),
-      ticketLink(),
+
     ].join(""),
   },
   {
@@ -182,7 +181,7 @@ const SEEDS: TemplateSeed[] = [
         { label: "Sujet", value: "{{ticket_subject}}" },
         { label: "Client", value: "{{org_name}}" },
       ]),
-      ticketLink(),
+
     ].join(""),
   },
   {
@@ -294,7 +293,7 @@ const SEEDS: TemplateSeed[] = [
         { label: "Sujet", value: "{{ticket_subject}}" },
         { label: "Reçue le", value: "{{ticket_created_at}}" },
       ]),
-      ticketLink(),
+
     ].join(""),
   },
   {
@@ -307,7 +306,7 @@ const SEEDS: TemplateSeed[] = [
         { label: "Numéro", value: "{{ticket_display_number}}" },
         { label: "Sujet", value: "{{ticket_subject}}" },
       ]),
-      ticketLink(),
+
     ].join(""),
   },
   {
@@ -317,7 +316,7 @@ const SEEDS: TemplateSeed[] = [
     body: [
       block(`<p style="margin:0;font-size:14px;color:#0F172A;">Bonjour <strong>{{requester_name}}</strong>,</p><p style="margin:8px 0 0;font-size:13px;color:#64748B;">Nouvelle réponse de <strong>{{actor_name}}</strong> :</p>`),
       quote("{{reply_excerpt}}"),
-      ticketLink(),
+
     ].join(""),
   },
 ];
