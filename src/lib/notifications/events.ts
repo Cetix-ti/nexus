@@ -79,18 +79,13 @@ export const EVENTS: EventSpec[] = [
     category: "tickets",
     defaults: { inApp: true, email: true },
   },
-  {
-    key: "sla_warning",
-    label: "SLA bientôt expiré",
-    category: "tickets",
-    defaults: { inApp: true, email: true },
-  },
-  {
-    key: "sla_breach",
-    label: "SLA dépassé",
-    category: "tickets",
-    defaults: { inApp: true, email: true },
-  },
+  // Note: les événements `sla_warning` et `sla_breach` ont été retirés
+  // du catalogue le 2026-04-27. Ils étaient déclarés ici, exposés dans
+  // l'UI préférences et dans le template, mais aucun trigger ne les
+  // déclenchait jamais. Le prédicteur IA `sla-drift-predictor` reste la
+  // seule source d'alerte SLA (in-app uniquement). Une vraie chaîne
+  // d'escalade SLA (notification assignee + manager au breach) sera
+  // ré-introduite quand on aura l'infra escalade côté User/Team.
   {
     key: "ticket_approval_decided",
     label: "Décision d'approbation",

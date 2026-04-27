@@ -3,19 +3,40 @@
 //   - fixProposed : PR prête (pour review/merge)
 //   - dailyDigest : résumé quotidien matinal
 //
-// Destinataire par défaut : env BUG_REPORTS_NOTIFY_EMAIL, fallback
-// informatique@cetix.ca.
+// Routage : on passe par `notifyUsers()` ciblant les admins (SUPER_ADMIN
+// + MSP_ADMIN) pour que chaque admin puisse contrôler ses propres
+// préférences (canal email/in-app, opt-out par event). Avant : on
+// envoyait en direct vers BUG_REPORTS_NOTIFY_EMAIL ce qui contournait
+// totalement les préférences. L'env var sert maintenant uniquement de
+// fallback (si aucun admin trouvé en DB, ce qui ne devrait pas arriver
+// en prod mais reste un filet de sécurité pour les dev locaux).
 
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { signBugApprovalToken } from "@/lib/bugs/approval-token";
 import { buildNexusEmail } from "@/lib/email/nexus-template";
+import { notifyUsers } from "@/lib/notifications/notify";
 
-function notifyEmail(): string {
+function fallbackEmail(): string {
   return process.env.BUG_REPORTS_NOTIFY_EMAIL ?? "informatique@cetix.ca";
 }
 function appUrl(): string {
   return process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? "https://nexus.cetix.ca";
+}
+
+/**
+ * Liste les admins actifs qui doivent recevoir les notifs bugs. Centralise
+ * la requête pour les trois events (new / fix / digest).
+ */
+async function listBugAdminIds(): Promise<string[]> {
+  const admins = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      role: { in: ["SUPER_ADMIN", "MSP_ADMIN"] },
+    },
+    select: { id: true },
+  });
+  return admins.map((a) => a.id);
 }
 
 const SEVERITY_LABEL: Record<string, string> = { LOW: "Mineur", MEDIUM: "Moyen", HIGH: "Majeur", CRITICAL: "Critique" };
@@ -65,25 +86,48 @@ export async function sendNewBugEmail(bugId: string): Promise<boolean> {
   L'approbation enclenche le worker Claude nocturne (22h–6h). Le worker propose une PR — tu gardes le contrôle du merge.
 </p>`;
 
+  const subject = `[Bug ${bug.severity}] ${bug.title}`;
+  const emailMeta = [
+    { label: "Sévérité", value: SEVERITY_LABEL[bug.severity] ?? bug.severity },
+    { label: "Signalé par", value: reporterName },
+    ...(bug.contextUrl ? [{ label: "URL", value: bug.contextUrl }] : []),
+    { label: "Date", value: new Date(bug.createdAt).toLocaleString("fr-CA") },
+  ];
+
+  const adminIds = await listBugAdminIds();
+  if (adminIds.length > 0) {
+    await notifyUsers(adminIds, "bug_reported", {
+      title: subject,
+      body: `Signalé par ${reporterName}`,
+      link: `/admin/bugs/${bug.id}`,
+      emailSubject: subject,
+      email: {
+        preheader: `Bug ${SEVERITY_LABEL[bug.severity] ?? bug.severity} – ${bug.title}`,
+        title: bug.title,
+        intro: `Signalé par ${reporterName}`,
+        metadata: emailMeta,
+        body,
+        ctaUrl: detailUrl,
+        ctaLabel: "Voir dans Nexus",
+      },
+    });
+    return true;
+  }
+
+  // Fallback : aucun admin actif en DB (dev local ?). On retombe sur
+  // l'env var historique pour ne pas perdre l'info.
   const html = buildNexusEmail({
     event: "bug_reported",
     preheader: `Bug ${SEVERITY_LABEL[bug.severity] ?? bug.severity} – ${bug.title}`,
     title: bug.title,
     intro: `Signalé par ${reporterName}`,
-    metadata: [
-      { label: "Sévérité", value: SEVERITY_LABEL[bug.severity] ?? bug.severity },
-      { label: "Signalé par", value: reporterName },
-      ...(bug.contextUrl ? [{ label: "URL", value: bug.contextUrl }] : []),
-      { label: "Date", value: new Date(bug.createdAt).toLocaleString("fr-CA") },
-    ],
+    metadata: emailMeta,
     body,
     ctaUrl: detailUrl,
     ctaLabel: "Voir dans Nexus",
   });
-
-  const subject = `[Bug ${bug.severity}] ${bug.title}`;
-  return sendEmail(notifyEmail(), subject, html, {
-    from: { name: "Nexus Bugs", email: notifyEmail() },
+  return sendEmail(fallbackEmail(), subject, html, {
+    from: { name: "Nexus Bugs", email: fallbackEmail() },
   });
 }
 
@@ -116,24 +160,46 @@ export async function sendFixProposedEmail(attemptId: string): Promise<boolean> 
   Reviewer le code, puis merger via GitHub. Aucun merge automatique — tu gardes le contrôle.
 </p>`;
 
+  const subject = `[PR à merger] ${bug.title}`;
+  const intro = `Fix automatique généré par ${attempt.agentModel}${confidencePct != null ? ` · Confiance ${confidencePct}%` : ""}`;
+  const emailMeta = [
+    { label: "Modèle IA", value: attempt.agentModel },
+    ...(confidencePct != null ? [{ label: "Confiance", value: `${confidencePct}%` }] : []),
+    ...(filesStr ? [{ label: "Fichiers modifiés", value: filesStr }] : []),
+  ];
+
+  const adminIds = await listBugAdminIds();
+  if (adminIds.length > 0) {
+    await notifyUsers(adminIds, "bug_fix_proposed", {
+      title: subject,
+      body: intro,
+      link: `/admin/bugs/${bug.id}`,
+      emailSubject: subject,
+      email: {
+        preheader: `PR prête à merger — ${bug.title}`,
+        title: bug.title,
+        intro,
+        metadata: emailMeta,
+        body,
+        ctaUrl: attempt.prUrl,
+        ctaLabel: "Voir la PR GitHub",
+      },
+    });
+    return true;
+  }
+
   const html = buildNexusEmail({
     event: "bug_fix_proposed",
     preheader: `PR prête à merger — ${bug.title}`,
     title: bug.title,
-    intro: `Fix automatique généré par ${attempt.agentModel}${confidencePct != null ? ` · Confiance ${confidencePct}%` : ""}`,
-    metadata: [
-      { label: "Modèle IA", value: attempt.agentModel },
-      ...(confidencePct != null ? [{ label: "Confiance", value: `${confidencePct}%` }] : []),
-      ...(filesStr ? [{ label: "Fichiers modifiés", value: filesStr }] : []),
-    ],
+    intro,
+    metadata: emailMeta,
     body,
     ctaUrl: attempt.prUrl,
     ctaLabel: "Voir la PR GitHub",
   });
-
-  const subject = `[PR à merger] ${bug.title}`;
-  return sendEmail(notifyEmail(), subject, html, {
-    from: { name: "Nexus Bugs", email: notifyEmail() },
+  return sendEmail(fallbackEmail(), subject, html, {
+    from: { name: "Nexus Bugs", email: fallbackEmail() },
   });
 }
 
@@ -234,20 +300,39 @@ export async function sendDailyDigestEmail(options: { force?: boolean } = {}): P
   }
 
   const today = new Date().toLocaleDateString("fr-CA");
+  const subject = `[Bugs] Résumé ${today} — ${newBugs.length} nouveau(x), ${fixedBugs.length} fixé(s), ${fixProposed.length} PR à merger`;
+  const intro = `${newBugs.length} nouveau(x) bug(s) · ${fixedBugs.length} réglé(s) · ${fixProposed.length} PR prête(s) à merger`;
+  const adminIds = await listBugAdminIds();
+
+  if (adminIds.length > 0) {
+    await notifyUsers(adminIds, "bug_daily_digest", {
+      title: `Bugs — ${today}`,
+      body: intro,
+      link: "/admin/bugs",
+      emailSubject: subject,
+      email: {
+        preheader: `${newBugs.length} nouveau(x) · ${fixedBugs.length} réglé(s) · ${fixProposed.length} PR à merger`,
+        title: `Résumé quotidien — ${today}`,
+        intro,
+        body: sections.join(""),
+        ctaUrl: `${base}/admin/bugs`,
+        ctaLabel: "Ouvrir le dashboard",
+      },
+    });
+    return { sent: true };
+  }
 
   const html = buildNexusEmail({
     event: "bug_daily_digest",
     preheader: `${newBugs.length} nouveau(x) · ${fixedBugs.length} réglé(s) · ${fixProposed.length} PR à merger`,
     title: `Résumé quotidien — ${today}`,
-    intro: `${newBugs.length} nouveau(x) bug(s) · ${fixedBugs.length} réglé(s) · ${fixProposed.length} PR prête(s) à merger`,
+    intro,
     body: sections.join(""),
     ctaUrl: `${base}/admin/bugs`,
     ctaLabel: "Ouvrir le dashboard",
   });
-
-  const subject = `[Bugs] Résumé ${today} — ${newBugs.length} nouveau(x), ${fixedBugs.length} fixé(s), ${fixProposed.length} PR à merger`;
-  const ok = await sendEmail(notifyEmail(), subject, html, {
-    from: { name: "Nexus Bugs", email: notifyEmail() },
+  const ok = await sendEmail(fallbackEmail(), subject, html, {
+    from: { name: "Nexus Bugs", email: fallbackEmail() },
   });
   return { sent: ok };
 }

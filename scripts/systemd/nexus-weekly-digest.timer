@@ -1,0 +1,16 @@
+[Unit]
+Description=Nexus weekly digest — vendredi 17h00
+Requires=nexus-weekly-digest.service
+
+[Timer]
+# Fri = vendredi. 17:00 = 5pm America/Toronto (le timer hérite du fuseau
+# horaire du système, qui est déjà aligné America/Toronto sur le serveur
+# Nexus). Persistent=true → si la machine était down vendredi 17h, le
+# timer rejoue dès qu'elle redémarre.
+OnCalendar=Fri 17:00:00
+RandomizedDelaySec=300
+Persistent=true
+Unit=nexus-weekly-digest.service
+
+[Install]
+WantedBy=timers.target

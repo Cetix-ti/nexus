@@ -8,6 +8,7 @@
 // ============================================================================
 
 import prisma from "@/lib/prisma";
+import { isAllowedContactEmail } from "@/lib/notifications/allowlist";
 import {
   DEFAULT_PERSISTENCE_HTML,
   DEFAULT_PERSISTENCE_TEXT,
@@ -170,11 +171,34 @@ async function getGraphToken(): Promise<string> {
 
 export async function sendPersistenceAlertEmail(
   ctx: PersistenceEmailContext,
-): Promise<{ sent: boolean; reason?: string }> {
+): Promise<{ sent: boolean; reason?: string; blocked?: string[] }> {
   const tpl = await getOrSeedPersistenceTemplate();
   if (!tpl.enabled) return { sent: false, reason: "disabled" };
   if (!tpl.recipients || tpl.recipients.length === 0) {
     return { sent: false, reason: "no_recipients" };
+  }
+
+  // Garde "dev-safety" : ce canal envoie via Microsoft Graph (pas
+  // Nodemailer) donc il échappait à `isAllowedContactEmail()` qui gate
+  // les autres flux contacts. On filtre ici manuellement avant l'appel
+  // sendMail. Si tous les recipients sont bloqués, on n'envoie rien.
+  const allowedRecipients: string[] = [];
+  const blockedRecipients: string[] = [];
+  for (const addr of tpl.recipients) {
+    if (await isAllowedContactEmail(addr)) {
+      allowedRecipients.push(addr);
+    } else {
+      blockedRecipients.push(addr);
+    }
+  }
+  if (blockedRecipients.length > 0) {
+    console.info(
+      `[persistence-alert] ${blockedRecipients.length} recipient(s) blocked by dev-safety allowlist:`,
+      blockedRecipients.join(", "),
+    );
+  }
+  if (allowedRecipients.length === 0) {
+    return { sent: false, reason: "blocked_by_allowlist", blocked: blockedRecipients };
   }
 
   const placeholders = buildPlaceholders(ctx);
@@ -196,7 +220,7 @@ export async function sendPersistenceAlertEmail(
         message: {
           subject,
           body: { contentType: "HTML", content: html },
-          toRecipients: tpl.recipients.map((addr) => ({
+          toRecipients: allowedRecipients.map((addr) => ({
             emailAddress: { address: addr },
           })),
         },
@@ -210,7 +234,10 @@ export async function sendPersistenceAlertEmail(
   }
   // Silence unused-var warning — text is reserved for a future SMTP fallback.
   void text;
-  return { sent: true };
+  return {
+    sent: true,
+    ...(blockedRecipients.length > 0 ? { blocked: blockedRecipients } : {}),
+  };
 }
 
 export const PERSISTENCE_TEMPLATE_KIND = TEMPLATE_KIND;
