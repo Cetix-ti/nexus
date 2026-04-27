@@ -57,7 +57,7 @@ export async function GET(req: Request) {
       priority: true,
       status: true,
       organizationId: true,
-      organization: { select: { id: true, name: true } },
+      organization: { select: { id: true, name: true, logo: true } },
       assignee: { select: { firstName: true, lastName: true } },
     },
     orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
@@ -129,6 +129,7 @@ export async function GET(req: Request) {
   type OrgGroup = {
     organizationId: string;
     organizationName: string;
+    organizationLogo: string | null;
     nextVisit: NextVisit | null;
     tickets: TicketDTO[];
   };
@@ -141,6 +142,7 @@ export async function GET(req: Request) {
       g = {
         organizationId: t.organizationId,
         organizationName: t.organization.name,
+        organizationLogo: t.organization.logo ?? null,
         nextVisit: orgToNextVisit.get(t.organizationId) ?? null,
         tickets: [],
       };

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronDown, ListTodo, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
+import { OrgLogo } from "@/components/organizations/org-logo";
 
 // ---------------------------------------------------------------------------
 // OnSitePlanningPanel — file de planification "à faire sur place".
@@ -38,6 +39,7 @@ interface OnSiteTicketDTO {
 interface OnSiteOrgGroup {
   organizationId: string;
   organizationName: string;
+  organizationLogo: string | null;
   nextVisit: {
     eventId: string;
     title: string;
@@ -123,6 +125,7 @@ function OtherOrgGroup({ g }: { g: OnSiteOrgGroup }) {
             !open && "-rotate-90",
           )}
         />
+        <OrgLogo name={g.organizationName} logo={g.organizationLogo} size={20} rounded="sm" />
         <span className="text-[12.5px] font-medium text-slate-700 truncate flex-1 min-w-0">
           {g.organizationName}
         </span>
@@ -164,14 +167,15 @@ function QueueBody({ data, loading }: { data: OnSiteQueueResponse | null; loadin
           </div>
           {upcoming.map((g) => (
             <div key={g.organizationId} className="border-b border-slate-100 last:border-b-0">
-              <div className="flex items-start gap-2 px-3 py-2 bg-blue-50/40">
-                <MapPin className="h-3.5 w-3.5 text-blue-600 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-2.5 px-3 py-2 bg-blue-50/40">
+                <OrgLogo name={g.organizationName} logo={g.organizationLogo} size={28} rounded="md" className="shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <div className="text-[12.5px] font-semibold text-slate-800 truncate">
                     {g.organizationName}
                   </div>
                   {g.nextVisit && (
-                    <div className="text-[10.5px] text-slate-500 truncate">
+                    <div className="text-[10.5px] text-slate-500 truncate flex items-center gap-1">
+                      <MapPin className="h-3 w-3 text-blue-600 shrink-0" />
                       {fmtVisitDate(g.nextVisit.startsAt)}
                       {g.nextVisit.agents.length > 0 && (
                         <>
