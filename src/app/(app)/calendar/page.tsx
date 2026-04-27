@@ -16,6 +16,8 @@ import {
   RefreshCcw,
   X,
   Pencil,
+  ChevronDown,
+  ListTodo,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -501,6 +503,13 @@ export function CalendarBoard({ embedded = false }: { embedded?: boolean } = {})
             </div>
           </CardContent>
         </Card>
+
+        {/* Panneau "À planifier sur place" — file d'attente compacte
+            des tickets marqués requiresOnSite=true et non encore planifiés.
+            Repliable (collapsed par défaut pour ne pas alourdir la vue).
+            Source de vérité unique pour cette file (l'onglet Tickets de
+            la page org a été supprimé, c'est ici qu'on dispatch). */}
+        <OnSitePlanningPanel />
 
         {/* Grille — rendu selon viewMode */}
         {viewMode === "month" && (
@@ -2077,6 +2086,149 @@ function TimeGrid({
 // ---------------------------------------------------------------------------
 export default function CalendarPage() {
   return <CalendarBoard />;
+}
+
+// ---------------------------------------------------------------------------
+// OnSitePlanningPanel — panneau repliable qui liste tous les tickets
+// marqués `requiresOnSite=true` et encore actifs (non résolus/fermés),
+// tous clients confondus. C'est la file d'attente de planification "à
+// faire sur place" — on l'affiche dans le calendrier puisque c'est l'outil
+// utilisé pour planifier ces visites. Repliée par défaut (état persisté
+// localStorage) pour rester discrète tant qu'on n'en a pas besoin.
+// ---------------------------------------------------------------------------
+interface OnSitePlanningTicket {
+  id: string;
+  number: number;
+  displayNumber?: string;
+  subject: string;
+  priority: string;
+  status: string;
+  organizationId: string | null;
+  organizationName?: string | null;
+  assignee?: { firstName: string; lastName: string } | null;
+}
+
+const PRIORITY_DOT: Record<string, string> = {
+  CRITICAL: "bg-red-500",
+  URGENT: "bg-red-500",
+  HIGH: "bg-orange-500",
+  MEDIUM: "bg-amber-500",
+  LOW: "bg-slate-400",
+};
+
+function OnSitePlanningPanel() {
+  const [open, setOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("calendar.onSitePanel.open") === "1";
+  });
+  const [tickets, setTickets] = useState<OnSitePlanningTicket[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("calendar.onSitePanel.open", open ? "1" : "0");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    fetch("/api/v1/tickets?requiresOnSiteOnly=true&limit=200")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((arr: OnSitePlanningTicket[]) => {
+        if (!cancelled) setTickets(Array.isArray(arr) ? arr : []);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 transition-colors"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <ListTodo className="h-4 w-4 text-slate-500 shrink-0" />
+            <span className="text-[12px] font-semibold text-slate-700 truncate">
+              À planifier sur place
+            </span>
+            {open && tickets.length > 0 && (
+              <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-md bg-amber-100 px-1.5 text-[11px] font-bold text-amber-800 tabular-nums shrink-0">
+                {tickets.length}
+              </span>
+            )}
+            {!open && (
+              <span className="text-[11px] text-slate-400 shrink-0">
+                — Tickets marqués sur place et non encore planifiés
+              </span>
+            )}
+          </div>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 text-slate-400 shrink-0 transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        </button>
+        {open && (
+          <div className="border-t border-slate-100">
+            {loading && (
+              <div className="px-3 py-4 text-[12px] text-slate-400">Chargement…</div>
+            )}
+            {!loading && tickets.length === 0 && (
+              <div className="px-3 py-4 text-[12px] text-slate-400">
+                Aucun ticket à planifier sur place pour l&apos;instant.
+              </div>
+            )}
+            {!loading && tickets.length > 0 && (
+              <div className="max-h-[280px] overflow-y-auto divide-y divide-slate-100">
+                {tickets.map((t) => (
+                  <Link
+                    key={t.id}
+                    href={`/tickets/${t.id}`}
+                    className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 transition-colors"
+                  >
+                    <span
+                      className={cn(
+                        "h-2 w-2 rounded-full shrink-0",
+                        PRIORITY_DOT[t.priority] ?? "bg-slate-400",
+                      )}
+                      title={`Priorité ${t.priority}`}
+                    />
+                    <span className="font-mono text-[11px] text-slate-500 tabular-nums shrink-0 w-12">
+                      {t.displayNumber ?? `#${t.number}`}
+                    </span>
+                    <span className="text-[12px] text-slate-800 truncate flex-1 min-w-0">
+                      {t.subject}
+                    </span>
+                    {t.organizationName && (
+                      <span className="text-[11px] text-slate-500 truncate max-w-[140px] shrink-0">
+                        {t.organizationName}
+                      </span>
+                    )}
+                    {t.assignee && (
+                      <span className="text-[10px] text-slate-400 truncate max-w-[80px] shrink-0">
+                        {t.assignee.firstName} {t.assignee.lastName.charAt(0)}.
+                      </span>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 // ---------------------------------------------------------------------------

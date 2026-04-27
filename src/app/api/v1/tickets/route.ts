@@ -38,6 +38,7 @@ export async function GET(req: Request) {
     unassignedOnly: url.searchParams.get("unassignedOnly") === "true",
     overdueOnly: url.searchParams.get("overdueOnly") === "true",
     openOnly: url.searchParams.get("openOnly") === "true",
+    requiresOnSiteOnly: url.searchParams.get("requiresOnSiteOnly") === "true",
     // includeMonitoring=true pour que le dashboard "Alertes monitoring"
     // puisse les récupérer. Par défaut exclus des vues tickets classiques.
     includeMonitoring: url.searchParams.get("includeMonitoring") === "true",

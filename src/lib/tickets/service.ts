@@ -241,6 +241,12 @@ export async function listTickets(options?: {
   overdueOnly?: boolean;
   openOnly?: boolean;
   /**
+   * File de planification "à faire sur place" : tickets avec
+   * `requiresOnSite=true` et statut actif (non résolus/fermés). Utilisé
+   * par le panneau "À planifier sur place" du calendrier.
+   */
+  requiresOnSiteOnly?: boolean;
+  /**
    * Par défaut, les tickets de monitoring (source=MONITORING ou type=ALERT)
    * sont EXCLUS des listes tickets classiques — ils vivent dans leur propre
    * dashboard "Alertes monitoring" pour ne pas polluer les vues utilisateur
@@ -270,7 +276,8 @@ export async function listTickets(options?: {
   if (options?.projectId) where.projectId = options.projectId;
   if (options?.unassignedOnly) where.assigneeId = null;
   if (options?.overdueOnly) where.isOverdue = true;
-  if (options?.openOnly || options?.unassignedOnly || options?.overdueOnly) {
+  if (options?.requiresOnSiteOnly) where.requiresOnSite = true;
+  if (options?.openOnly || options?.unassignedOnly || options?.overdueOnly || options?.requiresOnSiteOnly) {
     // Statuts "actifs" = pas encore résolus/fermés/annulés/supprimés.
     // On utilise status notIn pour couvrir tous les états "terminaux" en
     // une règle, plutôt qu'énumérer les actifs (plus robuste si de

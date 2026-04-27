@@ -74,7 +74,6 @@ import { OrgCapabilitiesSection } from "@/components/organizations/org-capabilit
 import { OrgDossierExportButton } from "@/components/organizations/org-dossier-export";
 import { Lightbulb, ShieldCheck as ShieldCheckIcon, Package, GitCommit } from "lucide-react";
 import { Plus, X } from "lucide-react";
-import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
 
 function portalRoleVariant(role: ClientPortalPermissions["portalRole"] | null): "danger" | "warning" | "primary" | "default" {
   if (role === "admin") return "danger";
@@ -263,253 +262,7 @@ const ticketStatusIcon = (s: string) => {
   }
 };
 
-// Status group config for the org tickets tab
-const TICKET_STATUS_GROUPS: { key: OrgTicket["status"]; label: string; bg: string; ring: string; dot: string }[] = [
-  { key: "Nouveau", label: "Nouveau", bg: "bg-blue-50/60", ring: "ring-blue-200/60", dot: "bg-blue-500" },
-  { key: "Ouvert", label: "Ouvert", bg: "bg-amber-50/60", ring: "ring-amber-200/60", dot: "bg-amber-500" },
-  { key: "En cours", label: "En cours", bg: "bg-violet-50/60", ring: "ring-violet-200/60", dot: "bg-violet-500" },
-  { key: "En attente", label: "En attente", bg: "bg-orange-50/60", ring: "ring-orange-200/60", dot: "bg-orange-500" },
-  { key: "Résolu", label: "Résolu", bg: "bg-emerald-50/60", ring: "ring-emerald-200/60", dot: "bg-emerald-500" },
-  { key: "Fermé", label: "Fermé", bg: "bg-slate-50/60", ring: "ring-slate-200/60", dot: "bg-slate-400" },
-];
 
-function getInitialsName(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-}
-
-function getAvatarGradient(name: string): string {
-  const gradients = [
-    "from-blue-500 to-blue-700",
-    "from-violet-500 to-violet-700",
-    "from-emerald-500 to-emerald-700",
-    "from-amber-500 to-amber-700",
-    "from-rose-500 to-rose-700",
-    "from-cyan-500 to-cyan-700",
-    "from-fuchsia-500 to-fuchsia-700",
-    "from-indigo-500 to-indigo-700",
-  ];
-  const hash = name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  return gradients[hash % gradients.length];
-}
-
-function OrgTicketsTab({ tickets }: { tickets: OrgTicket[] }) {
-  const onSiteTickets = tickets.filter((t) => t.status === "Sur place");
-  const otherTickets = tickets.filter((t) => t.status !== "Sur place");
-
-  const avatars = useAgentAvatarsStore((s) => s.avatars);
-  const loadAvatars = useAgentAvatarsStore((s) => s.load);
-  useEffect(() => { loadAvatars(); }, [loadAvatars]);
-
-  return (
-    <div className="space-y-5">
-      {/* SUR PLACE — Featured section */}
-      <Card className="overflow-hidden ring-1 ring-cyan-200/60 border-cyan-200/80">
-        <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-cyan-50/80 to-blue-50/40 border-b border-cyan-100">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-cyan-100 flex items-center justify-center text-cyan-600 ring-1 ring-inset ring-cyan-200/60">
-              <MapPin className="h-5 w-5" strokeWidth={2.25} />
-            </div>
-            <div>
-              <h3 className="text-[15px] font-semibold text-slate-900">
-                Tickets à faire sur place
-              </h3>
-              <p className="text-[12.5px] text-slate-600">
-                Interventions nécessitant un déplacement chez le client
-              </p>
-            </div>
-          </div>
-          <span className="inline-flex h-7 items-center rounded-full bg-white px-3 text-[13px] font-bold text-cyan-700 tabular-nums ring-1 ring-inset ring-cyan-200">
-            {onSiteTickets.length} {onSiteTickets.length === 1 ? "ticket" : "tickets"}
-          </span>
-        </div>
-        {onSiteTickets.length === 0 ? (
-          <div className="p-12 text-center">
-            <p className="text-[13px] text-slate-500">
-              Aucun ticket nécessitant une intervention sur place actuellement.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {onSiteTickets.map((t) => (
-              <div
-                key={t.id}
-                className="group flex items-center gap-4 px-5 py-3.5 hover:bg-cyan-50/30 transition-colors"
-              >
-                <span className="font-mono text-[11px] font-semibold text-cyan-600 tabular-nums shrink-0">
-                  {t.number}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13.5px] font-semibold text-slate-900 truncate">
-                    {t.subject}
-                  </p>
-                  <p className="text-[11.5px] text-slate-500 mt-0.5">
-                    Demandé par {t.requester} •{" "}
-                    {new Date(t.createdAt).toLocaleDateString("fr-CA")}
-                  </p>
-                </div>
-                <Badge variant={priorityColor(t.priority)}>{t.priority}</Badge>
-                {t.assignee ? (
-                  <div className="flex items-center gap-2 shrink-0">
-                    {t.assigneeAvatar ? (
-                      <img
-                        src={t.assigneeAvatar}
-                        alt={t.assignee}
-                        title={t.assignee}
-                        className="h-7 w-7 rounded-full object-cover ring-2 ring-white shadow-sm"
-                      />
-                    ) : (
-                      <div
-                        className={cn(
-                          "h-7 w-7 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[10px] font-semibold ring-2 ring-white shadow-sm",
-                          getAvatarGradient(t.assignee)
-                        )}
-                        title={t.assignee}
-                      >
-                        {getInitialsName(t.assignee)}
-                      </div>
-                    )}
-                    <span className="text-[12px] text-slate-700 hidden md:inline">
-                      {t.assignee}
-                    </span>
-                  </div>
-                ) : (
-                  <span className="text-[11.5px] italic text-slate-400 shrink-0">
-                    Non assigné
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* OTHER STATUSES — Grouped */}
-      {TICKET_STATUS_GROUPS.map((group) => {
-        const groupTickets = otherTickets.filter((t) => t.status === group.key);
-        if (groupTickets.length === 0) return null;
-        return (
-          <Card key={group.key} className="overflow-hidden">
-            <div
-              className={cn(
-                "flex items-center justify-between px-5 py-3 border-b border-slate-100 ring-1 ring-inset",
-                group.bg,
-                group.ring
-              )}
-            >
-              <div className="flex items-center gap-2.5">
-                <span className={cn("h-2 w-2 rounded-full", group.dot)} />
-                <h3 className="text-[12.5px] font-semibold uppercase tracking-[0.04em] text-slate-700">
-                  {group.label}
-                </h3>
-                <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-md bg-white px-1.5 text-[11px] font-bold text-slate-700 tabular-nums shadow-sm ring-1 ring-inset ring-slate-200/60">
-                  {groupTickets.length}
-                </span>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50/40">
-                    <th className="px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
-                      #
-                    </th>
-                    <th className="px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
-                      Sujet
-                    </th>
-                    <th className="px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
-                      Priorité
-                    </th>
-                    <th className="px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
-                      Assigné à
-                    </th>
-                    <th className="px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
-                      Demandeur
-                    </th>
-                    <th className="px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
-                      Créé le
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {groupTickets.map((t) => (
-                    <tr
-                      key={t.id}
-                      className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-colors"
-                    >
-                      <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500 tabular-nums">
-                        {t.number}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className="font-medium text-slate-900">
-                          {t.subject}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Badge variant={priorityColor(t.priority)}>
-                          {t.priority}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {t.assignee ? (
-                          <div className="flex items-center gap-2">
-                            {t.assigneeAvatar ? (
-                              <img
-                                src={t.assigneeAvatar}
-                                alt={t.assignee}
-                                title={t.assignee}
-                                className="h-6 w-6 rounded-full object-cover ring-2 ring-white shadow-sm"
-                              />
-                            ) : (
-                              <div
-                                className={cn(
-                                  "h-6 w-6 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[9px] font-semibold ring-2 ring-white shadow-sm",
-                                  getAvatarGradient(t.assignee)
-                                )}
-                                title={t.assignee}
-                              >
-                                {getInitialsName(t.assignee)}
-                              </div>
-                            )}
-                            <span className="text-[12px] text-slate-700 whitespace-nowrap">
-                              {t.assignee}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-[11.5px] italic text-slate-400">
-                            Non assigné
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-[12px] text-slate-600">
-                        {t.requester}
-                      </td>
-                      <td className="px-3 py-2.5 text-[12px] text-slate-500 tabular-nums">
-                        {new Date(t.createdAt).toLocaleDateString("fr-CA")}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        );
-      })}
-
-      {tickets.length === 0 && (
-        <Card>
-          <div className="p-12 text-center text-slate-400 text-[13px]">
-            Aucun ticket trouvé pour cette organisation.
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-}
 
 const priorityColor = (p: string) => {
   switch (p) {
@@ -542,7 +295,6 @@ const TABS = [
   { key: "overview", label: "Aperçu" },
   { key: "contacts", label: "Contacts" },
   { key: "sites", label: "Sites" },
-  { key: "tickets", label: "Tickets" },
   { key: "assets", label: "Actifs" },
   { key: "particularities", label: "Particularités" },
   { key: "policies", label: "Politiques" },
@@ -1172,12 +924,6 @@ export default function OrganizationDetailPage() {
     return contacts.filter((c) => `${c.firstName} ${c.lastName}`.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.jobTitle.toLowerCase().includes(q));
   }, [contacts, tabSearch]);
 
-  const filteredTickets = useMemo(() => {
-    if (!tabSearch.trim()) return tickets;
-    const q = tabSearch.toLowerCase();
-    return tickets.filter((t) => t.subject.toLowerCase().includes(q) || t.number.toLowerCase().includes(q) || t.requester.toLowerCase().includes(q));
-  }, [tickets, tabSearch]);
-
   const filteredContracts = useMemo(() => {
     if (!tabSearch.trim()) return contracts;
     const q = tabSearch.toLowerCase();
@@ -1589,22 +1335,6 @@ export default function OrganizationDetailPage() {
             </>
           )}
         </Card>
-      )}
-
-      {/* Tickets Tab */}
-      {activeTab === "tickets" && (
-        ticketsLoading ? (
-          <Card className="overflow-hidden">
-            <div className="flex items-center justify-center py-16">
-              <div className="flex flex-col items-center gap-3">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
-                <p className="text-[13px] text-slate-500">Chargement des tickets...</p>
-              </div>
-            </div>
-          </Card>
-        ) : (
-          <OrgTicketsTab tickets={filteredTickets} />
-        )
       )}
 
       {/* Billing Tab — overrides tarifaires + rapports mensuels + auto-publish */}
