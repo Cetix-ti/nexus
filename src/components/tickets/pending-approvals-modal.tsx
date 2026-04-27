@@ -139,7 +139,7 @@ export function PendingApprovalsModal({ open, onClose, tickets }: Props) {
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-5xl my-4 rounded-2xl bg-white shadow-2xl flex flex-col max-h-[90vh]"
+        className="relative w-full max-w-7xl my-4 rounded-2xl bg-white shadow-2xl flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -166,7 +166,9 @@ export function PendingApprovalsModal({ open, onClose, tickets }: Props) {
           </button>
         </div>
 
-        {/* Body */}
+        {/* Body — refonte en cards avec description visible (anciennement
+            tableau 6-colonnes trop serré, qui tronquait les sujets et
+            ne montrait pas la description du ticket). */}
         <div className="flex-1 overflow-y-auto">
           {sorted.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-slate-400">
@@ -176,165 +178,214 @@ export function PendingApprovalsModal({ open, onClose, tickets }: Props) {
               </p>
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-slate-50/95 backdrop-blur border-b border-slate-200">
-                <tr className="text-left">
-                  <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                    Ticket
-                  </th>
-                  <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                    Demandeur
-                  </th>
-                  <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                    Client
-                  </th>
-                  <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                    Approbateurs
-                  </th>
-                  <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                    Attente
-                  </th>
-                  <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 text-right">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {sorted.map((t) => {
-                  const isRunning =
-                    action.type === "running" && action.ticketId === t.id;
-                  const isSuccess =
-                    action.type === "success" && action.ticketId === t.id;
-                  const isError =
-                    action.type === "error" && action.ticketId === t.id;
-                  return (
-                    <tr key={t.id} className="hover:bg-slate-50/50">
-                      <td className="px-4 py-3 align-top">
-                        <Link
-                          href={`/tickets/${t.id}`}
-                          className="inline-flex items-center gap-1.5 text-[12px] font-mono font-semibold text-blue-700 hover:underline"
-                        >
-                          {t.number}
-                          <ExternalLink className="h-3 w-3" />
-                        </Link>
-                        <p className="mt-1 text-[13px] font-medium text-slate-900 line-clamp-2 max-w-md">
-                          {t.subject}
-                        </p>
-                        <div className="mt-1 flex items-center gap-1.5 text-[11px]">
-                          <span
-                            className={cn(
-                              "inline-flex items-center rounded px-1.5 py-0.5 ring-1 ring-inset",
-                              t.priority === "critical"
-                                ? "bg-red-50 text-red-700 ring-red-200"
-                                : t.priority === "high"
-                                ? "bg-orange-50 text-orange-700 ring-orange-200"
-                                : "bg-slate-100 text-slate-600 ring-slate-200",
-                            )}
-                          >
-                            {t.priority}
-                          </span>
-                          <span className="text-slate-400">·</span>
-                          <span className="text-slate-500">{t.type}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 align-top">
-                        <p className="text-[12.5px] text-slate-700">
-                          {t.requesterName}
-                        </p>
-                        <p className="text-[11px] text-slate-400 truncate max-w-[200px]">
-                          {t.requesterEmail}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 align-top">
-                        <p className="text-[12.5px] text-slate-700 truncate max-w-[180px]">
-                          {t.organizationName}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 align-top">
-                        {t.approvers && t.approvers.length > 0 ? (
-                          <div className="space-y-0.5">
-                            {t.approvers.map((a) => (
-                              <p
-                                key={a.id}
-                                className="text-[11.5px] text-slate-600 truncate max-w-[220px]"
-                                title={a.email}
-                              >
-                                {a.name}
-                                {a.role === "primary" && (
-                                  <span className="ml-1 text-[10px] text-slate-400">
-                                    (principal)
-                                  </span>
-                                )}
-                              </p>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-[11.5px] italic text-slate-400">
-                            Aucun approbateur défini
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 align-top text-[12px] text-slate-500 tabular-nums whitespace-nowrap">
-                        {formatDistanceToNow(new Date(t.createdAt), {
-                          addSuffix: false,
-                          locale: fr,
-                        })}
-                      </td>
-                      <td className="px-4 py-3 align-top">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleResend(t)}
-                            disabled={
-                              isRunning ||
-                              !t.approvers ||
-                              t.approvers.length === 0
-                            }
-                            title="Renvoyer la demande d'approbation par courriel"
-                          >
-                            {isRunning && action.action === "resend" ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Send className="h-3.5 w-3.5" />
-                            )}
-                            Relancer
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="primary"
-                            onClick={() => handleOverride(t)}
-                            disabled={isRunning}
-                            title="Approuver manuellement (override)"
-                          >
-                            {isRunning && action.action === "override" ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                            )}
-                            Approuver
-                          </Button>
-                        </div>
-                        {isSuccess && (
-                          <p className="mt-1.5 text-[11px] text-emerald-600 text-right">
-                            ✓ {action.message}
-                          </p>
-                        )}
-                        {isError && (
-                          <p className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-red-600">
-                            <AlertTriangle className="h-3 w-3" />
-                            {action.message}
-                          </p>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="divide-y divide-slate-100">
+              {sorted.map((t) => (
+                <PendingApprovalRow
+                  key={t.id}
+                  ticket={t}
+                  action={action}
+                  onResend={handleResend}
+                  onOverride={handleOverride}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Card pour un ticket en attente. Layout 2 zones :
+ *   - Bandeau du haut : ticket # + sujet en grand + chips priorité/type
+ *   - Grille meta + description : 4 colonnes (Demandeur / Client /
+ *     Approbateurs / Attente) + bloc description en dessous, repliable
+ *   - Zone d'actions à droite (Relancer / Approuver)
+ *
+ * Plus respirant que l'ancien table-grid. La description du ticket est
+ * visible directement (300 premiers caractères) avec un toggle pour voir
+ * le texte complet quand il dépasse.
+ */
+function PendingApprovalRow({
+  ticket,
+  action,
+  onResend,
+  onOverride,
+}: {
+  ticket: Ticket;
+  action: ActionState;
+  onResend: (t: Ticket) => void;
+  onOverride: (t: Ticket) => void;
+}) {
+  const [showFull, setShowFull] = useState(false);
+  const isRunning = action.type === "running" && action.ticketId === ticket.id;
+  const isSuccess = action.type === "success" && action.ticketId === ticket.id;
+  const isError = action.type === "error" && action.ticketId === ticket.id;
+
+  // Plain-text excerpt à partir de la description riche éventuelle.
+  const plain = (ticket.description || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const excerpt = plain.slice(0, 300);
+  const hasMore = plain.length > 300;
+
+  return (
+    <div className="px-5 py-4 hover:bg-slate-50/40 transition-colors">
+      {/* Entête : numéro + sujet pleine largeur + chips */}
+      <div className="flex items-start gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              href={`/tickets/${ticket.id}`}
+              className="inline-flex items-center gap-1.5 text-[11.5px] font-mono font-semibold text-blue-700 hover:underline"
+            >
+              {ticket.number}
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+            <span
+              className={cn(
+                "inline-flex items-center rounded px-1.5 py-0.5 text-[10.5px] font-semibold ring-1 ring-inset",
+                ticket.priority === "critical"
+                  ? "bg-red-50 text-red-700 ring-red-200"
+                  : ticket.priority === "high"
+                    ? "bg-orange-50 text-orange-700 ring-orange-200"
+                    : "bg-slate-100 text-slate-600 ring-slate-200",
+              )}
+            >
+              {ticket.priority}
+            </span>
+            <span className="text-[11px] text-slate-500">{ticket.type}</span>
+            <span className="text-slate-400">·</span>
+            <span className="text-[11px] text-slate-500 tabular-nums">
+              en attente depuis{" "}
+              {formatDistanceToNow(new Date(ticket.createdAt), {
+                addSuffix: false,
+                locale: fr,
+              })}
+            </span>
+          </div>
+          <h3 className="mt-1 text-[14.5px] font-semibold text-slate-900 leading-snug">
+            {ticket.subject}
+          </h3>
+        </div>
+        <div className="shrink-0 flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onResend(ticket)}
+            disabled={
+              isRunning ||
+              !ticket.approvers ||
+              ticket.approvers.length === 0
+            }
+            title="Renvoyer la demande d'approbation par courriel"
+          >
+            {isRunning && action.type === "running" && action.action === "resend" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Send className="h-3.5 w-3.5" />
+            )}
+            Relancer
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => onOverride(ticket)}
+            disabled={isRunning}
+            title="Approuver manuellement (override)"
+          >
+            {isRunning && action.type === "running" && action.action === "override" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            )}
+            Approuver
+          </Button>
+        </div>
+      </div>
+
+      {/* Méta — 3 colonnes */}
+      <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">
+            Demandeur
+          </p>
+          <p className="text-[12.5px] text-slate-800 truncate">
+            {ticket.requesterName}
+          </p>
+          <p className="text-[11px] text-slate-500 truncate">
+            {ticket.requesterEmail}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">
+            Client
+          </p>
+          <p className="text-[12.5px] text-slate-800 truncate">
+            {ticket.organizationName}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">
+            Approbateurs
+          </p>
+          {ticket.approvers && ticket.approvers.length > 0 ? (
+            <ul className="space-y-0.5">
+              {ticket.approvers.map((a) => (
+                <li
+                  key={a.id}
+                  className="text-[12px] text-slate-700 truncate"
+                  title={a.email}
+                >
+                  {a.name}
+                  {a.role === "primary" && (
+                    <span className="ml-1 text-[10px] text-slate-400">
+                      (principal)
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[11.5px] italic text-slate-400">
+              Aucun approbateur défini
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Description du ticket — bloc dépliable */}
+      {plain && (
+        <div className="mt-3 rounded-lg bg-slate-50 ring-1 ring-slate-200/60 px-4 py-3">
+          <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            Description
+          </p>
+          <p className="text-[12.5px] text-slate-700 leading-relaxed whitespace-pre-wrap">
+            {showFull ? plain : excerpt + (hasMore ? "…" : "")}
+          </p>
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => setShowFull((v) => !v)}
+              className="mt-1.5 text-[11.5px] font-medium text-blue-700 hover:underline"
+            >
+              {showFull ? "Replier" : "Voir tout"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {isSuccess && (
+        <p className="mt-2 text-[11.5px] text-emerald-700">✓ {action.message}</p>
+      )}
+      {isError && (
+        <p className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-red-700">
+          <AlertTriangle className="h-3 w-3" />
+          {action.message}
+        </p>
+      )}
     </div>
   );
 }
