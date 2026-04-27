@@ -110,6 +110,11 @@ function statRow(label: string, value: number | string, hint?: string): string {
 export async function sendWeeklyDigestForUser(userId: string, since: Date, until: Date): Promise<void> {
   const stats = await computeDigestForUser(userId, since, until);
   const range = fmtRange(since, until);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { firstName: true, lastName: true },
+  });
+  const agentName = user ? `${user.firstName} ${user.lastName}`.trim() : "";
 
   const summaryTable = `
     <table style="width:100%;border-collapse:collapse;margin:0 0 8px;">
@@ -125,11 +130,30 @@ export async function sendWeeklyDigestForUser(userId: string, since: Date, until
     </table>
   `;
 
+  // Payload pour la substitution {{var}} dans le template DB
+  // weekly_digest. Couvre toutes les variables documentées dans le
+  // catalogue (variable-catalog.ts) pour cet event.
+  const appUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? "https://nexus.cetix.ca";
+  const emailPayload: Record<string, string> = {
+    app_url: appUrl,
+    company_name: process.env.COMPANY_NAME ?? "Cetix Informatique",
+    now: new Date().toLocaleString("fr-CA", { dateStyle: "long", timeStyle: "short" }),
+    agent_name: agentName,
+    week_range: range,
+    tickets_created: String(stats.ticketsCreated),
+    tickets_resolved: String(stats.ticketsResolved),
+    tickets_overdue: String(stats.ticketsOverdue),
+    hours_logged: String(stats.hoursLogged),
+    upcoming_renewals: String(stats.upcomingRenewals),
+    upcoming_visits: String(stats.upcomingOnSiteVisits),
+  };
+
   await notifyUsers([userId], "weekly_digest", {
     title: `Résumé hebdomadaire — ${range}`,
     body: `${stats.ticketsResolved} résolus · ${stats.hoursLogged} h saisies · ${stats.ticketsOverdue} en retard`,
     link: "/dashboard",
     emailSubject: `[Nexus] Votre semaine — ${range}`,
+    emailPayload,
     email: {
       preheader: `${stats.ticketsResolved} résolus · ${stats.hoursLogged} h · ${stats.ticketsOverdue} en retard`,
       title: `Votre semaine en un coup d'œil`,

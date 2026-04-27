@@ -103,6 +103,20 @@ export function EditEmailTemplateModal({ open, template, onClose, onSaved }: Pro
         setSaving(false);
         return;
       }
+      // Si l'API a renvoyé des warnings (variables inconnues), on affiche
+      // un avertissement non-bloquant. La sauvegarde est passée — on
+      // veut juste que l'admin sache que ces tokens seront vides à
+      // l'envoi.
+      const data = await res.json().catch(() => null);
+      const unknown: string[] | undefined = data?.warnings?.unknownVariables;
+      if (unknown && unknown.length > 0) {
+        setFeedback(
+          `Sauvegardé. ⚠ Variables inconnues (seront vides à l'envoi) : ${unknown.map((v) => `{{${v}}}`).join(", ")}`,
+        );
+        // On garde la modale ouverte pour que l'admin puisse corriger.
+        onSaved();
+        return;
+      }
       onSaved();
       onClose();
     } catch {

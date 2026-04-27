@@ -27,6 +27,7 @@ import { isAllowedContactEmail } from "./allowlist";
 import { getPortalTicketUrl, getAgentTicketUrl } from "@/lib/portal-domain/url";
 import { getClientTicketPrefix, formatTicketNumber } from "@/lib/tenant-settings/service";
 import { notifyUser, notifyUsers, type NotifyContent } from "./notify";
+import { buildTicketPayload } from "@/lib/email/payloads/ticket";
 
 // ----------------------------------------------------------------------------
 // Helpers internes
@@ -126,6 +127,12 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
       ? [ticket.assigneeId]
       : await listActiveAgents(ticket.creatorId);
 
+    // Payload pour la substitution {{var}} dans le template DB. Couvre
+    // toutes les variables du catalogue (variable-catalog.ts) pour cet
+    // event — sans ça, l'admin a beau placer {{org_name}} dans son
+    // template, ça serait remplacé par "" silencieusement.
+    const emailPayload = await buildTicketPayload(ticket.id);
+
     const content: NotifyContent = {
       title: ticket.assigneeId
         ? `Ticket assigné : ${ticket.subject}`
@@ -140,6 +147,7 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
         organizationName: ticket.organization?.name ?? null,
       },
       emailSubject: `[${displayNumber}] ${ticket.subject}`,
+      emailPayload,
       email: {
         title: ticket.assigneeId ? "Un ticket vous est assigné" : "Nouveau ticket à prendre en charge",
         intro: `${displayNumber} — ${ticket.subject}`,
@@ -379,6 +387,19 @@ export async function dispatchTicketStatusChange(
     const isResolution = newStatus.toUpperCase() === "RESOLVED";
     const eventKey = isResolution ? "ticket_resolved" : "ticket_status_change";
 
+    let actorName: string | undefined;
+    if (changedByUserId) {
+      const u = await prisma.user.findUnique({
+        where: { id: changedByUserId },
+        select: { firstName: true, lastName: true },
+      });
+      if (u) actorName = `${u.firstName} ${u.lastName}`.trim();
+    }
+    const emailPayload = await buildTicketPayload(ticket.id, {
+      actorName,
+      previousStatus: oldStatus,
+    });
+
     await notifyUsers(
       Array.from(recipients),
       eventKey,
@@ -395,6 +416,7 @@ export async function dispatchTicketStatusChange(
           organizationName: ticket.organization?.name ?? null,
         },
         emailSubject: `[${displayNumber}] ${isResolution ? "Résolu" : "Statut mis à jour"}`,
+        emailPayload,
         email: {
           title: isResolution ? "Ticket résolu" : "Statut du ticket mis à jour",
           intro: `${displayNumber} — ${ticket.subject}`,
@@ -487,6 +509,15 @@ export async function dispatchTicketComment(opts: {
       }
     }
 
+    // Payload variables — couvre comment_excerpt + actor_name pour que
+    // les templates `ticket_comment` et `ticket_mention` aient toutes
+    // leurs `{{var}}` substituées correctement.
+    const emailPayload = await buildTicketPayload(ticket.id, {
+      actorName: authorName,
+      commentExcerpt: excerpt + (excerpt.length === 300 ? "…" : ""),
+      commentIsInternal: !!opts.isInternal,
+    });
+
     const commonContent: Omit<NotifyContent, "title"> = {
       body: `${displayNumber} · ${authorName}${opts.isInternal ? " (note interne)" : ""}`,
       link: `/tickets/${ticket.id}`,
@@ -496,6 +527,7 @@ export async function dispatchTicketComment(opts: {
         organizationName: ticket.organization?.name ?? null,
       },
       emailSubject: `[${displayNumber}] Nouveau commentaire`,
+      emailPayload,
       email: {
         title: "Nouveau commentaire sur un ticket",
         intro: `${displayNumber} — ${ticket.subject}`,
