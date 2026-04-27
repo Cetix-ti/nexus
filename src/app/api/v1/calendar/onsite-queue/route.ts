@@ -30,6 +30,11 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const windowDays = Math.max(1, Math.min(60, parseInt(url.searchParams.get("windowDays") ?? "14", 10) || 14));
+  // `mine=true` : ne classe en "Prochaines visites" que les events auxquels
+  // l'utilisateur courant participe (présent dans `event.agents`). Les
+  // autres orgs basculent en "Autres clients". Mode par défaut sur le
+  // dashboard pour que chaque agent voie SES propres priorités.
+  const mineOnly = url.searchParams.get("mine") === "true";
   const now = new Date();
   const windowEnd = new Date(now.getTime() + windowDays * 24 * 3600 * 1000);
 
@@ -65,6 +70,12 @@ export async function GET(req: Request) {
       status: "active",
       deletedAt: null,
       startsAt: { gte: now, lte: windowEnd },
+      // `mine=true` : on garde uniquement les events où l'utilisateur courant
+      // est attendee (via CalendarEventAgent). Note : le `ownerId` est aussi
+      // un signal mais agents[] est la source de vérité multi-personnes.
+      ...(mineOnly
+        ? { agents: { some: { userId: me.id } } }
+        : {}),
     },
     select: {
       id: true,

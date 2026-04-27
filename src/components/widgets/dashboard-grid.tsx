@@ -422,17 +422,13 @@ function useViewport() {
 }
 
 const LAPTOP_FULL_WIDTH_WIDGETS = new Set([
-  // Historique : les tickets récents + « Mes tickets » prenaient déjà
-  // toute la largeur en mode laptop. On ajoute :
-  //   - `w_dash_unassigned` (tableau des tickets non assignés) — le
-  //     tableau compressé sur 5 cols était illisible à 1280 CSS px
-  //   - `w_dash_volume` (graphique "Volume de tickets") — le chart
-  //     respire beaucoup mieux sur toute la largeur, chaque barre gagne
-  //     du padding horizontal.
+  // Widgets historiquement forcés en pleine largeur sur les laptops
+  // (640-1535 CSS px) parce qu'ils étaient illisibles compressés à
+  // 5 cols. Note v4 : `w_dash_unassigned`, `w_dash_volume`, `w_dash_my`
+  // ont été retirés de ce set — la maquette dashboard les pose en 50/50
+  // côte-à-côte avec un voisin (`w_dash_onsite` / `w_dash_orgs`), donc
+  // les forcer pleine largeur casserait l'intention.
   "w_dash_recent",
-  "w_dash_unassigned",
-  "w_dash_my",
-  "w_dash_volume",
 ]);
 
 export function DashboardGrid({

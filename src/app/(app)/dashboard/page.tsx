@@ -16,6 +16,7 @@ import { WidgetSidebar } from "@/components/widgets/widget-sidebar";
 import { CalendarBoard } from "@/app/(app)/calendar/page";
 import { AiActivityWidget } from "@/components/dashboard/ai-activity-widget";
 import { RenewalsWidget } from "@/components/assets/renewals-widget";
+import { OnSitePlanningPanel } from "@/components/calendar/onsite-planning-panel";
 import {
   TicketsQuickModal,
   type QuickFilter,
@@ -52,15 +53,22 @@ const EMPTY: DashboardData = {
 // v3 = Volume+Tickets non-assignés côte-à-côte (hauteurs égales), Mes
 // tickets sur toute la largeur, widget "Tickets récents" remplacé par
 // "Tickets récents non assignés".
-const LAYOUT_KEY = "nexus:dashboard:layout:v3";
-const LEGACY_LAYOUT_KEYS = ["nexus:dashboard:layout:v2", "nexus:dashboard:layout"];
+// v4 = "Mes tickets" retiré, panneau "À planifier sur place" ajouté
+// côte-à-côte avec "non assignés", "Volume" côte-à-côte avec "par
+// organisation". Calendrier reste en haut.
+const LAYOUT_KEY = "nexus:dashboard:layout:v4";
+const LEGACY_LAYOUT_KEYS = [
+  "nexus:dashboard:layout:v3",
+  "nexus:dashboard:layout:v2",
+  "nexus:dashboard:layout",
+];
 const DEFAULT_ITEMS: DashboardItem[] = [
   { id: "d_kpis", widgetId: "w_dash_kpis", w: 20, h: 2 },
   { id: "d_calendar", widgetId: "w_dash_calendar", w: 20, h: 10 },
+  { id: "d_onsite", widgetId: "w_dash_onsite", w: 10, h: 6 },
+  { id: "d_unassigned", widgetId: "w_dash_unassigned", w: 10, h: 6 },
   { id: "d_volume", widgetId: "w_dash_volume", w: 10, h: 5 },
-  { id: "d_unassigned", widgetId: "w_dash_unassigned", w: 10, h: 5 },
-  { id: "d_my", widgetId: "w_dash_my", w: 20, h: 5 },
-  { id: "d_orgs", widgetId: "w_dash_orgs", w: 20, h: 4 },
+  { id: "d_orgs", widgetId: "w_dash_orgs", w: 10, h: 5 },
 ];
 
 function loadLayout(): DashboardItem[] {
@@ -74,32 +82,34 @@ function loadLayout(): DashboardItem[] {
     }
     if (!raw) return DEFAULT_ITEMS;
     const parsed = JSON.parse(raw) as DashboardItem[];
-    // Retire les widgets abandonnés (priorité, ancien "recent").
+    // Retire les widgets abandonnés (priorité, ancien "recent", "Mes
+    // tickets" supprimé en v4).
     const filtered = parsed.filter(
       (it) =>
         it.widgetId !== "w_dash_priority" &&
         it.widgetId !== "priority_chart" &&
         it.widgetId !== "w_dash_recent" && // remplacé par "unassigned"
-        it.widgetId !== "recent_tickets",
+        it.widgetId !== "recent_tickets" &&
+        it.widgetId !== "w_dash_my" && // retiré en v4
+        it.widgetId !== "my_tickets",
     );
     // Migre les anciens IDs.
     const migrated = filtered.map((item) => {
       if (item.widgetId === "kpis") return { ...item, widgetId: "w_dash_kpis" };
       if (item.widgetId === "ticket_volume") return { ...item, widgetId: "w_dash_volume" };
-      if (item.widgetId === "my_tickets") return { ...item, widgetId: "w_dash_my" };
       if (item.widgetId === "org_chart") return { ...item, widgetId: "w_dash_orgs" };
       return item;
     });
 
-    // Normalisation côté tailles pour respecter la nouvelle maquette :
-    //   volume+unassigned côte-à-côte (w=5, h=5), my pleine largeur (w=10)
-    // Migration 10→20 cols : double les w <= 10 pour occuper le même
-    // pourcentage visuel sur la grille 20 colonnes.
+    // Normalisation v4 : onsite+unassigned côte-à-côte (h=6), volume+orgs
+    // côte-à-côte (h=5). Migration 10→20 cols : double les w <= 10 pour
+    // occuper le même pourcentage visuel sur la grille 20 colonnes.
     const normalized = migrated.map((item) => {
       const w = item.w <= 10 ? item.w * 2 : item.w;
+      if (item.widgetId === "w_dash_onsite") return { ...item, w: 10, h: 6 };
+      if (item.widgetId === "w_dash_unassigned") return { ...item, w: 10, h: 6 };
       if (item.widgetId === "w_dash_volume") return { ...item, w: 10, h: 5 };
-      if (item.widgetId === "w_dash_unassigned") return { ...item, w: 10, h: 5 };
-      if (item.widgetId === "w_dash_my") return { ...item, w: 20, h: 5 };
+      if (item.widgetId === "w_dash_orgs") return { ...item, w: 10, h: 5 };
       return { ...item, w: Math.min(w, 20) };
     });
 
@@ -110,12 +120,23 @@ function loadLayout(): DashboardItem[] {
       if (kpiIdx >= 0) normalized.splice(kpiIdx + 1, 0, calItem);
       else normalized.unshift(calItem);
     }
+    const hasOnsite = normalized.some((it) => it.widgetId === "w_dash_onsite");
+    if (!hasOnsite) {
+      const calIdx = normalized.findIndex((it) => it.widgetId === "w_dash_calendar");
+      const onsiteItem: DashboardItem = { id: "d_onsite", widgetId: "w_dash_onsite", w: 10, h: 6 };
+      if (calIdx >= 0) normalized.splice(calIdx + 1, 0, onsiteItem);
+      else normalized.push(onsiteItem);
+    }
     const hasUnassigned = normalized.some((it) => it.widgetId === "w_dash_unassigned");
     if (!hasUnassigned) {
-      const volumeIdx = normalized.findIndex((it) => it.widgetId === "w_dash_volume");
-      const unItem: DashboardItem = { id: "d_unassigned", widgetId: "w_dash_unassigned", w: 10, h: 5 };
-      if (volumeIdx >= 0) normalized.splice(volumeIdx + 1, 0, unItem);
+      const onsiteIdx = normalized.findIndex((it) => it.widgetId === "w_dash_onsite");
+      const unItem: DashboardItem = { id: "d_unassigned", widgetId: "w_dash_unassigned", w: 10, h: 6 };
+      if (onsiteIdx >= 0) normalized.splice(onsiteIdx + 1, 0, unItem);
       else normalized.push(unItem);
+    }
+    const hasOrgs = normalized.some((it) => it.widgetId === "w_dash_orgs");
+    if (!hasOrgs) {
+      normalized.push({ id: "d_orgs", widgetId: "w_dash_orgs", w: 10, h: 5 });
     }
     return normalized;
   } catch {}
@@ -225,8 +246,11 @@ export default function DashboardPage() {
         // Tickets récents NON assignés — l'API les filtre serveur-side
         // (assigneeId=null + isInternal=false), donc on passe directement.
         return <RecentTickets tickets={data.recentTickets} title="Tickets récents non assignés" />;
-      case "w_dash_my":
-        return <RecentTickets tickets={data.myTickets} title="Mes tickets" showAssignee={false} />;
+      case "w_dash_onsite":
+        // File "à planifier sur place" — `mineOnly` filtre les prochaines
+        // visites sur celles auxquelles l'utilisateur courant participe,
+        // pour que chaque agent voie ses propres priorités en haut.
+        return <OnSitePlanningPanel variant="expanded" mineOnly />;
       case "w_dash_orgs":
         return <OrgChart data={data.ticketsByOrg} />;
       case "w_dash_ai":
