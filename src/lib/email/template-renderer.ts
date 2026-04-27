@@ -127,9 +127,15 @@ export async function renderTemplateForEvent(
 
   // On wrappe le body custom dans le chrome standard. On garde le `title`
   // et `intro` du fallback comme entête (c'est le contenu structurel de
-  // la carte) ; le `body` rendu remplace celui du fallback.
+  // la carte) ; le `body` rendu remplace celui du fallback. On strippe
+  // aussi `quote` et `metadata` parce que le template DB est censé les
+  // recréer dans son propre `body` (sinon doublon : par ex. le commentaire
+  // apparaissait deux fois — une dans le body du template, une dans le
+  // bloc quote du chrome via le fallback).
+  const { quote: _quote, metadata: _metadata, body: _fallbackBody, ...stripped } = options.fallback;
+  void _quote; void _metadata; void _fallbackBody;
   const html = buildNexusEmail({
-    ...options.fallback,
+    ...stripped,
     event: eventKey,
     body,
     prefsUrl: options.prefsUrl,

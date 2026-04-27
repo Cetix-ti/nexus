@@ -86,6 +86,81 @@ export async function POST(request: NextRequest) {
       categoryId,
       creatorId,
     });
+
+    // Workflow d'approbation automatique côté portail.
+    //
+    // Logique : si l'org a au moins un OrgApprover actif AVEC scope
+    // ALL_TICKETS, et que le contact qui crée le ticket n'est PAS lui-
+    // même un approbateur (c-à-d : il est un utilisateur "standard"),
+    // on déclenche l'approbation. L'approbateur reçoit un email avec un
+    // lien vers le portail pour décider.
+    //
+    // Si le contact EST un approbateur, on n'exige pas qu'il s'approuve
+    // lui-même — son ticket est créé directement (cohérent avec la
+    // sémantique "auto-approbation" implicite pour les approbateurs).
+    try {
+      const approvers = await prisma.orgApprover.findMany({
+        where: {
+          organizationId: user.organizationId,
+          isActive: true,
+          scope: "ALL_TICKETS",
+        },
+        select: {
+          id: true,
+          contactId: true,
+          contactName: true,
+          contactEmail: true,
+          isPrimary: true,
+        },
+        orderBy: [{ isPrimary: "desc" }, { level: "asc" }],
+      });
+
+      // Le requester est-il lui-même un approbateur ? Match par contactId
+      // (privilégié) ou par email normalisé (fallback si la row OrgApprover
+      // n'a pas de contactId lié).
+      const isRequesterAnApprover = approvers.some(
+        (a) =>
+          a.contactId === user.contactId ||
+          a.contactEmail.trim().toLowerCase() === user.email.trim().toLowerCase(),
+      );
+
+      if (approvers.length > 0 && !isRequesterAnApprover) {
+        const approvalData = approvers
+          .filter((a) => !!a.contactEmail)
+          .map((a, i) => ({
+            ticketId: ticket.id,
+            approverId: a.contactId ?? "",
+            approverName: a.contactName,
+            approverEmail: a.contactEmail.trim().toLowerCase(),
+            role: i === 0 ? "primary" : "secondary",
+          }));
+
+        if (approvalData.length > 0) {
+          await prisma.$transaction([
+            prisma.ticketApproval.createMany({ data: approvalData }),
+            prisma.ticket.update({
+              where: { id: ticket.id },
+              data: { requiresApproval: true, approvalStatus: "PENDING" },
+            }),
+          ]);
+
+          // Envoi des emails de demande d'approbation — fire-and-forget,
+          // gated par l'allowlist dev-safety dans notifyApprovalRequest.
+          import("@/lib/approvers/notifications")
+            .then(({ notifyApprovalRequest }) =>
+              notifyApprovalRequest(ticket.id).catch((e) =>
+                console.warn("[portal/tickets] approval notify failed:", e),
+              ),
+            )
+            .catch(() => {});
+        }
+      }
+    } catch (e) {
+      // L'approbation est best-effort : si elle échoue, on ne bloque
+      // pas la création du ticket. Logue pour investigation.
+      console.error("[portal/tickets] approval workflow failed:", e);
+    }
+
     return NextResponse.json({ success: true, data: ticket }, { status: 201 });
   } catch (err) {
     console.error("[portal/tickets POST]", err);
