@@ -127,7 +127,8 @@ model Organization {
   /// automatiquement publiés au portail dès leur création. Sinon, un
   /// agent doit les publier manuellement. Défaut false (publication
   /// manuelle, sécurité par défaut).
-  monthlyReportAutoPublish Boolean @default(false) @map("monthly_report_auto_publish")
+  monthlyReportAutoPublish Boolean           @default(false) @map("monthly_report_auto_publish")
+  orgBillingConfig         OrgBillingConfig?
 
   @@map("organizations")
 }
@@ -147,7 +148,7 @@ model Site {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   contacts       Contact[]
   assets         Asset[]
   tickets        Ticket[]
@@ -193,8 +194,8 @@ model User {
   /// le CLIENT soit correctement facturé — seul le remboursement
   /// personnel est désactivé.
   mileageAllocationEnabled Boolean @default(true) @map("mileage_allocation_enabled")
-  signature      String?  @db.Text
-  signatureHtml  String?  @map("signature_html") @db.Text
+  signature                String? @db.Text
+  signatureHtml            String? @map("signature_html") @db.Text
 
   // MFA (TOTP)
   mfaEnabled    Boolean   @default(false) @map("mfa_enabled")
@@ -241,51 +242,51 @@ model User {
   generatedMonthlyReports MonthlyClientReport[] @relation("MonthlyReportGenerator")
 
   // Socle nouveaux modules
-  orgCapabilitiesUpdated        OrgCapabilities[]        @relation("OrgCapabilitiesUpdater")
-  contentRelationsCreated       ContentRelation[]        @relation("ContentRelationCreator")
-  particularitiesAuthored       Particularity[]          @relation("ParticularityAuthor")
-  particularitiesUpdated        Particularity[]          @relation("ParticularityUpdater")
-  particularityTemplatesCreated ParticularityTemplate[]  @relation("ParticularityTemplateCreator")
-  particularityTemplatesUpdated ParticularityTemplate[]  @relation("ParticularityTemplateUpdater")
-  particularityVersionsAuthored ParticularityVersion[]   @relation("ParticularityVersionAuthor")
-  softwareTemplatesCreated      SoftwareTemplate[]       @relation("SoftwareTemplateCreator")
-  softwareTemplatesUpdated      SoftwareTemplate[]       @relation("SoftwareTemplateUpdater")
-  softwareInstancesUpdated      SoftwareInstance[]       @relation("SoftwareInstanceUpdater")
-  softwareInstancesCetixOwner   SoftwareInstance[]       @relation("SoftwareInstanceCetixOwner")
-  softwareInstallersUploaded    SoftwareInstaller[]      @relation("SoftwareInstallerUploader")
-  softwareDownloadLinksCreated  SoftwareDownloadLink[]   @relation("SoftwareDownloadLinkCreator")
-  softwareLicensesCreated       SoftwareLicense[]        @relation("SoftwareLicenseCreator")
-  gpoTemplatesCreated           GpoTemplate[]            @relation("GpoTemplateCreator")
-  gpoTemplatesUpdated           GpoTemplate[]            @relation("GpoTemplateUpdater")
-  gpoInstancesUpdated           GpoInstance[]            @relation("GpoInstanceUpdater")
-  gpoImportsUploaded            GpoImport[]              @relation("GpoImportUploader")
-  scriptTemplatesCreated        ScriptTemplate[]         @relation("ScriptTemplateCreator")
-  scriptTemplatesUpdated        ScriptTemplate[]         @relation("ScriptTemplateUpdater")
-  scriptInstancesUpdated        ScriptInstance[]         @relation("ScriptInstanceUpdater")
-  scriptPublicationsCreated     ScriptPublication[]      @relation("ScriptPublicationCreator")
-  policyDocumentsAuthored       PolicyDocument[]         @relation("PolicyDocumentAuthor")
-  policyDocumentsUpdated        PolicyDocument[]         @relation("PolicyDocumentUpdater")
+  orgCapabilitiesUpdated         OrgCapabilities[]        @relation("OrgCapabilitiesUpdater")
+  contentRelationsCreated        ContentRelation[]        @relation("ContentRelationCreator")
+  particularitiesAuthored        Particularity[]          @relation("ParticularityAuthor")
+  particularitiesUpdated         Particularity[]          @relation("ParticularityUpdater")
+  particularityTemplatesCreated  ParticularityTemplate[]  @relation("ParticularityTemplateCreator")
+  particularityTemplatesUpdated  ParticularityTemplate[]  @relation("ParticularityTemplateUpdater")
+  particularityVersionsAuthored  ParticularityVersion[]   @relation("ParticularityVersionAuthor")
+  softwareTemplatesCreated       SoftwareTemplate[]       @relation("SoftwareTemplateCreator")
+  softwareTemplatesUpdated       SoftwareTemplate[]       @relation("SoftwareTemplateUpdater")
+  softwareInstancesUpdated       SoftwareInstance[]       @relation("SoftwareInstanceUpdater")
+  softwareInstancesCetixOwner    SoftwareInstance[]       @relation("SoftwareInstanceCetixOwner")
+  softwareInstallersUploaded     SoftwareInstaller[]      @relation("SoftwareInstallerUploader")
+  softwareDownloadLinksCreated   SoftwareDownloadLink[]   @relation("SoftwareDownloadLinkCreator")
+  softwareLicensesCreated        SoftwareLicense[]        @relation("SoftwareLicenseCreator")
+  gpoTemplatesCreated            GpoTemplate[]            @relation("GpoTemplateCreator")
+  gpoTemplatesUpdated            GpoTemplate[]            @relation("GpoTemplateUpdater")
+  gpoInstancesUpdated            GpoInstance[]            @relation("GpoInstanceUpdater")
+  gpoImportsUploaded             GpoImport[]              @relation("GpoImportUploader")
+  scriptTemplatesCreated         ScriptTemplate[]         @relation("ScriptTemplateCreator")
+  scriptTemplatesUpdated         ScriptTemplate[]         @relation("ScriptTemplateUpdater")
+  scriptInstancesUpdated         ScriptInstance[]         @relation("ScriptInstanceUpdater")
+  scriptPublicationsCreated      ScriptPublication[]      @relation("ScriptPublicationCreator")
+  policyDocumentsAuthored        PolicyDocument[]         @relation("PolicyDocumentAuthor")
+  policyDocumentsUpdated         PolicyDocument[]         @relation("PolicyDocumentUpdater")
   policyDocumentTemplatesCreated PolicyDocumentTemplate[] @relation("PolicyDocumentTemplateCreator")
-  approvalRequestsRequested     ApprovalRequest[]        @relation("ApprovalRequester")
-  approvalRequestsDecided       ApprovalRequest[]        @relation("ApprovalDecider")
-  approvalDelegateAssignments   ApprovalDelegate[]       @relation("ApprovalDelegateUser")
-  changesAuthored               Change[]                 @relation("ChangeAuthor")
-  changesReviewed               Change[]                 @relation("ChangeReviewer")
-  changesApproved               Change[]                 @relation("ChangeApprover")
-  assetWarrantiesCreated        AssetWarranty[]          @relation("AssetWarrantyCreator")
-  assetSubscriptionsCreated     AssetSubscription[]      @relation("AssetSubscriptionCreator")
-  assetSupportContractsCreated  AssetSupportContract[]   @relation("AssetSupportContractCreator")
-  budgetsCreated                Budget[]                 @relation("BudgetCreator")
-  budgetsUpdated                Budget[]                 @relation("BudgetUpdater")
-  budgetLinesCreated            BudgetLine[]             @relation("BudgetLineCreator")
-  budgetLinesUpdated            BudgetLine[]             @relation("BudgetLineUpdater")
-  budgetVersionsCreated         BudgetVersion[]          @relation("BudgetVersionAuthor")
-  budgetCommentsAuthored        BudgetComment[]          @relation("BudgetCommentAuthor")
-  bugsReported                  BugReport[]              @relation("BugReporter")
-  bugsAssigned                  BugReport[]              @relation("BugAssignee")
-  bugsApproved                  BugReport[]              @relation("BugApprover")
-  bugsRejected                  BugReport[]              @relation("BugRejecter")
-  bugCommentsAuthored           BugComment[]             @relation("BugCommentAuthor")
+  approvalRequestsRequested      ApprovalRequest[]        @relation("ApprovalRequester")
+  approvalRequestsDecided        ApprovalRequest[]        @relation("ApprovalDecider")
+  approvalDelegateAssignments    ApprovalDelegate[]       @relation("ApprovalDelegateUser")
+  changesAuthored                Change[]                 @relation("ChangeAuthor")
+  changesReviewed                Change[]                 @relation("ChangeReviewer")
+  changesApproved                Change[]                 @relation("ChangeApprover")
+  assetWarrantiesCreated         AssetWarranty[]          @relation("AssetWarrantyCreator")
+  assetSubscriptionsCreated      AssetSubscription[]      @relation("AssetSubscriptionCreator")
+  assetSupportContractsCreated   AssetSupportContract[]   @relation("AssetSupportContractCreator")
+  budgetsCreated                 Budget[]                 @relation("BudgetCreator")
+  budgetsUpdated                 Budget[]                 @relation("BudgetUpdater")
+  budgetLinesCreated             BudgetLine[]             @relation("BudgetLineCreator")
+  budgetLinesUpdated             BudgetLine[]             @relation("BudgetLineUpdater")
+  budgetVersionsCreated          BudgetVersion[]          @relation("BudgetVersionAuthor")
+  budgetCommentsAuthored         BudgetComment[]          @relation("BudgetCommentAuthor")
+  bugsReported                   BugReport[]              @relation("BugReporter")
+  bugsAssigned                   BugReport[]              @relation("BugAssignee")
+  bugsApproved                   BugReport[]              @relation("BugApprover")
+  bugsRejected                   BugReport[]              @relation("BugRejecter")
+  bugCommentsAuthored            BugComment[]             @relation("BugCommentAuthor")
 
   @@map("users")
 }
@@ -450,15 +451,15 @@ model Contact {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  site           Site?             @relation(fields: [siteId], references: [id])
-  tickets        Ticket[]          @relation("TicketRequester")
-  assignedAssets Asset[]           @relation("AssignedContact")
-  portalAccess   PortalAccessUser?
-  assetNotes     AssetNote[]       @relation("AssetNoteContact")
+  organization          Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site                  Site?                   @relation(fields: [siteId], references: [id])
+  tickets               Ticket[]                @relation("TicketRequester")
+  assignedAssets        Asset[]                 @relation("AssignedContact")
+  portalAccess          PortalAccessUser?
+  assetNotes            AssetNote[]             @relation("AssetNoteContact")
   // Logiciels
-  softwareResponsibleAt SoftwareInstance[]     @relation("SoftwareInstanceClientOwner")
-  softwareLicenses      SoftwareLicense[]      @relation("SoftwareLicenseContact")
+  softwareResponsibleAt SoftwareInstance[]      @relation("SoftwareInstanceClientOwner")
+  softwareLicenses      SoftwareLicense[]       @relation("SoftwareLicenseContact")
   softwareAccesses      ContactSoftwareAccess[]
 
   @@map("contacts")
@@ -486,34 +487,34 @@ model Ticket {
   description     String  @db.Text
   descriptionHtml String? @map("description_html") @db.Text
 
-  status             TicketStatus   @default(NEW)
+  status               TicketStatus   @default(NEW)
   /// Priorité par défaut = LOW. Le créateur peut surcharger explicitement
   /// (medium, high, critical). L'IA peut ensuite ré-évaluer et remonter
   /// la priorité SI sa confiance est "high" (voir src/lib/ai/auto-prioritize.ts).
   /// `prioritySource` garde une trace de l'origine pour l'UI.
-  priority           TicketPriority @default(LOW)
+  priority             TicketPriority @default(LOW)
   /// Origine de la valeur courante de `priority` :
   ///   - null ou "DEFAULT" : valeur par défaut (LOW), jamais touchée
   ///   - "MANUAL"          : fixée explicitement par un humain
   ///   - "AI"              : ajustée par l'IA après création
-  prioritySource     String?        @map("priority_source")
+  prioritySource       String?        @map("priority_source")
   /// Origine de la catégorie courante : null/DEFAULT = jamais fixée,
   /// MANUAL = choix explicite humain (ne jamais écraser),
   /// AI = appliquée par le triage automatique avec sa confidence loguée.
-  categorySource     String?        @map("category_source")
+  categorySource       String?        @map("category_source")
   /// Confidence (0-1) de l'IA au moment de l'application auto — affichée
   /// dans l'UI à côté de la catégorie.
-  categoryConfidence Float?         @map("category_confidence")
+  categoryConfidence   Float?         @map("category_confidence")
   /// Résumé court (1-2 phrases) généré par l'IA pour clarifier le sujet
   /// dans les livrables (ex. rapport mensuel client) quand le titre seul
   /// est insuffisant. Null si pas encore généré ou confidence trop basse.
-  aiSummary           String?        @map("ai_summary") @db.Text
-  aiSummaryConfidence Float?         @map("ai_summary_confidence")
-  aiSummaryGeneratedAt DateTime?     @map("ai_summary_generated_at")
-  urgency            TicketUrgency  @default(MEDIUM)
-  impact             TicketImpact   @default(MEDIUM)
-  type               TicketType     @default(INCIDENT)
-  source             TicketSource   @default(PORTAL)
+  aiSummary            String?        @map("ai_summary") @db.Text
+  aiSummaryConfidence  Float?         @map("ai_summary_confidence")
+  aiSummaryGeneratedAt DateTime?      @map("ai_summary_generated_at")
+  urgency              TicketUrgency  @default(MEDIUM)
+  impact               TicketImpact   @default(MEDIUM)
+  type                 TicketType     @default(INCIDENT)
+  source               TicketSource   @default(PORTAL)
 
   dueAt           DateTime? @map("due_at")
   firstResponseAt DateTime? @map("first_response_at")
@@ -563,14 +564,14 @@ model Ticket {
   calendarEvent   CalendarEvent? @relation("CalendarEventLinkedTickets", fields: [calendarEventId], references: [id], onDelete: SetNull)
 
   // Approval workflow
-  requiresApproval Boolean        @default(false) @map("requires_approval")
-  approvalStatus   ApprovalStatus @default(NOT_REQUIRED) @map("approval_status")
+  requiresApproval     Boolean        @default(false) @map("requires_approval")
+  approvalStatus       ApprovalStatus @default(NOT_REQUIRED) @map("approval_status")
   /// Permet à un agent (staff) de "déverrouiller" manuellement un ticket
   /// en attente d'approbation pour le traiter quand même (ex: urgence
   /// avant que l'approbateur n'ait pu trancher). Sans ce flag, les
   /// modifications PATCH (statut, assignee, etc.) sont bloquées tant que
   /// requiresApproval=true && approvalStatus=PENDING.
-  approvalLockOverride Boolean @default(false) @map("approval_lock_override")
+  approvalLockOverride Boolean        @default(false) @map("approval_lock_override")
 
   comments             Comment[]
   attachments          Attachment[]
@@ -950,19 +951,16 @@ model Asset {
 
   assignedContactId String? @map("assigned_contact_id")
 
-  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  site            Site?         @relation(fields: [siteId], references: [id])
-  assignedContact Contact?      @relation("AssignedContact", fields: [assignedContactId], references: [id])
-  tickets         TicketAsset[]
-  assetNotes      AssetNote[]
-  softwareLicenses SoftwareLicense[] @relation("SoftwareLicenseAsset")
-  warranties      AssetWarranty[]
-  subscriptions   AssetSubscription[]
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site             Site?                  @relation(fields: [siteId], references: [id])
+  assignedContact  Contact?               @relation("AssignedContact", fields: [assignedContactId], references: [id])
+  tickets          TicketAsset[]
+  assetNotes       AssetNote[]
+  softwareLicenses SoftwareLicense[]      @relation("SoftwareLicenseAsset")
+  warranties       AssetWarranty[]
+  subscriptions    AssetSubscription[]
   supportContracts AssetSupportContract[]
 
-  @@index([organizationId, type])
-  @@index([assignedContactId])
-  @@index([externalSource, externalId])
   /// Clé métier d'unicité d'un actif synchronisé : un même externalId
   /// peut exister dans plusieurs orgs (ID Atera réutilisé entre tenants),
   /// mais pas deux fois dans la MÊME org pour la MÊME source. Empêche
@@ -970,6 +968,9 @@ model Asset {
   /// d'avril 2026 (deux code paths utilisaient des formats d'externalId
   /// différents `atera_<id>` vs `<id>`).
   @@unique([organizationId, externalSource, externalId])
+  @@index([organizationId, type])
+  @@index([assignedContactId])
+  @@index([externalSource, externalId])
   @@map("assets")
 }
 
@@ -1512,44 +1513,44 @@ model VerificationToken {
 /// Relations volontairement non déclarées en Prisma (FK SQL uniquement)
 /// pour éviter d'avoir à éditer Ticket/User/Organization.
 model TimeEntry {
-  id              String    @id @default(cuid())
-  ticketId        String    @map("ticket_id")
-  organizationId  String    @map("organization_id")
-  agentId         String    @map("agent_id")
-  timeType        String    @map("time_type")
-  startedAt       DateTime  @map("started_at")
-  endedAt         DateTime? @map("ended_at")
-  durationMinutes Int       @map("duration_minutes")
-  description     String    @default("") @db.Text
-  isAfterHours    Boolean   @default(false) @map("is_after_hours")
-  isWeekend       Boolean   @default(false) @map("is_weekend")
-  isUrgent        Boolean   @default(false) @map("is_urgent")
-  isOnsite        Boolean   @default(false) @map("is_onsite")
+  id                    String       @id @default(cuid())
+  ticketId              String       @map("ticket_id")
+  organizationId        String       @map("organization_id")
+  agentId               String       @map("agent_id")
+  timeType              String       @map("time_type")
+  startedAt             DateTime     @map("started_at")
+  endedAt               DateTime?    @map("ended_at")
+  durationMinutes       Int          @map("duration_minutes")
+  description           String       @default("") @db.Text
+  isAfterHours          Boolean      @default(false) @map("is_after_hours")
+  isWeekend             Boolean      @default(false) @map("is_weekend")
+  isUrgent              Boolean      @default(false) @map("is_urgent")
+  isOnsite              Boolean      @default(false) @map("is_onsite")
   /// Déplacement facturé au client pour cette saisie. Décorrélé de isOnsite :
   /// un technicien peut se déplacer sans facturer le déplacement (ex: courtoisie,
   /// contrat FTIG inclusif) OU facturer un déplacement sur un travail partiellement
   /// sur place. Utilisé par les widgets analytics pour compter les déplacements
   /// et par la détection de doublons même-jour même-client.
-  hasTravelBilled Boolean   @default(false) @map("has_travel_billed")
+  hasTravelBilled       Boolean      @default(false) @map("has_travel_billed")
   /// Durée du trajet (aller-retour) en minutes quand hasTravelBilled=true.
   /// Synchronisé avec le déplacement affiché dans l'onglet Déplacements du
   /// ticket : une seule source de vérité pour le temps de trajet.
-  travelDurationMinutes Int? @map("travel_duration_minutes")
-  coverageStatus  String    @default("pending") @map("coverage_status")
-  coverageReason  String    @default("") @map("coverage_reason")
-  hourlyRate      Float?    @map("hourly_rate")
-  amount          Float?
-  approvalStatus  String    @default("draft") @map("approval_status")
+  travelDurationMinutes Int?         @map("travel_duration_minutes")
+  coverageStatus        String       @default("pending") @map("coverage_status")
+  coverageReason        String       @default("") @map("coverage_reason")
+  hourlyRate            Float?       @map("hourly_rate")
+  amount                Float?
+  approvalStatus        String       @default("draft") @map("approval_status")
   /// Type de prestation choisi par l'agent (axe "quoi"). Drive timeType,
   /// isOnsite et la couverture FREE/INCLUDED. Null si type système direct.
-  workTypeId      String?      @map("work_type_id")
-  workType        OrgWorkType? @relation(fields: [workTypeId], references: [id], onDelete: SetNull)
+  workTypeId            String?      @map("work_type_id")
+  workType              OrgWorkType? @relation(fields: [workTypeId], references: [id], onDelete: SetNull)
   /// Palier tarifaire choisi par l'agent (axe "combien"). Donne le taux
   /// horaire de base. Null = retombe sur le taux scalaire du profil.
-  rateTierId      String?      @map("rate_tier_id")
-  rateTier        OrgRateTier? @relation(fields: [rateTierId], references: [id], onDelete: SetNull)
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  rateTierId            String?      @map("rate_tier_id")
+  rateTier              OrgRateTier? @relation(fields: [rateTierId], references: [id], onDelete: SetNull)
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
 
   @@index([ticketId])
   @@index([organizationId, startedAt])
@@ -2183,40 +2184,40 @@ enum BillingCoverageMode {
 /// sont optionnels — quand non null ils remplacent le champ correspondant
 /// du `BillingProfile` de base. Un seul override par org (unique).
 model ClientBillingOverride {
-  id                       String       @id @default(cuid())
-  organizationId           String       @unique @map("organization_id")
-  organization             Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id                       String              @id @default(cuid())
+  organizationId           String              @unique @map("organization_id")
+  organization             Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   /// ID du BillingProfile de base (ex. "bp_standard"). Pour l'instant on
   /// stocke le slug textuel (mock-data.ts) — quand les profils seront
   /// migrés en DB, ce sera une FK.
-  baseProfileId            String       @map("base_profile_id")
-  isActive                 Boolean      @default(true) @map("is_active")
-  effectiveFrom            DateTime     @default(now()) @map("effective_from")
-  effectiveTo              DateTime?    @map("effective_to")
+  baseProfileId            String              @map("base_profile_id")
+  isActive                 Boolean             @default(true) @map("is_active")
+  effectiveFrom            DateTime            @default(now()) @map("effective_from")
+  effectiveTo              DateTime?           @map("effective_to")
   // --- Couverture par mode (par client) --------------------------------
   remoteCoverage           BillingCoverageMode @default(BILLABLE) @map("remote_coverage")
   onsiteCoverage           BillingCoverageMode @default(BILLABLE) @map("onsite_coverage")
   /// Multiplicateur appliqué sur le taux pour les saisies marquées "soir".
-  afterHoursMultiplier     Float        @default(1.5) @map("after_hours_multiplier")
+  afterHoursMultiplier     Float               @default(1.5) @map("after_hours_multiplier")
   /// Multiplicateur appliqué sur le taux pour les saisies en weekend.
-  weekendMultiplier        Float        @default(2.0) @map("weekend_multiplier")
+  weekendMultiplier        Float               @default(2.0) @map("weekend_multiplier")
   // --- Taux numériques (null = hérite de la base) -----------------------
-  standardRate             Float?       @map("standard_rate")
-  onsiteRate               Float?       @map("onsite_rate")
-  remoteRate               Float?       @map("remote_rate")
-  urgentRate               Float?       @map("urgent_rate")
-  afterHoursRate           Float?       @map("after_hours_rate")
-  weekendRate              Float?       @map("weekend_rate")
-  travelRate               Float?       @map("travel_rate")
-  ratePerKm                Float?       @map("rate_per_km")
-  travelFlatFee            Float?       @map("travel_flat_fee")
-  hourBankOverageRate      Float?       @map("hour_bank_overage_rate")
-  mspExcludedRate          Float?       @map("msp_excluded_rate")
-  minimumBillableMinutes   Int?         @map("minimum_billable_minutes")
-  roundingIncrementMinutes Int?         @map("rounding_increment_minutes")
-  notes                    String?      @db.Text
-  createdAt                DateTime     @default(now()) @map("created_at")
-  updatedAt                DateTime     @updatedAt @map("updated_at")
+  standardRate             Float?              @map("standard_rate")
+  onsiteRate               Float?              @map("onsite_rate")
+  remoteRate               Float?              @map("remote_rate")
+  urgentRate               Float?              @map("urgent_rate")
+  afterHoursRate           Float?              @map("after_hours_rate")
+  weekendRate              Float?              @map("weekend_rate")
+  travelRate               Float?              @map("travel_rate")
+  ratePerKm                Float?              @map("rate_per_km")
+  travelFlatFee            Float?              @map("travel_flat_fee")
+  hourBankOverageRate      Float?              @map("hour_bank_overage_rate")
+  mspExcludedRate          Float?              @map("msp_excluded_rate")
+  minimumBillableMinutes   Int?                @map("minimum_billable_minutes")
+  roundingIncrementMinutes Int?                @map("rounding_increment_minutes")
+  notes                    String?             @db.Text
+  createdAt                DateTime            @default(now()) @map("created_at")
+  updatedAt                DateTime            @updatedAt @map("updated_at")
 
   @@map("client_billing_overrides")
 }
@@ -2237,7 +2238,7 @@ model OrgWorkType {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  timeEntries    TimeEntry[]
+  timeEntries TimeEntry[]
 
   @@unique([organizationId, label])
   @@index([organizationId, isActive])
@@ -2260,7 +2261,7 @@ model OrgRateTier {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  timeEntries    TimeEntry[]
+  timeEntries TimeEntry[]
 
   @@unique([organizationId, label])
   @@index([organizationId, isActive])
@@ -2680,9 +2681,9 @@ model CalendarEvent {
   allDay      Boolean           @default(false) @map("all_day")
 
   /// L'agent concerné (pour LEAVE, WORK_LOCATION, PERSONAL).
-  ownerId        String? @map("owner_id")
+  ownerId         String?  @map("owner_id")
   /// Emplacement texte libre : "client:HVAC", "office", "remote", "onsite:address"
-  location       String?
+  location        String?
   /// Pour RENEWAL et WORK_LOCATION chez un client. Pour un event à un
   /// seul client, `organizationId` est renseigné. Pour les events
   /// multi-clients (ex : "SF/MV SADB/BDU" visitant 2 clients le même
@@ -2691,7 +2692,7 @@ model CalendarEvent {
   organizationId  String?  @map("organization_id")
   organizationIds String[] @default([]) @map("organization_ids")
   /// Site précis chez l'organisation (facultatif).
-  siteId         String? @map("site_id")
+  siteId          String?  @map("site_id")
 
   // --- RENEWAL-specific ---
   renewalType             String? @map("renewal_type") // license | ssl | subscription | warranty
@@ -3068,24 +3069,24 @@ model MonthlyClientReport {
 // si l'ISP fournit uniquement une IP dynamique/CGNAT/NAT.
 
 model OrgInternetLink {
-  id             String   @id @default(cuid())
-  organizationId String   @map("organization_id")
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   // null = lien non rattaché à un site précis (ex: lien partagé multi-sites)
-  siteId         String?  @map("site_id")
-  site           Site?    @relation(fields: [siteId], references: [id], onDelete: SetNull)
-  isp            String   // nom du fournisseur (Bell, Vidéotron, TELUS, Cogeco, …)
-  label          String?  // étiquette libre (« Lien principal », « Backup fibre »…)
-  downloadMbps   Int?     @map("download_mbps")
-  uploadMbps     Int?     @map("upload_mbps")
+  siteId         String?      @map("site_id")
+  site           Site?        @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  isp            String // nom du fournisseur (Bell, Vidéotron, TELUS, Cogeco, …)
+  label          String? // étiquette libre (« Lien principal », « Backup fibre »…)
+  downloadMbps   Int?         @map("download_mbps")
+  uploadMbps     Int?         @map("upload_mbps")
   gateway        String?
-  dnsPrimary     String?  @map("dns_primary")
-  dnsSecondary   String?  @map("dns_secondary")
-  notes          String?  @db.Text
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  dnsPrimary     String?      @map("dns_primary")
+  dnsSecondary   String?      @map("dns_secondary")
+  notes          String?      @db.Text
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  ipBlocks       OrgIpBlock[]
+  ipBlocks OrgIpBlock[]
 
   @@index([organizationId])
   @@index([siteId])
@@ -3093,8 +3094,8 @@ model OrgInternetLink {
 }
 
 model OrgIpBlock {
-  id        String      @id @default(cuid())
-  linkId    String      @map("link_id")
+  id        String          @id @default(cuid())
+  linkId    String          @map("link_id")
   link      OrgInternetLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
   kind      IpBlockKind
   // Représentation textuelle canonique :
@@ -3102,8 +3103,8 @@ model OrgIpBlock {
   //   RANGE  → "203.0.113.40-203.0.113.45"
   //   SUBNET → "203.0.113.0/29"
   value     String
-  label     String?     // usage libre (« NAT firewall », « VPN site-à-site »…)
-  createdAt DateTime    @default(now()) @map("created_at")
+  label     String? // usage libre (« NAT firewall », « VPN site-à-site »…)
+  createdAt DateTime        @default(now()) @map("created_at")
 
   @@index([linkId])
   @@map("org_ip_blocks")
@@ -3139,15 +3140,15 @@ model SiteVlan {
 
 /// Niveau d'exposition d'un contenu. Toujours explicite, jamais implicite.
 enum ContentVisibility {
-  INTERNAL     // agents uniquement (défaut sécuritaire)
+  INTERNAL // agents uniquement (défaut sécuritaire)
   CLIENT_ADMIN // + portail client, rôle admin de l'org
-  CLIENT_ALL   // + portail client, tout rôle (rare, opt-in explicite)
+  CLIENT_ALL // + portail client, tout rôle (rare, opt-in explicite)
 }
 
 /// État de synchronisation entre une instance client et son template global.
 enum ContentSyncState {
-  IN_SYNC  // aligné avec la version courante du template
-  DRIFTED  // le template a évolué depuis l'instanciation → révision nécessaire
+  IN_SYNC // aligné avec la version courante du template
+  DRIFTED // le template a évolué depuis l'instanciation → révision nécessaire
   DETACHED // lien rompu volontairement, édition libre côté client
 }
 
@@ -3163,32 +3164,32 @@ enum ContentStatus {
 /// 1:1 avec Organization. `extras` permet d'ajouter des flags ponctuels sans
 /// migration.
 model OrgCapabilities {
-  id                String   @id @default(cuid())
-  organizationId    String   @unique @map("organization_id")
-  hasAD             Boolean  @default(false) @map("has_ad")
-  hasAzureAD        Boolean  @default(false) @map("has_azure_ad")
-  hasEntra          Boolean  @default(false) @map("has_entra")
-  hasM365           Boolean  @default(false) @map("has_m365")
-  hasExchangeOnPrem Boolean  @default(false) @map("has_exchange_onprem")
-  hasVPN            Boolean  @default(false) @map("has_vpn")
-  hasRDS            Boolean  @default(false) @map("has_rds")
-  hasHyperV         Boolean  @default(false) @map("has_hyperv")
-  hasVMware         Boolean  @default(false) @map("has_vmware")
-  hasOnPremServers  Boolean  @default(false) @map("has_onprem_servers")
-  hasBackupsVeeam   Boolean  @default(false) @map("has_backups_veeam")
-  hasSOC            Boolean  @default(false) @map("has_soc")
-  hasMDM            Boolean  @default(false) @map("has_mdm")
-  hasKeePass        Boolean  @default(false) @map("has_keepass")
+  id                   String   @id @default(cuid())
+  organizationId       String   @unique @map("organization_id")
+  hasAD                Boolean  @default(false) @map("has_ad")
+  hasAzureAD           Boolean  @default(false) @map("has_azure_ad")
+  hasEntra             Boolean  @default(false) @map("has_entra")
+  hasM365              Boolean  @default(false) @map("has_m365")
+  hasExchangeOnPrem    Boolean  @default(false) @map("has_exchange_onprem")
+  hasVPN               Boolean  @default(false) @map("has_vpn")
+  hasRDS               Boolean  @default(false) @map("has_rds")
+  hasHyperV            Boolean  @default(false) @map("has_hyperv")
+  hasVMware            Boolean  @default(false) @map("has_vmware")
+  hasOnPremServers     Boolean  @default(false) @map("has_onprem_servers")
+  hasBackupsVeeam      Boolean  @default(false) @map("has_backups_veeam")
+  hasSOC               Boolean  @default(false) @map("has_soc")
+  hasMDM               Boolean  @default(false) @map("has_mdm")
+  hasKeePass           Boolean  @default(false) @map("has_keepass")
   /// Permet l'interface anglaise sur les postes/logiciels corporatifs pour
   /// cette org. Peut être surchargé par logiciel (SoftwareInstance.allowEnglishUI).
-  allowEnglishUI    Boolean  @default(true) @map("allow_english_ui")
+  allowEnglishUI       Boolean  @default(true) @map("allow_english_ui")
   /// Mois de début d'année fiscale (1-12). Défaut 1 = janvier. Utilisé par le
   /// module Budgets pour déterminer la période d'un budget annuel.
-  fiscalYearStartMonth Int  @default(1) @map("fiscal_year_start_month")
-  extras            Json?
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
-  updatedByUserId   String?  @map("updated_by_user_id")
+  fiscalYearStartMonth Int      @default(1) @map("fiscal_year_start_month")
+  extras               Json?
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+  updatedByUserId      String?  @map("updated_by_user_id")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   updatedBy    User?        @relation("OrgCapabilitiesUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
@@ -3284,31 +3285,31 @@ model ParticularityTemplate {
 /// Particularité appliquée à une organisation. Autonome (templateId=null) ou
 /// dérivée d'un ParticularityTemplate.
 model Particularity {
-  id                  String            @id @default(cuid())
-  organizationId      String            @map("organization_id")
-  templateId          String?           @map("template_id")
+  id                  String                   @id @default(cuid())
+  organizationId      String                   @map("organization_id")
+  templateId          String?                  @map("template_id")
   /// Version du template au moment du lien (permet de détecter DRIFTED).
-  templateVersion     Int?              @map("template_version")
+  templateVersion     Int?                     @map("template_version")
   title               String
-  categoryId          String?           @map("category_id")
-  summary             String?           @db.Text
-  body                String            @default("") @db.Text // TipTap HTML
-  tags                String[]          @default([])
-  resolvedVariables   Json?             @map("resolved_variables")
-  visibility          ContentVisibility @default(INTERNAL)
-  status              ContentStatus     @default(ACTIVE)
-  syncState           ContentSyncState  @default(IN_SYNC) @map("sync_state")
-  version             Int               @default(1)
-  authorId            String?           @map("author_id")
-  updatedByUserId     String?           @map("updated_by_user_id")
-  lastReviewedAt      DateTime?         @map("last_reviewed_at")
+  categoryId          String?                  @map("category_id")
+  summary             String?                  @db.Text
+  body                String                   @default("") @db.Text // TipTap HTML
+  tags                String[]                 @default([])
+  resolvedVariables   Json?                    @map("resolved_variables")
+  visibility          ContentVisibility        @default(INTERNAL)
+  status              ContentStatus            @default(ACTIVE)
+  syncState           ContentSyncState         @default(IN_SYNC) @map("sync_state")
+  version             Int                      @default(1)
+  authorId            String?                  @map("author_id")
+  updatedByUserId     String?                  @map("updated_by_user_id")
+  lastReviewedAt      DateTime?                @map("last_reviewed_at")
   /// True si la catégorie a été suggérée par l'IA sans correction humaine.
   /// Sert au feedback loop (memory `category_autoapply`).
-  aiCategorySuggested Boolean           @default(false) @map("ai_category_suggested")
+  aiCategorySuggested Boolean                  @default(false) @map("ai_category_suggested")
   /// Full-text search — tsvector populé par trigger (config french_unaccent).
   searchVector        Unsupported("tsvector")? @map("search_vector")
-  createdAt           DateTime          @default(now()) @map("created_at")
-  updatedAt           DateTime          @updatedAt @map("updated_at")
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  updatedAt           DateTime                 @updatedAt @map("updated_at")
 
   organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   template     ParticularityTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
@@ -3335,7 +3336,7 @@ model ParticularityVersion {
   /// Snapshot complet : title, body, summary, categoryId, tags, visibility,
   /// resolvedVariables. Regénérable par restore.
   snapshot        Json
-  changeNote      String?  @db.Text @map("change_note")
+  changeNote      String?  @map("change_note") @db.Text
   authorId        String?  @map("author_id")
   createdAt       DateTime @default(now()) @map("created_at")
 
@@ -3395,9 +3396,9 @@ model SoftwareTemplate {
   createdAt            DateTime          @default(now()) @map("created_at")
   updatedAt            DateTime          @updatedAt @map("updated_at")
 
-  category   SoftwareCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  createdBy  User?             @relation("SoftwareTemplateCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy  User?             @relation("SoftwareTemplateUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  category   SoftwareCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy  User?               @relation("SoftwareTemplateCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy  User?               @relation("SoftwareTemplateUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
   instances  SoftwareInstance[]
   installers SoftwareInstaller[] @relation("SoftwareTemplateInstaller")
   licenses   SoftwareLicense[]   @relation("SoftwareTemplateLicense")
@@ -3411,44 +3412,44 @@ model SoftwareTemplate {
 /// Logiciel déployé/autorisé chez un client. Peut être natif (pas de template)
 /// ou dérivé.
 model SoftwareInstance {
-  id                         String            @id @default(cuid())
-  organizationId             String            @map("organization_id")
-  templateId                 String?           @map("template_id")
-  templateSchemaVersion      Int?              @map("template_schema_version")
+  id                         String                   @id @default(cuid())
+  organizationId             String                   @map("organization_id")
+  templateId                 String?                  @map("template_id")
+  templateSchemaVersion      Int?                     @map("template_schema_version")
   name                       String
   vendor                     String?
-  categoryId                 String?           @map("category_id")
+  categoryId                 String?                  @map("category_id")
   version                    String?
   /// Override de la doc globale pour ce client (HTML, vide = hérite template).
-  bodyOverride               String?           @db.Text @map("body_override")
+  bodyOverride               String?                  @map("body_override") @db.Text
   links                      Json?
-  supportInfo                Json?             @map("support_info")
-  tags                       String[]          @default([])
-  visibility                 ContentVisibility @default(INTERNAL)
-  status                     ContentStatus     @default(ACTIVE)
-  syncState                  ContentSyncState  @default(IN_SYNC) @map("sync_state")
+  supportInfo                Json?                    @map("support_info")
+  tags                       String[]                 @default([])
+  visibility                 ContentVisibility        @default(INTERNAL)
+  status                     ContentStatus            @default(ACTIVE)
+  syncState                  ContentSyncState         @default(IN_SYNC) @map("sync_state")
   /// Contact client responsable de la gestion (accès, demandes).
-  responsibleClientContactId String?           @map("responsible_client_contact_id")
+  responsibleClientContactId String?                  @map("responsible_client_contact_id")
   /// User Cetix responsable de l'administration.
-  responsibleCetixUserId     String?           @map("responsible_cetix_user_id")
+  responsibleCetixUserId     String?                  @map("responsible_cetix_user_id")
   /// Override de la capacité org `allowEnglishUI` pour ce logiciel précis.
   /// null = hérite org.
-  allowEnglishUI             Boolean?          @map("allow_english_ui")
-  updatedByUserId            String?           @map("updated_by_user_id")
+  allowEnglishUI             Boolean?                 @map("allow_english_ui")
+  updatedByUserId            String?                  @map("updated_by_user_id")
   searchVector               Unsupported("tsvector")? @map("search_vector")
-  createdAt                  DateTime          @default(now()) @map("created_at")
-  updatedAt                  DateTime          @updatedAt @map("updated_at")
+  createdAt                  DateTime                 @default(now()) @map("created_at")
+  updatedAt                  DateTime                 @updatedAt @map("updated_at")
 
-  organization              Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  template                  SoftwareTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  category                  SoftwareCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  responsibleClientContact  Contact?           @relation("SoftwareInstanceClientOwner", fields: [responsibleClientContactId], references: [id], onDelete: SetNull)
-  responsibleCetixUser      User?              @relation("SoftwareInstanceCetixOwner", fields: [responsibleCetixUserId], references: [id], onDelete: SetNull)
-  updatedBy                 User?              @relation("SoftwareInstanceUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
-  installers                SoftwareInstaller[] @relation("SoftwareInstanceInstaller")
-  licenses                  SoftwareLicense[]   @relation("SoftwareInstanceLicense")
-  procedures                SoftwareProcedure[] @relation("SoftwareInstanceProcedure")
-  contactAccesses           ContactSoftwareAccess[]
+  organization             Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template                 SoftwareTemplate?       @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  category                 SoftwareCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  responsibleClientContact Contact?                @relation("SoftwareInstanceClientOwner", fields: [responsibleClientContactId], references: [id], onDelete: SetNull)
+  responsibleCetixUser     User?                   @relation("SoftwareInstanceCetixOwner", fields: [responsibleCetixUserId], references: [id], onDelete: SetNull)
+  updatedBy                User?                   @relation("SoftwareInstanceUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  installers               SoftwareInstaller[]     @relation("SoftwareInstanceInstaller")
+  licenses                 SoftwareLicense[]       @relation("SoftwareInstanceLicense")
+  procedures               SoftwareProcedure[]     @relation("SoftwareInstanceProcedure")
+  contactAccesses          ContactSoftwareAccess[]
 
   @@index([organizationId])
   @@index([templateId])
@@ -3461,32 +3462,32 @@ model SoftwareInstance {
 
 enum SoftwareInstallerScope {
   GLOBAL // rattaché à un SoftwareTemplate, commun à tous les clients
-  ORG    // rattaché à un SoftwareInstance, spécifique à un client
+  ORG // rattaché à un SoftwareInstance, spécifique à un client
 }
 
 /// Fichier d'installation stocké. Peut être global (catalogue MSP) ou
 /// spécifique à un client. Un token SoftwareDownloadLink permet de partager
 /// l'URL externe vers nexus.cetix.ca/d/<token>.
 model SoftwareInstaller {
-  id                  String                 @id @default(cuid())
-  title               String
-  filename            String
-  sizeBytes           Int                    @map("size_bytes")
-  sha256              String
+  id                 String                 @id @default(cuid())
+  title              String
+  filename           String
+  sizeBytes          Int                    @map("size_bytes")
+  sha256             String
   /// Chemin relatif à la racine de stockage (ex : "software/<templateId>/<cuid>.msi")
-  storagePath         String                 @map("storage_path")
-  scope               SoftwareInstallerScope
-  softwareTemplateId  String?                @map("software_template_id")
-  softwareInstanceId  String?                @map("software_instance_id")
-  organizationId      String?                @map("organization_id")
-  notes               String?
-  uploadedByUserId    String?                @map("uploaded_by_user_id")
-  createdAt           DateTime               @default(now()) @map("created_at")
+  storagePath        String                 @map("storage_path")
+  scope              SoftwareInstallerScope
+  softwareTemplateId String?                @map("software_template_id")
+  softwareInstanceId String?                @map("software_instance_id")
+  organizationId     String?                @map("organization_id")
+  notes              String?
+  uploadedByUserId   String?                @map("uploaded_by_user_id")
+  createdAt          DateTime               @default(now()) @map("created_at")
 
-  template     SoftwareTemplate?     @relation("SoftwareTemplateInstaller", fields: [softwareTemplateId], references: [id], onDelete: Cascade)
-  instance     SoftwareInstance?     @relation("SoftwareInstanceInstaller", fields: [softwareInstanceId], references: [id], onDelete: Cascade)
-  organization Organization?         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  uploadedBy   User?                 @relation("SoftwareInstallerUploader", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  template      SoftwareTemplate?      @relation("SoftwareTemplateInstaller", fields: [softwareTemplateId], references: [id], onDelete: Cascade)
+  instance      SoftwareInstance?      @relation("SoftwareInstanceInstaller", fields: [softwareInstanceId], references: [id], onDelete: Cascade)
+  organization  Organization?          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy    User?                  @relation("SoftwareInstallerUploader", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
   downloadLinks SoftwareDownloadLink[]
 
   @@index([softwareTemplateId])
@@ -3498,26 +3499,26 @@ model SoftwareInstaller {
 /// Lien public signé pour télécharger un installeur depuis l'externe. Token
 /// non-devinable, expiration obligatoire, quota max, PIN optionnel, audit.
 model SoftwareDownloadLink {
-  id              String   @id @default(cuid())
-  installerId     String   @map("installer_id")
-  organizationId  String?  @map("organization_id")
+  id              String    @id @default(cuid())
+  installerId     String    @map("installer_id")
+  organizationId  String?   @map("organization_id")
   /// Token base64url (32 bytes). Unique, indexé.
-  token           String   @unique
+  token           String    @unique
   label           String?
-  expiresAt       DateTime @map("expires_at")
-  maxDownloads    Int?     @map("max_downloads")
-  downloadCount   Int      @default(0) @map("download_count")
-  requirePin      Boolean  @default(false) @map("require_pin")
-  pinHash         String?  @map("pin_hash")
+  expiresAt       DateTime  @map("expires_at")
+  maxDownloads    Int?      @map("max_downloads")
+  downloadCount   Int       @default(0) @map("download_count")
+  requirePin      Boolean   @default(false) @map("require_pin")
+  pinHash         String?   @map("pin_hash")
   lastUsedAt      DateTime? @map("last_used_at")
   lastUsedIp      String?   @map("last_used_ip")
   revokedAt       DateTime? @map("revoked_at")
-  createdByUserId String?  @map("created_by_user_id")
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdByUserId String?   @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
-  installer    SoftwareInstaller      @relation(fields: [installerId], references: [id], onDelete: Cascade)
-  organization Organization?          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    User?                  @relation("SoftwareDownloadLinkCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  installer    SoftwareInstaller       @relation(fields: [installerId], references: [id], onDelete: Cascade)
+  organization Organization?           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?                   @relation("SoftwareDownloadLinkCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   audits       SoftwareDownloadAudit[]
 
   @@index([installerId])
@@ -3527,13 +3528,13 @@ model SoftwareDownloadLink {
 }
 
 model SoftwareDownloadAudit {
-  id           String   @id @default(cuid())
-  linkId       String   @map("link_id")
-  downloadedAt DateTime @default(now()) @map("downloaded_at")
-  ip           String?
-  userAgent    String?  @map("user_agent")
-  success      Boolean  @default(true)
-  failureReason String? @map("failure_reason")
+  id            String   @id @default(cuid())
+  linkId        String   @map("link_id")
+  downloadedAt  DateTime @default(now()) @map("downloaded_at")
+  ip            String?
+  userAgent     String?  @map("user_agent")
+  success       Boolean  @default(true)
+  failureReason String?  @map("failure_reason")
 
   link SoftwareDownloadLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
 
@@ -3543,9 +3544,9 @@ model SoftwareDownloadAudit {
 
 enum SoftwareLicenseScope {
   GLOBAL_POOL // pool MSP (licences revendues à N clients)
-  ORG         // licence site attribuée à un client
-  PER_SEAT    // licence rattachée à un Asset
-  PER_USER    // licence rattachée à un Contact
+  ORG // licence site attribuée à un client
+  PER_SEAT // licence rattachée à un Asset
+  PER_USER // licence rattachée à un Contact
 }
 
 /// Licence logiciel. scope détermine les liens (template, instance, org,
@@ -3561,7 +3562,7 @@ model SoftwareLicense {
   contractId         String?              @map("contract_id")
   /// Clé/identifiant de licence. Stocké chiffré (voir src/lib/security/crypto.ts
   /// une fois implémenté — pour l'instant en clair, TODO chiffrement at-rest).
-  licenseKey         String?              @db.Text @map("license_key")
+  licenseKey         String?              @map("license_key") @db.Text
   seats              Int?
   usedSeats          Int?                 @map("used_seats")
   startDate          DateTime?            @map("start_date")
@@ -3601,17 +3602,17 @@ enum SoftwareProcedureKind {
 /// commune à tous les clients) ou spécifique (sur un SoftwareInstance, override
 /// ou complément). Si instance a 0 procédures, hérite des procédures du template.
 model SoftwareProcedure {
-  id                  String                 @id @default(cuid())
-  softwareTemplateId  String?                @map("software_template_id")
-  softwareInstanceId  String?                @map("software_instance_id")
-  title               String
-  kind                SoftwareProcedureKind  @default(INSTALL)
-  body                String                 @default("") @db.Text
-  visibility          ContentVisibility      @default(INTERNAL)
-  version             Int                    @default(1)
-  createdByUserId     String?                @map("created_by_user_id")
-  createdAt           DateTime               @default(now()) @map("created_at")
-  updatedAt           DateTime               @updatedAt @map("updated_at")
+  id                 String                @id @default(cuid())
+  softwareTemplateId String?               @map("software_template_id")
+  softwareInstanceId String?               @map("software_instance_id")
+  title              String
+  kind               SoftwareProcedureKind @default(INSTALL)
+  body               String                @default("") @db.Text
+  visibility         ContentVisibility     @default(INTERNAL)
+  version            Int                   @default(1)
+  createdByUserId    String?               @map("created_by_user_id")
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
 
   template SoftwareTemplate? @relation("SoftwareTemplateProcedure", fields: [softwareTemplateId], references: [id], onDelete: Cascade)
   instance SoftwareInstance? @relation("SoftwareInstanceProcedure", fields: [softwareInstanceId], references: [id], onDelete: Cascade)
@@ -3631,15 +3632,15 @@ enum ContactSoftwareAccessLevel {
 /// Accès attribué à un contact sur un logiciel client. Historisé via
 /// grantedAt/revokedAt plutôt que suppression hard.
 model ContactSoftwareAccess {
-  id                 String                      @id @default(cuid())
-  contactId          String                      @map("contact_id")
-  softwareInstanceId String                      @map("software_instance_id")
-  accessLevel        ContactSoftwareAccessLevel  @default(USER) @map("access_level")
-  grantedAt          DateTime                    @default(now()) @map("granted_at")
-  grantedByUserId    String?                     @map("granted_by_user_id")
-  revokedAt          DateTime?                   @map("revoked_at")
-  note               String?                     @db.Text
-  visibility         ContentVisibility           @default(INTERNAL)
+  id                 String                     @id @default(cuid())
+  contactId          String                     @map("contact_id")
+  softwareInstanceId String                     @map("software_instance_id")
+  accessLevel        ContactSoftwareAccessLevel @default(USER) @map("access_level")
+  grantedAt          DateTime                   @default(now()) @map("granted_at")
+  grantedByUserId    String?                    @map("granted_by_user_id")
+  revokedAt          DateTime?                  @map("revoked_at")
+  note               String?                    @db.Text
+  visibility         ContentVisibility          @default(INTERNAL)
 
   contact  Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
   instance SoftwareInstance @relation(fields: [softwareInstanceId], references: [id], onDelete: Cascade)
@@ -3664,19 +3665,19 @@ enum ApprovalStatusP {
 /// Demande d'approbation polymorphique. `targetType` + `targetId` identifient
 /// l'objet sur lequel porte la demande (ex: targetType="gpo_instance").
 model ApprovalRequest {
-  id              String          @id @default(cuid())
-  organizationId  String?         @map("organization_id")
-  targetType      String          @map("target_type")
-  targetId        String          @map("target_id")
-  action          String          // "deploy", "publish", "grant_access", …
-  status          ApprovalStatusP @default(PENDING)
-  requestedByUserId String        @map("requested_by_user_id")
-  decidedByUserId   String?       @map("decided_by_user_id")
-  decidedAt         DateTime?     @map("decided_at")
-  justification     String?       @db.Text
-  decisionNote      String?       @db.Text @map("decision_note")
+  id                String          @id @default(cuid())
+  organizationId    String?         @map("organization_id")
+  targetType        String          @map("target_type")
+  targetId          String          @map("target_id")
+  action            String // "deploy", "publish", "grant_access", …
+  status            ApprovalStatusP @default(PENDING)
+  requestedByUserId String          @map("requested_by_user_id")
+  decidedByUserId   String?         @map("decided_by_user_id")
+  decidedAt         DateTime?       @map("decided_at")
+  justification     String?         @db.Text
+  decisionNote      String?         @map("decision_note") @db.Text
   payload           Json?
-  createdAt         DateTime      @default(now()) @map("created_at")
+  createdAt         DateTime        @default(now()) @map("created_at")
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   requestedBy  User          @relation("ApprovalRequester", fields: [requestedByUserId], references: [id])
@@ -3749,9 +3750,9 @@ model PolicyCategory {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  gpoTemplates      GpoTemplate[]
-  scriptTemplates   ScriptTemplate[]
-  policyDocuments   PolicyDocument[]
+  gpoTemplates            GpoTemplate[]
+  scriptTemplates         ScriptTemplate[]
+  policyDocuments         PolicyDocument[]
   policyDocumentTemplates PolicyDocumentTemplate[]
 
   @@map("policy_categories")
@@ -3770,9 +3771,9 @@ model GpoTemplate {
   categoryId           String?           @map("category_id")
   description          String?           @db.Text
   body                 String            @default("") @db.Text // procédure HTML
-  deploymentProcedure  String?           @db.Text @map("deployment_procedure")
-  variables            Json?             // [{ key, label, required, hint, default, scope:"domain"|"client" }]
-  dependencies         Json?             // { scripts, scheduledTasks, otherGpos }
+  deploymentProcedure  String?           @map("deployment_procedure") @db.Text
+  variables            Json? // [{ key, label, required, hint, default, scope:"domain"|"client" }]
+  dependencies         Json? // { scripts, scheduledTasks, otherGpos }
   tags                 String[]          @default([])
   requiresCapabilities String[]          @default(["hasAD"]) @map("requires_capabilities")
   visibilityDefault    ContentVisibility @default(INTERNAL) @map("visibility_default")
@@ -3816,7 +3817,7 @@ model GpoInstance {
   computedName          String            @map("computed_name")
   resolvedVariables     Json?             @map("resolved_variables")
   description           String?           @db.Text
-  bodyOverride          String?           @db.Text @map("body_override")
+  bodyOverride          String?           @map("body_override") @db.Text
   dependencies          Json?
   status                GpoInstanceStatus @default(DRAFT)
   visibility            ContentVisibility @default(INTERNAL)
@@ -3843,16 +3844,16 @@ model GpoInstance {
 /// Import d'un fichier GPO (XML/backup). L'IA analyse pour proposer
 /// titre/description/procédure/variables.
 model GpoImport {
-  id                String   @id @default(cuid())
-  organizationId    String?  @map("organization_id")
-  uploadedByUserId  String?  @map("uploaded_by_user_id")
-  filename          String
-  rawContent        String   @db.Text @map("raw_content")
-  aiAnalysis        Json?    @map("ai_analysis")
-  status            String   @default("PENDING") // PENDING | ANALYZED | APPLIED | REJECTED
-  resultingTemplateId String? @map("resulting_template_id")
-  resultingInstanceId String? @map("resulting_instance_id")
-  createdAt         DateTime @default(now()) @map("created_at")
+  id                  String   @id @default(cuid())
+  organizationId      String?  @map("organization_id")
+  uploadedByUserId    String?  @map("uploaded_by_user_id")
+  filename            String
+  rawContent          String   @map("raw_content") @db.Text
+  aiAnalysis          Json?    @map("ai_analysis")
+  status              String   @default("PENDING") // PENDING | ANALYZED | APPLIED | REJECTED
+  resultingTemplateId String?  @map("resulting_template_id")
+  resultingInstanceId String?  @map("resulting_instance_id")
+  createdAt           DateTime @default(now()) @map("created_at")
 
   uploadedBy User? @relation("GpoImportUploader", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
 
@@ -3868,12 +3869,12 @@ model ScriptTemplate {
   title             String
   language          ScriptLanguage
   categoryId        String?           @map("category_id")
-  bodyCode          String            @default("") @db.Text @map("body_code")
-  bodyDocMarkdown   String?           @db.Text @map("body_doc_markdown")
+  bodyCode          String            @default("") @map("body_code") @db.Text
+  bodyDocMarkdown   String?           @map("body_doc_markdown") @db.Text
   variables         Json?
   tags              String[]          @default([])
   runAs             String?           @map("run_as") // "SYSTEM" | "USER" | "CUSTOM:xxx"
-  schedule          String?           // cron-like
+  schedule          String? // cron-like
   visibilityDefault ContentVisibility @default(INTERNAL) @map("visibility_default")
   schemaVersion     Int               @default(1) @map("schema_version")
   publishedAt       DateTime?         @map("published_at")
@@ -3883,9 +3884,9 @@ model ScriptTemplate {
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
 
-  category     PolicyCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  createdBy    User?              @relation("ScriptTemplateCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy    User?              @relation("ScriptTemplateUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  category     PolicyCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy    User?               @relation("ScriptTemplateCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy    User?               @relation("ScriptTemplateUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
   instances    ScriptInstance[]
   publications ScriptPublication[]
 
@@ -3902,8 +3903,8 @@ model ScriptInstance {
   templateSchemaVersion Int?              @map("template_schema_version")
   title                 String
   language              ScriptLanguage
-  bodyCode              String            @default("") @db.Text @map("body_code")
-  bodyDocMarkdown       String?           @db.Text @map("body_doc_markdown")
+  bodyCode              String            @default("") @map("body_code") @db.Text
+  bodyDocMarkdown       String?           @map("body_doc_markdown") @db.Text
   resolvedVariables     Json?             @map("resolved_variables")
   runAs                 String?           @map("run_as")
   schedule              String?
@@ -3927,17 +3928,17 @@ model ScriptInstance {
 /// rendu avec variables résolues. Utilisée quand l'agent déploie une version
 /// précise approuvée.
 model ScriptPublication {
-  id               String   @id @default(cuid())
-  organizationId   String   @map("organization_id")
-  templateId       String   @map("template_id")
-  publishedVersion Int      @map("published_version")
-  resolvedVariables Json?   @map("resolved_variables")
-  renderedCode     String   @db.Text @map("rendered_code")
-  approvalId       String?  @map("approval_id")
-  publishedAt      DateTime @default(now()) @map("published_at")
-  supersededBy     String?  @map("superseded_by")
-  status           String   @default("ACTIVE") // ACTIVE | SUPERSEDED | REVOKED
-  createdByUserId  String?  @map("created_by_user_id")
+  id                String   @id @default(cuid())
+  organizationId    String   @map("organization_id")
+  templateId        String   @map("template_id")
+  publishedVersion  Int      @map("published_version")
+  resolvedVariables Json?    @map("resolved_variables")
+  renderedCode      String   @map("rendered_code") @db.Text
+  approvalId        String?  @map("approval_id")
+  publishedAt       DateTime @default(now()) @map("published_at")
+  supersededBy      String?  @map("superseded_by")
+  status            String   @default("ACTIVE") // ACTIVE | SUPERSEDED | REVOKED
+  createdByUserId   String?  @map("created_by_user_id")
 
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   template     ScriptTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
@@ -3969,8 +3970,8 @@ model PolicyDocumentTemplate {
   createdAt            DateTime          @default(now()) @map("created_at")
   updatedAt            DateTime          @updatedAt @map("updated_at")
 
-  category  PolicyCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  createdBy User?             @relation("PolicyDocumentTemplateCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  category  PolicyCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy User?            @relation("PolicyDocumentTemplateCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   instances PolicyDocument[]
 
   @@index([subcategory])
@@ -3979,28 +3980,28 @@ model PolicyDocumentTemplate {
 }
 
 model PolicyDocument {
-  id                    String            @id @default(cuid())
-  organizationId        String            @map("organization_id")
-  templateId            String?           @map("template_id")
-  templateSchemaVersion Int?              @map("template_schema_version")
+  id                    String                   @id @default(cuid())
+  organizationId        String                   @map("organization_id")
+  templateId            String?                  @map("template_id")
+  templateSchemaVersion Int?                     @map("template_schema_version")
   subcategory           PolicySubcategory
   title                 String
-  categoryId            String?           @map("category_id")
-  summary               String?           @db.Text
-  body                  String            @default("") @db.Text
-  structuredFields      Json?             @map("structured_fields")
-  resolvedVariables     Json?             @map("resolved_variables")
-  tags                  String[]          @default([])
-  visibility            ContentVisibility @default(INTERNAL)
-  status                ContentStatus     @default(ACTIVE)
-  syncState             ContentSyncState  @default(IN_SYNC) @map("sync_state")
-  authorId              String?           @map("author_id")
-  updatedByUserId       String?           @map("updated_by_user_id")
-  lastReviewedAt        DateTime?         @map("last_reviewed_at")
+  categoryId            String?                  @map("category_id")
+  summary               String?                  @db.Text
+  body                  String                   @default("") @db.Text
+  structuredFields      Json?                    @map("structured_fields")
+  resolvedVariables     Json?                    @map("resolved_variables")
+  tags                  String[]                 @default([])
+  visibility            ContentVisibility        @default(INTERNAL)
+  status                ContentStatus            @default(ACTIVE)
+  syncState             ContentSyncState         @default(IN_SYNC) @map("sync_state")
+  authorId              String?                  @map("author_id")
+  updatedByUserId       String?                  @map("updated_by_user_id")
+  lastReviewedAt        DateTime?                @map("last_reviewed_at")
   /// Full-text search — tsvector populé par trigger (config french_unaccent).
   searchVector          Unsupported("tsvector")? @map("search_vector")
-  createdAt             DateTime          @default(now()) @map("created_at")
-  updatedAt             DateTime          @updatedAt @map("updated_at")
+  createdAt             DateTime                 @default(now()) @map("created_at")
+  updatedAt             DateTime                 @updatedAt @map("updated_at")
 
   organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   template     PolicyDocumentTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
@@ -4021,7 +4022,7 @@ model PolicyDocument {
 // ============================================================================
 
 enum ChangeStatus {
-  AI_SUGGESTED  // signal IA, pas encore validé
+  AI_SUGGESTED // signal IA, pas encore validé
   IN_REVIEW
   APPROVED
   PUBLISHED
@@ -4051,43 +4052,43 @@ enum ChangeImpact {
 }
 
 model Change {
-  id             String            @id @default(cuid())
-  organizationId String            @map("organization_id")
-  title          String
-  summary        String?           @db.Text
-  body           String            @default("") @db.Text
-  category       ChangeCategory
-  status         ChangeStatus      @default(AI_SUGGESTED)
-  impact         ChangeImpact      @default(MODERATE)
-  visibility     ContentVisibility @default(INTERNAL)
-  changeDate     DateTime          @map("change_date")
-  detectedAt     DateTime?         @map("detected_at")
-  aiConfidence   Float?            @map("ai_confidence")
+  id                     String                   @id @default(cuid())
+  organizationId         String                   @map("organization_id")
+  title                  String
+  summary                String?                  @db.Text
+  body                   String                   @default("") @db.Text
+  category               ChangeCategory
+  status                 ChangeStatus             @default(AI_SUGGESTED)
+  impact                 ChangeImpact             @default(MODERATE)
+  visibility             ContentVisibility        @default(INTERNAL)
+  changeDate             DateTime                 @map("change_date")
+  detectedAt             DateTime?                @map("detected_at")
+  aiConfidence           Float?                   @map("ai_confidence")
   /// [{type:"ticket"|"project"|"policy"|"note"|"particularity"|..., id:string, excerpt?:string}]
-  sources        Json?
-  manualEntry    Boolean           @default(false) @map("manual_entry")
+  sources                Json?
+  manualEntry            Boolean                  @default(false) @map("manual_entry")
   /// Si true, exposable au portail client (CLIENT_ADMIN) à la publication.
-  exposeToClientAdmin Boolean      @default(false) @map("expose_to_client_admin")
-  authorId       String?           @map("author_id")
-  reviewerId     String?           @map("reviewer_id")
-  approverId     String?           @map("approver_id")
-  mergedIntoId   String?           @map("merged_into_id")
-  linkedTicketIds   String[] @default([]) @map("linked_ticket_ids")
-  linkedAssetIds    String[] @default([]) @map("linked_asset_ids")
-  linkedSoftwareIds String[] @default([]) @map("linked_software_ids")
-  linkedPolicyIds   String[] @default([]) @map("linked_policy_ids")
-  linkedParticularityIds String[] @default([]) @map("linked_particularity_ids")
-  searchVector   Unsupported("tsvector")? @map("search_vector")
-  createdAt      DateTime          @default(now()) @map("created_at")
-  updatedAt      DateTime          @updatedAt @map("updated_at")
-  publishedAt    DateTime?         @map("published_at")
+  exposeToClientAdmin    Boolean                  @default(false) @map("expose_to_client_admin")
+  authorId               String?                  @map("author_id")
+  reviewerId             String?                  @map("reviewer_id")
+  approverId             String?                  @map("approver_id")
+  mergedIntoId           String?                  @map("merged_into_id")
+  linkedTicketIds        String[]                 @default([]) @map("linked_ticket_ids")
+  linkedAssetIds         String[]                 @default([]) @map("linked_asset_ids")
+  linkedSoftwareIds      String[]                 @default([]) @map("linked_software_ids")
+  linkedPolicyIds        String[]                 @default([]) @map("linked_policy_ids")
+  linkedParticularityIds String[]                 @default([]) @map("linked_particularity_ids")
+  searchVector           Unsupported("tsvector")? @map("search_vector")
+  createdAt              DateTime                 @default(now()) @map("created_at")
+  updatedAt              DateTime                 @updatedAt @map("updated_at")
+  publishedAt            DateTime?                @map("published_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  author       User?        @relation("ChangeAuthor", fields: [authorId], references: [id], onDelete: SetNull)
-  reviewer     User?        @relation("ChangeReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
-  approver     User?        @relation("ChangeApprover", fields: [approverId], references: [id], onDelete: SetNull)
-  mergedInto   Change?      @relation("ChangeMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
-  mergedFrom   Change[]     @relation("ChangeMerge")
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User?            @relation("ChangeAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  reviewer     User?            @relation("ChangeReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  approver     User?            @relation("ChangeApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  mergedInto   Change?          @relation("ChangeMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedFrom   Change[]         @relation("ChangeMerge")
   aiSignals    ChangeAiSignal[] @relation("SignalProposedChange")
 
   @@index([organizationId, changeDate(sort: Desc)])
@@ -4113,25 +4114,25 @@ enum WarrantyCoverageLevel {
 }
 
 model AssetWarranty {
-  id              String                 @id @default(cuid())
-  assetId         String                 @map("asset_id")
-  organizationId  String                 @map("organization_id")
+  id              String                @id @default(cuid())
+  assetId         String                @map("asset_id")
+  organizationId  String                @map("organization_id")
   vendor          String?
   reference       String?
-  startDate       DateTime               @map("start_date")
-  endDate         DateTime               @map("end_date")
-  coverageLevel   WarrantyCoverageLevel  @default(BASIC) @map("coverage_level")
-  notes           String?                @db.Text
-  visibility      ContentVisibility      @default(INTERNAL)
-  contractId      String?                @map("contract_id")
-  createdByUserId String?                @map("created_by_user_id")
-  createdAt       DateTime               @default(now()) @map("created_at")
-  updatedAt       DateTime               @updatedAt @map("updated_at")
+  startDate       DateTime              @map("start_date")
+  endDate         DateTime              @map("end_date")
+  coverageLevel   WarrantyCoverageLevel @default(BASIC) @map("coverage_level")
+  notes           String?               @db.Text
+  visibility      ContentVisibility     @default(INTERNAL)
+  contractId      String?               @map("contract_id")
+  createdByUserId String?               @map("created_by_user_id")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
 
-  asset        Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contract     Contract?     @relation("AssetWarrantyContract", fields: [contractId], references: [id], onDelete: SetNull)
-  createdBy    User?         @relation("AssetWarrantyCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contract     Contract?    @relation("AssetWarrantyContract", fields: [contractId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("AssetWarrantyCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@index([assetId])
   @@index([organizationId, endDate])
@@ -4148,26 +4149,26 @@ enum SubscriptionBillingCycle {
 }
 
 model AssetSubscription {
-  id              String                    @id @default(cuid())
-  assetId         String?                   @map("asset_id")
-  softwareInstanceId String?                @map("software_instance_id")
-  organizationId  String                    @map("organization_id")
-  vendor          String?
-  plan            String?
-  reference       String?
-  startDate       DateTime                  @map("start_date")
-  endDate         DateTime                  @map("end_date")
-  autoRenew       Boolean                   @default(false) @map("auto_renew")
-  billingCycle    SubscriptionBillingCycle  @default(YEARLY) @map("billing_cycle")
-  amount          Float?
-  currency        String                    @default("CAD")
-  renewalNotes    String?                   @db.Text @map("renewal_notes")
-  notes           String?                   @db.Text
-  visibility      ContentVisibility         @default(INTERNAL)
-  contractId      String?                   @map("contract_id")
-  createdByUserId String?                   @map("created_by_user_id")
-  createdAt       DateTime                  @default(now()) @map("created_at")
-  updatedAt       DateTime                  @updatedAt @map("updated_at")
+  id                 String                   @id @default(cuid())
+  assetId            String?                  @map("asset_id")
+  softwareInstanceId String?                  @map("software_instance_id")
+  organizationId     String                   @map("organization_id")
+  vendor             String?
+  plan               String?
+  reference          String?
+  startDate          DateTime                 @map("start_date")
+  endDate            DateTime                 @map("end_date")
+  autoRenew          Boolean                  @default(false) @map("auto_renew")
+  billingCycle       SubscriptionBillingCycle @default(YEARLY) @map("billing_cycle")
+  amount             Float?
+  currency           String                   @default("CAD")
+  renewalNotes       String?                  @map("renewal_notes") @db.Text
+  notes              String?                  @db.Text
+  visibility         ContentVisibility        @default(INTERNAL)
+  contractId         String?                  @map("contract_id")
+  createdByUserId    String?                  @map("created_by_user_id")
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
 
   asset        Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -4206,10 +4207,10 @@ model AssetSupportContract {
   createdAt       DateTime          @default(now()) @map("created_at")
   updatedAt       DateTime          @updatedAt @map("updated_at")
 
-  asset        Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contract     Contract?     @relation("AssetSupportContractContract", fields: [contractId], references: [id], onDelete: SetNull)
-  createdBy    User?         @relation("AssetSupportContractCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contract     Contract?    @relation("AssetSupportContractContract", fields: [contractId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("AssetSupportContractCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@index([assetId])
   @@index([organizationId, endDate])
@@ -4219,19 +4220,19 @@ model AssetSupportContract {
 /// Signal brut détecté par l'IA (une ligne par source). Consolidé ensuite
 /// vers un `Change` (status=AI_SUGGESTED) avant publication humaine.
 model ChangeAiSignal {
-  id             String   @id @default(cuid())
-  organizationId String   @map("organization_id")
-  sourceType     String   @map("source_type") // ticket | project | project_comment | policy | gpo | script | software | asset | particularity | note
-  sourceId       String   @map("source_id")
-  rawText        String   @db.Text @map("raw_text")
-  detectedAt     DateTime @default(now()) @map("detected_at")
-  confidence     Float    @default(0)
-  proposedChangeId String? @map("proposed_change_id")
-  merged         Boolean  @default(false)
-  status         String   @default("OPEN") // OPEN | PROMOTED | DISMISSED
+  id               String   @id @default(cuid())
+  organizationId   String   @map("organization_id")
+  sourceType       String   @map("source_type") // ticket | project | project_comment | policy | gpo | script | software | asset | particularity | note
+  sourceId         String   @map("source_id")
+  rawText          String   @map("raw_text") @db.Text
+  detectedAt       DateTime @default(now()) @map("detected_at")
+  confidence       Float    @default(0)
+  proposedChangeId String?  @map("proposed_change_id")
+  merged           Boolean  @default(false)
+  status           String   @default("OPEN") // OPEN | PROMOTED | DISMISSED
 
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  proposedChange  Change?      @relation("SignalProposedChange", fields: [proposedChangeId], references: [id], onDelete: SetNull)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  proposedChange Change?      @relation("SignalProposedChange", fields: [proposedChangeId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, detectedAt(sort: Desc)])
   @@index([status])
@@ -4255,82 +4256,82 @@ model ChangeAiSignal {
 // ============================================================================
 
 enum BudgetStatus {
-  DRAFT         // Cetix construit
-  PROPOSED      // envoyé au client pour approbation
-  APPROVED      // baseline locked, exécution en cours
-  EXECUTING     // actualAmount se remplit au fil de l'année (alias de APPROVED après signature)
-  CLOSED        // fin d'année, figé
-  REJECTED      // refusé par client, retourne à DRAFT après ajustements
+  DRAFT // Cetix construit
+  PROPOSED // envoyé au client pour approbation
+  APPROVED // baseline locked, exécution en cours
+  EXECUTING // actualAmount se remplit au fil de l'année (alias de APPROVED après signature)
+  CLOSED // fin d'année, figé
+  REJECTED // refusé par client, retourne à DRAFT après ajustements
 }
 
 enum BudgetCategory {
-  SUBSCRIPTIONS       // abonnements logiciels/SaaS
-  LICENSES            // licences perpétuelles ou annuelles
-  HARDWARE            // nouveau matériel à acheter
-  OBSOLESCENCE        // remplacements d'assets en fin de vie
-  WARRANTIES          // garanties matériel à renouveler
-  SUPPORT             // contrats de support (L1/L2/24x7)
-  EXTERNAL_SERVICES   // services ponctuels : pentest, audit SOC2, conseil
-  PROJECTS            // projets IT internes
-  TRAINING            // formations utilisateurs/admins
-  TELECOM             // Internet, téléphonie, forfaits mobiles
-  CONTINGENCY         // ligne de contingence (imprévus)
+  SUBSCRIPTIONS // abonnements logiciels/SaaS
+  LICENSES // licences perpétuelles ou annuelles
+  HARDWARE // nouveau matériel à acheter
+  OBSOLESCENCE // remplacements d'assets en fin de vie
+  WARRANTIES // garanties matériel à renouveler
+  SUPPORT // contrats de support (L1/L2/24x7)
+  EXTERNAL_SERVICES // services ponctuels : pentest, audit SOC2, conseil
+  PROJECTS // projets IT internes
+  TRAINING // formations utilisateurs/admins
+  TELECOM // Internet, téléphonie, forfaits mobiles
+  CONTINGENCY // ligne de contingence (imprévus)
   OTHER
 }
 
 enum BudgetLineSource {
-  AUTO_SUBSCRIPTION     // AssetSubscription
-  AUTO_LICENSE          // SoftwareLicense
-  AUTO_WARRANTY         // AssetWarranty
-  AUTO_SUPPORT          // AssetSupportContract
-  AUTO_CONTRACT         // Contract récurrent
-  AUTO_ASSET_EOL        // Asset lifecycleEndDate
-  MANUAL                // saisi à la main
+  AUTO_SUBSCRIPTION // AssetSubscription
+  AUTO_LICENSE // SoftwareLicense
+  AUTO_WARRANTY // AssetWarranty
+  AUTO_SUPPORT // AssetSupportContract
+  AUTO_CONTRACT // Contract récurrent
+  AUTO_ASSET_EOL // Asset lifecycleEndDate
+  MANUAL // saisi à la main
 }
 
 enum BudgetLineStatus {
-  PLANNED     // prévu (ligne issue d'ingest ou saisie)
-  COMMITTED   // engagé ferme (PO émise, devis signé)
-  INVOICED    // facturé par le fournisseur
-  PAID        // payé
-  CANCELLED   // annulé (n'entre plus dans le réalisé)
+  PLANNED // prévu (ligne issue d'ingest ou saisie)
+  COMMITTED // engagé ferme (PO émise, devis signé)
+  INVOICED // facturé par le fournisseur
+  PAID // payé
+  CANCELLED // annulé (n'entre plus dans le réalisé)
 }
 
 model Budget {
-  id              String       @id @default(cuid())
-  organizationId  String       @map("organization_id")
+  id              String            @id @default(cuid())
+  organizationId  String            @map("organization_id")
   /// Année fiscale : année civile du mois de début. Ex: fy=2026 avec
   /// fiscalYearStartMonth=4 → avril 2026 → mars 2027.
-  fiscalYear      Int          @map("fiscal_year")
-  title           String       // ex: "Budget IT 2026"
-  summary         String?      @db.Text
-  status          BudgetStatus @default(DRAFT)
-  currency        String       @default("CAD")
+  fiscalYear      Int               @map("fiscal_year")
+  title           String // ex: "Budget IT 2026"
+  summary         String?           @db.Text
+  status          BudgetStatus      @default(DRAFT)
+  currency        String            @default("CAD")
   /// Montant total cible (ceiling) fixé par Cetix/client. Les lignes doivent
   /// roughly y cadrer. Si null, pas de cible explicite.
-  targetAmount    Decimal?     @db.Decimal(14, 2) @map("target_amount")
+  targetAmount    Decimal?          @map("target_amount") @db.Decimal(14, 2)
   /// Ligne de contingence en % (ex: 10 pour 10%). Appliquée au sommant des
   /// lignes PLANNED pour l'affichage du "budget total avec contingence".
-  contingencyPct  Float        @default(0) @map("contingency_pct")
+  contingencyPct  Float             @default(0) @map("contingency_pct")
   /// Notes Cetix internes, jamais exposées portail même si visibility CLIENT_*.
-  internalNotes   String?      @db.Text @map("internal_notes")
+  internalNotes   String?           @map("internal_notes") @db.Text
   /// Visibilité du budget en entier. Lignes peuvent avoir visibility plus
   /// restrictive (INTERNAL), mais le budget lui-même doit être au moins
   /// CLIENT_ADMIN pour que le client puisse l'approuver.
   visibility      ContentVisibility @default(CLIENT_ADMIN)
-  proposedAt      DateTime?    @map("proposed_at")
-  approvedAt      DateTime?    @map("approved_at")
-  closedAt        DateTime?    @map("closed_at")
+  proposedAt      DateTime?         @map("proposed_at")
+  approvedAt      DateTime?         @map("approved_at")
+  closedAt        DateTime?         @map("closed_at")
   /// Référence à la demande d'approbation (ApprovalRequest) créée à PROPOSED.
-  approvalId      String?      @map("approval_id")
-  createdByUserId String?      @map("created_by_user_id")
-  updatedByUserId String?      @map("updated_by_user_id")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
+  approvalId      String?           @map("approval_id")
+  createdByUserId String?           @map("created_by_user_id")
+  updatedByUserId String?           @map("updated_by_user_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    User?            @relation("BudgetCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy    User?            @relation("BudgetUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?           @relation("BudgetCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy    User?           @relation("BudgetUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
   lines        BudgetLine[]
   versions     BudgetVersion[]
   comments     BudgetComment[]
@@ -4342,37 +4343,37 @@ model Budget {
 }
 
 model BudgetLine {
-  id              String           @id @default(cuid())
-  budgetId        String           @map("budget_id")
+  id              String            @id @default(cuid())
+  budgetId        String            @map("budget_id")
   category        BudgetCategory
-  source          BudgetLineSource @default(MANUAL)
+  source          BudgetLineSource  @default(MANUAL)
   /// Type de la ressource source (polymorphe, string-typed). Valeurs :
   /// "asset_subscription" | "software_license" | "asset_warranty" |
   /// "asset_support_contract" | "contract" | "asset" | null pour MANUAL.
-  sourceRefType   String?          @map("source_ref_type")
-  sourceRefId     String?          @map("source_ref_id")
+  sourceRefType   String?           @map("source_ref_type")
+  sourceRefId     String?           @map("source_ref_id")
   label           String
   vendor          String?
   /// Mois de l'année fiscale où la dépense tombe (1-12, relatif à l'année
   /// fiscale du budget). Si null, "flexible / réparti".
-  plannedMonth    Int?             @map("planned_month")
-  plannedAmount   Decimal          @db.Decimal(14, 2) @map("planned_amount")
-  committedAmount Decimal?         @db.Decimal(14, 2) @map("committed_amount")
-  actualAmount    Decimal?         @db.Decimal(14, 2) @map("actual_amount")
-  currency        String           @default("CAD")
-  status          BudgetLineStatus @default(PLANNED)
+  plannedMonth    Int?              @map("planned_month")
+  plannedAmount   Decimal           @map("planned_amount") @db.Decimal(14, 2)
+  committedAmount Decimal?          @map("committed_amount") @db.Decimal(14, 2)
+  actualAmount    Decimal?          @map("actual_amount") @db.Decimal(14, 2)
+  currency        String            @default("CAD")
+  status          BudgetLineStatus  @default(PLANNED)
   /// Hérite la visibility du budget par défaut, mais peut être restreint
   /// à INTERNAL pour cacher une ligne sensible au client même si le budget
   /// est CLIENT_ADMIN.
   visibility      ContentVisibility @default(CLIENT_ADMIN)
-  notes           String?          @db.Text
+  notes           String?           @db.Text
   /// Date d'échéance cible (pour les lignes avec une date précise de
   /// renouvellement/commande). Utile pour alertes 90j.
-  dueDate         DateTime?        @map("due_date")
-  createdByUserId String?          @map("created_by_user_id")
-  updatedByUserId String?          @map("updated_by_user_id")
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
+  dueDate         DateTime?         @map("due_date")
+  createdByUserId String?           @map("created_by_user_id")
+  updatedByUserId String?           @map("updated_by_user_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
 
   budget    Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   createdBy User?  @relation("BudgetLineCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
@@ -4388,15 +4389,15 @@ model BudgetLine {
 /// Snapshot immuable à chaque transition de statut. Permet de restaurer
 /// une version antérieure ou tracer ce qui a été approuvé par le client.
 model BudgetVersion {
-  id              String       @id @default(cuid())
-  budgetId        String       @map("budget_id")
-  version         Int
+  id               String       @id @default(cuid())
+  budgetId         String       @map("budget_id")
+  version          Int
   statusAtSnapshot BudgetStatus @map("status_at_snapshot")
   /// Payload complet budget + lignes au moment du snapshot.
-  snapshot        Json
-  note            String?
-  authorId        String?      @map("author_id")
-  createdAt       DateTime     @default(now()) @map("created_at")
+  snapshot         Json
+  note             String?
+  authorId         String?      @map("author_id")
+  createdAt        DateTime     @default(now()) @map("created_at")
 
   budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   author User?  @relation("BudgetVersionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
@@ -4409,20 +4410,20 @@ model BudgetVersion {
 /// Commentaires sur un budget (agent ou client via portail). Permet une
 /// discussion asynchrone pendant la phase PROPOSED.
 model BudgetComment {
-  id         String   @id @default(cuid())
-  budgetId   String   @map("budget_id")
+  id                 String   @id @default(cuid())
+  budgetId           String   @map("budget_id")
   /// Optionnel : commentaire attaché à une ligne spécifique plutôt qu'au
   /// budget global.
-  lineId     String?  @map("line_id")
-  body       String   @db.Text
+  lineId             String?  @map("line_id")
+  body               String   @db.Text
   /// Source : "agent" (Cetix) ou "portal" (client via portail). Déterminé
   /// au POST selon la session. Permet UI de colorer différemment.
-  source     String   @default("agent")
+  source             String   @default("agent")
   /// Si source=agent, authorId = User. Si portal, authorPortalUserId set.
-  authorId            String?  @map("author_id")
-  authorPortalUserId  String?  @map("author_portal_user_id")
-  authorName          String?  @map("author_name")
-  createdAt  DateTime @default(now()) @map("created_at")
+  authorId           String?  @map("author_id")
+  authorPortalUserId String?  @map("author_portal_user_id")
+  authorName         String?  @map("author_name")
+  createdAt          DateTime @default(now()) @map("created_at")
 
   budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   author User?  @relation("BudgetCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
@@ -4443,73 +4444,73 @@ model BudgetComment {
 // ============================================================================
 
 enum BugSeverity {
-  LOW        // cosmétique, texte, styling mineur
-  MEDIUM     // fonctionnalité dégradée mais contournable
-  HIGH       // fonctionnalité cassée, pas de workaround trivial
-  CRITICAL   // perte de données possible, crash, sécurité
+  LOW // cosmétique, texte, styling mineur
+  MEDIUM // fonctionnalité dégradée mais contournable
+  HIGH // fonctionnalité cassée, pas de workaround trivial
+  CRITICAL // perte de données possible, crash, sécurité
 }
 
 enum BugStatus {
-  NEW                  // nouveau signalement, pas trié
-  TRIAGED              // lu et catégorisé, en attente de décision
-  APPROVED_FOR_FIX     // approuvé pour auto-fix nocturne
-  FIX_IN_PROGRESS      // worker en train d'analyser
-  FIX_PROPOSED         // PR ouverte, en attente merge humain
-  FIXED                // PR mergée
-  REJECTED             // refusé (won't fix / by design)
-  DUPLICATE            // doublon d'un autre bug
+  NEW // nouveau signalement, pas trié
+  TRIAGED // lu et catégorisé, en attente de décision
+  APPROVED_FOR_FIX // approuvé pour auto-fix nocturne
+  FIX_IN_PROGRESS // worker en train d'analyser
+  FIX_PROPOSED // PR ouverte, en attente merge humain
+  FIXED // PR mergée
+  REJECTED // refusé (won't fix / by design)
+  DUPLICATE // doublon d'un autre bug
 }
 
 enum BugFixAttemptStatus {
-  ANALYZING      // Claude lit le code
-  PROPOSED       // patch généré, PR ouverte
-  MERGED         // PR mergée → bug fixé
-  ABANDONED      // worker a décidé d'abandonner (zone interdite, complexité)
-  FAILED         // erreur technique (build/lint/test fail)
-  REJECTED       // utilisateur a rejeté le fix proposé
+  ANALYZING // Claude lit le code
+  PROPOSED // patch généré, PR ouverte
+  MERGED // PR mergée → bug fixé
+  ABANDONED // worker a décidé d'abandonner (zone interdite, complexité)
+  FAILED // erreur technique (build/lint/test fail)
+  REJECTED // utilisateur a rejeté le fix proposé
 }
 
 model BugReport {
-  id                String       @id @default(cuid())
-  title             String
-  description       String       @db.Text
-  stepsToReproduce  String?      @db.Text @map("steps_to_reproduce")
-  severity          BugSeverity  @default(MEDIUM)
-  status            BugStatus    @default(NEW)
+  id                   String      @id @default(cuid())
+  title                String
+  description          String      @db.Text
+  stepsToReproduce     String?     @map("steps_to_reproduce") @db.Text
+  severity             BugSeverity @default(MEDIUM)
+  status               BugStatus   @default(NEW)
   /// Utilisateur qui a signalé (agent). Pour un bug portail client, on
   /// peut étendre avec reporterPortalUserId + reporterOrgId plus tard.
-  reporterUserId    String?      @map("reporter_user_id")
-  reporterEmail     String?      @map("reporter_email")
+  reporterUserId       String?     @map("reporter_user_id")
+  reporterEmail        String?     @map("reporter_email")
   /// URL de la page où le bug a été constaté. Capturé côté client.
-  contextUrl        String?      @map("context_url")
+  contextUrl           String?     @map("context_url")
   /// Blob contextuel : navigateur, userAgent, derniers logs console, route
   /// active, etc. Schéma libre côté client.
-  contextMeta       Json?        @map("context_meta")
+  contextMeta          Json?       @map("context_meta")
   /// URLs/chemins de screenshots uploadés (via l'endpoint /api/v1/bugs/[id]/attachments).
-  screenshots       Json?
+  screenshots          Json?
   /// Lien ticket si le bug provient d'une investigation de ticket.
-  linkedTicketId    String?      @map("linked_ticket_id")
-  duplicateOfId     String?      @map("duplicate_of_id")
+  linkedTicketId       String?     @map("linked_ticket_id")
+  duplicateOfId        String?     @map("duplicate_of_id")
   /// Assignation manuelle pour un fix humain (bypass worker).
-  assignedToUserId  String?      @map("assigned_to_user_id")
+  assignedToUserId     String?     @map("assigned_to_user_id")
   /// Approbation : token signé pour workflow email + traçabilité.
-  approvalToken     String?      @unique @map("approval_token")
-  approvedForAutoFixAt DateTime? @map("approved_for_auto_fix_at")
-  approvedByUserId  String?      @map("approved_by_user_id")
-  rejectedAt        DateTime?    @map("rejected_at")
-  rejectedByUserId  String?      @map("rejected_by_user_id")
-  rejectionReason   String?      @db.Text @map("rejection_reason")
-  createdAt         DateTime     @default(now()) @map("created_at")
-  updatedAt         DateTime     @updatedAt @map("updated_at")
+  approvalToken        String?     @unique @map("approval_token")
+  approvedForAutoFixAt DateTime?   @map("approved_for_auto_fix_at")
+  approvedByUserId     String?     @map("approved_by_user_id")
+  rejectedAt           DateTime?   @map("rejected_at")
+  rejectedByUserId     String?     @map("rejected_by_user_id")
+  rejectionReason      String?     @map("rejection_reason") @db.Text
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
 
-  reporter          User?              @relation("BugReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
-  assignedTo        User?              @relation("BugAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
-  approvedBy        User?              @relation("BugApprover", fields: [approvedByUserId], references: [id], onDelete: SetNull)
-  rejectedBy        User?              @relation("BugRejecter", fields: [rejectedByUserId], references: [id], onDelete: SetNull)
-  duplicateOf       BugReport?         @relation("BugDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
-  duplicates        BugReport[]        @relation("BugDuplicates")
-  fixAttempts       BugFixAttempt[]
-  comments          BugComment[]
+  reporter    User?           @relation("BugReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  assignedTo  User?           @relation("BugAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  approvedBy  User?           @relation("BugApprover", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  rejectedBy  User?           @relation("BugRejecter", fields: [rejectedByUserId], references: [id], onDelete: SetNull)
+  duplicateOf BugReport?      @relation("BugDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates  BugReport[]     @relation("BugDuplicates")
+  fixAttempts BugFixAttempt[]
+  comments    BugComment[]
 
   @@index([status])
   @@index([severity])
@@ -4519,31 +4520,31 @@ model BugReport {
 }
 
 model BugFixAttempt {
-  id              String              @id @default(cuid())
-  bugId           String              @map("bug_id")
-  status          BugFixAttemptStatus @default(ANALYZING)
+  id           String              @id @default(cuid())
+  bugId        String              @map("bug_id")
+  status       BugFixAttemptStatus @default(ANALYZING)
   /// Modèle Anthropic utilisé (claude-sonnet-4-6, claude-opus-4-7, etc.)
-  agentModel      String              @map("agent_model")
+  agentModel   String              @map("agent_model")
   /// Branche git créée : bugfix/bug-{shortId}-slug
-  branch          String?
-  commitSha       String?             @map("commit_sha")
-  prUrl           String?             @map("pr_url")
-  prNumber        Int?                @map("pr_number")
+  branch       String?
+  commitSha    String?             @map("commit_sha")
+  prUrl        String?             @map("pr_url")
+  prNumber     Int?                @map("pr_number")
   /// Résumé généré par Claude du fix proposé (pour email + UI).
-  diffSummary     String?             @db.Text @map("diff_summary")
-  filesChanged    String[]            @map("files_changed")
+  diffSummary  String?             @map("diff_summary") @db.Text
+  filesChanged String[]            @map("files_changed")
   /// Confiance auto-estimée (0-1). Utilisé pour prioriser le review humain.
-  confidence      Float?
-  testsRun        Boolean             @default(false) @map("tests_run")
-  testsPass       Boolean?            @map("tests_pass")
+  confidence   Float?
+  testsRun     Boolean             @default(false) @map("tests_run")
+  testsPass    Boolean?            @map("tests_pass")
   /// Coût cumulé (USD) pour traçabilité. Pas un cap — on logge seulement.
-  tokensInput     Int?                @map("tokens_input")
-  tokensOutput    Int?                @map("tokens_output")
-  costUsd         Decimal?            @db.Decimal(10, 4) @map("cost_usd")
-  abortReason     String?             @db.Text @map("abort_reason")
-  logs            String?             @db.Text // stdout/stderr tronqué (50kb max)
-  startedAt       DateTime            @default(now()) @map("started_at")
-  endedAt         DateTime?           @map("ended_at")
+  tokensInput  Int?                @map("tokens_input")
+  tokensOutput Int?                @map("tokens_output")
+  costUsd      Decimal?            @map("cost_usd") @db.Decimal(10, 4)
+  abortReason  String?             @map("abort_reason") @db.Text
+  logs         String?             @db.Text // stdout/stderr tronqué (50kb max)
+  startedAt    DateTime            @default(now()) @map("started_at")
+  endedAt      DateTime?           @map("ended_at")
 
   bug BugReport @relation(fields: [bugId], references: [id], onDelete: Cascade)
 
@@ -4553,12 +4554,12 @@ model BugFixAttempt {
 }
 
 model BugComment {
-  id         String   @id @default(cuid())
-  bugId      String   @map("bug_id")
-  body       String   @db.Text
-  authorUserId String? @map("author_user_id")
-  authorName String?  @map("author_name")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id           String   @id @default(cuid())
+  bugId        String   @map("bug_id")
+  body         String   @db.Text
+  authorUserId String?  @map("author_user_id")
+  authorName   String?  @map("author_name")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   bug    BugReport @relation(fields: [bugId], references: [id], onDelete: Cascade)
   author User?     @relation("BugCommentAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
@@ -4605,7 +4606,49 @@ model EmailTemplate {
   /// Locale, prévu pour la phase i18n future.
   locale    String   @default("fr-CA")
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt        @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("email_templates")
+}
+
+// ============================================================================
+// ORG BILLING CONFIG — config de facturation par organisation
+// ----------------------------------------------------------------------------
+// Centralise les configs qui étaient en localStorage côté composant
+// `client-billing-overrides-section.tsx` :
+//   - billingTypes : quels modèles sont activés pour le client
+//     (hour_bank / professional_services / ftig)
+//   - hourBank     : détails de la banque d'heures (montant, dates,
+//     paiements, types de travail consommés, etc.)
+//   - ftig         : détails du forfait (calcul per-user/per-device,
+//     inclusions, taux extras, etc.)
+//
+// Bug critique avant : ces configs vivaient en localStorage du navigateur
+// de chaque agent. Bruno active "Services professionnels" → Marcel ne voit
+// rien. Impact direct sur la facturation client → revenus.
+// ============================================================================
+
+model OrgBillingConfig {
+  id             String       @id @default(cuid())
+  organizationId String       @unique @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// Liste des modèles de facturation activés. Valeurs attendues :
+  /// "hour_bank", "professional_services", "ftig".
+  billingTypes String[] @default([]) @map("billing_types")
+
+  /// Config détaillée de la banque d'heures (forme = HourBankConfig
+  /// définie côté UI). Schéma libre pour permettre l'évolution sans
+  /// migration. Voir `client-billing-overrides-section.tsx`.
+  hourBank Json? @map("hour_bank")
+
+  /// Config détaillée du Forfait FTIG (forme = FtigConfig côté UI).
+  ftig Json? @map("ftig")
+
+  /// Audit
+  updatedByUserId String?  @map("updated_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("org_billing_configs")
 }

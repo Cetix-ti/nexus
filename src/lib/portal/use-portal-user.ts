@@ -91,7 +91,12 @@ function permissionsFromRole(role: string): PortalPermissions {
     canSeePolicies: isAdmin,
     canSeeSoftware: isAdmin,
     canSeeChanges: isAdmin,
-    canSeeRenewals: isAdmin,
+    // Échéances : visible à tout user portail par défaut. Ce ne sont pas
+    // des données sensibles (juste des dates de fin de garantie /
+    // abonnement / support pour l'org du user). Avant : isAdmin →
+    // l'utilisateur standard ne voyait pas la page Échéances dans la
+    // sidebar.
+    canSeeRenewals: true,
     canSeeLicenseCounts: isAdmin,
   };
 }

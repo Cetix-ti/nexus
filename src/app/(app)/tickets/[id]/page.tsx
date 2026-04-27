@@ -2079,37 +2079,18 @@ export default function TicketDetailPage() {
               </p>
             </div>
 
-            {/* Panneau Triage IA — résumé d'une ligne + suggestions de
-                catégorie, priorité, type, doublon probable, incident majeur.
-                Généré automatiquement à la création du ticket ; régénérable. */}
-            <AiTriagePanel
-              ticketId={ticket.id}
-              currentCategoryId={(ticket as { categoryId?: string | null }).categoryId ?? null}
-              currentPriority={ticket.priority}
-              currentPrioritySource={
-                (ticket as { prioritySource?: string }).prioritySource ?? null
-              }
-              onTicketChanged={refreshTickets}
-            />
+            {/* Triage IA / Tickets similaires / KB pertinents ont été
+                déplacés dans une zone full-width sous la fiche (3 cols
+                responsive) — la sidebar étroite (~300 px) écrasait
+                leur contenu. Voir le bloc "Assistance IA" plus bas
+                après la fermeture du layout principal. */}
 
-            {/* Checklist d'intervention — s'affiche sous le triage dès
-                qu'une catégorie est présente. */}
+            {/* Checklist d'intervention — reste en sidebar : courte,
+                actionable au quotidien. */}
             <AiInterventionChecklist
               ticketId={ticket.id}
               categoryId={(ticket as { categoryId?: string | null }).categoryId ?? null}
             />
-
-            {/* Tickets similaires — 3 buckets : ouverts/résolus du client
-                et résolus d'autres clients. Désactivé pour MONITORING/AUTOMATION. */}
-            <SimilarTicketsWidget
-              ticketId={ticket.id}
-              ticketSource={
-                (ticket as { source?: string | null }).source ?? null
-              }
-            />
-
-            {/* KB auto-linking — top-3 articles dont l'embedding est proche. */}
-            <KbSuggestionsWidget ticketId={ticket.id} />
 
             {/* Tech apprenti — tickets exemplaires pour l'assigné junior. */}
             <ApprentiExemplarsWidget ticketId={ticket.id} />
@@ -2128,6 +2109,38 @@ export default function TicketDetailPage() {
                 /intelligence. Accès via menu latéral principal >
                 Intelligence IA uniquement. */}
           </div>
+        </div>
+      </div>
+
+      {/* ==================================================================
+          ASSISTANCE IA — full-width sous la fiche.
+          Triage IA, Tickets similaires, KB pertinents : 3 widgets qui
+          étaient écrasés dans la sidebar étroite (~300 px). Maintenant
+          en grille 3-col responsive (1 col mobile, 2 cols tablet, 3 cols
+          desktop) sur toute la largeur de la page (~1100-1500 px), ce
+          qui leur donne enfin la place de respirer.
+          ================================================================== */}
+      <div className="mt-6 pt-5 border-t border-slate-200">
+        <h2 className="text-[14px] font-semibold uppercase tracking-wider text-slate-500 mb-3">
+          Assistance IA
+        </h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+          <AiTriagePanel
+            ticketId={ticket.id}
+            currentCategoryId={(ticket as { categoryId?: string | null }).categoryId ?? null}
+            currentPriority={ticket.priority}
+            currentPrioritySource={
+              (ticket as { prioritySource?: string }).prioritySource ?? null
+            }
+            onTicketChanged={refreshTickets}
+          />
+          <SimilarTicketsWidget
+            ticketId={ticket.id}
+            ticketSource={
+              (ticket as { source?: string | null }).source ?? null
+            }
+          />
+          <KbSuggestionsWidget ticketId={ticket.id} />
         </div>
       </div>
 

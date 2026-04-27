@@ -103,6 +103,13 @@ function saveClientBillingTypes(orgId: string, types: ClientBillingType[]) {
   try {
     localStorage.setItem(`nexus:client-billing-types:${orgId}`, JSON.stringify(types));
   } catch { /* quota */ }
+  // Push à l'API : autorité partagée entre agents (avant : localStorage
+  // ne se propageait pas → Bruno active "Services pro", Marcel ne voit rien).
+  void fetch(`/api/v1/organizations/${encodeURIComponent(orgId)}/billing-config`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ billingTypes: types }),
+  }).catch(() => {});
 }
 
 interface HourBankPayment {
@@ -177,6 +184,11 @@ function loadHourBankConfig(orgId: string): HourBankConfig {
 }
 function saveHourBankConfig(orgId: string, cfg: HourBankConfig) {
   try { localStorage.setItem(`nexus:client-hour-bank:${orgId}`, JSON.stringify(cfg)); } catch {}
+  void fetch(`/api/v1/organizations/${encodeURIComponent(orgId)}/billing-config`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hourBank: cfg }),
+  }).catch(() => {});
 }
 function loadFtigConfig(orgId: string): FtigConfig {
   if (typeof window === "undefined") return {};
@@ -190,6 +202,11 @@ function loadFtigConfig(orgId: string): FtigConfig {
 }
 function saveFtigConfig(orgId: string, cfg: FtigConfig) {
   try { localStorage.setItem(`nexus:client-ftig:${orgId}`, JSON.stringify(cfg)); } catch {}
+  void fetch(`/api/v1/organizations/${encodeURIComponent(orgId)}/billing-config`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ftig: cfg }),
+  }).catch(() => {});
 }
 
 /**
@@ -680,6 +697,41 @@ function ClientBillingOverridesSectionInner({
   const [ftigCfg, setFtigCfg] = useState<FtigConfig>(
     () => loadFtigConfig(organizationId),
   );
+
+  // CRITIQUE : recharge la config de facturation depuis l'API DB au
+  // montage. Avant : la config vivait en localStorage de chaque agent
+  // → Bruno active "Services pro" sur HVAC, Marcel ne voit rien.
+  // Maintenant : tous les agents partagent la même autorité (table
+  // OrgBillingConfig). localStorage reste comme cache de premier paint
+  // mais l'API écrase si elles divergent.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/v1/organizations/${encodeURIComponent(organizationId)}/billing-config`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { billingTypes?: string[]; hourBank?: HourBankConfig | null; ftig?: FtigConfig | null } | null) => {
+        if (cancelled || !d) return;
+        if (Array.isArray(d.billingTypes)) {
+          const valid = d.billingTypes.filter((t): t is ClientBillingType =>
+            ALL_BILLING_TYPES.includes(t as ClientBillingType),
+          );
+          setBillingTypes(valid);
+          try { localStorage.setItem(`nexus:client-billing-types:${organizationId}`, JSON.stringify(valid)); } catch {}
+        }
+        if (d.hourBank && typeof d.hourBank === "object") {
+          setHourBankCfg(d.hourBank as HourBankConfig);
+          try { localStorage.setItem(`nexus:client-hour-bank:${organizationId}`, JSON.stringify(d.hourBank)); } catch {}
+        }
+        if (d.ftig && typeof d.ftig === "object") {
+          setFtigCfg(d.ftig as FtigConfig);
+          try { localStorage.setItem(`nexus:client-ftig:${organizationId}`, JSON.stringify(d.ftig)); } catch {}
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId]);
+
   const [workTypes, setWorkTypes] = useState<WorkTypeOption[]>(
     () => loadWorkTypes(organizationId),
   );
