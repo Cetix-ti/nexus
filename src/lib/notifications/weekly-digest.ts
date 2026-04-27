@@ -143,21 +143,22 @@ export async function sendWeeklyDigestForUser(userId: string, since: Date, until
 
 /**
  * Entrée principale du worker. Calcule la fenêtre 7 jours glissants
- * (lundi 00h00 → vendredi 17h00 par défaut) et dispatche un digest par
- * agent autorisé.
+ * et dispatche un digest par agent autorisé.
  */
 export async function runWeeklyDigest(now: Date = new Date()): Promise<{
   recipients: number;
   sent: string[];
   skipped: string[];
 }> {
-  // Fenêtre : du lundi 00h00 de la semaine en cours au moment courant.
-  // Le vendredi 17h, ça couvre lun-ven au moment où la semaine se termine.
-  const weekStart = new Date(now);
-  const day = weekStart.getDay();
-  const offsetToMonday = (day + 6) % 7; // 0 = dimanche → 6 jours avant
-  weekStart.setDate(weekStart.getDate() - offsetToMonday);
-  weekStart.setHours(0, 0, 0, 0);
+  // Fenêtre rolling 7 jours : `now - 7 jours` → `now`.
+  //
+  // Avant : on prenait "lundi 00h00 de la semaine en cours → now". Sur le
+  // run cron du vendredi 17h ça donne lun-ven (correct), mais sur un
+  // déclenchement manuel un lundi matin la fenêtre dégénère à "lundi 00h
+  // → lundi 09h" → l'objet email affichait "27 avril – 27 avril". Le
+  // rolling 7 jours est lisible quel que soit le moment du déclenchement
+  // et reste intuitif vendredi 17h (= lun précédent → ven 17h).
+  const weekStart = new Date(now.getTime() - 7 * 24 * 3600_000);
 
   const recipients = await prisma.user.findMany({
     where: {

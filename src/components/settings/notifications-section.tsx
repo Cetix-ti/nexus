@@ -138,6 +138,44 @@ export function NotificationsSection() {
   const [emailTestTo, setEmailTestTo] = useState("");
   const [showEmailModal, setShowEmailModal] = useState(false);
 
+  // Weekly digest manual trigger state
+  const [digestRunning, setDigestRunning] = useState<"self" | "all" | null>(null);
+
+  async function runWeeklyDigest(mode: "self" | "all") {
+    setDigestRunning(mode);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/v1/notifications/weekly-digest/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTestResult({
+          channel: "weekly_digest",
+          ok: false,
+          message: data.error ?? `Erreur ${res.status}`,
+        });
+      } else {
+        const recipients = (data.sent as string[] | undefined)?.join(", ") ?? "";
+        setTestResult({
+          channel: "weekly_digest",
+          ok: true,
+          message:
+            mode === "self"
+              ? `Weekly digest envoyé à vous-même (${recipients}).`
+              : `Weekly digest envoyé : ${data.sent?.length ?? 0}/${data.recipients ?? 0} destinataire(s)${recipients ? ` (${recipients})` : ""}.`,
+        });
+      }
+    } catch {
+      setTestResult({ channel: "weekly_digest", ok: false, message: "Erreur réseau" });
+    } finally {
+      setDigestRunning(null);
+      setTimeout(() => setTestResult(null), 10000);
+    }
+  }
+
   function saveTemplate(t: EmailTemplate) {
     setTemplates((prev) => {
       const exists = prev.find((p) => p.id === t.id);
@@ -239,6 +277,50 @@ export function NotificationsSection() {
               <SendHorizonal className="h-3.5 w-3.5" />
             )}
             Envoyer un email de test
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Weekly digest — déclenchement manuel pour itérer sur le contenu
+          sans attendre vendredi 17h. "Pour moi" envoie uniquement à
+          l'admin courant ; "À tous les destinataires" reproduit le run
+          du cron (= Bruno + Simon tant que la phase pré-prod dure). */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Résumé hebdomadaire</CardTitle>
+          <CardDescription>
+            Déclencher manuellement le weekly digest. Le cron tourne automatiquement chaque vendredi 17h00.
+            La fenêtre couvre les 7 derniers jours glissants.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={digestRunning !== null}
+            onClick={() => runWeeklyDigest("self")}
+            title="Envoie le digest uniquement à toi — utile pour itérer sur le contenu sans spammer"
+          >
+            {digestRunning === "self" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <SendHorizonal className="h-3.5 w-3.5" />
+            )}
+            Envoyer pour moi
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={digestRunning !== null}
+            onClick={() => runWeeklyDigest("all")}
+            title="Reproduit le run du cron — envoie à tous les destinataires autorisés"
+          >
+            {digestRunning === "all" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <SendHorizonal className="h-3.5 w-3.5" />
+            )}
+            Envoyer à tous les destinataires
           </Button>
         </CardContent>
       </Card>
