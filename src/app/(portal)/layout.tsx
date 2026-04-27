@@ -222,7 +222,11 @@ export default function PortalLayout({
           )}
         </div>
 
-        {/* Org badge */}
+        {/* Org badge — sidebar : logo client + libellé "Portail Nexus".
+            Le nom complet de l'org est déplacé dans le top-bar de la
+            zone de contenu (cf. plus bas) où il a toute la place
+            horizontale, ce qui évite la troncature pour les noms
+            longs (ex: "Municipalité Saint-Urbain-Premier"). */}
         {!sidebarCollapsed && (
           <div className="px-4 py-3 border-b border-neutral-100">
             <div className="flex items-center gap-2.5">
@@ -231,12 +235,12 @@ export default function PortalLayout({
                 <img
                   src={orgLogo}
                   alt={orgName}
-                  className="h-8 w-8 rounded-lg object-contain bg-white ring-1 ring-slate-200 shrink-0"
+                  className="h-9 w-9 rounded-lg object-contain bg-white ring-1 ring-slate-200 shrink-0"
                 />
               ) : (
                 <div
                   className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm shrink-0 text-white text-[12px] font-bold",
+                    "flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm shrink-0 text-white text-[13px] font-bold",
                     accentGradient,
                   )}
                   style={brand?.primaryColor ? { background: brand.primaryColor } : undefined}
@@ -245,17 +249,8 @@ export default function PortalLayout({
                 </div>
               )}
               <div className="min-w-0">
-                {/* Permet jusqu'à 2 lignes pour les noms d'org longs
-                    ("Ville de Sainte-Anne-de-Bellevue", etc.) — avant
-                    `truncate` coupait à la première ligne et rendait
-                    la lecture difficile. line-clamp-2 + leading-tight
-                    garde la zone compacte. Tooltip natif via `title`
-                    pour les noms encore plus longs. */}
-                <p
-                  className="text-[13px] font-semibold text-neutral-900 leading-tight line-clamp-2 break-words"
-                  title={orgName}
-                >
-                  {orgName}
+                <p className="text-[13px] font-semibold text-neutral-900 leading-tight">
+                  Portail Nexus
                 </p>
                 <p className="mt-0.5 text-[10.5px] text-neutral-400 uppercase tracking-wider font-medium">
                   {t("portal.layout.clientPortal")}
@@ -442,11 +437,8 @@ export default function PortalLayout({
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p
-                      className="text-[13px] font-semibold text-neutral-900 leading-tight line-clamp-2 break-words"
-                      title={orgName}
-                    >
-                      {orgName}
+                    <p className="text-[13px] font-semibold text-neutral-900 leading-tight">
+                      Portail Nexus
                     </p>
                     <p className="mt-0.5 text-[10px] text-neutral-400 uppercase tracking-wider">{t("portal.layout.clientPortal")}</p>
                   </div>
@@ -499,6 +491,37 @@ export default function PortalLayout({
             </div>
           )}
         </header>
+
+        {/* Top bar — affiche le nom complet du client + identité visuelle.
+            Visible sur desktop uniquement (sur mobile, le header sticky
+            existant fait le job). Comme le sidebar ne montre plus que
+            "Portail Nexus", c'est ici que l'utilisateur voit clairement
+            quel client il consulte. */}
+        <div className="hidden md:flex items-center gap-3 px-6 py-3 border-b border-neutral-200 bg-white sticky top-0 z-20">
+          {orgLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={orgLogo}
+              alt={orgName}
+              className="h-8 w-8 rounded-md object-contain bg-white ring-1 ring-slate-200 shrink-0"
+            />
+          ) : (
+            <div
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br text-white text-[12px] font-bold shrink-0",
+                accentGradient,
+              )}
+              style={brand?.primaryColor ? { background: brand.primaryColor } : undefined}
+            >
+              {(orgName || "N").charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] font-semibold text-neutral-900 leading-tight truncate" title={orgName}>
+              {orgName}
+            </p>
+          </div>
+        </div>
 
         {/* Main Content */}
         <main className="flex-1">
