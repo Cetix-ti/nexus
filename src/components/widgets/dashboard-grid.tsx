@@ -53,6 +53,16 @@ export interface DashboardItem {
    * dans ce dashboard uniquement. S'applique aux widgets personnalisés.
    */
   overrideChartType?: string;
+  /**
+   * Contenu texte pour les widgets `widgetId === "text"` (sections
+   * d'annotation, titres, contexte). Persistés dans le layout au même
+   * titre que les autres widgets.
+   */
+  textContent?: string;
+  textAlign?: "left" | "center" | "right";
+  textSize?: "sm" | "base" | "lg" | "xl" | "2xl" | "3xl";
+  textWeight?: "normal" | "medium" | "semibold" | "bold";
+  textColor?: string;
 }
 
 interface DashboardGridProps {

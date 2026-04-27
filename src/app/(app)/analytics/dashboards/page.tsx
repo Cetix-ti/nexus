@@ -747,7 +747,21 @@ export default function ReportsPage() {
     applyLayoutChange(dashItems.map((i) => i.id === id ? { ...i, ...patch } : i));
   }
   function handleGridAdd(widgetId: string) {
-    const newItem: DashboardItem = { id: `di_${widgetId}_${Date.now()}`, widgetId, w: 20, h: 3 };
+    // Sections texte : valeurs par défaut adaptées (hauteur courte +
+    // contenu placeholder + style "titre de section").
+    const isText = widgetId === "text";
+    const newItem: DashboardItem = isText
+      ? {
+          id: `di_text_${Date.now()}`,
+          widgetId: "text",
+          w: 20,
+          h: 1,
+          textContent: "Nouvelle section",
+          textAlign: "left",
+          textSize: "lg",
+          textWeight: "semibold",
+        }
+      : { id: `di_${widgetId}_${Date.now()}`, widgetId, w: 20, h: 3 };
     applyLayoutChange([...dashItems, newItem]);
   }
 
@@ -2267,6 +2281,18 @@ export default function ReportsPage() {
 
                 const node = (() => {
                 switch (widgetId) {
+                  case "text": {
+                    // Section texte : annotation libre dans le dashboard.
+                    // Édition inline en mode édition (textarea), affichage
+                    // statique sinon.
+                    return (
+                      <TextSectionWidget
+                        item={item}
+                        editMode={editMode}
+                        onChange={(patch) => item && handleGridItemUpdate(item.id, patch)}
+                      />
+                    );
+                  }
                   case "ticket_kpis":
                     return tk ? (
                       <div className={cn("grid gap-3 p-3", kpiCols)}>
@@ -3106,6 +3132,32 @@ function WidgetAddPanel({
           </button>
         </div>
 
+        {/* Bloc spécial : section texte. Pas un widget de données — un
+            bloc d'annotation libre pour structurer un dashboard long. */}
+        <div className="px-4 pt-3">
+          <button
+            type="button"
+            onClick={() => {
+              onAdd("text");
+              onClose();
+            }}
+            className="w-full flex items-center gap-3 rounded-lg border border-dashed border-blue-300 bg-blue-50/40 hover:bg-blue-50 px-3 py-2.5 text-left transition-colors"
+          >
+            <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700 shrink-0">
+              <FileText className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-slate-900">
+                Section texte
+              </p>
+              <p className="text-[11px] text-slate-500 leading-snug">
+                Titre, contexte ou annotation entre les widgets.
+              </p>
+            </div>
+            <span className="text-[11px] font-medium text-blue-700">+ Ajouter</span>
+          </button>
+        </div>
+
         <div className="flex-1 overflow-y-auto px-4 py-3">
           <WidgetCatalogPicker
             widgets={widgets}
@@ -3132,6 +3184,126 @@ function WidgetAddPanel({
 // ===========================================================================
 // SUB-COMPONENTS
 // ===========================================================================
+
+/**
+ * TextSectionWidget — bloc de texte libre dans un dashboard. Permet
+ * d'ajouter des sections / titres / annotations entre les widgets de
+ * données pour structurer un rapport long.
+ *
+ * Mode lecture : rend le texte avec son style (taille, alignement, poids).
+ * Mode édition : textarea inline + barre de réglages compacte (taille,
+ * alignement, poids). Les changements appellent onChange qui met à jour
+ * le DashboardItem via le flux de persistance habituel.
+ */
+function TextSectionWidget({
+  item,
+  editMode,
+  onChange,
+}: {
+  item?: DashboardItem;
+  editMode: boolean;
+  onChange: (patch: Partial<DashboardItem>) => void;
+}) {
+  const content = item?.textContent ?? "";
+  const align = item?.textAlign ?? "left";
+  const size = item?.textSize ?? "lg";
+  const weight = item?.textWeight ?? "semibold";
+
+  const sizeClass: Record<string, string> = {
+    sm: "text-[12px]",
+    base: "text-[14px]",
+    lg: "text-[16px]",
+    xl: "text-[19px]",
+    "2xl": "text-[22px]",
+    "3xl": "text-[26px]",
+  };
+  const weightClass: Record<string, string> = {
+    normal: "font-normal",
+    medium: "font-medium",
+    semibold: "font-semibold",
+    bold: "font-bold",
+  };
+  const alignClass: Record<string, string> = {
+    left: "text-left",
+    center: "text-center",
+    right: "text-right",
+  };
+
+  if (!editMode) {
+    return (
+      <div
+        className={cn(
+          "h-full w-full flex items-center px-4 py-2 whitespace-pre-wrap break-words text-slate-900 leading-snug",
+          sizeClass[size],
+          weightClass[weight],
+          alignClass[align],
+        )}
+      >
+        {content || (
+          <span className="italic text-slate-400">Section vide</span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full w-full flex flex-col gap-1 p-2">
+      <div className="flex flex-wrap items-center gap-1 shrink-0">
+        <select
+          value={size}
+          onChange={(e) => onChange({ textSize: e.target.value as DashboardItem["textSize"] })}
+          className="h-7 rounded border border-slate-200 bg-white px-1.5 text-[11px]"
+          title="Taille"
+        >
+          <option value="sm">XS</option>
+          <option value="base">S</option>
+          <option value="lg">M</option>
+          <option value="xl">L</option>
+          <option value="2xl">XL</option>
+          <option value="3xl">XXL</option>
+        </select>
+        <select
+          value={weight}
+          onChange={(e) => onChange({ textWeight: e.target.value as DashboardItem["textWeight"] })}
+          className="h-7 rounded border border-slate-200 bg-white px-1.5 text-[11px]"
+          title="Poids"
+        >
+          <option value="normal">Normal</option>
+          <option value="medium">Medium</option>
+          <option value="semibold">Semi</option>
+          <option value="bold">Gras</option>
+        </select>
+        <div className="inline-flex rounded border border-slate-200 overflow-hidden">
+          {(["left", "center", "right"] as const).map((a) => (
+            <button
+              key={a}
+              type="button"
+              onClick={() => onChange({ textAlign: a })}
+              className={cn(
+                "h-7 px-2 text-[11px]",
+                align === a ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50",
+              )}
+              title={a === "left" ? "Gauche" : a === "center" ? "Centré" : "Droite"}
+            >
+              {a === "left" ? "⇤" : a === "center" ? "↔" : "⇥"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <textarea
+        value={content}
+        onChange={(e) => onChange({ textContent: e.target.value })}
+        placeholder="Tape ton texte ici… (titre de section, contexte, annotation)"
+        className={cn(
+          "flex-1 w-full resize-none rounded border border-slate-200 bg-white px-3 py-2 leading-snug focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none whitespace-pre-wrap",
+          sizeClass[size],
+          weightClass[weight],
+          alignClass[align],
+        )}
+      />
+    </div>
+  );
+}
 
 function MonthlyTrendWidget({ data }: { data: ReportData }) {
   const maxH = Math.max(...data.monthlyBreakdown.map((m) => m.hours), 1);
