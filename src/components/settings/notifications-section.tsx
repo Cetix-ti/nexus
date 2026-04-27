@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FileText,
   Pencil,
-  Trash2,
   SendHorizonal,
   Loader2,
   CheckCircle2,
@@ -32,88 +31,7 @@ import { NotificationAllowlistSection } from "./notification-allowlist-section";
 // Email templates
 // ---------------------------------------------------------------------------
 
-type TemplateAudience = "agent" | "contact";
-
-interface CategorizedTemplate extends EmailTemplate {
-  audience: TemplateAudience;
-}
-
-const initialTemplates: CategorizedTemplate[] = [
-  // Agent templates
-  {
-    id: "t1",
-    audience: "agent",
-    name: "Bienvenue agent",
-    subject: "Bienvenue dans Nexus, {{agent_name}} !",
-    body: "Bonjour {{agent_name}},\n\nBienvenue dans Nexus !",
-    updatedAt: "Il y a 2 jours",
-  },
-  {
-    id: "t3",
-    audience: "agent",
-    name: "Nouveau commentaire (agent)",
-    subject: "Nouvelle réponse sur le ticket {{ticket_id}}",
-    body: "Une nouvelle réponse a été ajoutée au ticket {{ticket_id}}.",
-    updatedAt: "Il y a 1 semaine",
-  },
-  {
-    id: "t5",
-    audience: "agent",
-    name: "Escalade SLA",
-    subject: "[Urgent] Le SLA du ticket {{ticket_id}} est dépassé",
-    body: "Le SLA du ticket {{ticket_id}} a été dépassé.",
-    updatedAt: "Il y a 3 semaines",
-  },
-  {
-    id: "t7",
-    audience: "agent",
-    name: "Nouveau ticket assigné",
-    subject: "Le ticket {{ticket_id}} vous a été assigné",
-    body: "Bonjour {{agent_name}},\n\nLe ticket #{{ticket_id}} — {{ticket_subject}} vous a été assigné.",
-    updatedAt: "Il y a 3 semaines",
-  },
-  {
-    id: "t8",
-    audience: "agent",
-    name: "Rappel de ticket",
-    subject: "Rappel : ticket {{ticket_id}} en attente",
-    body: "Le ticket {{ticket_id}} requiert votre attention.",
-    updatedAt: "Le mois dernier",
-  },
-  // Contact (client) templates
-  {
-    id: "t2",
-    audience: "contact",
-    name: "Confirmation de création de ticket",
-    subject: "Votre ticket {{ticket_id}} a été reçu",
-    body: "Bonjour {{requester_name}},\n\nNous avons bien reçu votre ticket {{ticket_id}}. Notre équipe le traitera dans les meilleurs délais.",
-    updatedAt: "Il y a 5 jours",
-  },
-  {
-    id: "t4",
-    audience: "contact",
-    name: "Résolution de ticket",
-    subject: "Votre ticket {{ticket_id}} est résolu",
-    body: "Bonjour {{requester_name}},\n\nVotre ticket {{ticket_id}} a été marqué comme résolu.",
-    updatedAt: "Il y a 2 semaines",
-  },
-  {
-    id: "t6",
-    audience: "contact",
-    name: "Nouvelle réponse (client)",
-    subject: "Nouvelle réponse sur votre ticket {{ticket_id}}",
-    body: "Bonjour {{requester_name}},\n\nUne nouvelle réponse a été ajoutée à votre ticket {{ticket_id}}.",
-    updatedAt: "Il y a 1 semaine",
-  },
-  {
-    id: "t9",
-    audience: "contact",
-    name: "Rappel ticket en attente",
-    subject: "Rappel : ticket {{ticket_id}} en attente de votre réponse",
-    body: "Bonjour {{requester_name}},\n\nLe ticket {{ticket_id}} est en attente de votre réponse.",
-    updatedAt: "Le mois dernier",
-  },
-];
+type CategorizedTemplate = EmailTemplate;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -121,11 +39,29 @@ const initialTemplates: CategorizedTemplate[] = [
 
 export function NotificationsSection() {
   const [templates, setTemplates] =
-    useState<CategorizedTemplate[]>(initialTemplates);
+    useState<CategorizedTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
+
+  async function loadTemplates() {
+    setTemplatesLoading(true);
+    try {
+      const res = await fetch("/api/v1/email-templates");
+      if (res.ok) {
+        const data: EmailTemplate[] = await res.json();
+        setTemplates(data);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadTemplates();
+  }, []);
   const [editingTemplate, setEditingTemplate] =
     useState<EmailTemplate | null>(null);
-  const [creatingTemplate, setCreatingTemplate] = useState(false);
-
   // Toast notifications
 
   // Test state
@@ -176,18 +112,10 @@ export function NotificationsSection() {
     }
   }
 
-  function saveTemplate(t: EmailTemplate) {
-    setTemplates((prev) => {
-      const exists = prev.find((p) => p.id === t.id);
-      if (exists) return prev.map((p) => (p.id === t.id ? { ...p, ...t } : p));
-      return [...prev, { ...t, audience: "agent" as TemplateAudience }];
-    });
-  }
-
-  function deleteTemplate(id: string) {
-    if (!confirm("Supprimer ce modèle d'email ?")) return;
-    setTemplates((prev) => prev.filter((p) => p.id !== id));
-  }
+  // saveTemplate / deleteTemplate retirés : la modale persiste maintenant
+  // directement via l'API, et la liste est rafraîchie via `loadTemplates()`
+  // après la sauvegarde. Pas de "créer" non plus — un template existe par
+  // event seedé en DB ; on ne crée pas de templates ad-hoc.
 
   async function handleSendTestEmail() {
     if (!emailTestTo || !emailTestTo.includes("@")) return;
@@ -338,13 +266,9 @@ export function NotificationsSection() {
               Personnalisez le contenu des notifications envoyées aux agents et aux contacts clients
             </CardDescription>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCreatingTemplate(true)}
-          >
-            Nouveau modèle
-          </Button>
+          {/* Plus de "Nouveau modèle" : un template par event est seedé en
+              DB, on n'en crée pas ad-hoc. Pour ajouter un template, il
+              faut d'abord ajouter un event au catalogue côté code. */}
         </CardHeader>
         <CardContent className="p-0">
           {/* Agent templates */}
@@ -354,9 +278,17 @@ export function NotificationsSection() {
             </p>
           </div>
           <div className="divide-y divide-slate-100">
-            {templates.filter((t) => t.audience === "agent").map((t) => (
-              <TemplateRow key={t.id} template={t} onEdit={() => setEditingTemplate(t)} onDelete={() => deleteTemplate(t.id)} />
-            ))}
+            {templatesLoading ? (
+              <div className="px-5 py-6 text-[12.5px] text-slate-400 inline-flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Chargement…
+              </div>
+            ) : templates.filter((t) => t.audience === "agent").length === 0 ? (
+              <div className="px-5 py-6 text-[12.5px] text-slate-400">Aucun template agent.</div>
+            ) : (
+              templates.filter((t) => t.audience === "agent").map((t) => (
+                <TemplateRow key={t.id} template={t} onEdit={() => setEditingTemplate(t)} />
+              ))
+            )}
           </div>
 
           {/* Contact templates */}
@@ -366,21 +298,22 @@ export function NotificationsSection() {
             </p>
           </div>
           <div className="divide-y divide-slate-100">
-            {templates.filter((t) => t.audience === "contact").map((t) => (
-              <TemplateRow key={t.id} template={t} onEdit={() => setEditingTemplate(t)} onDelete={() => deleteTemplate(t.id)} />
-            ))}
+            {!templatesLoading && templates.filter((t) => t.audience === "contact").length === 0 ? (
+              <div className="px-5 py-6 text-[12.5px] text-slate-400">Aucun template contact.</div>
+            ) : (
+              templates.filter((t) => t.audience === "contact").map((t) => (
+                <TemplateRow key={t.id} template={t} onEdit={() => setEditingTemplate(t)} />
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
 
       <EditEmailTemplateModal
-        open={!!editingTemplate || creatingTemplate}
+        open={!!editingTemplate}
         template={editingTemplate}
-        onClose={() => {
-          setEditingTemplate(null);
-          setCreatingTemplate(false);
-        }}
-        onSave={saveTemplate}
+        onClose={() => setEditingTemplate(null)}
+        onSaved={loadTemplates}
       />
 
       {/* Email test modal */}
@@ -437,11 +370,9 @@ export function NotificationsSection() {
 function TemplateRow({
   template,
   onEdit,
-  onDelete,
 }: {
   template: CategorizedTemplate;
   onEdit: () => void;
-  onDelete: () => void;
 }) {
   return (
     <div className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50/60 transition-colors group">
@@ -451,20 +382,19 @@ function TemplateRow({
       <div className="flex-1 min-w-0">
         <h3 className="text-[14px] font-semibold text-slate-900 truncate">
           {template.name}
+          {!template.enabled && (
+            <span className="ml-2 inline-block rounded bg-slate-200 text-slate-600 text-[10px] font-medium px-1.5 py-0.5 align-middle">
+              Désactivé
+            </span>
+          )}
         </h3>
-        <p className="mt-0.5 text-[12px] text-slate-500 truncate">
-          Objet : <span className="font-mono">{template.subject}</span>
+        <p className="mt-0.5 text-[12px] text-slate-500 truncate font-mono">
+          {template.eventKey}
         </p>
       </div>
-      <span className="text-[11px] text-slate-400 hidden sm:block">
-        Modifié {template.updatedAt}
-      </span>
       <Button variant="ghost" size="sm" onClick={onEdit}>
         <Pencil className="h-3.5 w-3.5" />
         Modifier
-      </Button>
-      <Button variant="ghost" size="sm" onClick={onDelete} title="Supprimer">
-        <Trash2 className="h-3.5 w-3.5 text-red-500" />
       </Button>
     </div>
   );

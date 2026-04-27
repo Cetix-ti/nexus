@@ -16,7 +16,8 @@
 
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email/send";
-import { buildNexusEmail, type NexusEmailOptions } from "@/lib/email/nexus-template";
+import { type NexusEmailOptions } from "@/lib/email/nexus-template";
+import { renderTemplateForEvent } from "@/lib/email/template-renderer";
 import { canNotify } from "./preferences";
 import { getPortalBaseUrl } from "@/lib/portal-domain/url";
 
@@ -29,10 +30,22 @@ export interface NotifyContent {
   link?: string;
   /** Métadonnées libres pour la Notification. */
   metadata?: Record<string, unknown>;
-  /** Options complètes pour le template email (si l'email doit être envoyé). */
+  /**
+   * Options complètes pour le template email — utilisées comme **fallback**
+   * si le template DB n'existe pas ou est désactivé. Si le template DB
+   * est présent, son contenu remplace `email.body` et son `subject` est
+   * utilisé à la place de `emailSubject`.
+   */
   email: Omit<NexusEmailOptions, "event">;
-  /** Sujet du courriel (distinct du title in-app pour contrôle fin). */
+  /** Sujet du courriel (utilisé en fallback si le template DB n'a pas de subject). */
   emailSubject: string;
+  /**
+   * Payload des variables pour la substitution `{{var}}` dans le template
+   * DB. Fourni typiquement par les dispatchers — le helper de chaque
+   * domaine sait quelles variables sa famille d'events expose (cf.
+   * Phase 8 — payload builders par event).
+   */
+  emailPayload?: Record<string, unknown>;
 }
 
 /**
@@ -81,12 +94,14 @@ export async function notifyUser(
       // Lien vers les préférences pour unsubscribe en 1 clic.
       const base = await getPortalBaseUrl();
       const prefsUrl = `${base}/account?tab=notifications`;
-      const html = buildNexusEmail({
-        event,
-        ...content.email,
+      // Rend le template via la DB (renderTemplateForEvent gère le
+      // fallback automatique si le template n'existe pas ou est disabled).
+      const rendered = await renderTemplateForEvent(event, {
+        payload: content.emailPayload ?? {},
+        fallback: { event, ...content.email },
         prefsUrl,
       });
-      promises.push(sendEmail(agentEmail, content.emailSubject, html));
+      promises.push(sendEmail(agentEmail, rendered.subject || content.emailSubject, rendered.html));
     }
 
     await Promise.allSettled(promises);

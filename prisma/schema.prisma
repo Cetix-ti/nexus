@@ -4560,3 +4560,46 @@ model BugComment {
   @@index([bugId, createdAt(sort: Desc)])
   @@map("bug_comments")
 }
+
+// ============================================================================
+// EMAIL TEMPLATES — modèles persistés en DB
+// ----------------------------------------------------------------------------
+// Avant : la section "Modèles d'email" de Paramètres > Notifications était
+// purement décorative — les templates vivaient en state React local et
+// n'étaient JAMAIS lus par le dispatcher d'emails (`buildNexusEmail` en dur).
+//
+// Après : un template par event existe en DB. `renderTemplateForEvent`
+// charge le row, substitue les `{{variables}}` du payload, et wrappe le
+// résultat dans le chrome Cetix. Le seul code en dur restant est le
+// chrome (logo, footer, palette) — le contenu (subject + body) est
+// éditable via l'UI admin.
+// ============================================================================
+
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  /// Clé d'event mappée (ex: "ticket_assigned", "ticket_comment", "weekly_digest").
+  /// Une seule version par event (pas de variantes pour l'instant — locale = "fr-CA"
+  /// est implicite ; on pivotera vers (eventKey, locale) si besoin i18n).
+  eventKey  String   @unique @map("event_key")
+  /// "agent" | "contact" — usage interne, sert au filtre UI.
+  audience  String
+  /// Nom affiché dans l'UI admin.
+  name      String
+  /// Sujet du courriel (peut contenir des `{{variables}}`).
+  subject   String
+  /// Corps HTML (rich text Tiptap). Peut contenir des `{{variables}}`.
+  body      String   @db.Text
+  /// Catalogue des variables disponibles pour ce template — alimenté par
+  /// le code (source de vérité = catalogue côté serveur), copié ici pour
+  /// le picker UI sans round-trip serveur.
+  variables String[] @default([])
+  /// Bascule rapide pour désactiver un template sans le supprimer
+  /// (l'envoi retombera alors sur `buildNexusEmail` hardcodé).
+  enabled   Boolean  @default(true)
+  /// Locale, prévu pour la phase i18n future.
+  locale    String   @default("fr-CA")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt        @map("updated_at")
+
+  @@map("email_templates")
+}
