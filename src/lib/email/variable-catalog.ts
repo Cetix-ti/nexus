@@ -64,7 +64,8 @@ const TICKET_VARS: VariableDef[] = [
 // Variables organisation — disponibles dans tout event lié à un client
 // ----------------------------------------------------------------------------
 const ORG_VARS: VariableDef[] = [
-  { key: "org_name", label: "Nom du client", description: "Nom de l'organisation", example: "Ville de Sainte-Anne-de-Bellevue" },
+  { key: "org_name", label: "Nom du client", description: "Nom complet de l'organisation", example: "Ville de Sainte-Anne-de-Bellevue" },
+  { key: "org_code", label: "Code client", description: "Code court (ex: SADB) — préféré dans les sujets de courriel", example: "SADB" },
   { key: "org_id", label: "ID du client", description: "Identifiant interne", example: "cmnp2evjs0016cdkc" },
   { key: "org_url", label: "Lien vers l'org", description: "URL absolue de la fiche org", example: "https://nexus.cetix.ca/organisations/sadb" },
 ];

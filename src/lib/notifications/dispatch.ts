@@ -652,7 +652,7 @@ export async function dispatchProjectAssigned(
   try {
     const project = await prisma.project.findUnique({
       where: { id: projectId },
-      select: { id: true, name: true, code: true, organizationId: true, organization: { select: { name: true, isInternal: true } } },
+      select: { id: true, name: true, code: true, organizationId: true, organization: { select: { name: true, clientCode: true, isInternal: true } } },
     });
     if (!project) return;
     const base = await getPortalTicketUrl(""); // piggyback for URL base
@@ -678,6 +678,7 @@ export async function dispatchProjectAssigned(
       project_name: project.name,
       project_url: url,
       org_name: project.organization?.name ?? "—",
+      org_code: (project.organization as { clientCode?: string | null } | null | undefined)?.clientCode ?? project.organization?.name ?? "—",
       org_id: project.organizationId,
       assignee_name: assignedUser ? `${assignedUser.firstName} ${assignedUser.lastName}`.trim() : "",
       assignee_email: assignedUser?.email ?? "",
@@ -725,6 +726,11 @@ export async function dispatchBackupAlert(opts: {
       company_name: process.env.COMPANY_NAME ?? "Cetix Informatique",
       now: new Date().toLocaleString("fr-CA", { dateStyle: "long", timeStyle: "short" }),
       org_name: opts.organizationName,
+      // Backup/monitoring sont appelés avec juste organizationName.
+      // On retombe sur ce nom pour `org_code` faute d'avoir l'orgId
+      // pour faire le lookup. Si l'appelant fournit `organizationCode`
+      // dans `opts`, on le préfère.
+      org_code: (opts as { organizationCode?: string }).organizationCode ?? opts.organizationName,
       org_id: "",
       org_url: "",
       backup_job_name: opts.jobName,
@@ -775,6 +781,11 @@ export async function dispatchMonitoringAlert(opts: {
       company_name: process.env.COMPANY_NAME ?? "Cetix Informatique",
       now: new Date().toLocaleString("fr-CA", { dateStyle: "long", timeStyle: "short" }),
       org_name: opts.organizationName,
+      // Backup/monitoring sont appelés avec juste organizationName.
+      // On retombe sur ce nom pour `org_code` faute d'avoir l'orgId
+      // pour faire le lookup. Si l'appelant fournit `organizationCode`
+      // dans `opts`, on le préfère.
+      org_code: (opts as { organizationCode?: string }).organizationCode ?? opts.organizationName,
       org_id: "",
       org_url: "",
       alert_title: opts.alertTitle,

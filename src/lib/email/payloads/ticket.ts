@@ -80,7 +80,7 @@ export async function buildTicketPayload(
   const ticket = await prisma.ticket.findUnique({
     where: { id: ticketId },
     include: {
-      organization: { select: { id: true, name: true, slug: true } },
+      organization: { select: { id: true, name: true, slug: true, clientCode: true } },
       assignee: { select: { firstName: true, lastName: true, email: true } },
       requester: { select: { firstName: true, lastName: true, email: true } },
     },
@@ -126,6 +126,7 @@ export async function buildTicketPayload(
     // Org
     org_id: ticket.organization?.id ?? "",
     org_name: ticket.organization?.name ?? "—",
+    org_code: ticket.organization?.clientCode ?? ticket.organization?.name ?? "—",
     org_url: orgUrl,
     // People
     assignee_name: ticket.assignee

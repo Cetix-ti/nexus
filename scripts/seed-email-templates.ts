@@ -48,7 +48,7 @@ const SEEDS: TemplateSeed[] = [
   {
     eventKey: "ticket_assigned",
     name: "Ticket assigné",
-    subject: "[{{org_name}}] {{ticket_priority_emoji}} {{ticket_display_number}} — {{ticket_subject}}",
+    subject: "[{{org_code}}] {{ticket_priority_emoji}} {{ticket_display_number}} — {{ticket_subject}}",
     body: [
       block(`<p style="margin:0 0 6px;font-size:13px;color:#64748B;">Vous êtes maintenant responsable de ce ticket :</p><p style="margin:0;font-size:18px;font-weight:600;color:#0F172A;">{{ticket_subject}}${priorityChip()}</p>`),
       metaTable([
@@ -66,7 +66,7 @@ const SEEDS: TemplateSeed[] = [
   {
     eventKey: "ticket_unassigned_pool",
     name: "Nouveau ticket non assigné (pool agents)",
-    subject: "[{{org_name}}] {{ticket_priority_emoji}} Nouveau ticket à prendre — {{ticket_subject}}",
+    subject: "[{{org_code}}] {{ticket_priority_emoji}} Nouveau ticket à prendre — {{ticket_subject}}",
     body: [
       block(`<p style="margin:0 0 6px;font-size:13px;color:#64748B;">Un nouveau ticket attend un agent :</p><p style="margin:0;font-size:18px;font-weight:600;color:#0F172A;">{{ticket_subject}}${priorityChip()}</p>`),
       metaTable([
@@ -82,7 +82,7 @@ const SEEDS: TemplateSeed[] = [
   {
     eventKey: "ticket_collaborator_added",
     name: "Ajouté comme collaborateur",
-    subject: "[{{org_name}}] Vous collaborez sur {{ticket_display_number}}",
+    subject: "[{{org_code}}] Vous collaborez sur {{ticket_display_number}}",
     body: [
       block(`<p style="margin:0;font-size:14px;color:#0F172A;line-height:1.6;"><strong>{{actor_name}}</strong> vous a ajouté comme collaborateur sur :</p><p style="margin:8px 0 0;font-size:16px;font-weight:600;color:#0F172A;">{{ticket_subject}}</p>`),
       metaTable([
@@ -97,7 +97,7 @@ const SEEDS: TemplateSeed[] = [
   {
     eventKey: "ticket_status_change",
     name: "Changement de statut",
-    subject: "[{{org_name}}] {{ticket_display_number}} : {{previous_status_label}} → {{ticket_status_label}}",
+    subject: "[{{org_code}}] {{ticket_display_number}} : {{previous_status_label}} → {{ticket_status_label}}",
     body: [
       block(`<p style="margin:0;font-size:14px;color:#0F172A;"><strong>{{actor_name}}</strong> a changé le statut du ticket.</p>`),
       metaTable([
@@ -128,7 +128,7 @@ const SEEDS: TemplateSeed[] = [
   {
     eventKey: "ticket_comment",
     name: "Nouveau commentaire",
-    subject: "[{{org_name}}] {{ticket_display_number}} — {{actor_name}} a commenté",
+    subject: "[{{org_code}}] {{ticket_display_number}} — {{actor_name}} a commenté",
     body: [
       block(`<p style="margin:0 0 4px;font-size:13px;color:#64748B;">{{actor_name}} a ajouté un commentaire sur :</p><p style="margin:0;font-size:16px;font-weight:600;color:#0F172A;">{{ticket_subject}}</p>`),
       quote("{{comment_excerpt}}"),
@@ -143,7 +143,7 @@ const SEEDS: TemplateSeed[] = [
   {
     eventKey: "ticket_mention",
     name: "Mention dans un commentaire",
-    subject: "[{{org_name}}] @mention sur {{ticket_display_number}}",
+    subject: "[{{org_code}}] @mention sur {{ticket_display_number}}",
     body: [
       block(`<p style="margin:0;font-size:14px;color:#0F172A;"><strong>{{actor_name}}</strong> vous a mentionné dans un commentaire.</p>`),
       quote("{{comment_excerpt}}", "#9D174D"),
@@ -173,7 +173,7 @@ const SEEDS: TemplateSeed[] = [
   {
     eventKey: "ticket_approval_decided",
     name: "Décision d'approbation",
-    subject: "[{{org_name}}] Ticket {{ticket_display_number}} — {{approval_decision_label}}",
+    subject: "[{{org_code}}] Ticket {{ticket_display_number}} — {{approval_decision_label}}",
     body: [
       block(`<p style="margin:0;font-size:14px;color:#0F172A;"><strong>{{actor_name}}</strong> a <strong>{{approval_decision_label}}</strong> ce ticket.</p>`),
       quote("{{approval_note}}"),
@@ -188,7 +188,7 @@ const SEEDS: TemplateSeed[] = [
   {
     eventKey: "project_assigned",
     name: "Projet assigné",
-    subject: "[{{org_name}}] Projet — {{project_name}}",
+    subject: "[{{org_code}}] Projet — {{project_name}}",
     body: [
       block(`<p style="margin:0;font-size:14px;color:#0F172A;">Vous êtes maintenant responsable du projet <strong>{{project_name}}</strong> chez <strong>{{org_name}}</strong>.</p>`),
     ].join(""),
@@ -196,7 +196,7 @@ const SEEDS: TemplateSeed[] = [
   {
     eventKey: "backup_failed",
     name: "Sauvegarde en échec",
-    subject: "[{{org_name}}] ⚠ Sauvegarde en échec — {{backup_job_name}}",
+    subject: "[{{org_code}}] ⚠ Sauvegarde en échec — {{backup_job_name}}",
     body: [
       block(`<p style="margin:0;font-size:14px;color:#0F172A;">Le job de sauvegarde <strong>{{backup_job_name}}</strong> de <strong>{{org_name}}</strong> est en échec.</p>`),
       quote("{{backup_failure_reason}}", "#991B1B"),
@@ -205,7 +205,7 @@ const SEEDS: TemplateSeed[] = [
   {
     eventKey: "monitoring_alert",
     name: "Alerte monitoring",
-    subject: "[{{org_name}}] {{alert_severity}} — {{alert_title}}",
+    subject: "[{{org_code}}] {{alert_severity}} — {{alert_title}}",
     body: [
       block(`<p style="margin:0 0 4px;font-size:13px;color:#64748B;">Source : <strong>{{alert_source}}</strong> · Sévérité : <strong>{{alert_severity}}</strong></p><p style="margin:0;font-size:16px;font-weight:600;color:#0F172A;">{{alert_title}}</p>`),
       quote("{{alert_message}}", "#991B1B"),
@@ -235,7 +235,7 @@ const SEEDS: TemplateSeed[] = [
   {
     eventKey: "renewal_reminder",
     name: "Renouvellement à venir",
-    subject: "[{{org_name}}] Renouvellement — {{renewal_label}} dans {{renewal_days_left}} j",
+    subject: "[{{org_code}}] Renouvellement — {{renewal_label}} dans {{renewal_days_left}} j",
     body: [
       block(`<p style="margin:0 0 4px;font-size:13px;color:#64748B;">Type : <strong>{{renewal_type}}</strong></p><p style="margin:0;font-size:18px;font-weight:600;color:#0F172A;">{{renewal_label}}</p>`),
       metaTable([
