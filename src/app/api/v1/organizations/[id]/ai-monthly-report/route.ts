@@ -9,18 +9,16 @@
 
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 import { generateMonthlyReport } from "@/lib/ai/features/monthly-report";
 
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasMinimumRole(me.role, "SUPERVISOR")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // Génération de rapport → ai.run_jobs (consomme tokens + livrable client)
+  const guard = await requireAiPermission("ai.run_jobs");
+  if (!guard.ok) return guard.res;
   const { id } = await params;
 
   const org = await prisma.organization.findUnique({

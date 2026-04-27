@@ -14,11 +14,19 @@
 
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { getCurrentUser, hasCapability, hasMinimumRole } from "@/lib/auth-utils";
 import { invalidateConsentCache } from "@/lib/ai/consent";
 
+/**
+ * Auth de cette route est spéciale (Loi 25) :
+ *   - Côté staff : exige `ai.manage` (modifie la config IA d'une org)
+ *     pour PATCH ; `ai.view` suffit pour GET
+ *   - Côté client : seul un CLIENT_ADMIN de l'org elle-même peut consulter
+ *     ou modifier son propre consent (la loi exige que le client puisse
+ *     révoquer SANS demander l'autorisation du MSP)
+ */
 async function authorize(
-  req: { id: string },
+  req: { id: string; method: "GET" | "PATCH" },
 ): Promise<{ ok: true; userId: string; email: string | null } | { ok: false; res: Response }> {
   const me = await getCurrentUser();
   if (!me) {
@@ -28,7 +36,18 @@ async function authorize(
     };
   }
   const isStaff = hasMinimumRole(me.role, "SUPERVISOR");
-  if (!isStaff) {
+  if (isStaff) {
+    const requiredPerm = req.method === "PATCH" ? "ai.manage" : "ai.view";
+    if (!hasCapability(me, requiredPerm)) {
+      return {
+        ok: false,
+        res: NextResponse.json(
+          { error: `Forbidden — permission requise: ${requiredPerm}` },
+          { status: 403 },
+        ),
+      };
+    }
+  } else {
     const membership = await prisma.userOrganization.findFirst({
       where: {
         userId: me.id,
@@ -52,7 +71,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const auth = await authorize({ id });
+  const auth = await authorize({ id, method: "GET" });
   if (!auth.ok) return auth.res;
 
   const row = await prisma.aiConsent.findUnique({
@@ -77,7 +96,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const auth = await authorize({ id });
+  const auth = await authorize({ id, method: "PATCH" });
   if (!auth.ok) return auth.res;
 
   const body = await req.json().catch(() => ({}));

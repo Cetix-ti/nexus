@@ -655,6 +655,9 @@ export default function OrganizationDetailPage() {
       .catch(() => {});
   }, []);
   const canFinances = userCapabilities.includes("finances");
+  // Capacité IA (ai.view) — masque l'onglet Intelligence IA aux rôles
+  // qui n'ont pas la permission. Avant : tout le monde voyait l'onglet.
+  const canAi = userCapabilities.includes("ai.view");
   const visibleTabs = useMemo(
     () =>
       TABS.filter((t) => {
@@ -666,9 +669,10 @@ export default function OrganizationDetailPage() {
         ) {
           return canFinances;
         }
+        if (t.key === "ai") return canAi;
         return true;
       }),
-    [canFinances],
+    [canFinances, canAi],
   );
   // Si le tab actif est gaté et l'utilisateur n'a pas la cap, on retombe
   // sur "overview" pour éviter un écran blanc.
@@ -1552,8 +1556,11 @@ export default function OrganizationDetailPage() {
       )}
 
       {/* Intelligence IA Tab — Phase 3 : analyse risques, rapports
-          exécutifs mensuels, opportunités commerciales. */}
-      {activeTab === "ai" && (
+          exécutifs mensuels, opportunités commerciales.
+          Gaté sur ai.view (cf. visibleTabs ci-dessus). Le && canAi est
+          un double check : si jamais le filtre du tab échoue, on évite
+          quand même de rendre le composant aux non-autorisés. */}
+      {activeTab === "ai" && canAi && (
         <OrgAiIntelligenceTab
           organizationId={orgId}
           organizationSlug={slugOrId}

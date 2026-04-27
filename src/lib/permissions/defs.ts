@@ -93,6 +93,15 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: "reports.create", label: "Créer des rapports",     description: "Créer des rapports personnalisés" },
     ],
   },
+  {
+    category: "Intelligence IA",
+    permissions: [
+      { key: "ai.view",       label: "Voir les analyses IA",  description: "Consulter les insights, prédictions et rapports IA d'une organisation (onglet Intelligence IA)" },
+      { key: "ai.manage",     label: "Configurer l'IA",       description: "Activer/désactiver les capacités IA, ajuster les seuils, gérer les modèles" },
+      { key: "ai.run_jobs",   label: "Déclencher des jobs IA", description: "Lancer manuellement des analyses, prédictions, classifications" },
+      { key: "ai.view_costs", label: "Voir les coûts IA",     description: "Consulter les compteurs de tokens et coûts USD par appel" },
+    ],
+  },
 ];
 
 /**
@@ -139,6 +148,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "users.view", "users.create", "users.update", "users.delete", "users.assign_roles",
     "settings.general", "settings.sla", "settings.categories", "settings.queues", "settings.automations", "settings.integrations",
     "reports.view", "reports.export", "reports.create",
+    "ai.view", "ai.manage", "ai.run_jobs", "ai.view_costs",
   ],
   MSP_ADMIN: [
     "tickets.view", "tickets.view_all", "tickets.create", "tickets.update", "tickets.delete", "tickets.assign", "tickets.merge", "tickets.bulk_actions",
@@ -146,12 +156,14 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "users.view", "users.create", "users.update", "users.assign_roles",
     "settings.general", "settings.sla", "settings.categories", "settings.queues", "settings.automations",
     "reports.view", "reports.export", "reports.create",
+    "ai.view", "ai.run_jobs",
   ],
   SUPERVISOR: [
     "tickets.view", "tickets.view_all", "tickets.create", "tickets.update", "tickets.assign", "tickets.merge", "tickets.bulk_actions",
     "orgs.view",
     "users.view",
     "reports.view", "reports.export",
+    "ai.view",
   ],
   TECHNICIAN: [
     "tickets.view", "tickets.view_all", "tickets.create", "tickets.update", "tickets.assign",

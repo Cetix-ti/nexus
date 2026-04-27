@@ -10,17 +10,15 @@
 
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (me.role.startsWith("CLIENT_")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // Consultation mémoire IA → ai.view
+  const guard = await requireAiPermission("ai.view");
+  if (!guard.ok) return guard.res;
   const { id } = await params;
 
   const url = new URL(req.url);
@@ -53,11 +51,10 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasMinimumRole(me.role, "SUPERVISOR")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // Ajout manuel de faits → ai.manage (modifie l'état IA durablement)
+  const guard = await requireAiPermission("ai.manage");
+  if (!guard.ok) return guard.res;
+  const me = guard.me;
   const { id } = await params;
 
   const body = await req.json();

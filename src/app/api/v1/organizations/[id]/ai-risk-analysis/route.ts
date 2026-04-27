@@ -11,7 +11,7 @@
 
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUser, hasMinimumRole } from "@/lib/auth-utils";
+import { requireAiPermission } from "@/lib/permissions/ai-guard";
 import {
   analyzeClientRisks,
   getLastRiskAnalysis,
@@ -21,11 +21,9 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (me.role.startsWith("CLIENT_")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // Lecture d'analyse → ai.view (consultation des insights existants)
+  const guard = await requireAiPermission("ai.view");
+  if (!guard.ok) return guard.res;
   const { id } = await params;
   const analysis = await getLastRiskAnalysis(id);
   return NextResponse.json({ analysis });
@@ -35,11 +33,9 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasMinimumRole(me.role, "SUPERVISOR")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // Déclencher une analyse → ai.run_jobs (consomme des tokens IA)
+  const guard = await requireAiPermission("ai.run_jobs");
+  if (!guard.ok) return guard.res;
   const { id } = await params;
 
   const org = await prisma.organization.findUnique({
