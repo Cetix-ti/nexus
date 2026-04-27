@@ -2096,16 +2096,32 @@ export default function CalendarPage() {
 // utilisé pour planifier ces visites. Repliée par défaut (état persisté
 // localStorage) pour rester discrète tant qu'on n'en a pas besoin.
 // ---------------------------------------------------------------------------
-interface OnSitePlanningTicket {
+interface OnSiteTicketDTO {
   id: string;
-  number: number;
-  displayNumber?: string;
+  displayNumber: string;
   subject: string;
   priority: string;
   status: string;
-  organizationId: string | null;
-  organizationName?: string | null;
-  assignee?: { firstName: string; lastName: string } | null;
+  assignee: { firstName: string; lastName: string } | null;
+}
+
+interface OnSiteOrgGroup {
+  organizationId: string;
+  organizationName: string;
+  nextVisit: {
+    eventId: string;
+    title: string;
+    startsAt: string;
+    agents: { id: string; firstName: string; lastName: string }[];
+  } | null;
+  tickets: OnSiteTicketDTO[];
+}
+
+interface OnSiteQueueResponse {
+  upcoming: OnSiteOrgGroup[];
+  other: OnSiteOrgGroup[];
+  totalTickets: number;
+  totalOrgs: number;
 }
 
 const PRIORITY_DOT: Record<string, string> = {
@@ -2116,12 +2132,94 @@ const PRIORITY_DOT: Record<string, string> = {
   LOW: "bg-slate-400",
 };
 
+/** Format court d'une date d'event : "Mar 28 avr · 09h00" / "Demain · 14h00". */
+function fmtVisitDate(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
+  const isTomorrow =
+    d.getFullYear() === tomorrow.getFullYear() &&
+    d.getMonth() === tomorrow.getMonth() &&
+    d.getDate() === tomorrow.getDate();
+  const time = d.toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" });
+  if (sameDay) return `Aujourd'hui · ${time}`;
+  if (isTomorrow) return `Demain · ${time}`;
+  return d.toLocaleDateString("fr-CA", { weekday: "short", day: "numeric", month: "short" }) + ` · ${time}`;
+}
+
+/** Ligne ticket cliquable — utilisé dans les deux sections. */
+function OnSiteTicketRow({ t }: { t: OnSiteTicketDTO }) {
+  return (
+    <Link
+      href={`/tickets/${t.id}`}
+      className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-slate-50 transition-colors group"
+    >
+      <span
+        className={cn(
+          "h-2 w-2 rounded-full shrink-0",
+          PRIORITY_DOT[t.priority] ?? "bg-slate-400",
+        )}
+        title={`Priorité ${t.priority}`}
+      />
+      <span className="text-[12.5px] text-slate-800 group-hover:text-blue-700 truncate flex-1 min-w-0">
+        {t.subject}
+      </span>
+      {t.assignee && (
+        <span className="text-[10.5px] text-slate-400 truncate max-w-[100px] shrink-0">
+          {t.assignee.firstName} {t.assignee.lastName.charAt(0)}.
+        </span>
+      )}
+      <span className="font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0 min-w-[44px] text-right">
+        {t.displayNumber}
+      </span>
+    </Link>
+  );
+}
+
+/** Header collapsible pour un groupe org dans la section "Autres clients". */
+function OtherOrgGroup({ g }: { g: OnSiteOrgGroup }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 transition-colors text-left"
+      >
+        <ChevronDown
+          className={cn(
+            "h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform",
+            !open && "-rotate-90",
+          )}
+        />
+        <span className="text-[12.5px] font-medium text-slate-700 truncate flex-1 min-w-0">
+          {g.organizationName}
+        </span>
+        <span className="text-[10.5px] text-slate-500 tabular-nums shrink-0">
+          {g.tickets.length}
+        </span>
+      </button>
+      {open && (
+        <div className="bg-slate-50/40 border-y border-slate-100 divide-y divide-slate-100/80">
+          {g.tickets.map((t) => (
+            <OnSiteTicketRow key={t.id} t={t} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OnSitePlanningPanel() {
   const [open, setOpen] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("calendar.onSitePanel.open") === "1";
   });
-  const [tickets, setTickets] = useState<OnSitePlanningTicket[]>([]);
+  const [data, setData] = useState<OnSiteQueueResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -2134,10 +2232,10 @@ function OnSitePlanningPanel() {
     if (!open) return;
     let cancelled = false;
     setLoading(true);
-    fetch("/api/v1/tickets?requiresOnSiteOnly=true&limit=200")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((arr: OnSitePlanningTicket[]) => {
-        if (!cancelled) setTickets(Array.isArray(arr) ? arr : []);
+    fetch("/api/v1/calendar/onsite-queue")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: OnSiteQueueResponse | null) => {
+        if (!cancelled) setData(d);
       })
       .catch(() => {})
       .finally(() => {
@@ -2147,6 +2245,10 @@ function OnSitePlanningPanel() {
       cancelled = true;
     };
   }, [open]);
+
+  const totalTickets = data?.totalTickets ?? 0;
+  const upcoming = data?.upcoming ?? [];
+  const other = data?.other ?? [];
 
   return (
     <Card>
@@ -2161,9 +2263,9 @@ function OnSitePlanningPanel() {
             <span className="text-[12px] font-semibold text-slate-700 truncate">
               À planifier sur place
             </span>
-            {open && tickets.length > 0 && (
+            {open && totalTickets > 0 && (
               <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-md bg-amber-100 px-1.5 text-[11px] font-bold text-amber-800 tabular-nums shrink-0">
-                {tickets.length}
+                {totalTickets}
               </span>
             )}
             {!open && (
@@ -2184,44 +2286,71 @@ function OnSitePlanningPanel() {
             {loading && (
               <div className="px-3 py-4 text-[12px] text-slate-400">Chargement…</div>
             )}
-            {!loading && tickets.length === 0 && (
+            {!loading && totalTickets === 0 && (
               <div className="px-3 py-4 text-[12px] text-slate-400">
                 Aucun ticket à planifier sur place pour l&apos;instant.
               </div>
             )}
-            {!loading && tickets.length > 0 && (
-              <div className="max-h-[280px] overflow-y-auto divide-y divide-slate-100">
-                {tickets.map((t) => (
-                  <Link
-                    key={t.id}
-                    href={`/tickets/${t.id}`}
-                    className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 transition-colors"
-                  >
-                    <span
-                      className={cn(
-                        "h-2 w-2 rounded-full shrink-0",
-                        PRIORITY_DOT[t.priority] ?? "bg-slate-400",
-                      )}
-                      title={`Priorité ${t.priority}`}
-                    />
-                    <span className="font-mono text-[11px] text-slate-500 tabular-nums shrink-0 w-12">
-                      {t.displayNumber ?? `#${t.number}`}
-                    </span>
-                    <span className="text-[12px] text-slate-800 truncate flex-1 min-w-0">
-                      {t.subject}
-                    </span>
-                    {t.organizationName && (
-                      <span className="text-[11px] text-slate-500 truncate max-w-[140px] shrink-0">
-                        {t.organizationName}
+            {!loading && totalTickets > 0 && (
+              <div className="max-h-[420px] overflow-y-auto">
+                {/* Section 1 — Prochaines visites cédulées (14 j) */}
+                {upcoming.length > 0 && (
+                  <div>
+                    <div className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-white sticky top-0 z-10 border-b border-slate-100">
+                      Prochaines visites
+                    </div>
+                    {upcoming.map((g) => (
+                      <div key={g.organizationId} className="border-b border-slate-100 last:border-b-0">
+                        <div className="flex items-start gap-2 px-3 py-2 bg-blue-50/40">
+                          <MapPin className="h-3.5 w-3.5 text-blue-600 shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[12.5px] font-semibold text-slate-800 truncate">
+                              {g.organizationName}
+                            </div>
+                            {g.nextVisit && (
+                              <div className="text-[10.5px] text-slate-500 truncate">
+                                {fmtVisitDate(g.nextVisit.startsAt)}
+                                {g.nextVisit.agents.length > 0 && (
+                                  <>
+                                    {" · "}
+                                    {g.nextVisit.agents
+                                      .map((a) => `${a.firstName} ${a.lastName.charAt(0)}.`)
+                                      .join(", ")}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-[10.5px] text-slate-500 tabular-nums shrink-0 mt-0.5">
+                            {g.tickets.length}
+                          </span>
+                        </div>
+                        <div className="divide-y divide-slate-100">
+                          {g.tickets.map((t) => (
+                            <OnSiteTicketRow key={t.id} t={t} />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Section 2 — Autres clients (sans visite cédulée), repliés par défaut */}
+                {other.length > 0 && (
+                  <div>
+                    <div className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-white sticky top-0 z-10 border-b border-slate-100">
+                      Autres clients
+                      <span className="ml-2 text-slate-400 font-normal normal-case tracking-normal">
+                        ({other.reduce((acc, g) => acc + g.tickets.length, 0)} tickets · {other.length} clients)
                       </span>
-                    )}
-                    {t.assignee && (
-                      <span className="text-[10px] text-slate-400 truncate max-w-[80px] shrink-0">
-                        {t.assignee.firstName} {t.assignee.lastName.charAt(0)}.
-                      </span>
-                    )}
-                  </Link>
-                ))}
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {other.map((g) => (
+                        <OtherOrgGroup key={g.organizationId} g={g} />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
