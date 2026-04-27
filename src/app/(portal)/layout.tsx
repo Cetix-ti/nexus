@@ -245,10 +245,19 @@ export default function PortalLayout({
                 </div>
               )}
               <div className="min-w-0">
-                <p className="text-[13px] font-semibold text-neutral-900 truncate leading-tight">
+                {/* Permet jusqu'à 2 lignes pour les noms d'org longs
+                    ("Ville de Sainte-Anne-de-Bellevue", etc.) — avant
+                    `truncate` coupait à la première ligne et rendait
+                    la lecture difficile. line-clamp-2 + leading-tight
+                    garde la zone compacte. Tooltip natif via `title`
+                    pour les noms encore plus longs. */}
+                <p
+                  className="text-[13px] font-semibold text-neutral-900 leading-tight line-clamp-2 break-words"
+                  title={orgName}
+                >
                   {orgName}
                 </p>
-                <p className="text-[10.5px] text-neutral-400 uppercase tracking-wider font-medium">
+                <p className="mt-0.5 text-[10.5px] text-neutral-400 uppercase tracking-wider font-medium">
                   {t("portal.layout.clientPortal")}
                 </p>
               </div>
@@ -432,9 +441,14 @@ export default function PortalLayout({
                       {(orgName || "N").charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <div>
-                    <p className="text-[13px] font-semibold text-neutral-900">{orgName}</p>
-                    <p className="text-[10px] text-neutral-400 uppercase tracking-wider">{t("portal.layout.clientPortal")}</p>
+                  <div className="min-w-0">
+                    <p
+                      className="text-[13px] font-semibold text-neutral-900 leading-tight line-clamp-2 break-words"
+                      title={orgName}
+                    >
+                      {orgName}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-neutral-400 uppercase tracking-wider">{t("portal.layout.clientPortal")}</p>
                   </div>
                 </div>
 

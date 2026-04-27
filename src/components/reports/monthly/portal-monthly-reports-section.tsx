@@ -45,22 +45,17 @@ export function PortalMonthlyReportsSection() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return (
-      <div className="rounded-xl border border-slate-200 bg-white p-6">
-        <h2 className="text-[15px] font-bold text-slate-900 flex items-center gap-2">
-          <FileText className="h-4 w-4 text-blue-600" />
-          Rapports mensuels
-        </h2>
-        <div className="mt-3 flex items-center gap-2 text-[12px] text-slate-500">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Chargement…
-        </div>
-      </div>
-    );
-  }
+  // Loading silencieux : on ne rend rien tant qu'on ne sait pas s'il
+  // y a des rapports publiés. Avant : on affichait une carte avec un
+  // spinner "Chargement…" puis on faisait `return null` quand items était
+  // vide → flash visuel d'1-2 secondes (carte qui apparait puis
+  // disparait) très désagréable côté portail. Maintenant la carte
+  // n'apparait QUE quand il y a au moins un rapport à montrer.
+  if (loading || items.length === 0) return null;
 
-  if (items.length === 0) return null;
+  // void Loader2 — l'import est conservé au cas où on voudrait revenir
+  // à un loader visible plus tard. Réservé pour l'instant.
+  void Loader2;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
