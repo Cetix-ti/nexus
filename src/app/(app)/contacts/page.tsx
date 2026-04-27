@@ -87,6 +87,19 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loaded, setLoaded] = useState(false);
 
+  // Extrait pour pouvoir être rappelé après une sauvegarde modale
+  // (sinon la liste reste sur les données pré-modification → utilisateur
+  // perçoit les modifs comme "non appliquées").
+  async function loadContacts() {
+    try {
+      const r = await fetch("/api/v1/contacts");
+      const data = await r.json();
+      if (Array.isArray(data)) setContacts(data as Contact[]);
+    } catch (e) {
+      console.error("Erreur de chargement des contacts", e);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/v1/contacts")
@@ -303,8 +316,9 @@ export default function ContactsPage() {
                         name: `${contact.firstName} ${contact.lastName}`,
                         email: contact.email,
                         phone: contact.phone,
-                        jobTitle: contact.jobTitle ?? undefined,
+                        jobTitle: contact.jobTitle ?? "",
                         organization: contact.organization,
+                        organizationId: contact.organizationId,
                         isVIP: contact.vip,
                       })
                     }
@@ -453,6 +467,7 @@ export default function ContactsPage() {
         open={!!editingContact}
         onClose={() => setEditingContact(null)}
         contact={editingContact}
+        onSaved={loadContacts}
       />
     </div>
   );

@@ -24,8 +24,10 @@ export interface EditContactModalContact {
   name: string;
   email: string;
   phone: string;
+  /** Nom de l'org (affichage). Conservé pour rétrocompat ; la source de vérité côté formulaire est `organizationId`. */
   organization: string;
-  organizationId?: string;
+  /** ID de l'org propriétaire — REQUIS pour que le dropdown se pré-sélectionne correctement. */
+  organizationId: string;
   jobTitle: string;
   isVIP: boolean;
 }
@@ -34,6 +36,13 @@ interface EditContactModalProps {
   open: boolean;
   onClose: () => void;
   contact: EditContactModalContact | null;
+  /**
+   * Callback appelé après une sauvegarde réussie. Le parent peut
+   * recharger sa liste pour refléter les changements (nom, statut, org,
+   * permissions). Sans ça, la modale se ferme mais l'UI parente reste
+   * sur des données stale.
+   */
+  onSaved?: () => void;
 }
 
 function splitName(name: string): { first: string; last: string } {
@@ -56,13 +65,18 @@ export function EditContactModal({
   open,
   onClose,
   contact,
+  onSaved,
 }: EditContactModalProps) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [jobTitle, setJobTitle] = useState("");
-  const [organization, setOrganization] = useState("");
+  // L'état stocke l'ID de l'org sélectionnée (pas le nom) pour matcher
+  // de façon fiable l'option du dropdown — avant : on matchait par nom,
+  // ce qui cassait silencieusement quand l'API retournait une casse ou
+  // un trim différent du nom passé par le parent.
+  const [organizationId, setOrganizationId] = useState("");
   const [site, setSite] = useState("");
   const [vip, setVip] = useState(false);
   const [notes, setNotes] = useState("");
@@ -71,13 +85,14 @@ export function EditContactModal({
   const [phonePref, setPhonePref] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Organizations fetched from API
-  const [organizations, setOrganizations] = useState<string[]>([]);
+  // Liste des orgs pour le dropdown — on garde {id, name} et le matching
+  // se fait par ID (et plus par nom).
+  const [organizations, setOrganizations] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
     fetch("/api/v1/organizations")
       .then((r) => (r.ok ? r.json() : []))
       .then((data: { id: string; name: string }[]) => {
-        if (Array.isArray(data)) setOrganizations(data.map((o) => o.name));
+        if (Array.isArray(data)) setOrganizations(data);
       })
       .catch(() => setOrganizations([]));
   }, []);
@@ -105,7 +120,7 @@ export function EditContactModal({
       setEmail(contact.email || "");
       setPhone(contact.phone || "");
       setJobTitle(contact.jobTitle || "");
-      setOrganization(contact.organization || "");
+      setOrganizationId(contact.organizationId || "");
       setSite("");
       setVip(!!contact.isVIP);
       setNotes("");
@@ -149,7 +164,7 @@ export function EditContactModal({
     setEmail("");
     setPhone("");
     setJobTitle("");
-    setOrganization("");
+    setOrganizationId("");
     setSite("");
     setVip(false);
     setNotes("");
@@ -178,6 +193,10 @@ export function EditContactModal({
           phone,
           jobTitle,
           isVIP: vip,
+          // Réassignation explicite seulement si l'utilisateur a changé l'org.
+          ...(organizationId && organizationId !== contact?.organizationId
+            ? { organizationId }
+            : {}),
           portalAccess: {
             canAccessPortal: portalPerms.canAccessPortal,
             portalRole: ROLE_MAP[portalPerms.portalRole] || "STANDARD",
@@ -203,10 +222,11 @@ export function EditContactModal({
         setSaveError(`Échec de la mise à jour : ${message}`);
         return;
       }
-    } catch (err) {
+    } catch {
       setSaveError("Erreur réseau — impossible de contacter le serveur.");
       return;
     }
+    onSaved?.();
     handleClose();
   }
 
@@ -303,14 +323,14 @@ export function EditContactModal({
               <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
                 Organisation
               </label>
-              <Select value={organization} onValueChange={setOrganization}>
+              <Select value={organizationId} onValueChange={setOrganizationId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Sélectionner..." />
                 </SelectTrigger>
                 <SelectContent>
                   {organizations.map((o) => (
-                    <SelectItem key={o} value={o}>
-                      {o}
+                    <SelectItem key={o.id} value={o.id}>
+                      {o.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

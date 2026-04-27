@@ -148,6 +148,25 @@ export function BudgetDetail({ budgetId }: { budgetId: string }) {
     await load();
   }
 
+  // Suppression d'un budget — autorisée par le backend uniquement pour
+  // DRAFT et REJECTED (api/v1/budgets/[id]/route.ts:DELETE garde la
+  // règle métier). On reflète la même règle côté UI : le bouton
+  // n'apparaît que dans ces deux états.
+  async function removeBudget() {
+    if (!budget) return;
+    if (!confirm(`Supprimer définitivement le budget « ${budget.title} » ? Cette action est irréversible.`)) return;
+    setBusy(true); setError(null);
+    const r = await fetch(`/api/v1/budgets/${budgetId}`, { method: "DELETE" });
+    if (!r.ok) {
+      const b = await r.json().catch(() => ({}));
+      setError(b?.error || `HTTP ${r.status}`);
+      setBusy(false);
+      return;
+    }
+    // Retour à la fiche org après suppression — le budget courant n'existe plus.
+    router.push(`/organisations/${budget.organization.slug}`);
+  }
+
   async function propose() {
     if (!confirm("Proposer ce budget au client ? Une demande d'approbation sera créée.")) return;
     setBusy(true); setError(null);
@@ -205,6 +224,8 @@ export function BudgetDetail({ budgetId }: { budgetId: string }) {
   const isProposed = budget.status === "PROPOSED";
   const isApproved = budget.status === "APPROVED";
   const isExecuting = budget.status === "EXECUTING";
+  const isRejected = budget.status === "REJECTED";
+  const canDelete = isDraft || isRejected;
   const canEditLines = isDraft || isExecuting;
 
   return (
@@ -265,6 +286,18 @@ export function BudgetDetail({ budgetId }: { budgetId: string }) {
                   <Download className="h-4 w-4 mr-1.5" /> PDF
                 </Button>
               </a>
+              {canDelete && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={removeBudget}
+                  disabled={busy}
+                  className="text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200"
+                  title="Suppression définitive — autorisée uniquement pour les brouillons et les rejets"
+                >
+                  <Trash2 className="h-4 w-4 mr-1.5" /> Supprimer
+                </Button>
+              )}
             </div>
           </div>
 

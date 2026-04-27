@@ -24,7 +24,18 @@ export async function PATCH(req: Request, { params }: Params) {
   // Update contact-level fields
   const contactData: any = {};
   if (body.portalEnabled !== undefined) contactData.portalEnabled = !!body.portalEnabled;
-  if (body.portalStatus !== undefined) contactData.portalStatus = body.portalStatus;
+  if (body.portalStatus !== undefined) {
+    contactData.portalStatus = body.portalStatus;
+    // Miroir : `Contact.isActive` est lu par toutes les autres surfaces
+    // (liste exhaustive /contacts, login portail, modale Edit Contact).
+    // Avant : la modale "Contacts et rôles" du portail n'écrivait que
+    // `portalStatus` → un contact "active" côté portail apparaissait
+    // "Inactif" dans /contacts. On synchronise les deux ici, sauf si le
+    // payload force déjà une valeur explicite via `body.isActive`.
+    if (body.isActive === undefined) {
+      contactData.isActive = body.portalStatus === "active";
+    }
+  }
   if (body.isActive !== undefined) contactData.isActive = !!body.isActive;
   if (body.firstName !== undefined) contactData.firstName = body.firstName;
   if (body.lastName !== undefined) contactData.lastName = body.lastName;

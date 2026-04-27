@@ -796,30 +796,38 @@ export default function OrganizationDetailPage() {
   const sites = dbSites ?? [];
   const [dbContacts, setDbContacts] = useState<Contact[] | null>(null);
   const [contactsLoading, setContactsLoading] = useState(true);
+
+  // Extrait pour pouvoir être rappelé après une sauvegarde de la modale
+  // — sans ça, l'UI reste collée sur l'ancien snapshot et l'utilisateur
+  // pense que le PATCH n'a rien changé.
+  async function reloadContacts() {
+    setContactsLoading(true);
+    try {
+      const r = await fetch(`/api/v1/contacts?organizationId=${orgId}`);
+      const data = await r.json();
+      if (!Array.isArray(data)) { setDbContacts([]); return; }
+      setDbContacts(
+        data.map((c: any) => ({
+          id: c.id,
+          firstName: c.firstName,
+          lastName: c.lastName,
+          email: c.email,
+          phone: c.phone || "—",
+          jobTitle: c.jobTitle || "—",
+          vip: c.vip || false,
+        }))
+      );
+    } catch {
+      setDbContacts([]);
+    } finally {
+      setContactsLoading(false);
+    }
+  }
+
   useEffect(() => {
     setDbContacts(null);
-    setContactsLoading(true);
-    let cancelled = false;
-    fetch(`/api/v1/contacts?organizationId=${orgId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (!Array.isArray(data)) { setDbContacts([]); return; }
-        setDbContacts(
-          data.map((c: any) => ({
-            id: c.id,
-            firstName: c.firstName,
-            lastName: c.lastName,
-            email: c.email,
-            phone: c.phone || "—",
-            jobTitle: c.jobTitle || "—",
-            vip: c.vip || false,
-          }))
-        );
-      })
-      .catch(() => { if (!cancelled) setDbContacts([]); })
-      .finally(() => { if (!cancelled) setContactsLoading(false); });
-    return () => { cancelled = true; };
+    void reloadContacts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
   const contacts = dbContacts ?? [];
 
@@ -1031,6 +1039,7 @@ export default function OrganizationDetailPage() {
         open={!!editingContact}
         onClose={() => setEditingContact(null)}
         contact={editingContact}
+        onSaved={reloadContacts}
       />
 
       <EditPortalAccessModal
@@ -1271,7 +1280,8 @@ export default function OrganizationDetailPage() {
                     className="px-4 py-3 hover:bg-gray-50/80 cursor-pointer"
                     onClick={() => setEditingContact({
                       id: c.id, name: `${c.firstName} ${c.lastName}`, email: c.email,
-                      phone: c.phone, organization: o.name, jobTitle: c.jobTitle, isVIP: c.vip,
+                      phone: c.phone, organization: o.name, organizationId: orgId,
+                      jobTitle: c.jobTitle, isVIP: c.vip,
                     })}
                   >
                     <div className="flex items-start gap-3">
@@ -1310,7 +1320,8 @@ export default function OrganizationDetailPage() {
                         className="hover:bg-gray-50/80 transition-colors cursor-pointer"
                         onClick={() => setEditingContact({
                           id: c.id, name: `${c.firstName} ${c.lastName}`, email: c.email,
-                          phone: c.phone, organization: o.name, jobTitle: c.jobTitle, isVIP: c.vip,
+                          phone: c.phone, organization: o.name, organizationId: orgId,
+                          jobTitle: c.jobTitle, isVIP: c.vip,
                         })}
                       >
                         <td className="px-4 py-3">

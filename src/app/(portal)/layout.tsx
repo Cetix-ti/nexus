@@ -92,6 +92,34 @@ export default function PortalLayout({
 
   const isLoginPage = pathname === "/portal/login";
 
+  // Re-vérifie en DB la validité de la session à chaque navigation portail.
+  // Le JWT NextAuth garde un snapshot 24h ; sans ce check, désactiver un
+  // contact dans Nexus ne lui coupe pas l'accès tant que son token n'a pas
+  // expiré. La route /api/v1/portal/session-check vérifie isActive +
+  // portalEnabled + statut de l'org. Sur 401 on déconnecte côté client.
+  useEffect(() => {
+    if (isLoginPage) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/v1/portal/session-check", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (cancelled) return;
+        if (r.status === 401) {
+          await signOut({ callbackUrl: "/portal/login" });
+        }
+      } catch {
+        // Erreur réseau : on laisse passer plutôt que de déconnecter
+        // intempestivement le user (un blip ne doit pas l'éjecter).
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, isLoginPage]);
+
   if (isLoginPage) {
     return <div className="min-h-screen bg-[#F9FAFB]">{children}</div>;
   }

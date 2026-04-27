@@ -48,6 +48,16 @@ export async function PATCH(
   if (body.jobTitle !== undefined) data.jobTitle = body.jobTitle;
   if (body.isVIP !== undefined) data.isVIP = body.isVIP;
   if (body.isActive !== undefined) data.isActive = body.isActive;
+  // Réassignation d'org : la modale Edit envoie `organizationId` quand
+  // l'utilisateur change le client du contact. On accepte aussi `siteId`
+  // (ou null pour détacher du site quand l'org change).
+  if (body.organizationId !== undefined) {
+    data.organizationId = body.organizationId;
+    // Si on change l'org sans préciser de site, on détache le site
+    // existant (qui appartiendrait à l'ancienne org → contrainte FK).
+    if (body.siteId === undefined) data.siteId = null;
+  }
+  if (body.siteId !== undefined) data.siteId = body.siteId;
 
   if (Object.keys(data).length === 0 && !body.portalAccess) {
     return NextResponse.json({ error: "Aucun champ à mettre à jour" }, { status: 400 });

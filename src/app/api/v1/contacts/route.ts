@@ -38,7 +38,16 @@ export async function GET(req: Request) {
     vip: c.isVIP,
     tickets: countMap.get(c.id) ?? 0,
     portalEnabled: c.portalEnabled,
-    status: c.isActive ? "Actif" : "Inactif",
+    // Statut affiché : on lit en priorité `portalStatus` quand il est défini
+    // (sémantique RH plus riche : congé, départ partiel, etc.) et on
+    // retombe sur `isActive` sinon. Depuis le fix de la modale portail,
+    // les deux sont gardés en miroir, donc cette lecture combinée
+    // protège contre les contacts patchés AVANT le fix (rétrocompat).
+    status: (c.portalStatus === "active" || (c.portalStatus == null && c.isActive))
+      ? "Actif"
+      : "Inactif",
+    isActive: c.isActive,
+    portalStatus: c.portalStatus ?? null,
   }));
   return NextResponse.json(ui);
 }
