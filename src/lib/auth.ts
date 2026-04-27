@@ -365,22 +365,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const agentUser = await prisma.user.findUnique({
           where: { email: email.toLowerCase() },
         });
-        console.log("[auth] Agent lookup:", agentUser ? `found id=${agentUser.id} active=${agentUser.isActive}` : "not found");
+        console.log("[auth] Agent lookup:", agentUser ? `found id=${agentUser.id} active=${agentUser.isActive} role=${agentUser.role}` : "not found");
 
-        if (agentUser) {
-          if (!agentUser.isActive) { console.log("[auth] Agent inactive, rejecting"); return false; }
+        // Distinction critique :
+        //   - User avec role=CLIENT_* est une mauvaise catégorisation
+        //     (les clients vivent dans `Contact`). On IGNORE et on
+        //     fallback sur la résolution contact portail.
+        //   - User staff (SUPER_ADMIN/MSP_ADMIN/...) inactif → on rejette
+        //     (sécurité : un ex-employé désactivé ne doit pas re-auth
+        //     en passant par le portail client).
+        //   - User staff actif → on authentifie comme agent.
+        if (agentUser && !agentUser.role.startsWith("CLIENT_")) {
+          if (!agentUser.isActive) {
+            console.log("[auth] Staff agent inactive, rejecting");
+            return false;
+          }
           // Authenticate as agent — populate user object like credentials provider
           (user as any).id = agentUser.id;
           (user as any).email = agentUser.email;
           (user as any).firstName = agentUser.firstName;
           (user as any).lastName = agentUser.lastName;
           (user as any).role = agentUser.role;
-          // Update last login
           await prisma.user.update({
             where: { id: agentUser.id },
             data: { lastLoginAt: new Date() },
           }).catch(() => {});
           return true;
+        }
+        if (agentUser && agentUser.role.startsWith("CLIENT_")) {
+          console.log("[auth] User row with CLIENT_ role — ignoring, falling through to portal contact lookup");
         }
 
         // 2) Not an agent — try to resolve as portal client contact
