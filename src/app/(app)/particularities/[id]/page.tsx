@@ -204,10 +204,16 @@ export default function ParticularityDetailPage() {
                   </>
                 )}
               </div>
+              {/* Titre éditable inline. Bordure transparente par défaut
+                  pour ne pas alourdir la page, mais visible au hover/focus
+                  pour signaler l'affordance d'édition (auparavant le champ
+                  ressemblait à du texte statique → les utilisateurs ne
+                  réalisaient pas qu'ils pouvaient le renommer). */}
               <Input
                 value={data.title}
                 onChange={(e) => patch("title", e.target.value)}
-                className="mt-2 text-[20px] font-semibold border-transparent shadow-none px-0 focus-visible:ring-0"
+                title="Cliquer pour modifier le titre"
+                className="mt-2 text-[20px] font-semibold px-2 -ml-2 border border-transparent hover:border-slate-200 focus-visible:border-slate-300 focus-visible:ring-1 focus-visible:ring-slate-200 transition-colors"
               />
             </div>
             <VisibilityPicker

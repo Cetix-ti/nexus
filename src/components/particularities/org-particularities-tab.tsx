@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SyncBadge } from "@/components/shared/sync-badge";
+import { NewParticularityModal } from "@/components/particularities/new-particularity-modal";
 import { cn } from "@/lib/utils";
 
 interface ParticularityRow {
@@ -41,6 +42,7 @@ export function OrgParticularitiesTab({
   const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [showNew, setShowNew] = useState(false);
 
   async function load() {
     const [r1, r2] = await Promise.all([
@@ -104,9 +106,9 @@ export function OrgParticularitiesTab({
               {driftedCount} à réviser
             </span>
           )}
-          <Link href={`/particularities/new?orgId=${organizationId}`}>
-            <Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Ajouter</Button>
-          </Link>
+          <Button size="sm" className="gap-1.5" onClick={() => setShowNew(true)}>
+            <Plus className="h-4 w-4" /> Ajouter
+          </Button>
         </div>
       </div>
 
@@ -171,9 +173,9 @@ export function OrgParticularitiesTab({
             <p className="mt-1 text-[12.5px] text-slate-500">
               Documentez contraintes, quirks, exceptions ou contextes spécifiques qui aident à mieux supporter ce client.
             </p>
-            <Link href={`/particularities/new?orgId=${organizationId}`} className="mt-4 inline-block">
-              <Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Créer la première</Button>
-            </Link>
+            <Button size="sm" className="gap-1.5 mt-4" onClick={() => setShowNew(true)}>
+              <Plus className="h-4 w-4" /> Créer la première
+            </Button>
           </div>
         </Card>
       ) : (
@@ -202,6 +204,15 @@ export function OrgParticularitiesTab({
           ))}
         </div>
       )}
+
+      <NewParticularityModal
+        open={showNew}
+        onOpenChange={(v) => {
+          setShowNew(v);
+          if (!v) void load();
+        }}
+        defaultOrganizationId={organizationId}
+      />
     </div>
   );
 }

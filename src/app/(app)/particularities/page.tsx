@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SyncBadge } from "@/components/shared/sync-badge";
 import { PageLoader } from "@/components/ui/page-loader";
-import { cn } from "@/lib/utils";
+import { NewParticularityModal } from "@/components/particularities/new-particularity-modal";
 
 interface Row {
   id: string;
@@ -36,6 +36,7 @@ function Content() {
   const [q, setQ] = useState("");
   const [catId, setCatId] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(orgFilter);
+  const [showNew, setShowNew] = useState(false);
 
   async function load() {
     const params = new URLSearchParams();
@@ -83,9 +84,9 @@ function Content() {
           <Link href="/particularities/templates">
             <Button variant="outline" size="sm" className="gap-1.5"><Library className="h-4 w-4" /> Modèles</Button>
           </Link>
-          <Link href="/particularities/new">
-            <Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nouveau</Button>
-          </Link>
+          <Button size="sm" className="gap-1.5" onClick={() => setShowNew(true)}>
+            <Plus className="h-4 w-4" /> Nouveau
+          </Button>
         </div>
       </div>
 
@@ -128,7 +129,15 @@ function Content() {
             <p className="mt-1 text-[12.5px] text-slate-500">Ajustez vos filtres ou créez une nouvelle particularité.</p>
           </div>
         </Card>
-      ) : (
+      ) : null}
+
+      <NewParticularityModal
+        open={showNew}
+        onOpenChange={setShowNew}
+        defaultOrganizationId={orgId ?? undefined}
+      />
+
+      {items !== null && items.length > 0 && (
         <Card>
           <div className="divide-y divide-slate-100">
             {items.map((r) => (
