@@ -154,13 +154,11 @@ interface FtigConfig {
   includedEveningHours?: number;   // heures de soir incluses / mois
   eveningCarryOver?: boolean;      // reporter les heures de soir non utilisées
   includedOnsiteHours?: number;    // heures sur place incluses / mois
-  // Types de travail totalement couverts par le FTIG — toute saisie de
-  // temps sur ces types est non facturable en supplément (elles font déjà
-  // partie du forfait mensuel, peu importe le nombre d'heures).
+  // Filtres par WorkType — informationnels pour l'instant. Le moteur de
+  // facturation v1 décide la couverture FTIG sur les flags génériques
+  // isOnsite / isAfterHours / isWeekend / timeType=travel. Une logique
+  // plus fine par workType arrivera quand le besoin sera concret.
   includedWorkTypeIds?: string[];
-  // Types de travail "sur place" plafonnés par includedOnsiteHours/mois.
-  // Jusqu'au plafond = inclus dans le forfait. Au-delà = facturable au
-  // taux extraOnsiteHourlyRate (ou au taux du type de travail).
   onsiteWorkTypeIds?: string[];
   // Tarif sur place pour le travail NON inclus dans le FTIG (projets,
   // heures régulières en dehors du forfait).
@@ -184,10 +182,15 @@ function loadHourBankConfig(orgId: string): HourBankConfig {
 }
 function saveHourBankConfig(orgId: string, cfg: HourBankConfig) {
   try { localStorage.setItem(`nexus:client-hour-bank:${orgId}`, JSON.stringify(cfg)); } catch {}
+  // `hoursConsumed` est exclu du payload : le serveur est la source de
+  // vérité (incrément atomique à chaque saisie de temps). Sans ce strip,
+  // un superviseur qui sauvegarde avec un snapshot obsolète écraserait
+  // la consommation calculée par les agents en parallèle.
+  const { hoursConsumed: _ignored, ...sanitized } = cfg;
   void fetch(`/api/v1/organizations/${encodeURIComponent(orgId)}/billing-config`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ hourBank: cfg }),
+    body: JSON.stringify({ hourBank: sanitized }),
   }).catch(() => {});
 }
 function loadFtigConfig(orgId: string): FtigConfig {
@@ -1113,7 +1116,7 @@ function ClientBillingOverridesSectionInner({
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
               <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
                 <span className="text-[12px] font-medium text-slate-600">
                   Override actif
@@ -1985,12 +1988,14 @@ function ClientBillingOverridesSectionInner({
                         min={0}
                         step={0.25}
                         placeholder="0"
-                        value={hourBankCfg.hoursConsumed ?? ""}
-                        onChange={(e) => {
-                          const v = e.target.value === "" ? undefined : Number(e.target.value);
-                          updateHourBank({ hoursConsumed: v });
-                        }}
+                        value={hourBankCfg.hoursConsumed ?? 0}
+                        readOnly
+                        disabled
+                        className="bg-slate-50 text-slate-700 cursor-not-allowed"
                       />
+                      <p className="text-[10.5px] text-slate-500 leading-snug">
+                        Calculé automatiquement par le moteur de facturation à chaque saisie de temps. Pour ajuster manuellement, contactez l'administrateur.
+                      </p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-[11px] uppercase tracking-wider text-emerald-700/70 font-medium">

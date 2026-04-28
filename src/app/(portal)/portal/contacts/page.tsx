@@ -78,7 +78,21 @@ export default function PortalContactsPage() {
     return `${c.firstName} ${c.lastName} ${c.email} ${c.jobTitle ?? ""}`.toLowerCase().includes(q);
   }), [contacts, search]);
 
-  const { sorted: sortedContacts, sort: contactSort, toggleSort: toggleContactSort } = useSortable(filtered, "lastName");
+  // Tri par "Nom" basé sur le NOM COMPLET affiché (firstName + lastName)
+  // pour matcher ce que l'utilisateur voit. Avant : sort par `lastName`
+  // donnait un ordre qui ne ressemblait pas à un tri alpha pour qui
+  // lit la colonne "Samle-Gnogbo Zouzoua" (qui commence par S).
+  // On enrichit chaque contact avec un champ calculé `displayName`
+  // utilisé comme clé de tri.
+  const sortable = useMemo(
+    () =>
+      filtered.map((c) => ({
+        ...c,
+        displayName: `${c.firstName} ${c.lastName}`.trim().toLowerCase(),
+      })),
+    [filtered],
+  );
+  const { sorted: sortedContacts, sort: contactSort, toggleSort: toggleContactSort } = useSortable(sortable, "displayName");
 
   if (permissions.portalRole !== "admin" && !permissions.canManageContacts) {
     return (
@@ -116,7 +130,7 @@ export default function PortalContactsPage() {
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/60 text-left">
-              <SortableHeader label={t("portal.contacts.col.name")} sortKey="lastName" sort={contactSort} onToggle={toggleContactSort} />
+              <SortableHeader label={t("portal.contacts.col.name")} sortKey="displayName" sort={contactSort} onToggle={toggleContactSort} />
               <SortableHeader label={t("portal.contacts.col.email")} sortKey="email" sort={contactSort} onToggle={toggleContactSort} />
               <SortableHeader label={t("portal.contacts.col.jobTitle")} sortKey="jobTitle" sort={contactSort} onToggle={toggleContactSort} />
               <SortableHeader label={t("portal.contacts.col.status")} sortKey="portalStatus" sort={contactSort} onToggle={toggleContactSort} />

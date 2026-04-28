@@ -40,6 +40,7 @@ import { ContractModal } from "@/components/settings/contract-modal";
 const CONTRACT_TYPE_ICONS: Record<ContractType, React.ComponentType<{ className?: string }>> = {
   msp_monthly: Repeat,
   hour_bank: Wallet,
+  ftig: Repeat,
   time_and_materials: FileText,
   prepaid_block: Package,
   hybrid: Layers,

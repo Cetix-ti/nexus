@@ -104,6 +104,13 @@ export interface Ticket {
   /** Levée explicite du verrou par un staff. Si vrai, les agents peuvent
    *  modifier le ticket même si l'approbation est encore PENDING. */
   approvalLockOverride?: boolean;
+  /** Source externe d'origine (ex: "freshservice", "atera"). Null pour
+   *  les tickets créés directement dans Nexus. */
+  externalSource?: string | null;
+  /** Identifiant de référence dans le système externe. Pour Freshservice,
+   *  c'est l'ID API interne (ex: "t_fs_22024702643"), pas le INC-XXXXX
+   *  affiché dans l'UI Freshservice. */
+  externalId?: string | null;
 }
 
 export interface TicketApprover {

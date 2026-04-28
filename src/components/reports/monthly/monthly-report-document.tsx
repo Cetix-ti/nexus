@@ -812,7 +812,7 @@ function TicketsSection({
       {tickets.length === 0 ? (
         <EmptyNote>Aucun ticket à afficher.</EmptyNote>
       ) : (
-        <div style={{ display: "grid", gap: "20px" }}>
+        <div style={{ display: "grid", gap: "10px" }}>
           {tickets.map((t) => <TicketBlock key={t.ticketId} ticket={t} hideRates={hideRates} />)}
         </div>
       )}
@@ -827,7 +827,7 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
       style={{
         border: `1px solid ${THEME.hair}`,
         borderTop: `2px solid ${THEME.blue}`,
-        padding: "20px 24px",
+        padding: "12px 16px",
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "16px" }}>
@@ -866,9 +866,9 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
       {ticket.aiSummary ? (
         <p
           style={{
-            margin: "10px 0 0 0",
-            fontSize: "12px",
-            lineHeight: 1.55,
+            margin: "6px 0 0 0",
+            fontSize: "11.5px",
+            lineHeight: 1.5,
             color: THEME.inkSoft,
             fontStyle: "italic",
           }}
@@ -879,10 +879,10 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
 
       <div
         style={{
-          marginTop: "12px",
+          marginTop: "6px",
           display: "flex",
           flexWrap: "wrap",
-          gap: "20px",
+          gap: "16px",
           fontSize: "11px",
           color: THEME.slate,
         }}
@@ -896,7 +896,7 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
       </div>
 
       {ticket.agents.length > 0 ? (
-        <div style={{ marginTop: "8px", fontSize: "11px", color: THEME.slate }}>
+        <div style={{ marginTop: "4px", fontSize: "11px", color: THEME.slate }}>
           <span className="mrd-eyebrow" style={{ color: THEME.slate }}>Techniciens · </span>
           {ticket.agents.map((a, i) => (
             <span key={a.name}>
@@ -911,22 +911,22 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
       {ticket.resolutionNote ? (
         <div
           style={{
-            marginTop: "16px",
+            marginTop: "8px",
             background: "#ECFDF5",
             borderLeft: `3px solid ${THEME.positive}`,
-            padding: "12px 16px",
+            padding: "8px 12px",
           }}
         >
-          <div className="mrd-eyebrow" style={{ color: THEME.positive, marginBottom: "6px" }}>
+          <div className="mrd-eyebrow" style={{ color: THEME.positive, marginBottom: "4px" }}>
             Note de résolution
           </div>
           <p
             style={{
               margin: 0,
-              fontSize: "12px",
+              fontSize: "11.5px",
               color: THEME.inkSoft,
               whiteSpace: "pre-wrap",
-              lineHeight: 1.5,
+              lineHeight: 1.45,
             }}
           >
             {ticket.resolutionNote}
@@ -935,11 +935,11 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
       ) : null}
 
       {ticket.timeEntries.length > 0 ? (
-        <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: `1px solid ${THEME.hair}` }}>
-          <div className="mrd-eyebrow" style={{ marginBottom: "12px" }}>
+        <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: `1px solid ${THEME.hair}` }}>
+          <div className="mrd-eyebrow" style={{ marginBottom: "6px" }}>
             Interventions ({ticket.timeEntries.length})
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
             {ticket.timeEntries.map((e, idx) => (
               <div
                 key={e.id}
@@ -948,7 +948,7 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
                   background: idx % 2 === 0 ? THEME.blueIce : THEME.paper,
                   border: `1px solid ${THEME.hair}`,
                   borderLeft: `3px solid ${THEME.blue}`,
-                  padding: "12px 16px",
+                  padding: "6px 10px",
                 }}
               >
                 {/* Ligne 1 : date · agent · durée + couverture à droite. */}
@@ -957,8 +957,8 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
                     display: "flex",
                     alignItems: "baseline",
                     flexWrap: "wrap",
-                    gap: "10px",
-                    fontSize: "12px",
+                    gap: "8px",
+                    fontSize: "11.5px",
                   }}
                 >
                   <span
@@ -994,10 +994,10 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
                 {(e.isAfterHours || e.isWeekend || e.isUrgent || e.isOnsite || e.hasTravelBilled || e.timeType) && (
                   <div
                     style={{
-                      marginTop: "8px",
+                      marginTop: "4px",
                       display: "flex",
                       flexWrap: "wrap",
-                      gap: "5px",
+                      gap: "4px",
                       alignItems: "center",
                     }}
                   >
@@ -1026,26 +1026,26 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
                 {!hideRates && ((e.hourlyRate != null && e.hourlyRate > 0) || e.amount != null) ? (
                   <div
                     style={{
-                      marginTop: "8px",
-                      paddingTop: "8px",
+                      marginTop: "4px",
+                      paddingTop: "4px",
                       borderTop: `1px dashed ${THEME.hair}`,
                       display: "flex",
                       alignItems: "baseline",
                       justifyContent: "space-between",
-                      gap: "12px",
-                      fontSize: "11.5px",
+                      gap: "10px",
+                      fontSize: "11px",
                     }}
                   >
                     <div>
                       {e.hourlyRate != null && e.hourlyRate > 0 ? (
                         <>
-                          <span className="mrd-eyebrow" style={{ color: THEME.slate }}>Taux appliqué · </span>
+                          <span className="mrd-eyebrow" style={{ color: THEME.slate }}>Taux · </span>
                           <span
                             className="mrd-mono"
                             style={{
                               color: THEME.blueDeep,
                               fontWeight: 700,
-                              fontSize: "13px",
+                              fontSize: "12px",
                             }}
                           >
                             {fmtMoney(e.hourlyRate)}/h
@@ -1063,7 +1063,7 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
                           style={{
                             color: THEME.ink,
                             fontWeight: 700,
-                            fontSize: "13px",
+                            fontSize: "12px",
                           }}
                         >
                           {fmtMoney(e.amount)}
@@ -1072,34 +1072,36 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
                     )}
                   </div>
                 ) : null}
-                {/* Note / description sur sa propre ligne pour respirer et
-                    permettre le wrap multi-lignes naturellement. */}
-                <p
-                  style={{
-                    marginTop: "6px",
-                    marginBottom: 0,
-                    fontSize: "11.5px",
-                    lineHeight: 1.5,
-                    color: e.description ? THEME.inkSoft : THEME.slate,
-                    fontStyle: e.description ? "normal" : "italic",
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
-                  {e.description || "Aucune note saisie"}
-                </p>
+                {/* Note : on n'imprime la ligne « Aucune note saisie » que si
+                    une description est absente — la ligne vide est juste du
+                    bruit dans les rapports denses. */}
+                {e.description ? (
+                  <p
+                    style={{
+                      marginTop: "3px",
+                      marginBottom: 0,
+                      fontSize: "11px",
+                      lineHeight: 1.4,
+                      color: THEME.inkSoft,
+                      whiteSpace: "pre-wrap",
+                    }}
+                  >
+                    {e.description}
+                  </p>
+                ) : null}
               </div>
             ))}
           </div>
           {/* Total */}
           <div
             style={{
-              marginTop: "10px",
-              paddingTop: "10px",
+              marginTop: "6px",
+              paddingTop: "6px",
               borderTop: `1px solid ${THEME.hair}`,
               display: "flex",
               justifyContent: "space-between",
               alignItems: "baseline",
-              fontSize: "11.5px",
+              fontSize: "11px",
             }}
           >
             <span className="mrd-eyebrow" style={{ color: THEME.slate }}>
@@ -1110,7 +1112,7 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
               style={{
                 color: THEME.ink,
                 fontWeight: 600,
-                fontSize: "13px",
+                fontSize: "12px",
               }}
             >
               {fmtMinutesAsHours(ticket.totalMinutes)}
@@ -1287,7 +1289,7 @@ function EditorialTable({
               className="mrd-eyebrow"
               style={{
                 textAlign: c.align ?? "left",
-                padding: "10px 12px 10px 0",
+                padding: "7px 10px 7px 0",
                 color: THEME.ink,
                 fontSize: "10px",
                 fontWeight: 600,
@@ -1307,7 +1309,7 @@ function EditorialTable({
                 key={c.key}
                 className={c.mono ? "mrd-mono" : ""}
                 style={{
-                  padding: "12px 12px 12px 0",
+                  padding: "7px 10px 7px 0",
                   textAlign: c.align ?? "left",
                   color: c.muted ? THEME.slate : THEME.ink,
                   fontWeight: c.emphasis ? 600 : 400,
@@ -1325,7 +1327,7 @@ function EditorialTable({
               <td
                 key={c.key}
                 style={{
-                  padding: "14px 12px 14px 0",
+                  padding: "9px 10px 9px 0",
                   textAlign: c.align ?? "left",
                   color: THEME.ink,
                   fontWeight: 600,

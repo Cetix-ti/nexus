@@ -152,7 +152,7 @@ export async function sendWeeklyDigestForUser(userId: string, since: Date, until
     title: `Résumé hebdomadaire — ${range}`,
     body: `${stats.ticketsResolved} résolus · ${stats.hoursLogged} h saisies · ${stats.ticketsOverdue} en retard`,
     link: "/dashboard",
-    emailSubject: `[Nexus] Votre semaine — ${range}`,
+    emailSubject: `Votre semaine — ${range}`,
     emailPayload,
     email: {
       preheader: `${stats.ticketsResolved} résolus · ${stats.hoursLogged} h · ${stats.ticketsOverdue} en retard`,

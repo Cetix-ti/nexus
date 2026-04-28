@@ -284,12 +284,6 @@ export function EmailSection() {
               onChange={(e) => update("fromEmail", e.target.value)}
               placeholder="support@cetix.ca"
             />
-            <Input
-              label="Nom d'expéditeur"
-              value={cfg.fromName}
-              onChange={(e) => update("fromName", e.target.value)}
-              placeholder="Cetix Support"
-            />
           </div>
           <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-3">
             <div>
@@ -331,12 +325,6 @@ export function EmailSection() {
               value={cfg.replyTo}
               onChange={(e) => update("replyTo", e.target.value)}
               placeholder="reply@cetix.ca"
-            />
-            <Input
-              label="Préfixe de sujet"
-              value={cfg.subjectPrefix}
-              onChange={(e) => update("subjectPrefix", e.target.value)}
-              placeholder="[Cetix]"
             />
           </div>
           <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-3">

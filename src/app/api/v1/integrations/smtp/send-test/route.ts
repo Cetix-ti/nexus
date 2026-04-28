@@ -49,7 +49,7 @@ export async function POST(req: Request) {
       from: `"${cfg.fromName || "Nexus"}" <${cfg.fromEmail}>`,
       to,
       replyTo: cfg.replyTo || undefined,
-      subject: `${cfg.subjectPrefix ? cfg.subjectPrefix + " " : ""}Test SMTP Nexus`,
+      subject: "Test SMTP Nexus",
       text:
         "Ceci est un email de test envoye depuis Nexus.\n\nSi vous lisez ce message, votre configuration SMTP fonctionne correctement.",
       html,

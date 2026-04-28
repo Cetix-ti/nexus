@@ -202,7 +202,6 @@ export async function sendTicketReplyEmail(commentId: string): Promise<{
     references: allRefs.map((c) => c.messageId!).filter(Boolean),
     replyTo: inboundMailbox,
     from: inboundMailbox ? { email: inboundMailbox, name: "Cetix · Support" } : undefined,
-    skipSubjectPrefix: true, // le préfixe doit rester `Re: [TK-1042]` pour threader
     extraHeaders: {
       "X-Nexus-Ticket-Id": ticket.id,
       "X-Nexus-Ticket-Number": displayNumber,

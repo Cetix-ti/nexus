@@ -18,6 +18,7 @@ import { resolveClientBillingProfile } from "./engine";
 import { mockBillingProfiles } from "./mock-data";
 import { getClientBillingOverrideForOrg } from "./overrides-db";
 import { toEngineContract, pickActiveContract } from "./contract-mapper";
+import { buildVirtualContractFromOrgConfig } from "./org-billing-bridge";
 import type { BillingDecision, Contract, TimeType } from "./types";
 
 interface DecideInput {
@@ -73,12 +74,23 @@ export async function resolveDecisionForEntry(input: DecideInput): Promise<Serve
   }
   const billingProfile = resolveClientBillingProfile(baseProfile, override);
 
-  // 2. Contrat actif à la date de l'entrée.
-  const contractRows = await prisma.contract.findMany({
-    where: { organizationId: input.organizationId },
-  });
-  const activeRow = pickActiveContract(contractRows, input.startedAt);
-  const contract = activeRow ? toEngineContract(activeRow) : null;
+  // 2. Contrat actif à la date de l'entrée. Précédence : OrgBillingConfig
+  //    (UI Facturation) > Contract Prisma. Si l'org a une config FTIG ou
+  //    Banque d'heures active dans l'onglet Facturation, on synthétise un
+  //    Contract virtuel à partir d'elle — c'est la source de vérité de
+  //    facto. Sinon on retombe sur le Contract Prisma classique.
+  const virtualContract = await buildVirtualContractFromOrgConfig(
+    input.organizationId,
+    input.startedAt,
+  );
+  let contract: Contract | null = virtualContract;
+  if (!contract) {
+    const contractRows = await prisma.contract.findMany({
+      where: { organizationId: input.organizationId },
+    });
+    const activeRow = pickActiveContract(contractRows, input.startedAt);
+    contract = activeRow ? toEngineContract(activeRow) : null;
+  }
 
   // 3. Palier tarifaire choisi par l'agent → taux de base. Si absent ou
   //    invalide, l'engine retombe sur le scalaire du profil.

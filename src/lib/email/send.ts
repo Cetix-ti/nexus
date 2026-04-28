@@ -28,8 +28,6 @@ export interface SendEmailOptions {
   replyTo?: string;
   /** En-têtes libres supplémentaires. */
   extraHeaders?: Record<string, string>;
-  /** Bypass le préfixe de sujet (ex: éviter de casser le threading). */
-  skipSubjectPrefix?: boolean;
 }
 
 /**
@@ -77,19 +75,14 @@ export async function sendEmailWithMeta(
       tls: { rejectUnauthorized: !cfg.allowInvalidCerts },
     });
 
-    const prefix = options.skipSubjectPrefix
-      ? ""
-      : cfg.subjectPrefix
-        ? `${cfg.subjectPrefix} `
-        : "";
-    const fromName = options.from?.name ?? cfg.fromName ?? "Nexus";
+    const fromName = options.from?.name ?? "Nexus";
     const fromEmail = options.from?.email ?? cfg.fromEmail;
 
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromEmail}>`,
       to,
       replyTo: options.replyTo ?? cfg.replyTo ?? undefined,
-      subject: `${prefix}${subject}`,
+      subject,
       html,
       text: options.text,
       messageId: options.messageId,

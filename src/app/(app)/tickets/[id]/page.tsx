@@ -808,6 +808,23 @@ export default function TicketDetailPage() {
                     SLA dépassé
                   </Badge>
                 )}
+                {/* Origine Freshservice : badge informatif quand le ticket
+                    a été importé depuis FS. Évite la confusion entre le
+                    numéro Nexus (display TK-XXXXX = number+1000) et le
+                    numéro FS d'origine (INC-XXXXX, non stocké). Bug user :
+                    "TK-27714 dans Nexus = INC-13680 dans FS — risque de
+                    confusion". Le badge donne aux agents un signal visuel
+                    immédiat que ce ticket provient d'un import et que les
+                    numéros ne sont pas alignés. */}
+                {(ticket as { externalSource?: string | null }).externalSource === "freshservice" && (
+                  <Badge
+                    variant="default"
+                    className="gap-1 bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200"
+                    title={`Importé depuis Freshservice (référence interne ${(ticket as { externalId?: string | null }).externalId ?? "—"})`}
+                  >
+                    Importé · Freshservice
+                  </Badge>
+                )}
                 {/* Si le ticket est déverrouillé manuellement OU
                     déjà décidé, on garde le badge supplémentaire pour
                     matérialiser l'état (pending → loud overlay déjà

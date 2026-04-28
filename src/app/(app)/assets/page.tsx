@@ -326,10 +326,14 @@ export default function AssetsPage() {
           </SelectContent>
         </Select>
         <Select value={orgFilter} onValueChange={setOrgFilter}>
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-72">
             <SelectValue placeholder="Organisation" />
           </SelectTrigger>
-          <SelectContent>
+          {/* SelectContent élargi (w-80 ≈ 320 px) pour qu'on lise les
+              noms longs comme "Ville de Sainte-Anne-de-Bellevue" sans
+              troncature. Avant : w-48 = 192 px → noms tronqués à
+              "Ville de Sainte-Anne-de-..." */}
+          <SelectContent className="min-w-[320px]">
             <SelectItem value="all">Toutes les organisations</SelectItem>
             {orgOptions.map((org) => (
               <SelectItem key={org} value={org}>

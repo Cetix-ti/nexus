@@ -128,10 +128,10 @@ export function buildNexusEmail(opts: NexusEmailOptions): string {
            .map(
              (m) => `<tr>
                <td style="padding:10px 16px;border-bottom:1px solid ${P.cardBorder};width:40%;">
-                 <span style="font-size:11px;color:${P.textMuted};text-transform:uppercase;font-weight:600;letter-spacing:0.5px;">${escapeHtml(m.label)}</span>
+                 <span class="nexus-meta-label" style="font-size:11px;color:${P.textMuted};text-transform:uppercase;font-weight:600;letter-spacing:0.5px;">${escapeHtml(m.label)}</span>
                </td>
                <td style="padding:10px 16px;border-bottom:1px solid ${P.cardBorder};">
-                 <span style="font-size:13px;color:${P.textPrimary};font-weight:500;">${escapeHtml(m.value)}</span>
+                 <span class="nexus-meta-value" style="font-size:14px;color:${P.textPrimary};font-weight:500;">${escapeHtml(m.value)}</span>
                </td>
              </tr>`,
            )
@@ -149,9 +149,9 @@ export function buildNexusEmail(opts: NexusEmailOptions): string {
         //   On force un `white-space: normal` pour ne pas que les clients
         //   mail qui héritent du pre-wrap du span parent dupliquent les
         //   sauts de ligne du HTML.
-        `<div class="nexus-rich" style="font-size:14px;color:${P.textSecondary};line-height:1.6;white-space:normal;">${opts.quote.contentHtml}</div>`
+        `<div class="nexus-rich nexus-quote" style="font-size:15px;color:${P.textSecondary};line-height:1.6;white-space:normal;">${opts.quote.contentHtml}</div>`
       : // Plain text → on échappe + on garde les sauts de ligne via pre-wrap.
-        `<div style="font-size:14px;color:${P.textSecondary};line-height:1.6;white-space:pre-wrap;">${escapeHtml(opts.quote.content ?? "")}</div>`
+        `<div class="nexus-quote" style="font-size:15px;color:${P.textSecondary};line-height:1.6;white-space:pre-wrap;">${escapeHtml(opts.quote.content ?? "")}</div>`
     : "";
   const quoteBlock = opts.quote
     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-left:3px solid ${accent.fg};background:${P.softBg};border-radius:0 8px 8px 0;margin:0 0 20px;">
@@ -163,41 +163,82 @@ export function buildNexusEmail(opts: NexusEmailOptions): string {
     : "";
 
   const ctaBlock = opts.ctaUrl
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 4px;"><tr><td>
-         <a href="${opts.ctaUrl}" style="display:inline-block;background:${P.accent};color:#FFFFFF;font-size:14px;font-weight:600;padding:11px 24px;border-radius:8px;text-decoration:none;letter-spacing:0.1px;">
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 4px;width:100%;"><tr><td align="left">
+         <a href="${opts.ctaUrl}" class="nexus-cta" style="display:inline-block;background:${P.accent};color:#FFFFFF;font-size:15px;font-weight:600;padding:13px 26px;border-radius:8px;text-decoration:none;letter-spacing:0.1px;text-align:center;">
            ${escapeHtml(opts.ctaLabel || "Ouvrir dans Nexus")}
          </a>
        </td></tr></table>`
     : "";
 
   const prefsFooter = opts.prefsUrl
-    ? `<p style="margin:14px 0 0;font-size:11px;color:${P.textDim};line-height:1.5;">
+    ? `<p class="nexus-prefs" style="margin:14px 0 0;font-size:11px;color:${P.textDim};line-height:1.5;">
          Vous recevez ce courriel parce que vous avez activé les notifications pour ce type d'événement.
          <a href="${opts.prefsUrl}" style="color:${P.textMuted};text-decoration:underline;">Gérer mes préférences</a>.
        </p>`
     : "";
 
+  // Media queries mobiles : Apple Mail, Gmail iOS/Android app, Samsung
+  // Mail, Outlook iOS, Yahoo Mail mobile honorent ces règles. Outlook
+  // Windows desktop les ignore — on garde des tailles de base "lisibles
+  // partout" (16px body, 22px title) pour ne pas dépendre des MQ.
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
   <title>${escapeHtml(opts.title)}</title>
+  <style>
+    /* Reset minimal pour les clients qui injectent leurs styles. */
+    body, table, td, p, a, h1 { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+    img { -ms-interpolation-mode:bicubic; border:0; outline:none; text-decoration:none; }
+    /* Mobile : on resserre le padding et on bump les fontes pour rester
+       lisible quand le client mail réduit l'affichage. Le sélecteur
+       attribut est utilisé car les classes peuvent être strippées par
+       Gmail web (la version app les honore). */
+    @media only screen and (max-width: 600px) {
+      .nexus-card { width:100% !important; max-width:100% !important; border-radius:0 !important; border-left:0 !important; border-right:0 !important; }
+      .nexus-page { padding:0 !important; }
+      .nexus-pad { padding-left:18px !important; padding-right:18px !important; }
+      .nexus-pad-tight { padding-left:18px !important; padding-right:18px !important; padding-top:18px !important; padding-bottom:14px !important; }
+      .nexus-title { font-size:24px !important; line-height:1.3 !important; }
+      .nexus-intro { font-size:16px !important; line-height:1.55 !important; }
+      .nexus-body { font-size:16px !important; line-height:1.6 !important; }
+      .nexus-meta-label { font-size:12px !important; }
+      .nexus-meta-value { font-size:15px !important; }
+      .nexus-quote { font-size:16px !important; line-height:1.6 !important; }
+      .nexus-cta { display:block !important; width:100% !important; box-sizing:border-box !important; padding:14px 24px !important; font-size:16px !important; }
+      .nexus-footer { font-size:13px !important; line-height:1.6 !important; }
+      .nexus-prefs { font-size:12px !important; line-height:1.6 !important; }
+      .nexus-logo { max-width:140px !important; height:auto !important; }
+      .nexus-badge { font-size:12px !important; }
+    }
+    /* Dark mode natif : la majorité des clients respectent prefers-color-scheme.
+       On garde un look clair (cohérent avec le portail) sauf si le client le
+       force ; ces overrides empêchent du texte foncé sur fond foncé. */
+    @media (prefers-color-scheme: dark) {
+      .nexus-card { background:#FFFFFF !important; }
+      .nexus-title, .nexus-meta-value { color:#0F172A !important; }
+      .nexus-body, .nexus-quote { color:#334155 !important; }
+      .nexus-intro, .nexus-meta-label, .nexus-footer { color:#64748B !important; }
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;background-color:${P.pageBg};font-family:Inter,'Segoe UI',-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;">
   ${preheader}
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.pageBg};padding:32px 16px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="nexus-page" style="background-color:${P.pageBg};padding:32px 16px;">
     <tr><td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:${P.cardBg};border:1px solid ${P.cardBorder};border-radius:14px;box-shadow:${P.cardShadow};overflow:hidden;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" class="nexus-card" style="background-color:${P.cardBg};border:1px solid ${P.cardBorder};border-radius:14px;box-shadow:${P.cardShadow};overflow:hidden;width:100%;max-width:600px;">
 
         <!-- Header logo -->
-        <tr><td style="padding:22px 32px 14px;border-bottom:1px solid ${P.cardBorder};">
+        <tr><td class="nexus-pad-tight" style="padding:22px 32px 14px;border-bottom:1px solid ${P.cardBorder};">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-            <td>
-              <img src="${CETIX_LOGO_BASE64}" alt="${escapeHtml(COMPANY_NAME)}" width="120" height="auto" style="display:block;height:auto;max-width:120px;" />
+            <td valign="middle">
+              <img src="${CETIX_LOGO_BASE64}" alt="${escapeHtml(COMPANY_NAME)}" width="120" height="auto" class="nexus-logo" style="display:block;height:auto;max-width:120px;" />
             </td>
-            <td align="right">
-              <span style="display:inline-block;background:${accent.bg};color:${accent.fg};font-size:11px;font-weight:600;padding:4px 10px;border-radius:12px;letter-spacing:0.3px;text-transform:uppercase;">
+            <td align="right" valign="middle">
+              <span class="nexus-badge" style="display:inline-block;background:${accent.bg};color:${accent.fg};font-size:11px;font-weight:600;padding:5px 11px;border-radius:12px;letter-spacing:0.3px;text-transform:uppercase;">
                 ${escapeHtml(accent.label)}
               </span>
             </td>
@@ -205,24 +246,24 @@ export function buildNexusEmail(opts: NexusEmailOptions): string {
         </td></tr>
 
         <!-- Title + intro -->
-        <tr><td style="padding:26px 32px 6px;">
-          <h1 style="margin:0;font-size:20px;line-height:1.35;font-weight:700;color:${P.textPrimary};letter-spacing:-0.2px;">
+        <tr><td class="nexus-pad" style="padding:26px 32px 6px;">
+          <h1 class="nexus-title" style="margin:0;font-size:22px;line-height:1.35;font-weight:700;color:${P.textPrimary};letter-spacing:-0.2px;">
             ${escapeHtml(opts.title)}
           </h1>
-          ${opts.intro ? `<p style="margin:10px 0 0;font-size:14px;line-height:1.55;color:${P.textMuted};">${escapeHtml(opts.intro)}</p>` : ""}
+          ${opts.intro ? `<p class="nexus-intro" style="margin:10px 0 0;font-size:15px;line-height:1.55;color:${P.textMuted};">${escapeHtml(opts.intro)}</p>` : ""}
         </td></tr>
 
         <!-- Body -->
-        <tr><td style="padding:18px 32px 8px;">
+        <tr><td class="nexus-pad" style="padding:18px 32px 8px;">
           ${metadataBlock}
-          ${opts.body ? `<div style="margin:0 0 20px;font-size:14px;line-height:1.65;color:${P.textSecondary};">${opts.body}</div>` : ""}
+          ${opts.body ? `<div class="nexus-body" style="margin:0 0 20px;font-size:15px;line-height:1.65;color:${P.textSecondary};">${opts.body}</div>` : ""}
           ${quoteBlock}
           ${ctaBlock}
         </td></tr>
 
         <!-- Footer -->
-        <tr><td style="padding:18px 32px 26px;border-top:1px solid ${P.cardBorder};background:${P.softBg};">
-          <p style="margin:0;font-size:12px;color:${P.textMuted};line-height:1.55;">
+        <tr><td class="nexus-pad" style="padding:18px 32px 26px;border-top:1px solid ${P.cardBorder};background:${P.softBg};">
+          <p class="nexus-footer" style="margin:0;font-size:12px;color:${P.textMuted};line-height:1.55;">
             <strong style="color:${P.textSecondary};">Nexus</strong> — plateforme de gestion informatique développée par ${escapeHtml(COMPANY_NAME.replace(/\s+Informatique$/i, ""))}${COMPANY_WEBSITE ? ` · <a href="${COMPANY_WEBSITE}" style="color:${P.textMuted};text-decoration:none;">${escapeHtml(COMPANY_WEBSITE.replace(/^https?:\/\//, ""))}</a>` : ""}
           </p>
           ${prefsFooter}

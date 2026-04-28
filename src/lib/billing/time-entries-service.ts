@@ -218,8 +218,10 @@ export async function createTimeEntry(input: {
   });
 
   // Banque d'heures : si la décision a consommé du solde, on incrémente
-  // atomiquement côté serveur (source de vérité, plus besoin du
-  // localStorage bumpHourBankUsage côté client).
+  // atomiquement côté serveur. Le routage dépend du type de contrat :
+  //   - Contract Prisma classique → Contract.settings.hourBank.hoursConsumed
+  //   - Contract virtuel synthétisé depuis OrgBillingConfig (id préfixé
+  //     `virtual-orgconfig:`) → OrgBillingConfig.hourBank.hoursConsumed
   if (
     contract &&
     (decision.status === "deducted_from_hour_bank" || decision.status === "hour_bank_overage") &&
@@ -228,7 +230,12 @@ export async function createTimeEntry(input: {
     const consumedMinutes = decision.status === "deducted_from_hour_bank"
       ? input.durationMinutes
       : Math.max(0, contract.hourBank.totalHoursPurchased * 60 - contract.hourBank.hoursConsumed * 60);
-    await bumpContractHourBank(contract.id, consumedMinutes);
+    const { isVirtualContractId, bumpOrgBillingConfigHourBank } = await import("./org-billing-bridge");
+    if (isVirtualContractId(contract.id)) {
+      await bumpOrgBillingConfigHourBank(input.organizationId, consumedMinutes);
+    } else {
+      await bumpContractHourBank(contract.id, consumedMinutes);
+    }
   }
 
   return created;

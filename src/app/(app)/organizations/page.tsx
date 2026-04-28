@@ -56,6 +56,8 @@ const billingModeBadgeVariant = (mode: ContractType): "default" | "primary" | "s
       return "primary";
     case "hour_bank":
       return "warning";
+    case "ftig":
+      return "primary";
     case "time_and_materials":
       return "default";
     case "prepaid_block":

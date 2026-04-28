@@ -153,6 +153,11 @@ function flattenDetail(t: PrismaTicketDetail, clientPrefix: string): UiTicket {
     approvalStatus: (t.approvalStatus?.toLowerCase() as UiTicket["approvalStatus"]) ?? undefined,
     requiresApproval: t.requiresApproval ?? false,
     approvalLockOverride: t.approvalLockOverride ?? false,
+    // Origine externe — exposé pour le badge "Importé · Freshservice" sur
+    // la fiche ticket. Évite la confusion entre numéro Nexus (TK-XXXXX)
+    // et numéro Freshservice (INC-XXXXX) quand un ticket vient d'un import.
+    externalSource: t.externalSource ?? null,
+    externalId: t.externalId ?? null,
     approvers: (t.approvals ?? []).map((a) => ({
       id: a.id,
       contactId: a.approverId,
@@ -209,6 +214,11 @@ function flattenList(t: PrismaTicketList, clientPrefix: string): UiTicket {
     approvalStatus: (t.approvalStatus?.toLowerCase() as UiTicket["approvalStatus"]) ?? undefined,
     requiresApproval: t.requiresApproval ?? false,
     approvalLockOverride: t.approvalLockOverride ?? false,
+    // Origine externe — exposé pour le badge "Importé · Freshservice" sur
+    // la fiche ticket. Évite la confusion entre numéro Nexus (TK-XXXXX)
+    // et numéro Freshservice (INC-XXXXX) quand un ticket vient d'un import.
+    externalSource: t.externalSource ?? null,
+    externalId: t.externalId ?? null,
     approvers: (t.approvals ?? []).map((a) => ({
       id: a.id,
       contactId: a.approverId,

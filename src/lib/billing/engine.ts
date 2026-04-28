@@ -12,6 +12,7 @@ import type {
   BillingProfile,
   HourBankSettings,
   MSPPlanSettings,
+  FtigSettings,
   ClientBillingOverride,
   BillingCoverageMode,
   ResolvedBillingProfile,
@@ -139,6 +140,23 @@ function minutesToAmount(minutes: number, hourlyRate: number): number {
 // ----------------------------------------------------------------------------
 // HOUR BANK LOGIC
 // ----------------------------------------------------------------------------
+
+/** Choisit le taux de dépassement applicable selon le contexte de l'entrée :
+ *  déplacement, sur place, soir/weekend, ou cas standard. Les taux
+ *  contextuels supplantent `overageRate` quand ils sont configurés (>0). */
+function pickHourBankOverageRate(ctx: BillingContext, bank: HourBankSettings): number {
+  if (ctx.timeType === "travel" && bank.extraTravelRate && bank.extraTravelRate > 0) {
+    return bank.extraTravelRate;
+  }
+  if ((ctx.isAfterHours || ctx.isWeekend) && bank.extraEveningRate && bank.extraEveningRate > 0) {
+    return bank.extraEveningRate;
+  }
+  if (ctx.isOnsite && bank.extraOnsiteRate && bank.extraOnsiteRate > 0) {
+    return bank.extraOnsiteRate;
+  }
+  return bank.overageRate;
+}
+
 function decideHourBank(
   ctx: BillingContext,
   contract: Contract,
@@ -230,7 +248,7 @@ function decideHourBank(
         warnings: ["Banque d'heures épuisée — entrée bloquée"],
       };
     }
-    const rate = bank.overageRate;
+    const rate = pickHourBankOverageRate(ctx, bank);
     return {
       status: "hour_bank_overage",
       reason: `Banque d'heures épuisée — facturé en dépassement à ${rate.toFixed(2)} $/h`,
@@ -257,17 +275,143 @@ function decideHourBank(
   }
 
   const overageMinutes = billable - remainingMinutes;
-  const overageAmount = minutesToAmount(overageMinutes, bank.overageRate);
+  const overageRate = pickHourBankOverageRate(ctx, bank);
+  const overageAmount = minutesToAmount(overageMinutes, overageRate);
   return {
     status: "hour_bank_overage",
     reason: `${(remainingMinutes / 60).toFixed(2)} h déduites de la banque, ${(
       overageMinutes / 60
-    ).toFixed(2)} h facturées en dépassement à ${bank.overageRate.toFixed(2)} $/h`,
-    rate: bank.overageRate,
+    ).toFixed(2)} h facturées en dépassement à ${overageRate.toFixed(2)} $/h`,
+    rate: overageRate,
     amount: overageAmount,
     contractId: contract.id,
     appliedRule: "hour_bank.partial_overage",
     warnings: [`Dépassement de ${(overageMinutes / 60).toFixed(2)} h`],
+  };
+}
+
+// ----------------------------------------------------------------------------
+// FTIG LOGIC — Forfait Technicien IT Garanti
+//
+// Mensualité fixe + inclusions plafonnées par mois (onsite, soir/weekend,
+// déplacements). Le téletravail standard est toujours inclus. Les flags
+// "onsite", "after-hours/weekend" et le timeType "travel" consomment leur
+// quota respectif. Au-delà du quota, on bascule au taux `extraOnsiteRate`.
+//
+// La consommation du mois courant est pré-calculée par `server-decide.ts`
+// à partir des TimeEntry de la période — pas de compteurs persistés.
+// ----------------------------------------------------------------------------
+function decideFtig(
+  ctx: BillingContext,
+  contract: Contract,
+  ftig: FtigSettings,
+): BillingDecision {
+  // Déplacement : compteur de quantité (pas d'heures).
+  if (ctx.timeType === "travel") {
+    if (ftig.consumedTravelCount < ftig.includedTravelCount) {
+      return {
+        status: "included_in_contract",
+        reason: `Déplacement inclus dans le forfait FTIG (${ftig.consumedTravelCount + 1}/${ftig.includedTravelCount} ce mois)`,
+        contractId: contract.id,
+        appliedRule: "ftig.travel_included",
+      };
+    }
+    const rate = ctx.billingProfile.travelRate;
+    const billable = applyMinimumAndRounding(ctx.durationMinutes, ctx.billingProfile);
+    return {
+      status: "travel_billable",
+      reason: `Déplacements inclus du mois épuisés (${ftig.includedTravelCount}/${ftig.includedTravelCount}) — facturé au taux déplacement`,
+      rate,
+      amount: minutesToAmount(billable, rate),
+      contractId: contract.id,
+      appliedRule: "ftig.travel_overage",
+      warnings: ["Quota déplacements FTIG épuisé"],
+    };
+  }
+
+  const billable = applyMinimumAndRounding(ctx.durationMinutes, ctx.billingProfile);
+
+  // Soir / weekend : consomment le quota "evening" (les deux sont traités
+  // comme une seule banque "hors heures normales" pour rester simple).
+  if (ctx.isAfterHours || ctx.isWeekend) {
+    const remainingMinutes = Math.max(0, (ftig.includedEveningHours - ftig.consumedEveningHours) * 60);
+    if (remainingMinutes >= billable) {
+      return {
+        status: "included_in_contract",
+        reason: `Heures de soir/weekend incluses dans le forfait FTIG (${(remainingMinutes / 60).toFixed(2)} h restantes ce mois)`,
+        contractId: contract.id,
+        appliedRule: "ftig.evening_included",
+      };
+    }
+    const rate = ftig.extraOnsiteRate > 0
+      ? ftig.extraOnsiteRate
+      : (ctx.isWeekend ? ctx.billingProfile.weekendRate : ctx.billingProfile.afterHoursRate);
+    if (remainingMinutes <= 0) {
+      return {
+        status: "billable",
+        reason: `Quota soir/weekend FTIG épuisé (${ftig.includedEveningHours} h/mois) — facturé à ${rate.toFixed(2)} $/h`,
+        rate,
+        amount: minutesToAmount(billable, rate),
+        contractId: contract.id,
+        appliedRule: "ftig.evening_overage",
+        warnings: ["Quota heures soir FTIG épuisé"],
+      };
+    }
+    // Partial overage — surplus seul facturé, partie incluse non facturée.
+    const overageMinutes = billable - remainingMinutes;
+    return {
+      status: "billable",
+      reason: `${(remainingMinutes / 60).toFixed(2)} h incluses au forfait, ${(overageMinutes / 60).toFixed(2)} h facturées à ${rate.toFixed(2)} $/h`,
+      rate,
+      amount: minutesToAmount(overageMinutes, rate),
+      contractId: contract.id,
+      appliedRule: "ftig.evening_partial_overage",
+      warnings: [`Dépassement quota soir : ${(overageMinutes / 60).toFixed(2)} h`],
+    };
+  }
+
+  // Sur place (heures normales) : consomme le quota "onsite".
+  if (ctx.isOnsite) {
+    const remainingMinutes = Math.max(0, (ftig.includedOnsiteHours - ftig.consumedOnsiteHours) * 60);
+    if (remainingMinutes >= billable) {
+      return {
+        status: "included_in_contract",
+        reason: `Heures sur place incluses dans le forfait FTIG (${(remainingMinutes / 60).toFixed(2)} h restantes ce mois)`,
+        contractId: contract.id,
+        appliedRule: "ftig.onsite_included",
+      };
+    }
+    const rate = ftig.extraOnsiteRate > 0 ? ftig.extraOnsiteRate : ctx.billingProfile.onsiteRate;
+    if (remainingMinutes <= 0) {
+      return {
+        status: "billable",
+        reason: `Quota sur place FTIG épuisé (${ftig.includedOnsiteHours} h/mois) — facturé à ${rate.toFixed(2)} $/h`,
+        rate,
+        amount: minutesToAmount(billable, rate),
+        contractId: contract.id,
+        appliedRule: "ftig.onsite_overage",
+        warnings: ["Quota heures sur place FTIG épuisé"],
+      };
+    }
+    const overageMinutes = billable - remainingMinutes;
+    return {
+      status: "billable",
+      reason: `${(remainingMinutes / 60).toFixed(2)} h incluses au forfait, ${(overageMinutes / 60).toFixed(2)} h facturées à ${rate.toFixed(2)} $/h`,
+      rate,
+      amount: minutesToAmount(overageMinutes, rate),
+      contractId: contract.id,
+      appliedRule: "ftig.onsite_partial_overage",
+      warnings: [`Dépassement quota sur place : ${(overageMinutes / 60).toFixed(2)} h`],
+    };
+  }
+
+  // Télétravail standard heures normales : couvert par le forfait, sans
+  // plafond. C'est la promesse marketing du FTIG.
+  return {
+    status: "included_in_contract",
+    reason: "Inclus dans le forfait FTIG (télétravail standard)",
+    contractId: contract.id,
+    appliedRule: "ftig.remote_included",
   };
 }
 
@@ -510,6 +654,11 @@ export function decideBilling(ctx: BillingContext): BillingDecision {
     case "msp_monthly":
       if (ctx.contract.mspPlan) {
         return decideMSPPlan(ctx, ctx.contract, ctx.contract.mspPlan);
+      }
+      break;
+    case "ftig":
+      if (ctx.contract.ftig) {
+        return decideFtig(ctx, ctx.contract, ctx.contract.ftig);
       }
       break;
     case "time_and_materials": {

@@ -401,6 +401,7 @@ export type ContractType =
   | "time_and_materials"   // Temps et matériel
   | "msp_monthly"          // Forfait TI gérés mensuel
   | "hour_bank"            // Banque d'heures
+  | "ftig"                 // Forfait Technicien IT Garanti
   | "prepaid_block"        // Bloc prépayé
   | "hybrid";              // Contrat hybride
 
@@ -408,6 +409,7 @@ export const CONTRACT_TYPE_LABELS: Record<ContractType, string> = {
   time_and_materials: "Temps et matériel",
   msp_monthly: "Forfait TI gérés mensuel",
   hour_bank: "Banque d'heures",
+  ftig: "Forfait Technicien IT Garanti",
   prepaid_block: "Bloc prépayé",
   hybrid: "Hybride",
 };
@@ -434,11 +436,43 @@ export interface HourBankSettings {
   carryOverHours: boolean;        // report des heures non utilisées
   // Overage behavior
   allowOverage: boolean;          // accepter le dépassement
-  overageRate: number;            // taux pour les heures en dépassement
+  overageRate: number;            // taux pour les heures en dépassement (défaut)
+  // Taux de dépassement contextuels — si défini (>0), supplante `overageRate`
+  // pour le contexte correspondant. Permet d'avoir des tarifs distincts
+  // hors banque pour un déplacement vs un onsite vs une intervention soir.
+  extraTravelRate?: number;       // déplacement hors banque
+  extraOnsiteRate?: number;       // sur place hors banque
+  extraEveningRate?: number;      // soir/weekend hors banque
   // Travel inclusion
   includesTravel: boolean;
   includesOnsite: boolean;
   // Period
+  validFrom: string;
+  validTo: string;
+}
+
+/**
+ * FTIG (Forfait Technicien IT Garanti) — abonnement mensuel à montant fixe
+ * avec inclusions plafonnées par mois (heures sur place, heures de soir,
+ * déplacements). Au-delà des plafonds, on bascule au taux `extraOnsiteRate`.
+ *
+ * Les compteurs `consumed*` sont calculés au moment de la décision en
+ * sommant les TimeEntry du mois courant — ils ne sont pas persistés
+ * (évite la dérive de compteurs cumulés vs réalité des saisies).
+ */
+export interface FtigSettings {
+  monthlyAmount: number;          // montant mensuel facturé
+  // Inclusions par mois
+  includedOnsiteHours: number;    // heures sur place incluses / mois
+  includedEveningHours: number;   // heures de soir / weekend incluses / mois
+  includedTravelCount: number;    // déplacements inclus / mois
+  // Consommation observée du mois courant (calculée par server-decide)
+  consumedOnsiteHours: number;
+  consumedEveningHours: number;
+  consumedTravelCount: number;
+  // Tarif au-delà des plafonds
+  extraOnsiteRate: number;        // taux $/h pour dépassement onsite/evening
+  // Période contractuelle (le forfait n'est actif que dans cette plage)
   validFrom: string;
   validTo: string;
 }
@@ -482,6 +516,7 @@ export interface Contract {
   // Type-specific settings
   hourBank?: HourBankSettings;
   mspPlan?: MSPPlanSettings;
+  ftig?: FtigSettings;
   // Auto-renewal
   autoRenew: boolean;
   // Notes
