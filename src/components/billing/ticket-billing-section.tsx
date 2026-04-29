@@ -362,6 +362,11 @@ export function TicketBillingSection({
         editingEntry={editingTimeEntryId ? timeEntries.find((e) => e.id === editingTimeEntryId) ?? null : null}
         onSave={async (entry) => {
           try {
+            // Cast pour accéder aux 2 champs « axes de saisie » (workTypeId
+            // et rateTierId) qui sont posés par AddTimeModal mais pas
+            // déclarés dans le type TimeEntry de domain (legacy : ils ont
+            // été ajoutés après coup, le type n'a jamais suivi).
+            const e = entry as typeof entry & { workTypeId?: string | null; rateTierId?: string | null };
             const payload = {
               ticketId,
               organizationId,
@@ -386,6 +391,19 @@ export function TicketBillingSection({
               // Le flag "forcer non facturable" est le seul signal manuel
               // qui reste honoré par le serveur.
               forceNonBillable: (entry as { forceNonBillable?: boolean }).forceNonBillable ?? false,
+              // Axe « quoi » (type de prestation) + axe « combien » (palier
+              // tarifaire) — sans ces deux fields, les saisies finissent
+              // dans la DB avec rateTierId/workTypeId à null et les widgets
+              // analytics les regroupent toutes dans « Sans palier ».
+              ...(e.workTypeId ? { workTypeId: e.workTypeId } : {}),
+              ...(e.rateTierId ? { rateTierId: e.rateTierId } : {}),
+              // Agent attribué — peut différer de l'utilisateur courant
+              // quand un collègue saisit du temps au nom d'un autre. Le
+              // placeholder « usr_current » est filtré (le serveur prend
+              // l'auteur de la requête comme défaut).
+              ...(entry.agentId && entry.agentId !== "usr_current"
+                ? { agentId: entry.agentId }
+                : {}),
             };
             let res: Response;
             if (editingTimeEntryId) {

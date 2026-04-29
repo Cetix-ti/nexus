@@ -102,6 +102,15 @@ export const DATASETS: Record<string, DatasetDef> = {
       // Un ticket sans aucune saisie de temps tombe dans « — Sans saisie —».
       { name: "timeType", label: "Type de travail (saisies de temps)", type: "enum", groupable: true, aggregable: false, virtual: true,
         values: ["remote_work", "onsite_work", "travel", "preparation", "administration", "waiting", "follow_up", "internal", "other"] },
+      // Virtuel : palier tarifaire dérivé des saisies de temps liées au ticket.
+      // Permet de compter les tickets par palier (N1/N2/SR…). Un ticket avec
+      // des saisies sur plusieurs paliers apparaît dans chaque bucket. Sans
+      // saisie → « — Sans saisie — ». Saisies sans palier → « Sans palier ».
+      { name: "rateTierId", label: "Palier tarifaire (saisies de temps)", type: "relation", groupable: true, aggregable: false, virtual: true },
+      // Virtuel : type de prestation client dérivé des saisies de temps.
+      // Même logique que rateTierId, axé sur le « quoi » (workType) plutôt
+      // que le « combien » (rateTier).
+      { name: "workTypeId", label: "Type de prestation (saisies de temps)", type: "relation", groupable: true, aggregable: false, virtual: true },
       { name: "queueId", label: "File d'attente", type: "relation", groupable: true, aggregable: false },
       { name: "projectId", label: "Projet lié", type: "relation", groupable: true, aggregable: false },
       { name: "slaBreached", label: "SLA dépassé", type: "boolean", groupable: true, aggregable: false },
@@ -141,6 +150,15 @@ export const DATASETS: Record<string, DatasetDef> = {
       { name: "organizationId", label: "Organisation", type: "relation", groupable: true, aggregable: false },
       { name: "agentId", label: "Technicien", type: "relation", groupable: true, aggregable: false },
       { name: "ticketId", label: "Ticket", type: "relation", groupable: true, aggregable: false },
+      // Palier tarifaire choisi par l'agent à la saisie ("axe combien").
+      // Permet de voir la répartition des heures par niveau (N1/N2/SR…)
+      // chez un client. Les saisies sans palier (legacy ou taux scalaire)
+      // tombent dans « Sans palier ».
+      { name: "rateTierId", label: "Palier tarifaire", type: "relation", groupable: true, aggregable: false },
+      // Type de prestation client ("axe quoi"). Distinct du timeType
+      // système (qui reste l'enum). Permet de voir la répartition par
+      // libellé client (ex: "Maintenance", "Projet X").
+      { name: "workTypeId", label: "Type de prestation", type: "relation", groupable: true, aggregable: false },
       { name: "isOnsite", label: "Sur place", type: "boolean", groupable: true, aggregable: false },
       { name: "hasTravelBilled", label: "Déplacement facturé", type: "boolean", groupable: true, aggregable: false },
       { name: "isAfterHours", label: "Hors heures", type: "boolean", groupable: true, aggregable: false },
@@ -435,8 +453,12 @@ const DATASET_RELATION_INCLUDES: Record<string, RelationIncludes> = {
     projectId: { project: { select: { name: true } } },
   },
   time_entries: {
-    // Aucune relation déclarée sur TimeEntry — resolveLabels() résout
-    // organizationId / agentId / ticketId via lookups batch post-query.
+    // organizationId / agentId / ticketId : pas de relation Prisma déclarée
+    // sur TimeEntry — resolveLabels() les résout via lookups batch post-query.
+    // rateTier et workType : relations effectivement déclarées dans schema.prisma
+    // → on peut utiliser un include direct (gain de perf, pas d'aller-retour).
+    rateTierId: { rateTier: { select: { id: true, label: true } } },
+    workTypeId: { workType: { select: { id: true, label: true } } },
   },
   contacts: {
     organizationId: { organization: { select: { name: true } } },
@@ -495,6 +517,8 @@ function resolveRelationLabel(row: any, groupField: string): string {
   if (groupField === "siteId") return row.site?.name ?? "Sans site";
   if (groupField === "ownerId") return row.owner ? `${row.owner.firstName} ${row.owner.lastName}` : "—";
   if (groupField === "ticketId") return row.ticketId ?? "—";
+  if (groupField === "rateTierId") return row.rateTier?.label ?? "Sans palier";
+  if (groupField === "workTypeId") return row.workType?.label ?? "Sans type";
   return String(row[groupField] ?? "—");
 }
 
@@ -793,6 +817,88 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
   // Map champ → type pour coercer les valeurs correctement (date, number, bool).
   const fieldTypes = new Map<string, string>();
   for (const fd of def.fields) fieldTypes.set(fd.name, fd.type);
+  // Set des champs virtuels du dataset — leur valeur est synthétisée au
+  // moment de l'aggrégation (ex: tickets.timeType, tickets.categoryBaseId)
+  // et n'existe pas en DB. Filtrer ces champs via where Prisma planterait
+  // (Unknown argument). On les SKIPPE du where et on les applique en
+  // post-filtre sur les buckets de résultats — cf. applyVirtualFilters().
+  const virtualFieldSet = new Set<string>();
+  for (const fd of def.fields) if (fd.virtual) virtualFieldSet.add(fd.name);
+  const virtualFiltersToApply: typeof filters = [];
+
+  /** Labels « valeur manquante » synthétisés par les paths groupBy virtuels.
+   *  Utilisé par applyVirtualFilters pour reconnaître les variantes que
+   *  l'utilisateur peut taper dans un filtre (avec/sans em-dashes). */
+  const VIRTUAL_MISSING_LABELS: Record<string, string[]> = {
+    timeType: ["— Sans saisie —", "Sans saisie"],
+    categoryBaseId: ["Sans catégorie"],
+    // Sur tickets virtuel : couvre à la fois les tickets sans saisie ET
+    // les tickets dont les saisies n'ont pas de palier/type assigné.
+    rateTierId: ["— Sans saisie —", "Sans saisie", "Sans palier"],
+    workTypeId: ["— Sans saisie —", "Sans saisie", "Sans type"],
+  };
+  function isVirtualMissingLabel(field: string, raw: unknown): boolean {
+    if (typeof raw !== "string") return false;
+    const aliases = VIRTUAL_MISSING_LABELS[field];
+    if (!aliases) return false;
+    const t = raw.trim();
+    return aliases.includes(t);
+  }
+  function virtualLabelEquals(field: string, label: string, target: string): boolean {
+    if (label === target) return true;
+    return isVirtualMissingLabel(field, label) && isVirtualMissingLabel(field, target);
+  }
+  function applyVirtualFilters<T extends { label: string }>(rows: T[]): T[] {
+    if (virtualFiltersToApply.length === 0) return rows;
+    return rows.filter((r) => virtualFiltersToApply.every((f) => {
+      switch (f.operator) {
+        case "eq":  return virtualLabelEquals(f.field, r.label, String(f.value ?? ""));
+        case "neq": return !virtualLabelEquals(f.field, r.label, String(f.value ?? ""));
+        case "in": {
+          const list = Array.isArray(f.value)
+            ? f.value
+            : String(f.value ?? "").split(",").map((s: string) => s.trim()).filter(Boolean);
+          return list.some((v: unknown) => virtualLabelEquals(f.field, r.label, String(v)));
+        }
+        case "contains":
+          return typeof f.value === "string"
+            ? r.label.toLowerCase().includes(f.value.toLowerCase())
+            : true;
+        case "isnull": {
+          const wantMissing = f.value === true || f.value === "true";
+          const isMissing = isVirtualMissingLabel(f.field, r.label);
+          return wantMissing ? isMissing : !isMissing;
+        }
+        default: return true; // Operator non supporté en post-filtre → laisser passer
+      }
+    }));
+  }
+
+  /**
+   * Labels « valeur manquante » qu'affiche resolveRelationLabel pour les
+   * champs relation lorsque la cible est null. Quand l'utilisateur tape
+   * littéralement ce label dans un filtre (ex. « rateTierId neq Sans palier »),
+   * on traduit en sémantique NULL Prisma — sinon le filtre cherche une
+   * string qui n'existe pas en base et retourne 0 résultat.
+   *
+   * Synchronisé avec resolveRelationLabel ci-dessus + label-resolver.ts.
+   * On évite d'inclure les fallback ambigus comme "—" qui peuvent
+   * légitimement matcher des valeurs réelles.
+   */
+  const NULL_LABEL_BY_FIELD: Record<string, string> = {
+    rateTierId: "Sans palier",
+    workTypeId: "Sans type",
+    categoryId: "Sans catégorie",
+    queueId: "Sans file",
+    projectId: "Sans projet",
+    siteId: "Sans site",
+    assigneeId: "Non assigné",
+  };
+  function isNullSentinel(field: string, raw: unknown): boolean {
+    if (typeof raw !== "string") return false;
+    const expected = NULL_LABEL_BY_FIELD[field];
+    return !!expected && raw.trim() === expected;
+  }
 
   /**
    * Coerce une valeur brute (souvent string venant du client) vers le type
@@ -830,13 +936,25 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
     // String vide sur opérateur non-isnull → skip (évite d'envoyer "" à Prisma).
     if (f.operator !== "isnull" && typeof f.value === "string" && f.value.trim() === "") continue;
 
+    // Champ virtuel (ex: tickets.timeType dérivé des saisies de temps) :
+    // pas de colonne DB → on ne peut pas filtrer côté Prisma sans crash.
+    // On garde le filtre pour un post-filtre sur les buckets de résultats.
+    if (virtualFieldSet.has(f.field)) {
+      virtualFiltersToApply.push(f);
+      continue;
+    }
+
     switch (f.operator) {
       case "eq": {
+        // « rateTierId eq "Sans palier" » → match uniquement les nulls.
+        if (isNullSentinel(f.field, f.value)) { where[f.field] = null; break; }
         const v = coerce(f.field, f.value);
         if (v !== undefined) where[f.field] = v;
         break;
       }
       case "neq": {
+        // « rateTierId neq "Sans palier" » → exclut les nulls (= IS NOT NULL).
+        if (isNullSentinel(f.field, f.value)) { where[f.field] = { not: null }; break; }
         const v = coerce(f.field, f.value);
         if (v !== undefined) where[f.field] = { not: v };
         break;
@@ -865,8 +983,20 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
         const rawList: unknown[] = Array.isArray(f.value)
           ? f.value
           : String(f.value).split(",").map((s: string) => s.trim()).filter(Boolean);
-        const coerced = rawList.map((v: unknown) => coerce(f.field, v)).filter((v) => v !== undefined);
-        if (coerced.length > 0) where[f.field] = { in: coerced };
+        // Une sentinelle "Sans palier" dans la liste → on doit aussi
+        // accepter les nulls (Prisma `in` n'inclut JAMAIS les nulls).
+        const includesNullSentinel = rawList.some((v) => isNullSentinel(f.field, v));
+        const coerced = rawList
+          .filter((v) => !isNullSentinel(f.field, v))
+          .map((v: unknown) => coerce(f.field, v))
+          .filter((v) => v !== undefined);
+        if (includesNullSentinel && coerced.length > 0) {
+          where[f.field] = { OR: [{ [f.field]: { in: coerced } }, { [f.field]: null }] } as never;
+        } else if (includesNullSentinel) {
+          where[f.field] = null;
+        } else if (coerced.length > 0) {
+          where[f.field] = { in: coerced };
+        }
         break;
       }
       case "contains": {
@@ -874,7 +1004,15 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
         where[f.field] = { contains: f.value, mode: "insensitive" };
         break;
       }
-      case "isnull": where[f.field] = f.value === false ? { not: null } : null; break;
+      case "isnull": {
+        // L'UI envoie "true"/"false" en string via le Select de filter-row.tsx.
+        // Anciennement on comparait `f.value === false` (booléen) — bug :
+        // `"false" === false` → false, donc « N'est pas vide » sélectionnait
+        // en réalité les nulls (l'inverse). On accepte string et booléen.
+        const wantNull = f.value === true || f.value === "true";
+        where[f.field] = wantNull ? null : { not: null };
+        break;
+      }
       case "between": {
         const [lo, hi] = Array.isArray(f.value) ? f.value : String(f.value).split(",");
         const lov = coerce(f.field, lo);
@@ -926,6 +1064,7 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
     sortResults(results, sortBy, sortDir);
     results = results.slice(0, limit);
     results = await resolveLabels(results, groupBy);
+    results = applyVirtualFilters(results);
     return { results, total: totalRows, groupedBy: groupBy, aggregate };
   }
 
@@ -974,6 +1113,68 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
       }));
       sortResults(results, sortBy, sortDir);
       results = results.slice(0, limit);
+      results = applyVirtualFilters(results);
+      return { results, total: totalRows, groupedBy: groupBy, aggregate };
+    }
+
+    // Virtuels « via saisies de temps » : on bucket les tickets selon les
+    // paliers tarifaires (rateTierId) ou types de prestation (workTypeId)
+    // utilisés dans leurs saisies. Mêmes règles que timeType : un ticket
+    // avec saisies sur N paliers compte dans N buckets ; sans saisie →
+    // « — Sans saisie — » ; saisies présentes mais sans palier/type →
+    // « Sans palier » / « Sans type ».
+    if (
+      fieldDef?.virtual &&
+      dataset === "tickets" &&
+      (groupBy === "rateTierId" || groupBy === "workTypeId")
+    ) {
+      const rows = await model.findMany({ where, take: 5000 });
+      const totalRows = rows.length;
+      const ticketIds = rows.map((r: { id: string }) => r.id);
+      const entries = ticketIds.length > 0
+        ? await prisma.timeEntry.findMany({
+            where: { ticketId: { in: ticketIds } },
+            select: {
+              ticketId: true,
+              ...(groupBy === "rateTierId"
+                ? { rateTierId: true, rateTier: { select: { label: true } } }
+                : { workTypeId: true, workType: { select: { label: true } } }),
+            },
+          })
+        : [];
+      const missingLabel = groupBy === "rateTierId" ? "Sans palier" : "Sans type";
+      const labelsByTicket = new Map<string, Set<string>>();
+      for (const e of entries as Array<Record<string, any>>) {
+        const set = labelsByTicket.get(e.ticketId) ?? new Set<string>();
+        const id = groupBy === "rateTierId" ? e.rateTierId : e.workTypeId;
+        const rel = groupBy === "rateTierId" ? e.rateTier : e.workType;
+        set.add(id ? (rel?.label ?? missingLabel) : missingLabel);
+        labelsByTicket.set(e.ticketId, set);
+      }
+      const groups = new Map<string, { label: string; count: number; values: number[] }>();
+      for (const row of rows as Array<Record<string, unknown>>) {
+        const labels = labelsByTicket.get(String(row.id)) ?? new Set<string>();
+        if (labels.size === 0) {
+          const key = "— Sans saisie —";
+          const g = groups.get(key) ?? { label: key, count: 0, values: [] };
+          g.count += 1;
+          if (aggregateField && row[aggregateField] != null) g.values.push(Number(row[aggregateField]));
+          groups.set(key, g);
+          continue;
+        }
+        for (const lbl of labels) {
+          const g = groups.get(lbl) ?? { label: lbl, count: 0, values: [] };
+          g.count += 1;
+          if (aggregateField && row[aggregateField] != null) g.values.push(Number(row[aggregateField]));
+          groups.set(lbl, g);
+        }
+      }
+      let results = Array.from(groups.values()).map((g) => ({
+        label: g.label, value: applyDivide(computeAggregate(aggregate, g.values, g.count, totalRows)),
+      }));
+      sortResults(results, sortBy, sortDir);
+      results = results.slice(0, limit);
+      results = applyVirtualFilters(results);
       return { results, total: totalRows, groupedBy: groupBy, aggregate };
     }
 
@@ -1008,6 +1209,7 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
       }));
       sortResults(results, sortBy, sortDir);
       results = results.slice(0, limit);
+      results = applyVirtualFilters(results);
       return { results, total: totalRows, groupedBy: groupBy, aggregate };
     }
 
@@ -1032,6 +1234,7 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
       sortResults(results, sortBy, sortDir);
       results = results.slice(0, limit);
       results = await resolveLabels(results, groupBy);
+      results = applyVirtualFilters(results);
       return { results, total: totalRows, groupedBy: groupBy, aggregate };
     }
 
@@ -1079,6 +1282,7 @@ export async function executeSingleQuery(input: SingleQueryInput): Promise<Singl
     });
     sortResults(results, sortBy, sortDir);
     results = await resolveLabels(results, groupBy);
+    results = applyVirtualFilters(results);
     return { results, total: totalCount, groupedBy: groupBy, aggregate };
   }
 

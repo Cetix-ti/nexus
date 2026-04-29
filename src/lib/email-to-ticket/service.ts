@@ -18,6 +18,7 @@ import {
   extractTicketNumberFromSubject,
   parseInReplyTo,
   parseReferences,
+  isAutoReply,
 } from "@/lib/email-to-ticket/parse";
 
 // ---------------------------------------------------------------------------
@@ -382,9 +383,30 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
         try {
           const senderEmail = msg.from?.emailAddress?.address?.toLowerCase();
           if (!senderEmail) { skipped++; continue; }
+          // Self-loop : si la mailbox d'ingestion s'envoie un courriel à
+          // elle-même (notification interne, replay, mauvaise config SMTP)
+          // on l'ignore pour éviter une boucle de tickets fantômes.
+          if (senderEmail === cfg.mailbox.toLowerCase()) {
+            skipped++;
+            if (cfg.markAsRead && !msg.isRead) {
+              await markAsRead(cfg.mailbox, msg.id).catch(() => {});
+            }
+            continue;
+          }
           const senderName = msg.from?.emailAddress?.name || senderEmail;
           const rawSubject = (msg.subject || "").trim();
           if (!rawSubject) { skipped++; continue; }
+          // Auto-reply detection (RFC 3834 + heuristique sujet). Un
+          // « Out of Office » Outlook qui répond à une notif Nexus se
+          // ferait normalement enregistrer comme nouveau ticket — bug
+          // classique. On skip + marque comme lu (pour ne pas boucler).
+          if (isAutoReply(rawSubject, msg.internetMessageHeaders)) {
+            skipped++;
+            if (cfg.markAsRead && !msg.isRead) {
+              await markAsRead(cfg.mailbox, msg.id).catch(() => {});
+            }
+            continue;
+          }
           // Version "propre" du sujet pour ticket.subject : on vire les
           // préfixes Re:/Fw: et le tag [TK-1042] pour éviter la pollution.
           const cleanSubject = rawSubject
@@ -770,6 +792,19 @@ export async function syncEmailsToTickets(config?: EmailToTicketConfig | null): 
             select: { id: true },
           });
           created++;
+
+          // Workflow d'approbation : si le contact requester a des
+          // approbateurs configurés sur l'org, on déclenche TicketApproval
+          // + flag requiresApproval=true. Sans ce hook, les tickets créés
+          // par email passaient en NOT_REQUIRED (bug TK-28688/89/90).
+          // Best-effort : un échec ici ne bloque pas la création.
+          await import("@/lib/approvers/auto-trigger")
+            .then((m) => m.triggerApprovalsForNewTicket({
+              ticketId: newTicket.id,
+              organizationId: org.id,
+              requester: { contactId, email: senderEmail },
+            }))
+            .catch((e) => console.warn("[email-to-ticket] approval trigger failed:", e));
 
           // Notifications (fire-and-forget) : agents (tous si non assigné)
           // + contact demandeur (via garde allowlist pour éviter d'envoyer

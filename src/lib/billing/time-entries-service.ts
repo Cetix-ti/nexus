@@ -260,6 +260,13 @@ export async function updateTimeEntry(id: string, patch: any) {
   }
 
   const data: Record<string, unknown> = {};
+  // Réassignation d'agent : permet de corriger une saisie créée à tort
+  // sous le mauvais nom, ou de transférer après coup vers le collègue qui
+  // a réellement effectué le travail. Validation de l'existence/staff
+  // côté API route avant d'arriver ici.
+  if (patch.agentId !== undefined && typeof patch.agentId === "string" && patch.agentId.length > 0) {
+    data.agentId = patch.agentId;
+  }
   if (patch.timeType !== undefined) data.timeType = patch.timeType;
   if (patch.startedAt !== undefined) data.startedAt = new Date(patch.startedAt);
   if (patch.endedAt !== undefined) data.endedAt = patch.endedAt ? new Date(patch.endedAt) : null;

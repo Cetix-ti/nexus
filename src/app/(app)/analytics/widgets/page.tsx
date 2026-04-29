@@ -205,7 +205,18 @@ function generatePieColors(baseColor: string, count: number): string[] {
 }
 
 function loadWidgets(): CustomWidget[] { try { const r = localStorage.getItem(STORAGE_KEY); if (r) return JSON.parse(r); } catch {} return []; }
-function saveWidgets(w: CustomWidget[]) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(w)); } catch {} }
+function saveWidgets(w: CustomWidget[]) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(w)); } catch {}
+  // Notifie les dashboards ouverts (même onglet et autres onglets) que la
+  // définition source d'un ou plusieurs widgets a changé. Dans le même
+  // onglet, `localStorage.setItem` n'émet PAS l'événement `storage` natif —
+  // d'où le custom event. Les overrides per-instance (overrideColor,
+  // overrideChartType, scales) restent intacts : seules les valeurs source
+  // (query, name, color de base, chartType de base) sont rafraîchies.
+  if (typeof window !== "undefined") {
+    try { window.dispatchEvent(new Event("nexus:widgets-updated")); } catch {}
+  }
+}
 
 /**
  * Retourne true si le type de graphique est adapté à la forme des

@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
 import { readReportPdfOrGenerate } from "@/lib/reports/monthly/service";
+import { buildReportFilename } from "@/lib/reports/monthly/filename";
 
 export async function GET(
   _req: Request,
@@ -29,7 +30,7 @@ export async function GET(
       organizationId: true,
       publishedToPortal: true,
       period: true,
-      organization: { select: { slug: true } },
+      organization: { select: { slug: true, clientCode: true } },
     },
   });
   if (
@@ -42,8 +43,11 @@ export async function GET(
 
   try {
     const pdf = await readReportPdfOrGenerate(id);
-    const periodStr = meta.period.toISOString().slice(0, 7);
-    const filename = `rapport-${meta.organization.slug}-${periodStr}.pdf`;
+    const filename = buildReportFilename({
+      clientCode: meta.organization.clientCode,
+      slug: meta.organization.slug,
+      period: meta.period,
+    });
     return new NextResponse(new Uint8Array(pdf), {
       status: 200,
       headers: {

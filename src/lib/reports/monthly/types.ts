@@ -113,6 +113,11 @@ export interface MonthlyReportTripLine {
   /** Montant facturé au client pour ce déplacement ($), ou null si
    *  l'organisation n'est pas configurée pour facturation déplacement. */
   billedAmount: number | null;
+  /** Statut FTIG du déplacement :
+   *  - `included` : déplacement compté dans le quota FTIG inclus du mois
+   *  - `billable` : au-delà du quota OU pas de quota FTIG configuré
+   *  - `none`     : pas de FTIG actif sur l'org (mode déplacement standard) */
+  ftigStatus?: "included" | "billable" | "none";
 }
 
 export interface MonthlyReportTripsSection {

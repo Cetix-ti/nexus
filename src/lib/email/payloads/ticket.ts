@@ -103,6 +103,16 @@ export async function buildTicketPayload(
     .trim()
     .slice(0, 300);
 
+  // HTML riche sanitizé pour les templates qui veulent rendre le texte
+  // enrichi (gras, listes, images inline). Utilisé par {{ticket_description_html}}.
+  let descriptionHtml = "";
+  if (ticket.descriptionHtml && ticket.descriptionHtml.trim()) {
+    try {
+      const { sanitizeEmailHtml } = await import("@/lib/email-to-ticket/html");
+      descriptionHtml = sanitizeEmailHtml(ticket.descriptionHtml);
+    } catch { /* fallback : excerpt plain text */ }
+  }
+
   const orgUrl = ticket.organization?.slug
     ? `${commonPayload().app_url}/organisations/${ticket.organization.slug}`
     : "";
@@ -120,6 +130,7 @@ export async function buildTicketPayload(
     ticket_status_label: STATUS_LABEL[ticket.status] ?? ticket.status,
     ticket_url: agentUrl,
     ticket_description_excerpt: excerpt + (excerpt.length >= 300 ? "…" : ""),
+    ticket_description_html: descriptionHtml,
     ticket_created_at: fmtDateFr(ticket.createdAt),
     ticket_sla_deadline: fmtDateFr(ticket.dueAt),
     ticket_sla_state: slaState,

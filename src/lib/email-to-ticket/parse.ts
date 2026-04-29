@@ -174,3 +174,67 @@ export function parseReferences(headers: Array<{ name: string; value: string }> 
   }
   return [];
 }
+
+/**
+ * Détecte si un courriel entrant est une réponse automatique. Combine 3
+ * signaux :
+ *
+ *   1. RFC 3834 — `Auto-Submitted: auto-replied|auto-generated|...`
+ *      `Precedence: auto_reply|bulk|junk`
+ *      `X-Auto-Response-Suppress` (présent = signal d'autoresponder)
+ *      `X-Autoreply: yes`
+ *   2. Heuristique sujet — patterns multilingues OOO, vacation, etc.
+ *   3. (Implicite) le caller filtre déjà self-loop sender = mailbox.
+ *
+ * Retourne true si le message DEVRAIT être ignoré par email-to-ticket.
+ * Sans cette détection, l'auto-reply Outlook/Exchange du destinataire
+ * d'une notification Nexus crée un faux ticket — bug classique des
+ * systèmes email-to-ticket.
+ */
+export function isAutoReply(
+  subject: string | null | undefined,
+  headers: Array<{ name: string; value: string }> | undefined,
+): boolean {
+  // 1. Headers RFC 3834
+  if (Array.isArray(headers)) {
+    for (const h of headers) {
+      if (!h?.name || !h?.value) continue;
+      const name = h.name.toLowerCase();
+      const value = String(h.value).toLowerCase().trim();
+      if (name === "auto-submitted") {
+        // "no" est explicitement « ce n'est PAS un auto-reply ».
+        // Toute autre valeur (auto-replied / auto-generated / auto-notified)
+        // = auto-reply.
+        if (value && value !== "no") return true;
+      }
+      if (name === "x-auto-response-suppress") return true;
+      if (name === "x-autoreply" && value === "yes") return true;
+      if (name === "precedence" && (value === "auto_reply" || value === "bulk" || value === "junk")) {
+        return true;
+      }
+      // Headers Microsoft Exchange — propres à OOO Outlook
+      if (name === "x-ms-exchange-inbox-rules-loop") return true;
+      if (name === "x-ms-exchange-generated-message-source" && value.includes("vacation")) return true;
+    }
+  }
+
+  // 2. Heuristique sujet — multilingue, conservatrice (on évite les faux
+  //    positifs sur les sujets contenant "vacation" / "absent" en contexte
+  //    métier — donc on cible les phrases STANDARD générées par Outlook,
+  //    Gmail, Apple Mail, Lotus Notes, etc.)
+  const s = String(subject ?? "").toLowerCase();
+  if (!s) return false;
+  // Patterns standards explicites (FR + EN)
+  const patterns: RegExp[] = [
+    /^\s*(re:\s*)?(automatic\s+reply|automatical\s+reply|auto-?reply|out\s+of\s+(the\s+)?office|out-of-office|ooo)\b/,
+    /^\s*(re:\s*)?(réponse\s+automatique|absent\s+du\s+bureau|hors\s+du\s+bureau|message\s+d['']absence)\b/,
+    /^\s*(re:\s*)?automatische\s+antwort\b/,           // de
+    /^\s*(re:\s*)?respuesta\s+automática\b/,           // es
+    /^\s*(re:\s*)?risposta\s+automatica\b/,            // it
+    /^\s*(re:\s*)?(autosvar|fora\s+do\s+escritório)\b/, // sv / pt
+  ];
+  for (const re of patterns) {
+    if (re.test(s)) return true;
+  }
+  return false;
+}

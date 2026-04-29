@@ -202,6 +202,12 @@ export async function sendTicketReplyEmail(commentId: string): Promise<{
     references: allRefs.map((c) => c.messageId!).filter(Boolean),
     replyTo: inboundMailbox,
     from: inboundMailbox ? { email: inboundMailbox, name: "Cetix · Support" } : undefined,
+    // Reply ticket = vraie conversation humaine. On NE pose PAS
+    // `Auto-Submitted: auto-generated` (par défaut dans send.ts), sinon
+    // les serveurs SMTP rangent ces messages comme du bulk et les
+    // OOO légitimes ne se déclenchent plus alors qu'on les VEUT pour
+    // savoir que le client est absent.
+    skipAutoSubmittedHeader: true,
     extraHeaders: {
       "X-Nexus-Ticket-Id": ticket.id,
       "X-Nexus-Ticket-Number": displayNumber,

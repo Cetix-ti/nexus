@@ -28,6 +28,16 @@ export interface SendEmailOptions {
   replyTo?: string;
   /** En-têtes libres supplémentaires. */
   extraHeaders?: Record<string, string>;
+  /**
+   * Désactive le tag `Auto-Submitted: auto-generated`. Par défaut, tous
+   * les emails sortants Nexus posent ce header (RFC 3834) pour que les
+   * serveurs SMTP destinataires NE déclenchent PAS leur auto-reply
+   * (Out-of-Office, etc.) — sinon boucle de tickets fantômes côté
+   * inbox d'ingestion. À mettre à `true` UNIQUEMENT pour les vraies
+   * réponses de ticket (ticket-reply.ts) qu'on veut traiter comme une
+   * conversation humaine normale (threading, OOO légitime, etc.).
+   */
+  skipAutoSubmittedHeader?: boolean;
 }
 
 /**
@@ -78,6 +88,16 @@ export async function sendEmailWithMeta(
     const fromName = options.from?.name ?? "Nexus";
     const fromEmail = options.from?.email ?? cfg.fromEmail;
 
+    // Header RFC 3834 : signale aux serveurs SMTP destinataires que ce
+    // courriel est généré automatiquement → ils ne déclenchent PAS leur
+    // auto-reply (OOO Outlook, vacation Gmail, etc.). Évite la boucle
+    // « Nexus envoie une notif → OOO du destinataire répond → Nexus
+    // crée un faux ticket ».
+    const headers: Record<string, string> = { ...(options.extraHeaders ?? {}) };
+    if (!options.skipAutoSubmittedHeader && !headers["Auto-Submitted"] && !headers["auto-submitted"]) {
+      headers["Auto-Submitted"] = "auto-generated";
+    }
+
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromEmail}>`,
       to,
@@ -88,7 +108,7 @@ export async function sendEmailWithMeta(
       messageId: options.messageId,
       inReplyTo: options.inReplyTo,
       references: options.references,
-      headers: options.extraHeaders,
+      headers,
     });
 
     return { ok: true, messageId: info.messageId };

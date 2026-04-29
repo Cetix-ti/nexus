@@ -43,6 +43,13 @@ const nextConfig: NextConfig = {
       { source: "/intelligence/maintenance",       destination: "/intelligence/proposals?tab=maintenance",permanent: false },
       { source: "/intelligence/kb-gaps",           destination: "/intelligence/proposals?tab=kb-gaps",    permanent: false },
       { source: "/intelligence/playbooks",         destination: "/intelligence/proposals?tab=playbooks",  permanent: false },
+      // Raccourcis courriel : les courriels de notification utilisent
+      // l'URL courte /TK-NNNN ou /INT-NNNN (cf. getAgentTicketUrl). Sans
+      // ces redirects, le clic depuis la boîte mail tombait en 500
+      // (aucune route Next.js ne matche au root). Ces redirects pointent
+      // vers la vraie page /tickets/[id] qui sait résoudre les slugs.
+      { source: "/TK-:num(\\d+)",  destination: "/tickets/TK-:num",  permanent: false },
+      { source: "/INT-:num(\\d+)", destination: "/tickets/INT-:num", permanent: false },
     ];
   },
 };

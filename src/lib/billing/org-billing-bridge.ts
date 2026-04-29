@@ -67,7 +67,13 @@ function isWithinRange(atDate: Date, from?: string, to?: string): boolean {
 async function computeFtigMonthlyConsumption(
   organizationId: string,
   atDate: Date,
-): Promise<{ onsiteHours: number; eveningHours: number; travelCount: number }> {
+  excludedWorkTypeIds: string[],
+): Promise<{
+  onsiteHours: number;
+  eveningHours: number;
+  weekendHours: number;
+  travelCount: number;
+}> {
   const monthStart = new Date(atDate.getFullYear(), atDate.getMonth(), 1);
   const monthEnd = new Date(atDate.getFullYear(), atDate.getMonth() + 1, 1);
 
@@ -83,21 +89,46 @@ async function computeFtigMonthlyConsumption(
       isAfterHours: true,
       isWeekend: true,
       hasTravelBilled: true,
+      workTypeId: true,
     },
   });
 
   let onsiteMinutes = 0;
   let eveningMinutes = 0;
+  let weekendMinutes = 0;
   let travelCount = 0;
+  // `excludedWorkTypeIds` reste passé en argument pour rétro-compatibilité
+  // de la signature, mais n'est plus utilisé pour skipper les saisies du
+  // calcul de consommation (sémantique cosmétique B).
+  void excludedWorkTypeIds;
 
   for (const e of entries) {
+    // Note : les WorkType « hors contrat » consomment AUSSI les quotas
+    // depuis Sémantique B (cosmétique uniquement). Avant, ils étaient
+    // skippés via continue ici — mais ça créait des trous dans les
+    // compteurs et gardait les saisies d'éternellement marquées comme
+    // "billable" alors qu'elles aurait dû passer par la cascade jour/soir.
     if (e.timeType === "travel" || e.hasTravelBilled) {
       travelCount += 1;
     }
     if (e.timeType === "internal") continue;
-    if (e.isAfterHours || e.isWeekend) {
+    // Segmentation alignée sur la cascade du moteur :
+    //   weekend (peu importe sur place / à distance) → quota weekend
+    //   sinon soir + à distance                      → quota soir
+    //   sinon soir + sur place                       → billable direct (pas de quota)
+    //   sinon jour (sur place OU à distance)         → quota jour
+    if (e.isWeekend) {
+      weekendMinutes += e.durationMinutes;
+    } else if (e.isAfterHours && !e.isOnsite) {
       eveningMinutes += e.durationMinutes;
-    } else if (e.isOnsite) {
+    } else if (e.isAfterHours && e.isOnsite) {
+      // Sur place soir → pas de quota, billable direct. On ne le compte
+      // dans aucun consumed*. Continue.
+      continue;
+    } else if (!e.isAfterHours) {
+      // Heures normales — sur place OU à distance — consomment le même
+      // quota jour (champ persisté `includedOnsiteHours` mais sémantique
+      // « heures de jour » selon la nouvelle règle FTIG).
       onsiteMinutes += e.durationMinutes;
     }
   }
@@ -105,6 +136,7 @@ async function computeFtigMonthlyConsumption(
   return {
     onsiteHours: Math.round((onsiteMinutes / 60) * 100) / 100,
     eveningHours: Math.round((eveningMinutes / 60) * 100) / 100,
+    weekendHours: Math.round((weekendMinutes / 60) * 100) / 100,
     travelCount,
   };
 }
@@ -135,15 +167,25 @@ export async function buildVirtualContractFromOrgConfig(
     if (!isWithinRange(atDate, startDate, endDate)) {
       // Forfait pas actif à cette date, on essaie hour_bank en repli.
     } else {
-      const consumed = await computeFtigMonthlyConsumption(organizationId, atDate);
+      const excludedWorkTypeIds = Array.isArray(f.excludedWorkTypeIds)
+        ? (f.excludedWorkTypeIds as string[]).filter((s) => typeof s === "string")
+        : [];
+      const consumed = await computeFtigMonthlyConsumption(
+        organizationId,
+        atDate,
+        excludedWorkTypeIds,
+      );
       const ftigSettings: FtigSettings = {
         monthlyAmount: Number(f.monthlyAmount ?? 0),
         includedOnsiteHours: Number(f.includedOnsiteHours ?? 0),
         includedEveningHours: Number(f.includedEveningHours ?? 0),
+        includedWeekendHours: Number(f.includedWeekendHours ?? 0),
         includedTravelCount: Number(f.includedTravelCount ?? 0),
         consumedOnsiteHours: consumed.onsiteHours,
         consumedEveningHours: consumed.eveningHours,
+        consumedWeekendHours: consumed.weekendHours,
         consumedTravelCount: consumed.travelCount,
+        excludedWorkTypeIds,
         extraOnsiteRate: Number(f.extraOnsiteHourlyRate ?? 0),
         validFrom: startDate || atDate.toISOString(),
         validTo: endDate || "",
@@ -172,7 +214,15 @@ export async function buildVirtualContractFromOrgConfig(
     const b = cfg.hourBank as Record<string, unknown>;
     const startDate = (b.startDate as string | undefined) ?? "";
     const endDate = (b.endDate as string | undefined) ?? "";
-    if (!isWithinRange(atDate, startDate, endDate)) return null;
+    const carryOver = Boolean(b.carryOver ?? false);
+    // Si carryOver=true, la banque reste active même au-delà de la
+    // date de fin (les heures restantes se reportent indéfiniment
+    // jusqu'à renouvellement manuel). Sinon, le bank n'est plus
+    // utilisable une fois validTo dépassé.
+    const inRange = carryOver
+      ? !startDate || new Date(startDate) <= atDate
+      : isWithinRange(atDate, startDate, endDate);
+    if (!inRange) return null;
 
     const eligibleTimeTypes: TimeType[] = [
       "remote_work", "onsite_work", "preparation", "follow_up", "other",

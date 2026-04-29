@@ -497,21 +497,50 @@ export async function buildMonthlyReportPayload(
   // (mode kilométrique) le client n'est pas facturé directement par
   // déplacement — la facturation se fait via le taux horaire onsite.
   // Dans ce dernier cas, on n'affiche pas de montant.
-  const tripFlatFee = mileage?.flatFee ?? null;
-  const tripLines: MonthlyReportTripLine[] = Array.from(tripPicks.values())
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((t) => {
-      const ticket = ticketById.get(t.ticketId);
-      return {
-        date: t.date,
-        agentName: agentOf(t.agentId).fullName,
-        ticketDisplayId: ticket ? displayTicketId(ticket.number, !!ticket.isInternal, clientPrefix) : null,
-        ticketSubject: ticket?.subject ?? null,
-        billedAmount: tripsBillable
-          ? (tripFlatFee != null ? tripFlatFee : 0)
-          : null,
-      };
+  //
+  // FTIG : si l'org a un forfait FTIG actif sur la période avec un quota
+  // de déplacements inclus (`includedTravelCount`), on marque les N
+  // premiers déplacements (par ordre chrono) comme `included` et les
+  // suivants comme `billable`. Ce statut est rendu dans le PDF.
+  let ftigIncludedTravelCount = 0;
+  try {
+    const billingCfg = await prisma.orgBillingConfig.findUnique({
+      where: { organizationId: org.id },
+      select: { billingTypes: true, ftig: true },
     });
+    if (billingCfg?.billingTypes?.includes("ftig") && billingCfg.ftig) {
+      const f = billingCfg.ftig as Record<string, unknown>;
+      const startDate = (f.startDate as string | undefined) ?? null;
+      const endDate = (f.endDate as string | undefined) ?? null;
+      const periodMid = new Date(start.getFullYear(), start.getMonth(), 15);
+      const inRange =
+        (!startDate || new Date(startDate) <= periodMid) &&
+        (!endDate || new Date(endDate) >= periodMid);
+      if (inRange) {
+        ftigIncludedTravelCount = Math.max(0, Number(f.includedTravelCount ?? 0));
+      }
+    }
+  } catch { /* sans bloquer la génération si la config est introuvable */ }
+
+  const tripFlatFee = mileage?.flatFee ?? null;
+  const sortedTrips = Array.from(tripPicks.values()).sort((a, b) => a.date.localeCompare(b.date));
+  const tripLines: MonthlyReportTripLine[] = sortedTrips.map((t, idx) => {
+    const ticket = ticketById.get(t.ticketId);
+    let ftigStatus: "included" | "billable" | "none" = "none";
+    if (ftigIncludedTravelCount > 0) {
+      ftigStatus = idx < ftigIncludedTravelCount ? "included" : "billable";
+    }
+    return {
+      date: t.date,
+      agentName: agentOf(t.agentId).fullName,
+      ticketDisplayId: ticket ? displayTicketId(ticket.number, !!ticket.isInternal, clientPrefix) : null,
+      ticketSubject: ticket?.subject ?? null,
+      billedAmount: tripsBillable
+        ? (tripFlatFee != null ? tripFlatFee : 0)
+        : null,
+      ftigStatus,
+    };
+  });
 
   // 12) Construction tickets (détail).
   const ticketsBlocks: MonthlyReportTicketBlock[] = [];

@@ -376,7 +376,22 @@ export function TicketListView({ tickets }: TicketListViewProps) {
                 return (
                   <tr
                     key={ticket.id}
-                    onClick={() => router.push(`/tickets/${ticket.id}`)}
+                    onClick={(e) => {
+                      // Cmd/Ctrl+clic → nouvel onglet (UX standard navigateur).
+                      // Sans ce check, router.push tue l'intention « new tab ».
+                      if (e.metaKey || e.ctrlKey) {
+                        window.open(`/tickets/${ticket.id}`, "_blank", "noopener");
+                        return;
+                      }
+                      router.push(`/tickets/${ticket.id}`);
+                    }}
+                    onAuxClick={(e) => {
+                      // Clic-milieu (button=1) → nouvel onglet.
+                      if (e.button === 1) {
+                        e.preventDefault();
+                        window.open(`/tickets/${ticket.id}`, "_blank", "noopener");
+                      }
+                    }}
                     className={cn(
                       "cursor-pointer border-b border-slate-100 last:border-0 transition-colors duration-100 group",
                       isSelected ? "bg-blue-50/40" : "hover:bg-slate-50/80"
@@ -405,11 +420,19 @@ export function TicketListView({ tickets }: TicketListViewProps) {
                         #{ticket.number}
                       </Link>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <div>
-                        <span className="font-medium text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-1">
+                        {/* Titre = vrai <Link> pour que Cmd/Ctrl+clic et
+                            clic-milieu ouvrent dans un nouvel onglet via
+                            le comportement natif du navigateur (sans
+                            dépendre du handler onClick de la ligne, qui
+                            peut louper sur le texte selon le browser). */}
+                        <Link
+                          href={`/tickets/${ticket.id}`}
+                          className="font-medium text-slate-900 hover:text-blue-600 transition-colors line-clamp-1"
+                        >
                           {ticket.subject}
-                        </span>
+                        </Link>
                         <p className="mt-0.5 text-[11.5px] text-slate-400">{ticket.requesterName}</p>
                         {/* Sur mobile, on affiche les badges essentiels (statut + priorité)
                             en dessous du sujet puisque leurs colonnes dédiées sont cachées. */}

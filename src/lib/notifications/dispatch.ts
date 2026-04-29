@@ -193,6 +193,12 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
               { label: "Priorité", value: ticket.priority.toLowerCase() },
             ],
             body: `<p style="margin:0;">Bonjour ${ticket.requester.firstName},</p><p style="margin:12px 0 0;">Nous avons bien enregistré votre demande. Un membre de notre équipe la prendra en charge dans les meilleurs délais et vous pourrez suivre son avancement directement depuis le portail.</p>`,
+            // Si le requester a saisi du texte enrichi (gras, listes,
+            // images), on le ré-affiche sous forme de citation pour
+            // qu'il retrouve sa demande mise en forme dans son email.
+            quote: richDescription
+              ? { author: "Votre demande", contentHtml: richDescription }
+              : undefined,
             ctaUrl: portalUrl,
             ctaLabel: "Voir ma demande",
           },

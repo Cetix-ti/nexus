@@ -62,7 +62,16 @@ export interface DashboardItem {
   textAlign?: "left" | "center" | "right";
   textSize?: "sm" | "base" | "lg" | "xl" | "2xl" | "3xl";
   textWeight?: "normal" | "medium" | "semibold" | "bold";
+  /** Couleur du texte — soit un slug de palette Cetix
+   *  ("slate" | "blue" | "emerald" | "amber" | "rose" | "violet" | "cyan"),
+   *  soit un code hex personnalisé (#RRGGBB). */
   textColor?: string;
+  /** Style structurel pour délimiter visuellement les sections d'un dashboard.
+   *  - `plain`        : texte nu (défaut, comportement v1)
+   *  - `section`      : titre de section avec trait coloré sous le texte
+   *  - `subsection`   : sous-titre avec puce colorée à gauche
+   *  - `card`         : encart avec fond légèrement teinté + bordure */
+  textStyle?: "plain" | "section" | "subsection" | "card";
 }
 
 interface DashboardGridProps {

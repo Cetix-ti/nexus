@@ -10,7 +10,10 @@
 // que de déclencher deux exécutions en parallèle.
 //
 // Intervalles par défaut :
-//   - Email → ticket      : 60 s (quasi-temps réel pour les tickets client)
+//   - Email → ticket      : 10 s (quasi-temps réel — ticket dans la minute
+//                                 où le client envoie son courriel ; 1
+//                                 requête Graph API par tick, largement
+//                                 sous les limites de Microsoft)
 //   - Monitoring alerts   : 120 s (email monitoring Zabbix/Atera)
 //   - Veeam backups       : 300 s (plus lent — pas critique au seconde près)
 //
@@ -141,7 +144,9 @@ export function startBackgroundJobs() {
   const allDisabled = process.env.DISABLE_BACKGROUND_JOBS === "1";
   const calendarEnabled = !allDisabled || process.env.ENABLE_CALENDAR_AUTOSYNC === "1";
   const ateraEnabled = !allDisabled || process.env.ENABLE_ATERA_AUTOSYNC === "1";
-  if (allDisabled && !calendarEnabled && !ateraEnabled) {
+  const emailToTicketEnabled =
+    !allDisabled || process.env.ENABLE_EMAIL_TO_TICKET_AUTOSYNC === "1";
+  if (allDisabled && !calendarEnabled && !ateraEnabled && !emailToTicketEnabled) {
     console.log("[background-jobs] désactivés (DISABLE_BACKGROUND_JOBS=1)");
     return;
   }
@@ -149,6 +154,7 @@ export function startBackgroundJobs() {
     const enabledList = [
       calendarEnabled && "calendrier",
       ateraEnabled && "atera-assets",
+      emailToTicketEnabled && "email-to-ticket",
     ].filter(Boolean).join(" + ");
     console.log(`[background-jobs] mode partiel (${enabledList})`);
     if (calendarEnabled) {
@@ -169,6 +175,37 @@ export function startBackgroundJobs() {
           }
           if (result.errors.length > 0) {
             console.warn(`[location-sync] erreurs:`, result.errors.slice(0, 5));
+          }
+        },
+      });
+    }
+    if (emailToTicketEnabled) {
+      scheduleJob({
+        name: "email-to-ticket",
+        intervalMs: Number(process.env.EMAIL_SYNC_INTERVAL_MS) || 5_000,
+        isRunning: false,
+        lastRun: null,
+        lastError: null,
+        consecutiveErrors: 0,
+        run: async () => {
+          const { syncEmailsToTickets } = await import("@/lib/email-to-ticket/service");
+          const result = await syncEmailsToTickets();
+          if (result.created > 0) {
+            console.log(
+              `[email-to-ticket] +${result.created} ticket(s) depuis ${result.fetched} email(s)`,
+            );
+          }
+          if (result.errors && result.errors.length > 0) {
+            const key = result.errors.join("||");
+            if (!_emailSyncLastErrorKey || _emailSyncLastErrorKey !== key) {
+              console.warn(
+                `[email-to-ticket] erreur(s) : ${result.errors.slice(0, 3).join(" | ")}`,
+              );
+              _emailSyncLastErrorKey = key;
+            }
+          } else if (_emailSyncLastErrorKey) {
+            console.log("[email-to-ticket] erreurs précédentes résolues");
+            _emailSyncLastErrorKey = null;
           }
         },
       });

@@ -11,6 +11,7 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { readReportPdfOrGenerate } from "@/lib/reports/monthly/service";
 import { renderReportToPdf } from "@/lib/reports/monthly/pdf";
+import { buildReportFilename } from "@/lib/reports/monthly/filename";
 
 export async function GET(
   req: Request,
@@ -29,7 +30,7 @@ export async function GET(
     where: { id },
     select: {
       period: true,
-      organization: { select: { slug: true, name: true } },
+      organization: { select: { slug: true, name: true, clientCode: true } },
     },
   });
   if (!meta) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -42,9 +43,12 @@ export async function GET(
       variant === "hours_only"
         ? await renderReportToPdf(id, { hideRates: true })
         : await readReportPdfOrGenerate(id);
-    const periodStr = meta.period.toISOString().slice(0, 7);
-    const suffix = variant === "hours_only" ? "-heures" : "";
-    const filename = `rapport-${meta.organization.slug}-${periodStr}${suffix}.pdf`;
+    const filename = buildReportFilename({
+      clientCode: meta.organization.clientCode,
+      slug: meta.organization.slug,
+      period: meta.period,
+      hoursOnly: variant === "hours_only",
+    });
 
     return new NextResponse(new Uint8Array(pdf), {
       status: 200,

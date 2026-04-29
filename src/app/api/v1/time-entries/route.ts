@@ -17,6 +17,11 @@ function forbidden() {
 const createSchema = z.object({
   ticketId: z.string().min(1),
   organizationId: z.string().min(1),
+  /** Agent à qui attribuer la saisie. Optionnel : si absent, on prend
+   *  l'utilisateur courant (auto-saisie). Permet à un agent d'inscrire
+   *  du temps au nom d'un collègue (cas terrain : Bruno entre du temps
+   *  pour Simon qui était sur place mais n'a pas pu saisir lui-même). */
+  agentId: z.string().min(1).optional(),
   timeType: z.string().min(1),
   startedAt: z.string().datetime(),
   endedAt: z.string().datetime().optional().nullable(),
@@ -91,11 +96,29 @@ export async function POST(req: Request) {
     );
   }
   const d = parsed.data;
+  // Validation de l'agentId fourni : il doit exister et être un membre
+  // staff (pas un client). On évite ainsi l'attribution à un compte client
+  // ou à un utilisateur supprimé.
+  let resolvedAgentId = me.id;
+  if (d.agentId && d.agentId !== me.id) {
+    const { default: prisma } = await import("@/lib/prisma");
+    const target = await prisma.user.findUnique({
+      where: { id: d.agentId },
+      select: { id: true, role: true, isActive: true },
+    });
+    if (!target || !target.isActive || target.role.startsWith("CLIENT_")) {
+      return NextResponse.json(
+        { error: "Agent invalide ou inactif" },
+        { status: 400 },
+      );
+    }
+    resolvedAgentId = target.id;
+  }
   try {
     const created = await createTimeEntry({
       ticketId: d.ticketId,
       organizationId: d.organizationId,
-      agentId: me.id,
+      agentId: resolvedAgentId,
       timeType: d.timeType,
       startedAt: new Date(d.startedAt),
       endedAt: d.endedAt ? new Date(d.endedAt) : null,
@@ -142,6 +165,20 @@ export async function PATCH(req: Request) {
   const isOwner = entry.agentId === me.id;
   const isSupervisor = hasMinimumRole(me.role, "SUPERVISOR");
   if (!isOwner && !isSupervisor) return forbidden();
+
+  // Si le patch réassigne l'agent, valider la cible (membre staff actif).
+  if (typeof body.agentId === "string" && body.agentId !== entry.agentId) {
+    const target = await prisma.user.findUnique({
+      where: { id: body.agentId },
+      select: { id: true, role: true, isActive: true },
+    });
+    if (!target || !target.isActive || target.role.startsWith("CLIENT_")) {
+      return NextResponse.json(
+        { error: "Agent invalide ou inactif" },
+        { status: 400 },
+      );
+    }
+  }
 
   try {
     const { updateTimeEntry } = await import("@/lib/billing/time-entries-service");

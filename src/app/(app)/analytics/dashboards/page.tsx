@@ -278,22 +278,29 @@ interface DashboardPalette {
   slug: string;
   /** Nom affiché dans le picker. */
   name: string;
-  /** Couleur de départ du dégradé (haut-gauche). */
+  /** Couleur de départ du dégradé de fond (haut-gauche). */
   from: string;
-  /** Couleur d'arrivée (bas-droite). */
+  /** Couleur d'arrivée du dégradé de fond (bas-droite). */
   to: string;
+  /** Couleur primaire des graphiques (custom widgets). Quand définie,
+   *  s'applique à tous les widgets du dashboard qui n'ont pas
+   *  d'`overrideColor` explicite — supplante donc la couleur du widget
+   *  source pour offrir un thème harmonisé sans toucher la définition
+   *  d'origine du widget. Optionnelle : si absente, on garde la couleur
+   *  source du widget (comportement v1 / palette "Aucune"). */
+  chartPrimary?: string;
 }
 
 const PRESET_PALETTES: DashboardPalette[] = [
   { slug: "none",     name: "Aucune",          from: "transparent", to: "transparent" },
-  { slug: "cetix",    name: "Cetix",           from: "#EFF6FF", to: "#DBEAFE" },
-  { slug: "ocean",    name: "Océan",           from: "#ECFEFF", to: "#CFFAFE" },
-  { slug: "forest",   name: "Forêt",           from: "#ECFDF5", to: "#D1FAE5" },
-  { slug: "sunset",   name: "Coucher de soleil", from: "#FEF3C7", to: "#FED7AA" },
-  { slug: "rose",     name: "Rose poudré",     from: "#FCE7F3", to: "#FBCFE8" },
-  { slug: "lavender", name: "Lavande",         from: "#F5F3FF", to: "#EDE9FE" },
-  { slug: "midnight", name: "Minuit",          from: "#1E293B", to: "#0F172A" },
-  { slug: "graphite", name: "Graphite",        from: "#F8FAFC", to: "#E2E8F0" },
+  { slug: "cetix",    name: "Cetix",           from: "#EFF6FF", to: "#DBEAFE", chartPrimary: "#2563EB" },
+  { slug: "ocean",    name: "Océan",           from: "#ECFEFF", to: "#CFFAFE", chartPrimary: "#0891B2" },
+  { slug: "forest",   name: "Forêt",           from: "#ECFDF5", to: "#D1FAE5", chartPrimary: "#059669" },
+  { slug: "sunset",   name: "Coucher de soleil", from: "#FEF3C7", to: "#FED7AA", chartPrimary: "#D97706" },
+  { slug: "rose",     name: "Rose poudré",     from: "#FCE7F3", to: "#FBCFE8", chartPrimary: "#DB2777" },
+  { slug: "lavender", name: "Lavande",         from: "#F5F3FF", to: "#EDE9FE", chartPrimary: "#7C3AED" },
+  { slug: "midnight", name: "Minuit",          from: "#1E293B", to: "#0F172A", chartPrimary: "#60A5FA" },
+  { slug: "graphite", name: "Graphite",        from: "#F8FAFC", to: "#E2E8F0", chartPrimary: "#475569" },
 ];
 
 /** Palette aléatoire : tire deux teintes proches sur la roue HSL. */
@@ -646,8 +653,23 @@ export default function ReportsPage() {
   useEffect(() => { if (!editMode) setConfigureItemId(null); }, [editMode]);
   // Catalogue unifié (built-in + custom) et métadonnées widget-niveau.
   // Remonte queryWidgets au niveau page pour partager avec la modale de
-  // création et le drawer d'ajout.
-  const [queryWidgets] = useState<QueryWidget[]>(() => loadQueryWidgets());
+  // création et le drawer d'ajout. Re-fetch quand l'éditeur de widgets
+  // émet `nexus:widgets-updated` (édition / création / duplication /
+  // suppression) — même onglet ou cross-tab via l'événement natif `storage`.
+  const [queryWidgets, setQueryWidgets] = useState<QueryWidget[]>(() => loadQueryWidgets());
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const refresh = () => setQueryWidgets(loadQueryWidgets());
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === QUERY_WIDGETS_KEY) refresh();
+    };
+    window.addEventListener("nexus:widgets-updated", refresh);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("nexus:widgets-updated", refresh);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
   const [widgetMeta, setWidgetMeta] = useState<WidgetMetaStore>(() => loadWidgetMeta());
   const [createReportSearch, setCreateReportSearch] = useState("");
   const [widgetAttributeTargetId, setWidgetAttributeTargetId] = useState<string | null>(null);
@@ -837,8 +859,10 @@ export default function ReportsPage() {
           h: 1,
           textContent: "Nouvelle section",
           textAlign: "left",
-          textSize: "lg",
+          textSize: "xl",
           textWeight: "semibold",
+          textColor: "blue",
+          textStyle: "section",
         }
       : { id: `di_${widgetId}_${Date.now()}`, widgetId, w: 20, h: 3 };
     applyLayoutChange([...dashItems, newItem]);
@@ -2505,6 +2529,7 @@ export default function ReportsPage() {
                       titleScale={item?.titleScale}
                       chartScale={item?.chartScale}
                       orgContextId={orgContextId ?? (filterOrg !== "all" ? filterOrg : null)}
+                      themeColor={palette?.chartPrimary}
                     />;
                 }
                 })();
@@ -3031,6 +3056,7 @@ function QueryWidgetRenderer({
   titleScale = 1,
   chartScale = 1,
   orgContextId,
+  themeColor,
 }: {
   widgetId: string;
   /**
@@ -3051,6 +3077,11 @@ function QueryWidgetRenderer({
   titleScale?: number;
   /** Échelle du graphique (wrapper zoom autour de WidgetChart). */
   chartScale?: number;
+  /** Couleur primaire issue du thème du dashboard. Supplante la couleur
+   *  source du widget si aucun `overrideColor` per-instance n'est défini.
+   *  Permet d'harmoniser tous les widgets custom d'un dashboard d'un seul
+   *  geste sans modifier les widgets dans le catalogue. */
+  themeColor?: string;
   /**
    * Si défini, injecte automatiquement un filtre `organizationId = X` dans
    * la requête — utilisé quand le dashboard est vu dans le contexte d'une
@@ -3062,6 +3093,26 @@ function QueryWidgetRenderer({
   const [result, setResult] = useState<{ label: string; value: number }[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [widget, setWidget] = useState<QueryWidget | null>(null);
+  // Tick incrémenté quand l'éditeur de widgets émet un event de mise à jour.
+  // Force le useEffect ci-dessous à refetch la définition du widget +
+  // re-rouler la query, propageant les modifs de la définition source vers
+  // toutes les instances de ce widget sur les dashboards. Les overrides
+  // per-instance (overrideColor, overrideChartType…) sont sur DashboardItem
+  // et restent intacts.
+  const [refreshTick, setRefreshTick] = useState(0);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const refresh = () => setRefreshTick((t) => t + 1);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === QUERY_WIDGETS_KEY) refresh();
+    };
+    window.addEventListener("nexus:widgets-updated", refresh);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("nexus:widgets-updated", refresh);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   useEffect(() => {
     const widgets = loadQueryWidgets();
@@ -3120,7 +3171,7 @@ function QueryWidgetRenderer({
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [widgetId, dashboardDays, customFrom, customTo, orgContextId]);
+  }, [widgetId, dashboardDays, customFrom, customTo, orgContextId, refreshTick]);
 
   if (loading) return <Card><CardContent className="p-5 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-slate-400" /></CardContent></Card>;
   if (!widget) return <Card><CardContent className="p-5 text-center text-slate-400 text-[13px]">Widget « {widgetId} » introuvable</CardContent></Card>;
@@ -3158,9 +3209,25 @@ function QueryWidgetRenderer({
           <WidgetChart
             results={result}
             chartType={(overrideChartType || widget.chartType) as ChartType}
-            color={overrideColor || widget.color || "#2563eb"}
+            // Précédence couleur :
+            //   1. overrideColor — choix explicite per-instance (gagne sur tout)
+            //   2. themeColor    — thème du dashboard, harmonisation globale
+            //   3. widget.color  — couleur source du widget dans son catalogue
+            //   4. fallback bleu Cetix
+            color={overrideColor || themeColor || widget.color || "#2563eb"}
             name=""
             aggregate={typeof widget.query?.aggregate === "string" ? widget.query.aggregate : undefined}
+            // Style persisté du widget : axes, étiquettes valeurs au-dessus
+            // des barres, légende, grille, format. Si l'instance a un
+            // overrideColor, on injecte la couleur résolue dans le style
+            // pour que les éléments stylés (lignes, aires, etc.) suivent.
+            style={(() => {
+              const baseStyle = widget.style ?? {};
+              const effectiveColor = overrideColor || themeColor;
+              return effectiveColor
+                ? { ...baseStyle, primaryColor: effectiveColor }
+                : baseStyle;
+            })()}
             onDrillDown={handleDrillDown}
           />
         </div>
@@ -3181,6 +3248,11 @@ interface QueryWidget {
   chartType: string;
   color: string;
   query: Record<string, unknown>;
+  /** Configuration visuelle complète persistée par l'éditeur (axes,
+   *  étiquettes, légende, format des valeurs, palette, etc.). Propage
+   *  vers les dashboards via WidgetChart pour que les modifs faites dans
+   *  l'éditeur se reflètent partout. */
+  style?: Partial<import("@/lib/analytics/widget-style").VisualStyle>;
   createdAt: string;
 }
 
@@ -3314,8 +3386,8 @@ function PalettePickerPopover({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<"presets" | "custom">("presets");
-  const [customFrom, setCustomFrom] = useState(current?.from && current.slug.startsWith("custom") ? current.from : "#EFF6FF");
-  const [customTo, setCustomTo] = useState(current?.to && current.slug.startsWith("custom") ? current.to : "#DBEAFE");
+  const initialFrom = current?.from && current.slug.startsWith("custom") ? current.from : "#EFF6FF";
+  const initialTo = current?.to && current.slug.startsWith("custom") ? current.to : "#DBEAFE";
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -3384,10 +3456,20 @@ function PalettePickerPopover({
                     "text-[11px] font-medium drop-shadow-sm",
                     p.slug === "midnight" ? "text-white" : "text-slate-800"
                   )}>{p.name}</span>
+                  {p.chartPrimary && (
+                    <span
+                      className="absolute bottom-1.5 right-1.5 h-3 w-3 rounded-full ring-1 ring-white/70 shadow-sm"
+                      style={{ background: p.chartPrimary }}
+                      title={`Couleur des graphiques : ${p.chartPrimary}`}
+                    />
+                  )}
                 </button>
               );
             })}
           </div>
+          <p className="text-[10.5px] text-slate-500 leading-snug mb-2">
+            La pastille en bas à droite indique la couleur appliquée à <strong>tous les widgets</strong> du dashboard. Les couleurs choisies par widget restent prioritaires.
+          </p>
           <button
             type="button"
             onClick={() => onPick(randomPalette())}
@@ -3400,40 +3482,103 @@ function PalettePickerPopover({
       )}
 
       {mode === "custom" && (
-        <div className="space-y-3">
-          <div
-            className="h-16 rounded-lg border border-slate-200"
-            style={{ background: `linear-gradient(135deg, ${customFrom} 0%, ${customTo} 100%)` }}
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="text-[11px] text-slate-600 mb-1 block">Couleur 1</span>
-              <input
-                type="color"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                className="h-8 w-full rounded-md border border-slate-200 cursor-pointer"
-              />
-            </label>
-            <label className="block">
-              <span className="text-[11px] text-slate-600 mb-1 block">Couleur 2</span>
-              <input
-                type="color"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-                className="h-8 w-full rounded-md border border-slate-200 cursor-pointer"
-              />
-            </label>
-          </div>
-          <button
-            type="button"
-            onClick={() => onPick({ slug: `custom_${Date.now()}`, name: "Personnalisée", from: customFrom, to: customTo })}
-            className="w-full inline-flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
-          >
-            Appliquer
-          </button>
-        </div>
+        <CustomPaletteEditor
+          initialFrom={initialFrom}
+          initialTo={initialTo}
+          initialChart={current?.chartPrimary}
+          onApply={(p) => onPick(p)}
+        />
       )}
+    </div>
+  );
+}
+
+/** Sous-éditeur pour le mode "Personnalisée" — extrait pour gérer en local
+ *  la couleur de graphique du thème en plus des deux couleurs de fond. */
+function CustomPaletteEditor({
+  initialFrom,
+  initialTo,
+  initialChart,
+  onApply,
+}: {
+  initialFrom: string;
+  initialTo: string;
+  initialChart?: string;
+  onApply: (p: DashboardPalette) => void;
+}) {
+  const [customFrom, setCustomFrom] = useState(initialFrom);
+  const [customTo, setCustomTo] = useState(initialTo);
+  const [customChart, setCustomChart] = useState(initialChart ?? "#2563EB");
+  const [chartEnabled, setChartEnabled] = useState(Boolean(initialChart));
+
+  return (
+    <div className="space-y-3">
+      <div
+        className="h-16 rounded-lg border border-slate-200 relative"
+        style={{ background: `linear-gradient(135deg, ${customFrom} 0%, ${customTo} 100%)` }}
+      >
+        {chartEnabled && (
+          <span
+            className="absolute bottom-2 right-2 h-4 w-4 rounded-full ring-2 ring-white/80 shadow"
+            style={{ background: customChart }}
+          />
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className="text-[11px] text-slate-600 mb-1 block">Fond (haut-gauche)</span>
+          <input
+            type="color"
+            value={customFrom}
+            onChange={(e) => setCustomFrom(e.target.value)}
+            className="h-8 w-full rounded-md border border-slate-200 cursor-pointer"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[11px] text-slate-600 mb-1 block">Fond (bas-droite)</span>
+          <input
+            type="color"
+            value={customTo}
+            onChange={(e) => setCustomTo(e.target.value)}
+            className="h-8 w-full rounded-md border border-slate-200 cursor-pointer"
+          />
+        </label>
+      </div>
+      <div className="rounded-md border border-slate-200 p-2">
+        <label className="flex items-center justify-between gap-2 cursor-pointer">
+          <span className="text-[11px] text-slate-700 font-medium">Harmoniser les graphiques</span>
+          <input
+            type="checkbox"
+            checked={chartEnabled}
+            onChange={(e) => setChartEnabled(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-slate-300"
+          />
+        </label>
+        {chartEnabled && (
+          <label className="block mt-2">
+            <span className="text-[10.5px] text-slate-500 mb-1 block">Couleur appliquée à tous les widgets</span>
+            <input
+              type="color"
+              value={customChart}
+              onChange={(e) => setCustomChart(e.target.value)}
+              className="h-7 w-full rounded-md border border-slate-200 cursor-pointer"
+            />
+          </label>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => onApply({
+          slug: `custom_${Date.now()}`,
+          name: "Personnalisée",
+          from: customFrom,
+          to: customTo,
+          chartPrimary: chartEnabled ? customChart : undefined,
+        })}
+        className="w-full inline-flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+      >
+        Appliquer
+      </button>
     </div>
   );
 }
@@ -3448,6 +3593,40 @@ function PalettePickerPopover({
  * alignement, poids). Les changements appellent onChange qui met à jour
  * le DashboardItem via le flux de persistance habituel.
  */
+/** Palette de couleurs sémantiques Cetix pour les sections de dashboard.
+ *  Une couleur de texte pure (`text`) plus une teinte douce (`soft`)
+ *  utilisable comme fond d'encart `card` ou comme fond du trait `section`. */
+const TEXT_COLOR_PALETTE: Record<string, { text: string; soft: string; ring: string; label: string }> = {
+  slate:   { text: "#0F172A", soft: "#F1F5F9", ring: "#CBD5E1", label: "Ardoise" },
+  blue:    { text: "#1D4ED8", soft: "#DBEAFE", ring: "#93C5FD", label: "Bleu" },
+  emerald: { text: "#047857", soft: "#D1FAE5", ring: "#6EE7B7", label: "Émeraude" },
+  amber:   { text: "#B45309", soft: "#FEF3C7", ring: "#FCD34D", label: "Ambre" },
+  rose:    { text: "#BE123C", soft: "#FFE4E6", ring: "#FDA4AF", label: "Rose" },
+  violet:  { text: "#6D28D9", soft: "#EDE9FE", ring: "#C4B5FD", label: "Violet" },
+  cyan:    { text: "#0E7490", soft: "#CFFAFE", ring: "#67E8F9", label: "Cyan" },
+};
+
+/** Résout une valeur `textColor` (slug palette ou hex) en couleurs concrètes
+ *  pour appliquer aux différents styles. Hex → on le réutilise comme `text`,
+ *  on génère un `soft` transparent (rgba à 12 %) et un `ring` à 35 %. */
+function resolveTextColor(input: string | undefined): { text: string; soft: string; ring: string } {
+  if (!input) return { text: TEXT_COLOR_PALETTE.slate.text, soft: TEXT_COLOR_PALETTE.slate.soft, ring: TEXT_COLOR_PALETTE.slate.ring };
+  const preset = TEXT_COLOR_PALETTE[input];
+  if (preset) return preset;
+  if (/^#[0-9A-Fa-f]{6}$/.test(input)) {
+    // hex → soft + ring dérivés en transparent.
+    const r = parseInt(input.slice(1, 3), 16);
+    const g = parseInt(input.slice(3, 5), 16);
+    const b = parseInt(input.slice(5, 7), 16);
+    return {
+      text: input,
+      soft: `rgba(${r}, ${g}, ${b}, 0.10)`,
+      ring: `rgba(${r}, ${g}, ${b}, 0.35)`,
+    };
+  }
+  return { text: TEXT_COLOR_PALETTE.slate.text, soft: TEXT_COLOR_PALETTE.slate.soft, ring: TEXT_COLOR_PALETTE.slate.ring };
+}
+
 function TextSectionWidget({
   item,
   editMode,
@@ -3461,6 +3640,9 @@ function TextSectionWidget({
   const align = item?.textAlign ?? "left";
   const size = item?.textSize ?? "lg";
   const weight = item?.textWeight ?? "semibold";
+  const color = item?.textColor ?? "slate";
+  const style = item?.textStyle ?? "plain";
+  const colors = resolveTextColor(color);
 
   const sizeClass: Record<string, string> = {
     sm: "text-[12px]",
@@ -3482,25 +3664,106 @@ function TextSectionWidget({
     right: "text-right",
   };
 
-  if (!editMode) {
+  // Wrapper styles selon le style de section.
+  // Note : on utilise des styles inline (et non Tailwind) pour les couleurs
+  // dynamiques — sinon il faudrait safelist toute la palette × variantes
+  // dans tailwind.config (couleurs + opacités).
+  function renderShell(inner: React.ReactNode) {
+    if (style === "card") {
+      return (
+        <div
+          className="h-full w-full px-5 py-3 rounded-lg border"
+          style={{ background: colors.soft, borderColor: colors.ring, color: colors.text }}
+        >
+          {inner}
+        </div>
+      );
+    }
+    if (style === "section") {
+      return (
+        <div className="h-full w-full px-4 pt-2 pb-1 flex flex-col" style={{ color: colors.text }}>
+          {inner}
+          <div
+            className="mt-1 h-[2px] rounded-full"
+            style={{ background: colors.text, opacity: 0.85 }}
+          />
+        </div>
+      );
+    }
+    if (style === "subsection") {
+      return (
+        <div className="h-full w-full px-4 py-2 flex items-center gap-2.5" style={{ color: colors.text }}>
+          <span
+            className="h-2 w-2 rounded-full shrink-0"
+            style={{ background: colors.text }}
+          />
+          <div className="flex-1 min-w-0">{inner}</div>
+        </div>
+      );
+    }
     return (
+      <div className="h-full w-full px-4 py-2 flex items-center" style={{ color: colors.text }}>
+        {inner}
+      </div>
+    );
+  }
+
+  if (!editMode) {
+    return renderShell(
       <div
         className={cn(
-          "h-full w-full flex items-center px-4 py-2 whitespace-pre-wrap break-words text-slate-900 leading-snug",
+          "w-full whitespace-pre-wrap break-words leading-snug",
           sizeClass[size],
           weightClass[weight],
           alignClass[align],
         )}
       >
         {content || (
-          <span className="italic text-slate-400">Section vide</span>
+          <span className="italic opacity-50">Section vide</span>
         )}
-      </div>
+      </div>,
     );
   }
 
+  // Mode édition : barre d'outils compacte sur 2 lignes (style/couleur en
+  // haut, taille/poids/alignement en bas) + textarea live preview-coloré.
   return (
     <div className="h-full w-full flex flex-col gap-1 p-2">
+      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+        <select
+          value={style}
+          onChange={(e) => onChange({ textStyle: e.target.value as DashboardItem["textStyle"] })}
+          className="h-7 rounded border border-slate-200 bg-white px-1.5 text-[11px]"
+          title="Style de section"
+        >
+          <option value="plain">Texte simple</option>
+          <option value="section">Titre de section</option>
+          <option value="subsection">Sous-section</option>
+          <option value="card">Carte avec fond</option>
+        </select>
+        <div className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-1 py-0.5">
+          {Object.entries(TEXT_COLOR_PALETTE).map(([slug, c]) => (
+            <button
+              key={slug}
+              type="button"
+              onClick={() => onChange({ textColor: slug })}
+              title={c.label}
+              className={cn(
+                "h-5 w-5 rounded-full border transition-all",
+                color === slug ? "ring-2 ring-offset-1 ring-slate-400" : "border-slate-200",
+              )}
+              style={{ background: c.text }}
+            />
+          ))}
+          <input
+            type="color"
+            value={/^#[0-9A-Fa-f]{6}$/.test(color) ? color : "#0F172A"}
+            onChange={(e) => onChange({ textColor: e.target.value })}
+            title="Couleur personnalisée"
+            className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
+          />
+        </div>
+      </div>
       <div className="flex flex-wrap items-center gap-1 shrink-0">
         <select
           value={size}
@@ -3547,6 +3810,7 @@ function TextSectionWidget({
         value={content}
         onChange={(e) => onChange({ textContent: e.target.value })}
         placeholder="Tape ton texte ici… (titre de section, contexte, annotation)"
+        style={{ color: colors.text }}
         className={cn(
           "flex-1 w-full resize-none rounded border border-slate-200 bg-white px-3 py-2 leading-snug focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none whitespace-pre-wrap",
           sizeClass[size],

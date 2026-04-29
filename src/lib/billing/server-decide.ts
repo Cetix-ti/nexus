@@ -129,6 +129,7 @@ export async function resolveDecisionForEntry(input: DecideInput): Promise<Serve
     afterHoursMultiplier: override?.afterHoursMultiplier,
     weekendMultiplier: override?.weekendMultiplier,
     workTypeRate,
+    workTypeId: input.workTypeId ?? null,
   });
 
   return { decision, contract };

@@ -42,7 +42,37 @@ interface AddTimeModalProps {
   editingEntry?: TimeEntry | null;
 }
 
-const QUICK_DURATIONS = [15, 30, 45, 60, 90, 120];
+const QUICK_DURATIONS = [15, 30, 45];
+
+/** Convertit des minutes en string HH:MM pour l'affichage du champ.
+ *  Ex : 75 → "1:15"; 30 → "0:30". Reflète la saisie naturelle des
+ *  agents qui pensent en heures et minutes plutôt qu'en minutes pures. */
+function minutesToHM(min: number): string {
+  if (!Number.isFinite(min) || min <= 0) return "";
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return `${h}:${String(m).padStart(2, "0")}`;
+}
+
+/** Parse une saisie utilisateur en minutes. Accepte :
+ *   - "1:15" / "01:15"  → HH:MM
+ *   - "1.25" / "1,25"   → décimale d'heures
+ *   - "75"              → décimale d'heures aussi (1h15)
+ *  Retourne null si non parseable (chaîne vide / texte invalide). */
+function parseDurationToMinutes(raw: string): number | null {
+  const s = raw.trim().replace(",", ".");
+  if (!s) return null;
+  if (s.includes(":")) {
+    const [hStr, mStr = "0"] = s.split(":");
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    if (Number.isNaN(h) || Number.isNaN(m) || h < 0 || m < 0 || m >= 60) return null;
+    return h * 60 + m;
+  }
+  const v = parseFloat(s);
+  if (Number.isNaN(v) || v < 0) return null;
+  return Math.round(v * 60);
+}
 
 function todayISODate() {
   const d = new Date();
@@ -145,6 +175,11 @@ export function AddTimeModal({
   const [endTime, setEndTime] = useState("10:00");
   const [manualMode, setManualMode] = useState(true);
   const [manualMinutes, setManualMinutes] = useState(60);
+  // Représentation textuelle du champ Durée — synchronisée avec
+  // manualMinutes mais permet à l'utilisateur de taper « 1:15 » ou
+  // « 0,25 » sans se faire reformatter à chaque keypress. On commit
+  // la valeur (parse → minutes) au blur ou en frappant Enter.
+  const [manualText, setManualText] = useState<string>(() => minutesToHM(60));
   const [description, setDescription] = useState("");
   // Sur place est dérivé du type de travail sélectionné.
   const isOnsite = selectedWorkType?.timeType === "onsite_work";
@@ -195,6 +230,7 @@ export function AddTimeModal({
       setManualMode(true);
     }
     setManualMinutes(editingEntry.durationMinutes);
+    setManualText(minutesToHM(editingEntry.durationMinutes));
     setDescription(editingEntry.description ?? "");
     setIsAfterHours(!!editingEntry.isAfterHours);
     setIsWeekend(!!editingEntry.isWeekend);
@@ -220,23 +256,60 @@ export function AddTimeModal({
   }>>([]);
   useEffect(() => {
     if (!organizationId || !date) { setTravelConflicts([]); return; }
+    // Clear immédiat : sans ça, le warning resterait visible pendant les
+    // 100-300 ms du refetch et l'utilisateur croit qu'il « persiste ».
+    setTravelConflicts([]);
     const ctrl = new AbortController();
-    fetch(`/api/v1/time-entries/travel-conflicts?orgId=${organizationId}&date=${date}`, {
+    // En mode édition, on exclut la saisie en cours via excludeId — sans
+    // ça l'API la retourne elle-même comme « conflit » (elle a hasTravelBilled
+    // et matche la date) et l'avertissement reste collé sur sa propre date.
+    const excludeParam = editingEntry?.id ? `&excludeId=${encodeURIComponent(editingEntry.id)}` : "";
+    fetch(`/api/v1/time-entries/travel-conflicts?orgId=${organizationId}&date=${date}${excludeParam}`, {
       signal: ctrl.signal,
     })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => setTravelConflicts(d?.conflicts ?? []))
       .catch(() => { /* silent — non-bloquant */ });
     return () => ctrl.abort();
-  }, [organizationId, date]);
+  }, [organizationId, date, editingEntry?.id]);
 
-  // Load current user name
+  // Load current user (id + nom) — l'id sert de défaut pour le sélecteur
+  // d'agent, le nom pour le fallback d'affichage.
+  const [currentUserId, setCurrentUserId] = useState<string>("");
   const [currentUserName, setCurrentUserName] = useState("—");
   useEffect(() => {
     fetch("/api/v1/me").then((r) => r.ok ? r.json() : null).then((d) => {
+      if (d?.id) setCurrentUserId(d.id);
       if (d?.firstName) setCurrentUserName(`${d.firstName} ${d.lastName}`);
     }).catch(() => {});
   }, []);
+
+  // Liste des agents staff (techniciens et plus) pour permettre à l'agent
+  // courant de saisir du temps au nom d'un collègue. Excluante des comptes
+  // CLIENT_* via le filtre par défaut de l'API. Chargée à l'ouverture.
+  const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([]);
+  const [agentId, setAgentId] = useState<string>("");
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/v1/users").then((r) => r.ok ? r.json() : null).then((d) => {
+      const rows: Array<{ id: string; firstName: string; lastName: string; isActive: boolean }> =
+        Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
+      const mapped = rows
+        .filter((u) => u.isActive !== false)
+        .map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`.trim() }))
+        .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+      setAgents(mapped);
+    }).catch(() => {});
+  }, [open]);
+
+  // Sync agentId : édition d'une saisie → l'agent existant ; sinon →
+  // utilisateur courant. Le useEffect `editingEntry` tourne déjà pour
+  // pré-remplir le formulaire ; on synchronise ici l'agentId séparément.
+  useEffect(() => {
+    if (!open) return;
+    if (editingEntry?.agentId) setAgentId(editingEntry.agentId);
+    else if (currentUserId) setAgentId(currentUserId);
+  }, [open, editingEntry?.agentId, currentUserId]);
 
   // Load billing profile for this org from API
   const [billingData, setBillingData] = useState<{ baseProfile: any; override: any; resolved: any } | null>(null);
@@ -328,6 +401,12 @@ export function AddTimeModal({
       const endedAt = manualMode
         ? undefined
         : new Date(`${date}T${endTime}:00`).toISOString();
+      // Agent attribué : le sélecteur l'override, sinon l'utilisateur courant.
+      // « usr_current » est juste un placeholder pour l'aperçu — le serveur
+      // remplace par l'id réel à la création.
+      const effectiveAgentId = agentId || currentUserId || "usr_current";
+      const effectiveAgentName =
+        agents.find((a) => a.id === effectiveAgentId)?.name ?? currentUserName;
       const entry: TimeEntry = {
         id: `te_${Date.now()}`,
         ticketId,
@@ -335,8 +414,8 @@ export function AddTimeModal({
         organizationId,
         organizationName,
         contractId: contract?.id,
-        agentId: "usr_current",
-        agentName: currentUserName,
+        agentId: effectiveAgentId,
+        agentName: effectiveAgentName,
         timeType,
         startedAt,
         endedAt,
@@ -443,13 +522,38 @@ export function AddTimeModal({
                 <SelectContent>
                   {rateTiers.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
-                      {t.label} — {t.hourlyRate.toFixed(2)} $/h
+                      {t.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           ) : null}
+
+          {/* Sélecteur d'agent — par défaut l'utilisateur courant.
+              Permet d'inscrire du temps au nom d'un collègue (cas terrain :
+              le technicien qui a fait le travail n'a pas eu le temps de le
+              saisir, son collègue le fait à sa place). Masqué quand un seul
+              agent est disponible (UX inutile). */}
+          {agents.length > 1 && (
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+                Agent
+              </label>
+              <Select value={agentId} onValueChange={setAgentId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}{a.id === currentUserId ? " (moi)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -515,20 +619,52 @@ export function AddTimeModal({
           ) : (
             <div>
               <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
-                Durée (minutes)
+                Durée
               </label>
               <Input
-                type="number"
-                min={1}
-                value={manualMinutes}
-                onChange={(e) => setManualMinutes(Number(e.target.value) || 0)}
+                type="text"
+                inputMode="text"
+                value={manualText}
+                placeholder="1:15 ou 1,25"
+                onChange={(e) => {
+                  const txt = e.target.value;
+                  setManualText(txt);
+                  // Live-parse : si la chaîne tapée est déjà valide, on
+                  // met à jour les minutes au fil de la frappe pour que
+                  // l'aperçu de couverture reflète instantanément.
+                  const parsed = parseDurationToMinutes(txt);
+                  if (parsed != null) setManualMinutes(parsed);
+                }}
+                onBlur={() => {
+                  // Au blur on reformatte vers HH:MM canonique pour
+                  // confirmer visuellement la valeur prise en compte.
+                  const parsed = parseDurationToMinutes(manualText);
+                  if (parsed != null) {
+                    setManualMinutes(parsed);
+                    setManualText(minutesToHM(parsed));
+                  } else if (manualText.trim() === "") {
+                    setManualMinutes(0);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    (e.currentTarget as HTMLInputElement).blur();
+                  }
+                }}
               />
+              <p className="mt-1 text-[11px] text-slate-500">
+                Formats acceptés : <strong>1:15</strong> (1 h 15 min) ou <strong>1,25</strong> / <strong>1.25</strong> (heures décimales).
+              </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {QUICK_DURATIONS.map((m) => (
                   <button
                     key={m}
                     type="button"
-                    onClick={() => setManualMinutes(m)}
+                    onClick={() => {
+                      setManualMinutes(m);
+                      setManualText(minutesToHM(m));
+                    }}
                     className={cn(
                       "rounded-md border px-2.5 py-1 text-[11.5px] font-medium transition-colors",
                       manualMinutes === m
@@ -672,13 +808,21 @@ export function AddTimeModal({
               <p className="text-[12.5px] text-slate-600 leading-relaxed">
                 {decision.reason}
               </p>
-              <div className="mt-3 flex items-center gap-4 text-[12px] text-slate-500">
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-500">
                 <span>
                   Durée :{" "}
                   <span className="font-semibold text-slate-900">
                     {Math.floor(durationMinutes / 60)}h {durationMinutes % 60}min
                   </span>
                 </span>
+                {rateTierId && rateTiers.length > 0 && (
+                  <span>
+                    Palier&nbsp;:{" "}
+                    <span className="font-semibold text-slate-900">
+                      {rateTiers.find((t) => t.id === rateTierId)?.label ?? "—"}
+                    </span>
+                  </span>
+                )}
               </div>
               {/*
                 Confidentialité : taux horaire et montants ne sont JAMAIS affichés

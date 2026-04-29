@@ -174,20 +174,33 @@ export async function createOrganization(input: {
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
-  return prisma.organization.create({
-    data: {
-      name: input.name,
-      slug,
-      domain: input.domain,
-      clientCode: input.clientCode?.toUpperCase() || null,
-      // Portail : on duplique ici les defaults du schéma Prisma
-      // pour éviter que les éventuelles overrides applicatives ne
-      // privent une nouvelle org des trois providers. Cette ligne
-      // rend le comportement explicite et documenté côté service.
-      portalEnabled: true,
-      portalAuthProviders: ["microsoft", "google", "local"],
-      portalDefaultRole: "STANDARD",
-    },
+  // Création de l'org + seed des types de travail par défaut en transaction
+  // pour garantir qu'une nouvelle org dispose toujours d'au moins « À distance »
+  // et « Sur place » dans son catalogue de prestations. L'utilisateur peut
+  // les modifier ou en ajouter via l'onglet Facturation.
+  return prisma.$transaction(async (tx) => {
+    const org = await tx.organization.create({
+      data: {
+        name: input.name,
+        slug,
+        domain: input.domain,
+        clientCode: input.clientCode?.toUpperCase() || null,
+        // Portail : on duplique ici les defaults du schéma Prisma
+        // pour éviter que les éventuelles overrides applicatives ne
+        // privent une nouvelle org des trois providers. Cette ligne
+        // rend le comportement explicite et documenté côté service.
+        portalEnabled: true,
+        portalAuthProviders: ["microsoft", "google", "local"],
+        portalDefaultRole: "STANDARD",
+      },
+    });
+    await tx.orgWorkType.createMany({
+      data: [
+        { organizationId: org.id, label: "À distance", timeType: "remote_work", isActive: true, sortOrder: 0 },
+        { organizationId: org.id, label: "Sur place", timeType: "onsite_work", isActive: true, sortOrder: 1 },
+      ],
+    });
+    return org;
   });
 }
 

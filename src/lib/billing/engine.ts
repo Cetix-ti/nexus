@@ -81,6 +81,10 @@ interface BillingContext {
    *  base au lieu de standardRate/onsiteRate/remoteRate). Les multiplicateurs
    *  soir/weekend s'appliquent par-dessus. */
   workTypeRate?: number | null;
+  /** Id du type de travail choisi par l'agent (axe « quoi »). Permet à
+   *  decideFtig de détecter les WorkType exclus du forfait
+   *  (excludedWorkTypeIds) et de les router en T&M direct. */
+  workTypeId?: string | null;
 }
 
 /**
@@ -293,20 +297,62 @@ function decideHourBank(
 // ----------------------------------------------------------------------------
 // FTIG LOGIC — Forfait Technicien IT Garanti
 //
-// Mensualité fixe + inclusions plafonnées par mois (onsite, soir/weekend,
-// déplacements). Le téletravail standard est toujours inclus. Les flags
-// "onsite", "after-hours/weekend" et le timeType "travel" consomment leur
-// quota respectif. Au-delà du quota, on bascule au taux `extraOnsiteRate`.
+// Cascade de décision :
 //
-// La consommation du mois courant est pré-calculée par `server-decide.ts`
-// à partir des TimeEntry de la période — pas de compteurs persistés.
+//   1. timeType = travel              → quota déplacements (étape 1 maintenant
+//                                       car le quota travel est indépendant
+//                                       du timeType=onsite — voir aussi le
+//                                       hasTravelBilled handling plus bas)
+//   2. isWeekend                       → BILLABLE × 2.0 (pas dans le forfait)
+//   3. isAfterHours + sur place        → BILLABLE × 1.5 (pas dans le forfait)
+//   4. isAfterHours + à distance       → quota soir (X h/mois)
+//   5. heures normales (sur place OU à distance) → quota jour (Y h/mois)
+//
+// Note sémantique : `excludedWorkTypeIds` est désormais une étiquette
+// COSMÉTIQUE (« hors contrat » dans le rapport) — la cascade s'applique
+// pareil. Permet de marquer "Sur place" comme hors contrat tout en
+// bénéficiant des 3 h jour incluses. Reflété dans le `reason` retourné.
+//
+// Le champ persisté s'appelle toujours `includedOnsiteHours` pour la rétro-
+// compat des configs sauvegardées, mais sémantiquement c'est un quota
+// « de jour » qui couvre les deux modes (à distance + sur place). La
+// consommation du mois courant est pré-calculée par `server-decide.ts`.
 // ----------------------------------------------------------------------------
+/** Variante de computeRate qui injecte ftig.extraOnsiteRate comme taux de
+ *  base quand l'agent n'a pas choisi de palier (workTypeRate null/0). C'est
+ *  le « taux hors forfait » configuré dans l'onglet FTIG — sans cette
+ *  injection, le moteur retombe sur le profil par défaut (onsiteRate /
+ *  remoteRate), ce qui est rarement ce que l'utilisateur veut. */
+function computeFtigRate(ctx: BillingContext, ftig: FtigSettings): number {
+  if (ctx.timeType === "travel") return ctx.billingProfile.travelRate;
+  const hasTier = ctx.workTypeRate != null && ctx.workTypeRate > 0;
+  if (hasTier || !(ftig.extraOnsiteRate > 0)) return computeRate(ctx);
+  // Pas de palier choisi mais un taux hors-FTIG est défini → on l'utilise
+  // comme base, puis on ré-applique les multiplicateurs de computeRate.
+  const ahMult = ctx.afterHoursMultiplier ?? 1.5;
+  const weMult = ctx.weekendMultiplier ?? 2.0;
+  const base = ftig.extraOnsiteRate;
+  if (ctx.isWeekend) return base * weMult;
+  if (ctx.isAfterHours) return base * ahMult;
+  return base;
+}
+
 function decideFtig(
   ctx: BillingContext,
   contract: Contract,
   ftig: FtigSettings,
 ): BillingDecision {
-  // Déplacement : compteur de quantité (pas d'heures).
+  const billable = applyMinimumAndRounding(ctx.durationMinutes, ctx.billingProfile);
+
+  // « Hors contrat » : étiquette cosmétique (Sémantique B). Si le workType
+  // est dans excludedWorkTypeIds, la cascade FTIG s'applique normalement
+  // (consomme les quotas), mais le `reason` renvoyé porte l'étiquette
+  // « hors contrat » pour rendre visible la nature commerciale dans le
+  // rapport. Ne change pas la décision technique.
+  const isHorsContrat = !!(ctx.workTypeId && ftig.excludedWorkTypeIds?.includes(ctx.workTypeId));
+  const horsContratLabel = isHorsContrat ? " (hors contrat)" : "";
+
+  // 1. Déplacement : compteur de quantité (pas d'heures).
   if (ctx.timeType === "travel") {
     if (ftig.consumedTravelCount < ftig.includedTravelCount) {
       return {
@@ -317,7 +363,6 @@ function decideFtig(
       };
     }
     const rate = ctx.billingProfile.travelRate;
-    const billable = applyMinimumAndRounding(ctx.durationMinutes, ctx.billingProfile);
     return {
       status: "travel_billable",
       reason: `Déplacements inclus du mois épuisés (${ftig.includedTravelCount}/${ftig.includedTravelCount}) — facturé au taux déplacement`,
@@ -329,27 +374,76 @@ function decideFtig(
     };
   }
 
-  const billable = applyMinimumAndRounding(ctx.durationMinutes, ctx.billingProfile);
+  // 2. Weekend : si l'org n'a pas configuré de quota weekend, bypass FTIG
+  //    et facturable au taux palier × 2.0 (computeRate gère le multiplier).
+  //    Si elle EN A configuré un (cas atypique), on consomme le quota.
+  if (ctx.isWeekend) {
+    const remainingMinutes = Math.max(0, (ftig.includedWeekendHours - ftig.consumedWeekendHours) * 60);
+    if (ftig.includedWeekendHours <= 0 || remainingMinutes <= 0) {
+      const rate = computeFtigRate(ctx, ftig);
+      return {
+        status: "billable",
+        reason: (ftig.includedWeekendHours <= 0
+          ? "Travail le weekend hors forfait FTIG — facturé au taux palier × multiplicateur weekend"
+          : `Quota weekend FTIG épuisé (${ftig.includedWeekendHours} h/mois) — facturé au taux palier`) + horsContratLabel,
+        rate,
+        amount: minutesToAmount(billable, rate),
+        contractId: contract.id,
+        appliedRule: "ftig.weekend_billable",
+        ...(ftig.includedWeekendHours > 0 ? { warnings: ["Quota weekend FTIG épuisé"] } : {}),
+      };
+    }
+    if (remainingMinutes >= billable) {
+      return {
+        status: "included_in_contract",
+        reason: `Heures weekend incluses dans le forfait FTIG (${(remainingMinutes / 60).toFixed(2)} h restantes ce mois)`,
+        contractId: contract.id,
+        appliedRule: "ftig.weekend_included",
+      };
+    }
+    const overageMinutes = billable - remainingMinutes;
+    const rate = computeFtigRate(ctx, ftig);
+    return {
+      status: "billable",
+      reason: `${(remainingMinutes / 60).toFixed(2)} h incluses au forfait, ${(overageMinutes / 60).toFixed(2)} h facturées au taux palier`,
+      rate,
+      amount: minutesToAmount(overageMinutes, rate),
+      contractId: contract.id,
+      appliedRule: "ftig.weekend_partial_overage",
+    };
+  }
 
-  // Soir / weekend : consomment le quota "evening" (les deux sont traités
-  // comme une seule banque "hors heures normales" pour rester simple).
-  if (ctx.isAfterHours || ctx.isWeekend) {
+  // 3. Sur place + soir : pas dans le forfait → facturable au taux palier × 1.5
+  //    (le 3 h sur place ne couvre QUE les heures de jour ; le 2 h soir ne
+  //    couvre QUE le télétravail).
+  if (ctx.isAfterHours && ctx.isOnsite) {
+    const rate = computeFtigRate(ctx, ftig);
+    return {
+      status: "billable",
+      reason: "Travail sur place en soirée — hors forfait FTIG, facturé au taux palier × multiplicateur soir" + horsContratLabel,
+      rate,
+      amount: minutesToAmount(billable, rate),
+      contractId: contract.id,
+      appliedRule: "ftig.onsite_evening_billable",
+    };
+  }
+
+  // 4. À distance + soir : consomme le quota soir.
+  if (ctx.isAfterHours) {
     const remainingMinutes = Math.max(0, (ftig.includedEveningHours - ftig.consumedEveningHours) * 60);
     if (remainingMinutes >= billable) {
       return {
         status: "included_in_contract",
-        reason: `Heures de soir/weekend incluses dans le forfait FTIG (${(remainingMinutes / 60).toFixed(2)} h restantes ce mois)`,
+        reason: `Heures de soir (à distance) incluses dans le forfait FTIG (${(remainingMinutes / 60).toFixed(2)} h restantes ce mois)`,
         contractId: contract.id,
         appliedRule: "ftig.evening_included",
       };
     }
-    const rate = ftig.extraOnsiteRate > 0
-      ? ftig.extraOnsiteRate
-      : (ctx.isWeekend ? ctx.billingProfile.weekendRate : ctx.billingProfile.afterHoursRate);
+    const rate = computeFtigRate(ctx, ftig);
     if (remainingMinutes <= 0) {
       return {
         status: "billable",
-        reason: `Quota soir/weekend FTIG épuisé (${ftig.includedEveningHours} h/mois) — facturé à ${rate.toFixed(2)} $/h`,
+        reason: `Quota soir FTIG épuisé (${ftig.includedEveningHours} h/mois) — facturé au taux palier × multiplicateur soir` + horsContratLabel,
         rate,
         amount: minutesToAmount(billable, rate),
         contractId: contract.id,
@@ -357,11 +451,10 @@ function decideFtig(
         warnings: ["Quota heures soir FTIG épuisé"],
       };
     }
-    // Partial overage — surplus seul facturé, partie incluse non facturée.
     const overageMinutes = billable - remainingMinutes;
     return {
       status: "billable",
-      reason: `${(remainingMinutes / 60).toFixed(2)} h incluses au forfait, ${(overageMinutes / 60).toFixed(2)} h facturées à ${rate.toFixed(2)} $/h`,
+      reason: `${(remainingMinutes / 60).toFixed(2)} h incluses au forfait, ${(overageMinutes / 60).toFixed(2)} h facturées au taux palier × multiplicateur soir` + horsContratLabel,
       rate,
       amount: minutesToAmount(overageMinutes, rate),
       contractId: contract.id,
@@ -370,48 +463,39 @@ function decideFtig(
     };
   }
 
-  // Sur place (heures normales) : consomme le quota "onsite".
-  if (ctx.isOnsite) {
-    const remainingMinutes = Math.max(0, (ftig.includedOnsiteHours - ftig.consumedOnsiteHours) * 60);
-    if (remainingMinutes >= billable) {
-      return {
-        status: "included_in_contract",
-        reason: `Heures sur place incluses dans le forfait FTIG (${(remainingMinutes / 60).toFixed(2)} h restantes ce mois)`,
-        contractId: contract.id,
-        appliedRule: "ftig.onsite_included",
-      };
-    }
-    const rate = ftig.extraOnsiteRate > 0 ? ftig.extraOnsiteRate : ctx.billingProfile.onsiteRate;
-    if (remainingMinutes <= 0) {
-      return {
-        status: "billable",
-        reason: `Quota sur place FTIG épuisé (${ftig.includedOnsiteHours} h/mois) — facturé à ${rate.toFixed(2)} $/h`,
-        rate,
-        amount: minutesToAmount(billable, rate),
-        contractId: contract.id,
-        appliedRule: "ftig.onsite_overage",
-        warnings: ["Quota heures sur place FTIG épuisé"],
-      };
-    }
-    const overageMinutes = billable - remainingMinutes;
+  // 5. Heures normales (jour) — sur place OU à distance : consomme le
+  //    quota « jour » commun. Les deux modes partagent le même bucket
+  //    pour respecter la règle « X h de jour / mois, peu importe le mode ».
+  const remainingDayMinutes = Math.max(0, (ftig.includedOnsiteHours - ftig.consumedOnsiteHours) * 60);
+  if (remainingDayMinutes >= billable) {
     return {
-      status: "billable",
-      reason: `${(remainingMinutes / 60).toFixed(2)} h incluses au forfait, ${(overageMinutes / 60).toFixed(2)} h facturées à ${rate.toFixed(2)} $/h`,
-      rate,
-      amount: minutesToAmount(overageMinutes, rate),
+      status: "included_in_contract",
+      reason: `Heures de jour incluses dans le forfait FTIG (${(remainingDayMinutes / 60).toFixed(2)} h restantes ce mois)`,
       contractId: contract.id,
-      appliedRule: "ftig.onsite_partial_overage",
-      warnings: [`Dépassement quota sur place : ${(overageMinutes / 60).toFixed(2)} h`],
+      appliedRule: "ftig.day_included",
     };
   }
-
-  // Télétravail standard heures normales : couvert par le forfait, sans
-  // plafond. C'est la promesse marketing du FTIG.
+  const dayRate = computeFtigRate(ctx, ftig);
+  if (remainingDayMinutes <= 0) {
+    return {
+      status: "billable",
+      reason: `Quota jour FTIG épuisé (${ftig.includedOnsiteHours} h/mois) — facturé au taux palier` + horsContratLabel,
+      rate: dayRate,
+      amount: minutesToAmount(billable, dayRate),
+      contractId: contract.id,
+      appliedRule: "ftig.day_overage",
+      warnings: ["Quota heures de jour FTIG épuisé"],
+    };
+  }
+  const overageDayMinutes = billable - remainingDayMinutes;
   return {
-    status: "included_in_contract",
-    reason: "Inclus dans le forfait FTIG (télétravail standard)",
+    status: "billable",
+    reason: `${(remainingDayMinutes / 60).toFixed(2)} h incluses au forfait, ${(overageDayMinutes / 60).toFixed(2)} h facturées au taux palier` + horsContratLabel,
+    rate: dayRate,
+    amount: minutesToAmount(overageDayMinutes, dayRate),
     contractId: contract.id,
-    appliedRule: "ftig.remote_included",
+    appliedRule: "ftig.day_partial_overage",
+    warnings: [`Dépassement quota jour : ${(overageDayMinutes / 60).toFixed(2)} h`],
   };
 }
 

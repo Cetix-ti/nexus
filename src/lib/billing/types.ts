@@ -462,16 +462,31 @@ export interface HourBankSettings {
  */
 export interface FtigSettings {
   monthlyAmount: number;          // montant mensuel facturé
-  // Inclusions par mois
-  includedOnsiteHours: number;    // heures sur place incluses / mois
-  includedEveningHours: number;   // heures de soir / weekend incluses / mois
-  includedTravelCount: number;    // déplacements inclus / mois
-  // Consommation observée du mois courant (calculée par server-decide)
+  // Inclusions par mois — quotas orthogonaux/exclusifs :
+  //   onsite : sur place + jour normal uniquement
+  //   evening: à distance + soir uniquement
+  //   weekend: weekend (peu importe sur place/à distance)
+  //   travel : nombre de déplacements
+  // Tout ce qui sort de ces quotas tombe en facturable au taux palier
+  // × multiplicateur (1.0 jour, 1.5 soir, 2.0 weekend) via computeRate.
+  includedOnsiteHours: number;
+  includedEveningHours: number;
+  includedWeekendHours: number;
+  includedTravelCount: number;
+  // Consommation observée du mois courant (calculée par server-decide,
+  // depuis les TimeEntry — pas de compteurs persistés).
   consumedOnsiteHours: number;
   consumedEveningHours: number;
+  consumedWeekendHours: number;
   consumedTravelCount: number;
-  // Tarif au-delà des plafonds
-  extraOnsiteRate: number;        // taux $/h pour dépassement onsite/evening
+  // Types de travail (OrgWorkType.id) qui bypassent intégralement le FTIG.
+  // Toute saisie sur ces types tombe directement en T&M classique
+  // (taux palier × multiplicateur). Cas typique : « Services professionnels »
+  // pour les implantations/projets hors contrat de base.
+  excludedWorkTypeIds: string[];
+  // Tarif au-delà des plafonds (legacy : utilisé seulement si le palier de
+  // l'agent n'est pas défini — sinon `computeRate` prime).
+  extraOnsiteRate: number;
   // Période contractuelle (le forfait n'est actif que dans cette plage)
   validFrom: string;
   validTo: string;

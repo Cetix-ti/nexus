@@ -3,7 +3,20 @@ import prisma from "@/lib/prisma";
 import { getCurrentPortalUser } from "@/lib/portal/current-user.server";
 import { getClientTicketPrefix, formatTicketNumber } from "@/lib/tenant-settings/service";
 
-/** GET — list pending approvals for the current portal user */
+/** GET — list approvals for the current portal user.
+ *
+ * Cas d'usage :
+ *   - Utilisateur standard / approbateur → ses propres demandes
+ *     (matchées par approverEmail = user.email)
+ *   - Admin portail (portalRole=ADMIN) → TOUTES les demandes de l'org,
+ *     pour pouvoir suivre/auditer ce qui se passe sur son organisation.
+ *
+ * Le filtrage par tab (PENDING / APPROVED / REJECTED / TOUTES) est fait
+ * côté client sur la liste retournée — donc « Toutes » plante avant ce
+ * fix car la query ne renvoie que les approbations dont l'utilisateur
+ * est lui-même la cible. Un admin qui n'est pas approbateur reçoit
+ * toujours [] vide → onglet "Toutes" affiche du néant ou pète.
+ */
 export async function GET() {
   const user = await getCurrentPortalUser();
   if (!user) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
@@ -11,10 +24,15 @@ export async function GET() {
     return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
   }
 
+  // Admin portail voit TOUTES les approbations de son org. Sinon → ses
+  // propres approbations (match par email, case-insensitive).
+  const isAdmin = user.portalRole === "ADMIN";
+  const where = isAdmin
+    ? { ticket: { organizationId: user.organizationId } }
+    : { approverEmail: { equals: user.email, mode: "insensitive" as const } };
+
   const approvals = await prisma.ticketApproval.findMany({
-    where: {
-      approverEmail: { equals: user.email, mode: "insensitive" },
-    },
+    where,
     include: {
       ticket: {
         select: {

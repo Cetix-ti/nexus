@@ -113,6 +113,9 @@ export function QuickAddOnsiteTimeModal({
   // Fetch des déplacements déjà facturés ce jour-là pour cette org.
   useEffect(() => {
     if (!open || !organizationId || !eventDate) { setTravelConflicts([]); return; }
+    // Clear immédiat pour que l'avertissement ne reste pas affiché pendant
+    // le refetch quand l'utilisateur change la date.
+    setTravelConflicts([]);
     const dateStr = eventDate.slice(0, 10);
     const ctrl = new AbortController();
     fetch(`/api/v1/time-entries/travel-conflicts?orgId=${organizationId}&date=${dateStr}`, { signal: ctrl.signal })

@@ -774,8 +774,13 @@ function TripsSection({
           columns={[
             { key: "date", label: "Date", width: "12%" },
             { key: "agent", label: "Technicien", width: "22%" },
-            { key: "ticket", label: "Ticket", width: "16%", mono: true },
+            { key: "ticket", label: "Ticket", width: "14%", mono: true },
             { key: "subject", label: "Sujet", muted: true },
+            // Colonne « Couverture » affichée seulement si l'org a un FTIG
+            // actif avec quota déplacements (sinon ftigStatus = "none").
+            ...(trips.lines.some((t) => t.ftigStatus && t.ftigStatus !== "none")
+              ? [{ key: "coverage", label: "Couverture", width: "14%", align: "left" as const }]
+              : []),
             ...(showBilled
               ? [{ key: "billed", label: "Facturé", align: "right" as const, emphasis: true }]
               : []),
@@ -786,6 +791,9 @@ function TripsSection({
             agent: t.agentName,
             ticket: t.ticketDisplayId ?? "—",
             subject: t.ticketSubject ?? "—",
+            ...(t.ftigStatus && t.ftigStatus !== "none"
+              ? { coverage: t.ftigStatus === "included" ? "Inclus FTIG" : "Facturé" }
+              : {}),
             ...(showBilled
               ? { billed: t.billedAmount != null ? fmtMoney(t.billedAmount) : "—" }
               : {}),

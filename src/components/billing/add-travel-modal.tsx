@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { X, Car, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { mockBillingProfiles, mockContracts } from "@/lib/billing/mock-data";
 import type { TravelEntry, CoverageStatus } from "@/lib/billing/types";
 import { CoverageBadge } from "./coverage-badge";
@@ -34,12 +35,33 @@ export function AddTravelModal({
   const [date, setDate] = useState(todayISODate());
   const [durationMinutes, setDuration] = useState<number | "">("");
   const [notes, setNotes] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<string>("");
   const [currentUserName, setCurrentUserName] = useState("—");
   useEffect(() => {
     fetch("/api/v1/me").then((r) => r.ok ? r.json() : null).then((d) => {
+      if (d?.id) setCurrentUserId(d.id);
       if (d?.firstName) setCurrentUserName(`${d.firstName} ${d.lastName}`);
     }).catch(() => {});
   }, []);
+
+  // Sélecteur d'agent — saisie au nom d'un collègue (cas terrain : Bruno
+  // saisit le déplacement de Simon qui est sur la route). Liste fetchée
+  // à l'ouverture de la modale.
+  const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([]);
+  const [agentId, setAgentId] = useState<string>("");
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/v1/users").then((r) => r.ok ? r.json() : null).then((d) => {
+      const rows: Array<{ id: string; firstName: string; lastName: string; isActive: boolean }> =
+        Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
+      const mapped = rows
+        .filter((u) => u.isActive !== false)
+        .map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`.trim() }))
+        .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+      setAgents(mapped);
+      setAgentId((prev) => prev || currentUserId || mapped[0]?.id || "");
+    }).catch(() => {});
+  }, [open, currentUserId]);
 
   const profile = mockBillingProfiles[0];
   const contract = useMemo(
@@ -77,14 +99,18 @@ export function AddTravelModal({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Agent attribué — sélecteur prime, fallback utilisateur courant.
+    const effectiveAgentId = agentId || currentUserId || "usr_current";
+    const effectiveAgentName =
+      agents.find((a) => a.id === effectiveAgentId)?.name ?? currentUserName;
     const entry: TravelEntry = {
       id: `tv_${Date.now()}`,
       ticketId,
       ticketNumber,
       organizationId,
       organizationName,
-      agentId: "usr_current",
-      agentName: currentUserName,
+      agentId: effectiveAgentId,
+      agentName: effectiveAgentName,
       date: new Date(`${date}T00:00:00`).toISOString(),
       durationMinutes: typeof durationMinutes === "number" && durationMinutes > 0 ? durationMinutes : undefined,
       coverageStatus,
@@ -133,6 +159,27 @@ export function AddTravelModal({
             le montant facturable au client et remboursé à l&apos;agent sera
             calculé automatiquement.
           </div>
+
+          {/* Sélecteur d'agent — par défaut l'utilisateur courant.
+              Permet d'inscrire un déplacement au nom d'un collègue.
+              Masqué si un seul agent dispo. */}
+          {agents.length > 1 && (
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Agent</label>
+              <Select value={agentId} onValueChange={setAgentId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}{a.id === currentUserId ? " (moi)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div>
             <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Date</label>

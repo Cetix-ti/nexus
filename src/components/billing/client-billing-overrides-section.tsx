@@ -149,19 +149,28 @@ interface FtigConfig {
   calculationMethod?: "per_user" | "per_device";
   unitCount?: number;              // nombre d'utilisateurs ou d'appareils
   unitPrice?: number;              // prix par unité (selon méthode)
-  // Inclusions dans le forfait (par mois)
-  includedTravelCount?: number;    // nombre de déplacements inclus / mois
-  includedEveningHours?: number;   // heures de soir incluses / mois
-  eveningCarryOver?: boolean;      // reporter les heures de soir non utilisées
-  includedOnsiteHours?: number;    // heures sur place incluses / mois
-  // Filtres par WorkType — informationnels pour l'instant. Le moteur de
-  // facturation v1 décide la couverture FTIG sur les flags génériques
-  // isOnsite / isAfterHours / isWeekend / timeType=travel. Une logique
-  // plus fine par workType arrivera quand le besoin sera concret.
+  // Inclusions dans le forfait (par mois) — quotas orthogonaux :
+  //   onsite : sur place + jour normal
+  //   evening: à distance + soir
+  //   weekend: weekend (par défaut 0 = toujours facturable)
+  //   travel : nombre de déplacements
+  includedTravelCount?: number;
+  includedOnsiteHours?: number;
+  includedEveningHours?: number;
+  includedWeekendHours?: number;
+  eveningCarryOver?: boolean;
+  // Types de travail explicitement HORS forfait (« Services professionnels »
+  // pour les projets/implantations qui n'étaient pas dans le contrat de
+  // base). Toute saisie sur ces types contourne intégralement le FTIG et
+  // tombe en T&M classique (taux palier × multiplicateur).
+  excludedWorkTypeIds?: string[];
+  // Champs legacy gardés pour compat (jamais consommés par le moteur — on
+  // les laisse pour ne pas casser les configs existantes mais ils sont
+  // remplacés par excludedWorkTypeIds dans la nouvelle UX).
   includedWorkTypeIds?: string[];
   onsiteWorkTypeIds?: string[];
-  // Tarif sur place pour le travail NON inclus dans le FTIG (projets,
-  // heures régulières en dehors du forfait).
+  // Tarif fallback pour les overages onsite (utilisé seulement si l'agent
+  // n'a pas choisi de palier — sinon le palier × multiplicateurs prime).
   extraOnsiteHourlyRate?: number;
   // Montants
   monthlyAmount?: number;          // montant mensuel facturé au client
@@ -297,16 +306,15 @@ export interface BaseCategory {
   label: string;
   systemTimeType: WorkTypeOption["timeType"];
 }
+// Catégories de base proposées par défaut au niveau client. Volontairement
+// minimaliste : À distance + Sur place suffisent pour 95 % des saisies.
+// Les enums système (travel / preparation / administration / waiting /
+// follow_up / internal / other) restent valides côté moteur si une saisie
+// historique en porte un — on évite simplement de les exposer comme
+// libellés cliquables dans l'UI client.
 const DEFAULT_BASE_CATEGORIES: BaseCategory[] = [
   { id: "remote_work", label: "À distance", systemTimeType: "remote_work" },
   { id: "onsite_work", label: "Sur place", systemTimeType: "onsite_work" },
-  { id: "travel", label: "Déplacement", systemTimeType: "travel" },
-  { id: "preparation", label: "Préparation", systemTimeType: "preparation" },
-  { id: "administration", label: "Administration", systemTimeType: "administration" },
-  { id: "waiting", label: "Attente", systemTimeType: "waiting" },
-  { id: "follow_up", label: "Suivi", systemTimeType: "follow_up" },
-  { id: "internal", label: "Interne", systemTimeType: "internal" },
-  { id: "other", label: "Autre", systemTimeType: "other" },
 ];
 const BASE_CATEGORIES_KEY = "nexus:base-categories";
 export function loadBaseCategories(): BaseCategory[] {
@@ -442,10 +450,13 @@ export function labelForBaseCategory(id: string, cats?: BaseCategory[]): string 
   // 5. Raw id — garde l'info en analytique même si la catégorie n'existe plus.
   return id;
 }
+// Defaults proposés à la création d'une nouvelle org (côté DB et UI). On
+// garde volontairement minimaliste : 2 prestations couvrent 90% des saisies
+// et l'utilisateur peut ajouter ses propres libellés (Maintenance, Projet X,
+// etc.) au besoin via Organisations → Facturation → Types de travail.
 const DEFAULT_WORK_TYPES: WorkTypeOption[] = [
-  { id: "wt_onsite", label: "Sur place", timeType: "onsite_work" },
   { id: "wt_remote", label: "À distance", timeType: "remote_work" },
-  { id: "wt_sp", label: "Services professionnels", timeType: "remote_work" },
+  { id: "wt_onsite", label: "Sur place", timeType: "onsite_work" },
 ];
 export function loadWorkTypes(orgId: string): WorkTypeOption[] {
   if (typeof window === "undefined") return DEFAULT_WORK_TYPES;
@@ -2327,7 +2338,8 @@ function ClientBillingOverridesSectionInner({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[12px] font-medium text-slate-700">
-                    Heures sur place / mois
+                    Heures de jour / mois
+                    <span className="ml-1 text-[10.5px] font-normal text-slate-400">(sur place ou à distance)</span>
                   </label>
                   <Input
                     type="number"
@@ -2344,10 +2356,14 @@ function ClientBillingOverridesSectionInner({
                       updateFtig({ includedOnsiteHours: v, baseCost: auto });
                     }}
                   />
+                  <p className="text-[10.5px] text-slate-500 leading-snug">
+                    Quota partagé : sur place et à distance combinés, heures normales seulement (pas le soir ni le weekend).
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[12px] font-medium text-slate-700">
                     Heures de soir / mois
+                    <span className="ml-1 text-[10.5px] font-normal text-slate-400">(à distance)</span>
                   </label>
                   <Input
                     type="number"
@@ -2364,42 +2380,56 @@ function ClientBillingOverridesSectionInner({
                       updateFtig({ includedEveningHours: v, baseCost: auto });
                     }}
                   />
+                  <p className="text-[10.5px] text-slate-500 leading-snug">
+                    Quota soir applicable uniquement au télétravail. Une intervention sur place le soir reste facturable.
+                  </p>
                 </div>
-                <div className="sm:col-span-2 lg:col-span-3">
-                  <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                    <Switch
-                      checked={!!ftigCfg.eveningCarryOver}
-                      onCheckedChange={(c) => updateFtig({ eveningCarryOver: c })}
-                    />
-                    <span className="text-[12px] font-medium text-slate-700">
-                      Reporter les heures de soir non utilisées d&apos;un mois à l&apos;autre
-                    </span>
-                  </div>
+                <div className="space-y-1.5">
+                  <label className="text-[12px] font-medium text-slate-700">
+                    Heures weekend / mois
+                  </label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    placeholder="0 = toujours facturable"
+                    value={ftigCfg.includedWeekendHours ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value === "" ? undefined : Number(e.target.value);
+                      updateFtig({ includedWeekendHours: v });
+                    }}
+                  />
+                  <p className="text-[10.5px] text-slate-500 leading-snug">
+                    0 = toute saisie le weekend tombe en facturable au taux palier × multiplicateur weekend.
+                  </p>
                 </div>
+                {/* Toggle eveningCarryOver retiré — n'a jamais été
+                    implémenté côté engine FTIG (logique de rollover de
+                    fin de période non câblée). Évite la fausse promesse UI. */}
               </div>
             </div>
 
-            {/* Types de travail couverts par le forfait — sans plafond.
-                Toute saisie sur ces types = non facturable en supplément. */}
+            {/* Types de travail étiquetés « hors contrat » — sémantique
+                COSMÉTIQUE depuis la refonte : la cascade FTIG s'applique
+                normalement (consomme les quotas), mais le rapport affiche
+                « hors contrat » sur les lignes facturables pour rendre
+                visible la nature commerciale (ex: « Sur place » pour SADB). */}
             <div>
               <h4 className="text-[12px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                Types de travail inclus dans le forfait
+                Types de travail étiquetés « hors contrat »
               </h4>
               {workTypes.length === 0 ? (
                 <p className="text-[11.5px] italic text-slate-400">
-                  Aucun type de travail configuré pour ce client. Ajoute-en
-                  dans la carte &laquo;&nbsp;Types de travail&nbsp;&raquo;.
+                  Aucun type de travail configuré. Ajoute-en dans la carte &laquo;&nbsp;Types de travail&nbsp;&raquo;.
                 </p>
               ) : (
                 <>
                   <p className="text-[11.5px] text-slate-500 mb-2">
-                    Coche les types entièrement couverts par le forfait. Peu
-                    importe le nombre d&apos;heures, ils ne sont jamais
-                    facturés en supplément.
+                    Coche les types <strong>étiquetés « hors contrat »</strong> dans le rapport. La cascade FTIG s&apos;applique normalement (les saisies consomment les quotas et le dépassement utilise le taux hors forfait), mais l&apos;étiquette « hors contrat » s&apos;affiche sur les lignes facturables — utile pour rendre visible la nature commerciale.
                   </p>
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                     {workTypes.map((w) => {
-                      const list = ftigCfg.includedWorkTypeIds ?? [];
+                      const list = ftigCfg.excludedWorkTypeIds ?? [];
                       const checked = list.includes(w.id);
                       return (
                         <label
@@ -2407,7 +2437,7 @@ function ClientBillingOverridesSectionInner({
                           className={cn(
                             "flex items-center justify-between gap-2 rounded-md border bg-white px-3 py-1.5 cursor-pointer transition-colors",
                             checked
-                              ? "border-emerald-300 bg-emerald-50/50"
+                              ? "border-rose-300 bg-rose-50/50"
                               : "border-slate-200 hover:bg-slate-50",
                           )}
                         >
@@ -2418,13 +2448,13 @@ function ClientBillingOverridesSectionInner({
                             type="checkbox"
                             checked={checked}
                             onChange={() => {
-                              const current = ftigCfg.includedWorkTypeIds ?? [];
+                              const current = ftigCfg.excludedWorkTypeIds ?? [];
                               const next = current.includes(w.id)
                                 ? current.filter((id) => id !== w.id)
                                 : [...current, w.id];
-                              updateFtig({ includedWorkTypeIds: next });
+                              updateFtig({ excludedWorkTypeIds: next });
                             }}
-                            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                            className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
                           />
                         </label>
                       );
@@ -2434,77 +2464,18 @@ function ClientBillingOverridesSectionInner({
               )}
             </div>
 
-            {/* Types de travail plafonnés "heures sur place". Jusqu'au
-                plafond (includedOnsiteHours/mois) = inclus ; au-delà =
-                facturable au taux extraOnsiteHourlyRate. */}
+            {/* Types de travail couverts par le forfait — sans plafond.
+                Toute saisie sur ces types = non facturable en supplément. */}
             <div>
               <h4 className="text-[12px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                Types de travail plafonnés aux heures sur place
+                Types de travail inclus dans le forfait
               </h4>
-              {workTypes.length === 0 ? (
-                <p className="text-[11.5px] italic text-slate-400">
-                  Aucun type de travail configuré pour ce client.
-                </p>
-              ) : (
-                <>
-                  <p className="text-[11.5px] text-slate-500 mb-2">
-                    Coche les types comptés contre le plafond « Heures sur
-                    place / mois » (
-                    <span className="font-semibold">
-                      {ftigCfg.includedOnsiteHours ?? 0} h/mois
-                    </span>
-                    ). Les heures au-delà sont facturées au taux hors forfait.
-                  </p>
-                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                    {workTypes.map((w) => {
-                      const list = ftigCfg.onsiteWorkTypeIds ?? [];
-                      const checked = list.includes(w.id);
-                      // Alerte si l'admin coche à la fois "inclus" et "plafonné"
-                      // pour le même type : le "inclus" prime, le plafonné
-                      // serait ignoré — on signale visuellement.
-                      const bothSelected =
-                        checked && (ftigCfg.includedWorkTypeIds ?? []).includes(w.id);
-                      return (
-                        <label
-                          key={w.id}
-                          className={cn(
-                            "flex items-center justify-between gap-2 rounded-md border bg-white px-3 py-1.5 cursor-pointer transition-colors",
-                            checked
-                              ? "border-amber-300 bg-amber-50/50"
-                              : "border-slate-200 hover:bg-slate-50",
-                          )}
-                          title={
-                            bothSelected
-                              ? "Ce type est aussi marqué « inclus » — le plafond sera ignoré."
-                              : undefined
-                          }
-                        >
-                          <span className="text-[12.5px] text-slate-700 truncate flex items-center gap-1.5">
-                            {w.label}
-                            {bothSelected && (
-                              <span className="text-[9px] font-semibold text-amber-700 bg-amber-100 ring-1 ring-amber-200 rounded px-1 py-0.5">
-                                déjà inclus
-                              </span>
-                            )}
-                          </span>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              const current = ftigCfg.onsiteWorkTypeIds ?? [];
-                              const next = current.includes(w.id)
-                                ? current.filter((id) => id !== w.id)
-                                : [...current, w.id];
-                              updateFtig({ onsiteWorkTypeIds: next });
-                            }}
-                            className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
+              {/* Section retirée : `includedWorkTypeIds` et
+                  `onsiteWorkTypeIds` étaient des fields persistés mais
+                  jamais consommés par le moteur. La cascade FTIG actuelle
+                  utilise SEULEMENT `excludedWorkTypeIds` (étiquette
+                  cosmétique « hors contrat ») — les autres listes étaient
+                  des reliquats v1 et créaient de la confusion UX. */}
             </div>
 
             {/* Travail sur place non inclus au forfait — taux horaire utilisé

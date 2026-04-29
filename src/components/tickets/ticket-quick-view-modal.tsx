@@ -39,9 +39,9 @@ import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-edito
 import { Switch } from "@/components/ui/switch";
 import { OrgLogo } from "@/components/organizations/org-logo";
 import {
-  loadWorkTypes,
   bumpHourBankUsage,
   type WorkTypeOption,
+  type RateTierOption,
 } from "@/components/billing/client-billing-overrides-section";
 import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
 import {
@@ -163,8 +163,9 @@ export function TicketQuickViewModal({
   const { data: session } = useSession();
   const router = useRouter();
   const sessUser = session?.user as
-    | { firstName?: string; lastName?: string; email?: string }
+    | { id?: string; firstName?: string; lastName?: string; email?: string }
     | undefined;
+  const currentUserId = sessUser?.id ?? "";
   const currentUserName = sessUser
     ? `${sessUser.firstName ?? ""} ${sessUser.lastName ?? ""}`.trim() ||
       sessUser.email?.split("@")[0] ||
@@ -207,33 +208,61 @@ export function TicketQuickViewModal({
 
   // Quick time-entry state
   const [timeOpen, setTimeOpen] = useState(false);
-  // Types de travail configurés pour l'organisation du ticket. Mêmes
-  // règles que dans AddTimeModal : fallback par défaut si rien n'est
-  // configuré, refresh quand on ouvre le formulaire ou quand l'org change.
+  // Types de travail + paliers tarifaires — chargés DEPUIS L'API (DB).
+  // L'ancien `loadWorkTypes` (localStorage) renvoyait des IDs factices
+  // (`wt_onsite`, `wt_remote`…) en fallback ; quand on les POSTait, la
+  // contrainte FK `time_entries_work_type_id_fkey` pétait. Source de
+  // vérité unique = la DB, comme dans AddTimeModal.
   const ticketOrgId = (ticket as unknown as { organizationId?: string })?.organizationId ?? "";
-  const [workTypes, setWorkTypes] = useState<WorkTypeOption[]>(() =>
-    ticketOrgId ? loadWorkTypes(ticketOrgId) : [],
-  );
-  const [workTypeId, setWorkTypeId] = useState<string>(
-    () => (ticketOrgId ? loadWorkTypes(ticketOrgId)[0]?.id ?? "" : ""),
-  );
+  const [workTypes, setWorkTypes] = useState<WorkTypeOption[]>([]);
+  const [workTypeId, setWorkTypeId] = useState<string>("");
+  const [rateTiers, setRateTiers] = useState<RateTierOption[]>([]);
+  const [rateTierId, setRateTierId] = useState<string>("");
+  // Sélecteur d'agent — saisie au nom d'un collègue. Liste fetchée à
+  // l'ouverture du formulaire (via /api/v1/users), agentId initialisé
+  // à l'utilisateur courant.
+  const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([]);
+  const [agentId, setAgentId] = useState<string>("");
   useEffect(() => {
     if (!timeOpen || !ticketOrgId) return;
-    const list = loadWorkTypes(ticketOrgId);
-    setWorkTypes(list);
-    setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
-  }, [timeOpen, ticketOrgId]);
-  useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (!e.key || !e.key.startsWith("nexus:client-work-types:")) return;
-      if (!ticketOrgId) return;
-      const list = loadWorkTypes(ticketOrgId);
-      setWorkTypes(list);
-      setWorkTypeId((prev) => (list.find((w) => w.id === prev) ? prev : list[0]?.id ?? ""));
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [ticketOrgId]);
+    let cancelled = false;
+    Promise.all([
+      fetch(`/api/v1/organizations/${encodeURIComponent(ticketOrgId)}/work-types`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+      fetch(`/api/v1/organizations/${encodeURIComponent(ticketOrgId)}/rate-tiers`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    ]).then(([wtJson, rtJson]) => {
+      if (cancelled) return;
+      const wtRows = Array.isArray(wtJson?.data) ? wtJson.data : [];
+      const wtMapped: WorkTypeOption[] = wtRows.map((w: { id: string; label: string; timeType: WorkTypeOption["timeType"] }) => ({
+        id: w.id, label: w.label, timeType: w.timeType,
+      }));
+      setWorkTypes(wtMapped);
+      setWorkTypeId((prev) => (wtMapped.find((w) => w.id === prev) ? prev : wtMapped[0]?.id ?? ""));
+
+      const rtRows = Array.isArray(rtJson?.data) ? rtJson.data : [];
+      const rtMapped: RateTierOption[] = rtRows.map((t: { id: string; label: string; hourlyRate: number }) => ({
+        id: t.id, label: t.label, hourlyRate: t.hourlyRate,
+      }));
+      setRateTiers(rtMapped);
+      setRateTierId((prev) => (rtMapped.find((t) => t.id === prev) ? prev : rtMapped[0]?.id ?? ""));
+    });
+    // Fetch agents staff (excluant clients) pour le sélecteur d'agent.
+    fetch("/api/v1/users", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((d) => {
+      if (cancelled) return;
+      const rows: Array<{ id: string; firstName: string; lastName: string; isActive: boolean }> =
+        Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
+      const mapped = rows
+        .filter((u) => u.isActive !== false)
+        .map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`.trim() }))
+        .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+      setAgents(mapped);
+      setAgentId((prev) => prev || currentUserId || mapped[0]?.id || "");
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [timeOpen, ticketOrgId, currentUserId]);
   const selectedWorkType = workTypes.find((w) => w.id === workTypeId) ?? workTypes[0];
   const timeType = selectedWorkType?.timeType ?? "remote_work";
   const [isAfterHours, setIsAfterHours] = useState(false);
@@ -248,6 +277,14 @@ export function TicketQuickViewModal({
     agentName: string | null;
   }>>([]);
   const [timeMinutes, setTimeMinutes] = useState<number>(30);
+  // Représentation textuelle du champ Durée (HH:MM ou décimale d'heures).
+  // Cf. add-time-modal.tsx pour le rationnel : éviter de forcer l'agent
+  // à calculer en minutes pures.
+  const [timeText, setTimeText] = useState<string>(() => {
+    const h = Math.floor(30 / 60);
+    const m = Math.round(30 % 60);
+    return `${h}:${String(m).padStart(2, "0")}`;
+  });
   // Date de la saisie — par défaut aujourd'hui.
   const [timeDate, setTimeDate] = useState(() => {
     const d = new Date();
@@ -268,6 +305,9 @@ export function TicketQuickViewModal({
   // Fetch déclenché à l'ouverture du form et au changement de date.
   useEffect(() => {
     if (!timeOpen || !ticketOrgId || !timeDate) { setTravelConflicts([]); return; }
+    // Clear immédiat pour que l'avertissement ne reste pas affiché pendant
+    // les 100-300 ms du refetch quand l'utilisateur change la date.
+    setTravelConflicts([]);
     const ctrl = new AbortController();
     fetch(`/api/v1/time-entries/travel-conflicts?orgId=${ticketOrgId}&date=${timeDate}`, { signal: ctrl.signal })
       .then((r) => r.ok ? r.json() : null)
@@ -300,16 +340,19 @@ export function TicketQuickViewModal({
     setLocalComments([]);
     setTimeOpen(false);
     setTimeMinutes(30);
+    setTimeText("0:30");
     setTimeDescription("");
     setTimeError(null);
     setTimeSaved(false);
     setIsAfterHours(false);
     setIsWeekend(false);
     setForceNonBillable(false);
-    // Re-sélectionne le premier type de travail de la nouvelle org.
-    const list = ticketOrgId ? loadWorkTypes(ticketOrgId) : [];
-    setWorkTypes(list);
-    setWorkTypeId(list[0]?.id ?? "");
+    // Reset des types de travail / paliers — ils seront rechargés depuis
+    // l'API quand l'utilisateur ouvrira la zone de saisie de temps.
+    setWorkTypes([]);
+    setWorkTypeId("");
+    setRateTiers([]);
+    setRateTierId("");
     setLocalStatus(ticket?.status);
     setLocalPriority(ticket?.priority);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -417,6 +460,15 @@ export function TicketQuickViewModal({
           isAfterHours,
           isWeekend,
           ...(forceNonBillable ? { coverageStatus: "non_billable" } : {}),
+          // Type de prestation choisi (axe « quoi »).
+          ...(selectedWorkType?.id ? { workTypeId: selectedWorkType.id } : {}),
+          // Palier tarifaire choisi (axe « combien »). Drive le taux
+          // horaire côté serveur via resolveDecisionForEntry().
+          ...(rateTierId ? { rateTierId } : {}),
+          // Agent attribué — si différent de l'utilisateur courant, on
+          // l'envoie au serveur (sinon il prend l'auteur de la requête
+          // par défaut). Permet de saisir au nom d'un collègue.
+          ...(agentId && agentId !== currentUserId ? { agentId } : {}),
         }),
       });
       if (!res.ok) {
@@ -431,6 +483,7 @@ export function TicketQuickViewModal({
       });
       setTimeDescription("");
       setTimeMinutes(30);
+    setTimeText("0:30");
       setTimeout(() => {
         setTimeSaved(false);
         setTimeOpen(false);
@@ -979,21 +1032,64 @@ export function TicketQuickViewModal({
                         de travail.
                       </p>
                     ) : (
-                      <Select
-                        value={workTypeId}
-                        onValueChange={setWorkTypeId}
-                      >
-                        <SelectTrigger className="h-8 text-[12px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {workTypes.map((w) => (
-                            <SelectItem key={w.id} value={w.id}>
-                              {w.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-500 mb-1">Type de travail</label>
+                        <Select
+                          value={workTypeId}
+                          onValueChange={setWorkTypeId}
+                        >
+                          <SelectTrigger className="h-8 text-[12px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {workTypes.map((w) => (
+                              <SelectItem key={w.id} value={w.id}>
+                                {w.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {/* Palier tarifaire — masqué si l'org n'en a aucun.
+                        Aucun prix affiché : confidentialité côté ticket. */}
+                    {rateTiers.length > 0 && (
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-500 mb-1">Palier tarifaire</label>
+                        <Select value={rateTierId} onValueChange={setRateTierId}>
+                          <SelectTrigger className="h-8 text-[12px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {rateTiers.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>
+                                {t.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {/* Sélecteur d'agent — saisie au nom d'un collègue.
+                        Masqué quand un seul agent est dispo (UX inutile). */}
+                    {agents.length > 1 && (
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-500 mb-1">Agent</label>
+                        <Select value={agentId} onValueChange={setAgentId}>
+                          <SelectTrigger className="h-8 text-[12px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {agents.map((a) => (
+                              <SelectItem key={a.id} value={a.id}>
+                                {a.name}{a.id === currentUserId ? " (moi)" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     )}
 
                     <div className="grid grid-cols-2 gap-2">
@@ -1027,28 +1123,52 @@ export function TicketQuickViewModal({
 
                     <div>
                       <label className="block text-[10px] font-medium text-slate-500 mb-1">Durée</label>
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="number"
-                          min={1}
-                          max={24 * 60}
-                          step={5}
-                          value={timeMinutes}
-                          onChange={(e) =>
-                            setTimeMinutes(
-                              Math.max(1, Math.min(24 * 60, Number(e.target.value) || 0))
-                            )
+                      <input
+                        type="text"
+                        value={timeText}
+                        placeholder="1:15 ou 1,25"
+                        onChange={(e) => {
+                          const txt = e.target.value;
+                          setTimeText(txt);
+                          // Live-parse : HH:MM ou décimale d'heures (« , » ou « . »).
+                          const s = txt.trim().replace(",", ".");
+                          if (!s) return;
+                          let mins: number | null = null;
+                          if (s.includes(":")) {
+                            const [hStr, mStr = "0"] = s.split(":");
+                            const h = parseInt(hStr, 10);
+                            const m = parseInt(mStr, 10);
+                            if (!Number.isNaN(h) && !Number.isNaN(m) && h >= 0 && m >= 0 && m < 60) {
+                              mins = h * 60 + m;
+                            }
+                          } else {
+                            const v = parseFloat(s);
+                            if (!Number.isNaN(v) && v >= 0) mins = Math.round(v * 60);
                           }
-                          className="w-20 h-8 rounded-md border border-slate-200 bg-white px-2 text-[12px] tabular-nums text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                        />
-                        <span className="text-[11.5px] text-slate-500">min</span>
-                      </div>
+                          if (mins != null && mins > 0 && mins <= 24 * 60) setTimeMinutes(mins);
+                        }}
+                        onBlur={() => {
+                          // Reformatte vers HH:MM canonique au blur.
+                          if (timeMinutes > 0) {
+                            const h = Math.floor(timeMinutes / 60);
+                            const m = Math.round(timeMinutes % 60);
+                            setTimeText(`${h}:${String(m).padStart(2, "0")}`);
+                          }
+                        }}
+                        className="w-full h-8 rounded-md border border-slate-200 bg-white px-2 text-[12px] tabular-nums text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-500 leading-snug">
+                        Ex : <strong>1:15</strong> (1 h 15 min) ou <strong>1,25</strong> (heures décimales).
+                      </p>
                       <div className="mt-1.5 flex items-center gap-1">
-                        {[15, 30, 45, 60, 90, 120].map((m) => (
+                        {[15, 30, 45].map((m) => (
                           <button
                             key={m}
                             type="button"
-                            onClick={() => setTimeMinutes(m)}
+                            onClick={() => {
+                              setTimeMinutes(m);
+                              setTimeText(`0:${String(m).padStart(2, "0")}`);
+                            }}
                             className={cn(
                               "h-6 px-1.5 rounded text-[10.5px] font-medium transition-colors",
                               timeMinutes === m
@@ -1056,7 +1176,7 @@ export function TicketQuickViewModal({
                                 : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                             )}
                           >
-                            {m}
+                            {m}min
                           </button>
                         ))}
                       </div>
