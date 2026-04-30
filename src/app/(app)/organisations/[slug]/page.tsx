@@ -1476,7 +1476,7 @@ export default function OrganizationDetailPage() {
                             hourBank: {
                               totalHoursPurchased: c.hours,
                               hoursConsumed: c.usedHours,
-                              eligibleTimeTypes: ["remote_work", "onsite_work", "preparation", "follow_up"],
+                              eligibleTimeTypes: ["remote_work", "onsite_work"],
                               carryOverHours: false,
                               allowOverage: true,
                               overageRate: 145,

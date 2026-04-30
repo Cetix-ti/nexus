@@ -38,21 +38,34 @@ const PRIORITY_COLOR: Record<string, string> = {
   LOW: "bg-slate-100 text-slate-700 ring-slate-200",
 };
 
+type FilterKey = "PENDING" | "APPROVED" | "REJECTED" | "ALL";
+
 export default function PortalApprovalsPage() {
   const [approvals, setApprovals] = useState<PortalApproval[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"PENDING" | "ALL">("PENDING");
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FilterKey>("PENDING");
   const [acting, setActing] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
+    setError(null);
     try {
       const r = await fetch("/api/v1/portal/approvals", { cache: "no-store" });
-      if (r.ok) {
-        const d = await r.json();
-        setApprovals(d.data ?? []);
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        setError(e.error ?? `Erreur ${r.status}`);
+        return;
       }
+      const d = await r.json();
+      // Robustesse : ignore les approbations sans ticket joint (cas de
+      // donnée corrompue ou de ticket soft-supprimé entre la query et
+      // la sérialisation). Empêche un crash de map sur a.ticket.subject.
+      const list = Array.isArray(d.data) ? d.data : [];
+      setApprovals(list.filter((a: PortalApproval) => a && a.ticket));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -91,8 +104,10 @@ export default function PortalApprovalsPage() {
   }
 
   const visible =
-    filter === "PENDING" ? approvals.filter((a) => a.status === "PENDING") : approvals;
+    filter === "ALL" ? approvals : approvals.filter((a) => a.status === filter);
   const pendingCount = approvals.filter((a) => a.status === "PENDING").length;
+  const approvedCount = approvals.filter((a) => a.status === "APPROVED").length;
+  const rejectedCount = approvals.filter((a) => a.status === "REJECTED").length;
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
@@ -110,22 +125,35 @@ export default function PortalApprovalsPage() {
         </p>
       </div>
 
-      <div className="flex items-center gap-2">
-        {(["PENDING", "ALL"] as const).map((v) => (
+      <div className="flex items-center gap-2 flex-wrap">
+        {(
+          [
+            { key: "PENDING" as const, label: "En attente", count: pendingCount },
+            { key: "APPROVED" as const, label: "Approuvées", count: approvedCount },
+            { key: "REJECTED" as const, label: "Refusées", count: rejectedCount },
+            { key: "ALL" as const, label: "Toutes", count: approvals.length },
+          ]
+        ).map((t) => (
           <button
-            key={v}
+            key={t.key}
             type="button"
-            onClick={() => setFilter(v)}
+            onClick={() => setFilter(t.key)}
             className={`px-3 py-1.5 text-[12.5px] font-medium rounded-md ring-1 ring-inset transition-colors ${
-              filter === v
+              filter === t.key
                 ? "bg-slate-900 text-white ring-slate-900"
                 : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
             }`}
           >
-            {v === "PENDING" ? `En attente (${pendingCount})` : `Toutes (${approvals.length})`}
+            {t.label} ({t.count})
           </button>
         ))}
       </div>
+
+      {error && (
+        <div className="rounded-lg bg-red-50 text-red-800 ring-1 ring-red-200 px-4 py-2.5 text-[13px]">
+          Erreur de chargement : {error}
+        </div>
+      )}
 
       {feedback && (
         <div className="rounded-lg bg-blue-50 text-blue-800 ring-1 ring-blue-200 px-4 py-2.5 text-[13px]">
@@ -141,9 +169,10 @@ export default function PortalApprovalsPage() {
         <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
           <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-3" />
           <p className="text-[14px] font-medium text-slate-700">
-            {filter === "PENDING"
-              ? "Aucune approbation en attente."
-              : "Aucune approbation à afficher."}
+            {filter === "PENDING" && "Aucune approbation en attente."}
+            {filter === "APPROVED" && "Aucune approbation décidée comme approuvée."}
+            {filter === "REJECTED" && "Aucune approbation refusée."}
+            {filter === "ALL" && "Aucune approbation à afficher."}
           </p>
           <p className="mt-1 text-[12.5px] text-slate-500">
             Vous serez notifié par courriel dès qu'une demande arrive.
@@ -244,10 +273,13 @@ export default function PortalApprovalsPage() {
                     {a.decidedAt && (
                       <>
                         Décision rendue le{" "}
-                        {new Date(a.decidedAt).toLocaleDateString("fr-CA", {
-                          dateStyle: "long",
-                          timeStyle: "short",
-                        } as never)}
+                        {new Date(a.decidedAt).toLocaleString("fr-CA", {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </>
                     )}
                     {a.comment && (

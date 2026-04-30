@@ -789,22 +789,36 @@ model Activity {
 // CATEGORIES, QUEUES & TAGS
 // ============================================================================
 
+/// Scope de catégorie : détermine quelles catégories sont sélectionnables
+/// pour un ticket selon son `isInternal`.
+///   - CLIENT   : visible uniquement pour les tickets clients (isInternal=false)
+///   - INTERNAL : visible uniquement pour les tickets internes (isInternal=true)
+///
+/// Imposé par cohérence sur tout l'arbre : tous les descendants d'une
+/// racine héritent du scope de la racine. Pas de mix scope-père / scope-enfant.
+enum CategoryScope {
+  CLIENT
+  INTERNAL
+}
+
 model Category {
-  id             String   @id @default(cuid())
-  organizationId String?  @map("organization_id")
-  parentId       String?  @map("parent_id")
+  id             String        @id @default(cuid())
+  organizationId String?       @map("organization_id")
+  parentId       String?       @map("parent_id")
   name           String
   description    String?
   icon           String?
-  sortOrder      Int      @default(0) @map("sort_order")
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
+  scope          CategoryScope @default(CLIENT)
+  sortOrder      Int           @default(0) @map("sort_order")
+  isActive       Boolean       @default(true) @map("is_active")
+  createdAt      DateTime      @default(now()) @map("created_at")
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   parent       Category?     @relation("CategoryTree", fields: [parentId], references: [id])
   children     Category[]    @relation("CategoryTree")
   tickets      Ticket[]
 
+  @@index([scope, isActive])
   @@map("categories")
 }
 

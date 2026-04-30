@@ -25,15 +25,16 @@ function urgencyClass(days: number) {
 
 export default function PortalRenewalsPage() {
   const { permissions } = usePortalUser();
+  const isAdmin = permissions.portalRole === "admin";
   const [items, setItems] = useState<Row[] | null>(null);
   useEffect(() => {
-    if (!permissions.canSeeRenewals) return;
+    if (!isAdmin) return;
     void fetch("/api/portal/renewals?range=180d").then(async (r) => {
       if (r.ok) setItems(await r.json());
       else setItems([]);
     });
-  }, [permissions.canSeeRenewals]);
-  if (!permissions.canSeeRenewals) return <PortalAccessRestricted title="Échéances à venir" />;
+  }, [isAdmin]);
+  if (!isAdmin) return <PortalAccessRestricted title="Échéances à venir" />;
   if (items === null) return <PageLoader />;
 
   const critical = items.filter((i) => daysUntil(i.endDate) < 30).length;

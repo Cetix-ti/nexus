@@ -97,7 +97,9 @@ export async function renderReportToPdf(
 ): Promise<Buffer> {
   const token = signReportToken(reportId);
   const base = getSelfBaseUrl();
-  const variantQs = opts.hideRates ? `&variant=hours_only` : "";
+  // Le défaut côté page interne est SANS montants $ (hideRates=true).
+  // On envoie ?variant=with_amounts seulement quand on veut la version $.
+  const variantQs = opts.hideRates === false ? `&variant=with_amounts` : "";
   const url = `${base}/internal/reports/monthly/${reportId}?token=${encodeURIComponent(token)}${variantQs}`;
 
   // Récupère le label de période pour le footer (ex « Avril 2026 »).
@@ -143,13 +145,18 @@ export async function renderReportToPdf(
     const pdf = await page.pdf({
       format: "Letter",
       printBackground: true,
-      // preferCSSPageSize désactivé — on veut que les marges Puppeteer
-      // soient autoritaires (le @page CSS du document n'override plus).
-      // Marges symétriques 18mm sur les 4 côtés. Le footer est rendu
-      // À L'INTÉRIEUR de la marge bottom — donc 18mm doit être suffisant
-      // pour son contenu (logo 14px + texte ~10px + padding) tout en
-      // laissant l'impression d'une marge cohérente avec les autres bords.
-      margin: { top: "18mm", right: "18mm", bottom: "20mm", left: "18mm" },
+      // GOTCHA Chromium 147 : les marges horizontales (left/right) de
+      // page.pdf({margin}) sont silencieusement IGNORÉES quand
+      // displayHeaderFooter=true. Mesuré : peu importe la valeur passée
+      // (18mm, 30mm, 40mm), le body content tombe à ~10mm de chaque bord
+      // — Chrome utilise ses defaults pour le horizontal. Seules les
+      // marges top/bottom sont honorées (réservent l'espace pour
+      // header/footer template).
+      // Conséquence : le footerTemplate doit appliquer `padding: 0 10mm`
+      // pour s'aligner sur le body (cf. buildFooterTemplate ci-dessous).
+      // Si Chrome corrige un jour ce comportement, ajuster les deux
+      // ensemble. Référence : github.com/puppeteer/puppeteer/issues/1822
+      margin: { top: "18mm", right: "10mm", bottom: "20mm", left: "10mm" },
       displayHeaderFooter: true,
       headerTemplate: `<div></div>`,
       footerTemplate: await buildFooterTemplate(periodLabel),
@@ -169,30 +176,34 @@ export async function renderReportToPdf(
 async function buildFooterTemplate(periodLabel: string | null): Promise<string> {
   const logoDataUri = await getLogoDataUri();
   const logoImg = logoDataUri
-    ? `<img src="${logoDataUri}" style="height:13px;width:auto;display:block;" alt="Cetix" />`
+    ? `<img src="${logoDataUri}" style="height:17px;width:auto;display:block;" alt="Cetix" />`
     : "";
   // Note : Puppeteer footerTemplate exige des styles INLINE — pas de CSS
   // externe, pas de classes Tailwind. Polices de fallback système car
   // Geist n'est pas disponible dans le contexte d'impression Puppeteer.
   //
-  // Alignement : le footer template a la largeur FULL de la page.
-  // Pour matcher l'alignement gauche/droite du contenu de la page
-  // (Puppeteer margin = 18mm), on applique exactement 18mm de padding
-  // à gauche et à droite. box-sizing:border-box pour que le padding
-  // soit calculé sur la width totale et pas en supplément.
+  // GOTCHA Chromium : `footerTemplate` est rendu dans un iframe interne
+  // à un scale de 0.75x — donc une valeur écrite "18mm" donne ~13.5mm
+  // visuellement, et le footer apparaît décalé du contenu principal qui
+  // a vraiment 18mm de marge.
+  // Compensation : on multiplie par 1/0.75 ≈ 1.333. Donc :
+  //   - padding horizontal 18mm × 1.333 = 24mm (aligne sur le body)
+  //   - font-size écrit ~33% plus grand (8.5px → 11px) pour matcher le
+  //     ressenti visuel attendu.
+  // Référence : https://github.com/puppeteer/puppeteer/issues/1822
   const periodSegment = periodLabel
     ? `<span style="color:#94A3B8;margin:0 4px;">·</span><span style="color:#0F172A;font-weight:500;">${periodLabel}</span>`
     : "";
   return `
-    <div style="width:100%;box-sizing:border-box;padding:0 18mm;margin:0;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;font-size:8.5px;color:#64748B;">
-      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+    <div style="width:100%;box-sizing:border-box;padding:0 10mm;margin:0;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;font-size:11px;color:#64748B;">
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         ${logoImg}
         <span style="font-weight:500;color:#0F172A;">Cetix</span>
         <span style="color:#94A3B8;margin:0 2px;">·</span>
-        <span style="font-size:8px;letter-spacing:0.08em;text-transform:uppercase;color:#64748B;">Rapport mensuel</span>
+        <span style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#64748B;">Rapport mensuel</span>
         ${periodSegment}
       </div>
-      <div style="font-family:ui-monospace,SFMono-Regular,monospace;font-size:9px;color:#0F172A;font-weight:500;flex-shrink:0;">
+      <div style="font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;color:#0F172A;font-weight:500;flex-shrink:0;">
         <span class="pageNumber"></span> <span style="color:#94A3B8;">/</span> <span class="totalPages"></span>
       </div>
     </div>`;

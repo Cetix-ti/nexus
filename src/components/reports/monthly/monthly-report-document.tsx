@@ -87,6 +87,27 @@ function fmtDateShort(iso: string): string {
   const d = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
   return d.toLocaleDateString("fr-CA", { day: "2-digit", month: "short" });
 }
+/** Traduit l'enum DB TicketStatus (en majuscules anglaises) en libellé FR
+ *  pour le rendu PDF. Les rapports clients sont en français — on ne veut
+ *  jamais voir "NEW" / "IN_PROGRESS" tel quel sur la page. */
+function ticketStatusLabel(status: string): string {
+  switch (String(status).toUpperCase()) {
+    case "NEW":             return "Nouveau";
+    case "OPEN":            return "Ouvert";
+    case "IN_PROGRESS":     return "En cours";
+    case "ON_SITE":         return "Sur place";
+    case "PENDING":         return "En attente";
+    case "WAITING_CLIENT":  return "En attente du client";
+    case "WAITING_VENDOR":  return "En attente d'un fournisseur";
+    case "SCHEDULED":       return "Planifié";
+    case "RESOLVED":        return "Résolu";
+    case "CLOSED":          return "Fermé";
+    case "CANCELLED":       return "Annulé";
+    case "DELETED":         return "Supprimé";
+    default:                return status;
+  }
+}
+
 function coverageLabel(status: string): string {
   switch (status) {
     case "billable":               return "Facturable";
@@ -118,36 +139,117 @@ function capitalize(s: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Heuristique d'article défini français pour le nom d'une organisation —
+// utilisée dans la lettre exécutive pour produire un texte syntaxiquement
+// correct. Couvre les cas fréquents du portfolio MSP municipal/B2B QC :
+//   - "Ville de X"              → "la Ville de X"
+//   - "Municipalité de X"       → "la Municipalité de X"
+//   - "Hôpital X" / "Hôtel X"   → "l'Hôpital X" / "l'Hôtel X"
+//   - "Université X" / "École X"→ "l'Université X" / "l'École X"
+//   - "Agence X"                → "l'Agence X"
+//   - "Centre X" / "Collège X"  → "le Centre X" / "le Collège X"
+//   - "Cégep X" / "Conseil X"   → "le Cégep X" / "le Conseil X"
+//   - Commence par "Les "       → "les …" (déjà dans le nom)
+//   - Acronyme (2-6 lettres MAJ)→ pas d'article (ex: "HVAC", "MELS")
+//   - Nom propre type "Cetix"   → pas d'article
+//
+// Cas non couverts (« Chalet des Érables » qui devrait prendre "le")
+// retombent sur "pas d'article" — préférable à l'article incorrect.
+// ---------------------------------------------------------------------------
+function orgWithArticle(name: string, opts?: { capitalize?: boolean }): string {
+  const trimmed = name.trim();
+  // Acronyme : tout caps, 2-6 lettres, pas d'espace → pas d'article
+  if (/^[A-Z]{2,6}$/.test(trimmed)) return trimmed;
+  // Déjà préfixé "Les " (ou "les ")
+  if (/^Les\s/i.test(trimmed)) {
+    return opts?.capitalize ? trimmed.replace(/^Les/, "Les") : trimmed.replace(/^Les/, "les");
+  }
+  let article: "la" | "le" | "l'" | "" = "";
+  if (/^Ville\b|^Municipalité\b|^Société\b|^Commission\b|^Coopérative\b|^Caisse\b|^Compagnie\b/i.test(trimmed)) {
+    article = "la";
+  } else if (/^Centre\b|^Collège\b|^Cégep\b|^Conseil\b|^Comité\b|^Service\b|^Bureau\b|^Groupe\b|^Ministère\b|^Réseau\b|^Cabinet\b/i.test(trimmed)) {
+    article = "le";
+  } else if (/^Hôpital\b|^Hôtel\b|^Université\b|^Agence\b|^Académie\b|^École\b|^Église\b|^Office\b|^Institut\b|^Association\b/i.test(trimmed)) {
+    article = "l'";
+  }
+  if (article === "") return trimmed;
+  if (opts?.capitalize) {
+    const cap = article === "l'" ? "L'" : article.charAt(0).toUpperCase() + article.slice(1);
+    return article === "l'" ? `${cap}${trimmed}` : `${cap} ${trimmed}`;
+  }
+  return article === "l'" ? `l'${trimmed}` : `${article} ${trimmed}`;
+}
+
+// ---------------------------------------------------------------------------
 // Génère un court paragraphe synthèse pour la lettre exécutive — calculé
 // depuis les totaux. Pas d'IA, juste de la composition textuelle.
+//
+// Le texte s'ADAPTE au modèle de facturation de l'org :
+//   - Banque d'heures   → mention brève de la banque, pas de "facturable/inclus"
+//                         (les heures sortent du forfait acheté en bloc, le
+//                         concept "facturable à la carte" n'a pas de sens).
+//   - Forfait/contrat   → "X facturables, Y incluses au contrat" si les deux
+//                         existent ; sinon le cas dominant seul.
+//   - Aucun forfait     → "X heures livrées" tout court (côté client) ou
+//                         "X facturables" (côté agent).
 // ---------------------------------------------------------------------------
 function executiveSummaryText(
   payload: MonthlyReportPayload,
   opts: { hideRates?: boolean } = {},
 ): string {
   const t = payload.totals;
-  const tripsLine = payload.trips.count > 0
-    ? `${payload.trips.count} déplacement${payload.trips.count > 1 ? "s" : ""}`
-    : "aucun déplacement";
-  // En variante "heures seulement", on ne mentionne pas la part facturable
-  // (calcul tiré du rapport $) — on reste sur le décompte d'heures pur.
-  if (opts.hideRates) {
-    return `Au cours de ${payload.period.label}, l'équipe Cetix a livré `
-      + `${fmtHours(t.totalHours)} de service à ${payload.organization.name}. `
-      + `${t.ticketsResolvedCount} ticket${t.ticketsResolvedCount > 1 ? "s ont été résolus" : " a été résolu"} `
-      + `sur ${t.ticketsTouchedCount} pris en charge, et ${tripsLine} `
-      + `${payload.trips.count > 0 ? "a été" : "n'a été"} consigné${payload.trips.count !== 1 ? "s" : ""} sur la période.`;
+  const tripsCount = payload.trips.count;
+  // Phrase déplacements pluralisée correctement.
+  const tripsPhrase = tripsCount === 0
+    ? "aucun déplacement n'a été consigné"
+    : tripsCount === 1
+      ? "1 déplacement a été consigné"
+      : `${tripsCount} déplacements ont été consignés`;
+  // Phrase tickets résolus : 0 → "Aucun ticket n'a été…", 1 → "1 ticket a été…",
+  // n>1 → "n tickets ont été…". Évite "0 ticket a été résolu" non-naturel en FR.
+  const resolved = t.ticketsResolvedCount;
+  const resolvedPhrase = resolved === 0
+    ? "Aucun ticket n'a été résolu"
+    : resolved === 1
+      ? "1 ticket a été résolu"
+      : `${resolved} tickets ont été résolus`;
+  const orgName = orgWithArticle(payload.organization.name);
+  const intro = `Au cours de ${payload.period.label}, l'équipe Cetix a livré `
+    + `${fmtHours(t.totalHours)} de service à ${orgName}`;
+
+  // Choix du complément du 1er paragraphe selon le modèle de facturation.
+  let billingClause: string;
+  const hb = payload.hourBankTracking;
+  if (hb) {
+    // Banque d'heures : pas de "facturable" — tout est déduit du forfait
+    // acheté en bloc. Détail complet dans la section dédiée du PDF.
+    billingClause = `, déduites de la banque d'heures (forfait ${hb.totalHours} h annuelles).`;
+  } else if (opts.hideRates) {
+    // Version client sans montants : pas de détail facturable/inclus.
+    billingClause = `.`;
+  } else {
+    // Version interne avec montants — détail seulement si pertinent.
+    const hasBillable = t.billableHours > 0;
+    const hasCovered = t.coveredHours > 0;
+    if (hasBillable && hasCovered) {
+      const billableShare = t.totalHours > 0
+        ? Math.round((t.billableHours / t.totalHours) * 100)
+        : 0;
+      billingClause = `, dont ${fmtHours(t.billableHours)} facturables (${billableShare}%) et `
+        + `${fmtHours(t.coveredHours)} incluses au contrat.`;
+    } else if (hasBillable) {
+      billingClause = `, intégralement facturables.`;
+    } else if (hasCovered) {
+      billingClause = `, intégralement incluses au contrat.`;
+    } else {
+      // Que du non-facturable (geste commercial total) — rare mais possible.
+      billingClause = `.`;
+    }
   }
-  const billableShare = t.totalHours > 0
-    ? Math.round((t.billableHours / t.totalHours) * 100)
-    : 0;
-  return `Au cours de ${payload.period.label}, l'équipe Cetix a livré `
-    + `${fmtHours(t.totalHours)} de service à ${payload.organization.name}, dont `
-    + `${fmtHours(t.billableHours)} facturables (${billableShare}%) et `
-    + `${fmtHours(t.coveredHours)} incluses au contrat. `
-    + `${t.ticketsResolvedCount} ticket${t.ticketsResolvedCount > 1 ? "s ont été résolus" : " a été résolu"} `
-    + `sur ${t.ticketsTouchedCount} pris en charge, et ${tripsLine} `
-    + `${payload.trips.count > 0 ? "a été" : "n'a été"} consigné${payload.trips.count !== 1 ? "s" : ""} sur la période.`;
+
+  return `${intro}${billingClause} `
+    + `${resolvedPhrase} sur ${t.ticketsTouchedCount} pris en charge, et `
+    + `${tripsPhrase} sur la période.`;
 }
 
 // ===========================================================================
@@ -204,9 +306,11 @@ export function MonthlyReportDocument({
           border-top: 2px solid ${THEME.ink};
           margin: 0;
         }
-        /* IMPORTANT : on laisse Puppeteer (page.pdf({ margin: ... }))
-           contrôler les marges. Pas de @page margin override ici, sinon
-           la footer template overlaperait le contenu. */
+        /* @page : seul size est honoré ici (les style de composants
+           React ne sont pas autoritaires pour les margin). Le réglage
+           des marges est fait côté Puppeteer dans pdf.ts. Voir le
+           commentaire dans pdf.ts pour le bug Chromium qui force la
+           valeur effective à ~10mm horizontal. */
         @page { size: Letter; }
         @media print {
           body { background: ${THEME.paper}; }
@@ -230,6 +334,10 @@ export function MonthlyReportDocument({
         <TripsSection trips={trips} hideRates={hideRates} />
         <TicketsSection tickets={tickets} hideRates={hideRates} />
         {!hideRates && <FinancialSummary totals={totals} trips={trips} />}
+        {payload.hourBankTracking ? (
+          <HourBankTrackingSection tracking={payload.hourBankTracking} />
+        ) : null}
+        {payload.recap ? <RecapSection recap={payload.recap} /> : null}
       </div>
     </>
   );
@@ -867,7 +975,7 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
           </h3>
         </div>
         <span className="mrd-eyebrow" style={{ color: THEME.slate, whiteSpace: "nowrap" }}>
-          {ticket.status}
+          {ticketStatusLabel(ticket.status)}
         </span>
       </div>
 
@@ -1079,6 +1187,23 @@ function TicketBlock({ ticket, hideRates }: { ticket: MonthlyReportTicketBlock; 
                       </div>
                     )}
                   </div>
+                ) : null}
+                {/* Saisie partiellement incluse au forfait : on rend une
+                    petite ligne explicite « X h inclus FTIG + Y h × Z $/h ».
+                    Sans ça, le client voit « 1.00 h × 75 $/h = 18.75 $ »
+                    et croit à une erreur de calcul. */}
+                {!hideRates && e.billableMinutes != null && e.billableMinutes > 0 && e.billableMinutes < e.durationMinutes && e.hourlyRate != null && e.hourlyRate > 0 ? (
+                  <p
+                    style={{
+                      marginTop: "3px",
+                      marginBottom: 0,
+                      fontSize: "10.5px",
+                      color: THEME.accent,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    {fmtMinutesAsHours(e.durationMinutes - e.billableMinutes)} inclus au forfait FTIG · {fmtMinutesAsHours(e.billableMinutes)} facturé(e)s à {fmtMoney(e.hourlyRate)}/h
+                  </p>
                 ) : null}
                 {/* Note : on n'imprime la ligne « Aucune note saisie » que si
                     une description est absente — la ligne vide est juste du
@@ -1349,6 +1474,706 @@ function EditorialTable({
         ) : null}
       </tbody>
     </table>
+  );
+}
+
+// ===========================================================================
+// RECAP — synthèse finale orientée HEURES (sans montants $)
+//
+// Rendue en dernière page, après tickets (et FinancialSummary si version
+// agent avec montants). Cinq blocs :
+//   1. Heures par couverture (forfait / facturable / non facturable)
+//   2. Heures par plage horaire (jour / soir / weekend / urgence)
+//   3. Heures par type d'activité (remote / onsite / travel / autre)
+//   4. Déplacements (total + ventilation FTIG)
+//   5. Graphique heures par catégorie de ticket
+//
+// Tous les agrégats sont calculés côté builder en excluant le temps
+// interne. Le composant ne fait que rendre.
+// ===========================================================================
+const ACTIVITY_LABELS: Record<string, string> = {
+  remote_work: "Travail à distance",
+  onsite_work: "Travail sur site",
+  travel: "Déplacement",
+  other: "Autre",
+};
+
+function fmtPct(share: number): string {
+  if (share <= 0) return "0 %";
+  const v = share * 100;
+  // < 1 % mais > 0 → "< 1 %" pour ne pas afficher "0 %" trompeur
+  if (v < 1) return "< 1 %";
+  return `${v.toLocaleString("fr-CA", { maximumFractionDigits: 0 })} %`;
+}
+
+// ===========================================================================
+// HOUR BANK TRACKING — suivi du forfait banque d'heures
+//
+// Section dédiée affichée uniquement quand l'org a une banque d'heures
+// configurée (`payload.hourBankTracking` présent). Aide le client à
+// visualiser sa consommation cumulée vs son forfait, et à anticiper
+// un éventuel dépassement avant qu'il ne survienne.
+//
+// 3 blocs : statut/progression, histogramme mensuel, projection.
+// ===========================================================================
+function HourBankTrackingSection({
+  tracking,
+}: {
+  tracking: NonNullable<MonthlyReportPayload["hourBankTracking"]>;
+}) {
+  const {
+    totalHours,
+    consumedHours,
+    remainingHours,
+    consumedShare,
+    periodStart,
+    periodEnd,
+    monthlyHistory,
+    targetMonthlyHours,
+    averageMonthlyHours,
+    projectedTotalHours,
+    status,
+  } = tracking;
+
+  // Couleurs/labels selon status
+  const statusVisual = {
+    on_track: { color: THEME.positive, bg: "#ECFDF5", border: "#A7F3D0", icon: "✓", label: "Consommation alignée sur le forfait" },
+    warning:  { color: THEME.warning,  bg: "#FFFBEB", border: "#FDE68A", icon: "⚠", label: "Risque de dépassement au rythme actuel" },
+    overage:  { color: "#DC2626",       bg: "#FEF2F2", border: "#FECACA", icon: "⚠", label: "Dépassement du forfait" },
+    no_data:  { color: THEME.slate,    bg: THEME.hairLight, border: THEME.hair, icon: "·", label: "Aucune heure consommée à ce jour" },
+  }[status];
+
+  // Année du forfait : extrait de periodStart pour le titre
+  const yearLabel = periodStart.slice(0, 4);
+
+  // Max value pour scaler les barres (au moins le target pour que la
+  // ligne cible soit visible même quand peu de heures consommées)
+  const maxBarValue = Math.max(
+    ...monthlyHistory.map((m) => m.hours),
+    targetMonthlyHours * 1.2,
+    1,
+  );
+
+  // Message contextuel sous le bandeau de statut
+  let statusDetail = "";
+  if (status === "no_data") {
+    statusDetail = `Forfait actif jusqu'au ${formatPeriodEnd(periodEnd)}. Vos heures consommées s'afficheront ici dès la première saisie.`;
+  } else if (status === "on_track") {
+    const monthsRemaining = countMonthsRemaining(periodEnd);
+    if (monthsRemaining > 0 && remainingHours > 0) {
+      const paceRemaining = round1(remainingHours / monthsRemaining);
+      statusDetail = `Il vous reste ${fmtHours(remainingHours)} pour ${monthsRemaining} mois (${fmtHours(paceRemaining)}/mois en moyenne).`;
+    } else {
+      statusDetail = `Il vous reste ${fmtHours(remainingHours)} dans le forfait.`;
+    }
+  } else if (status === "warning") {
+    const overshoot = round1(projectedTotalHours - totalHours);
+    statusDetail = `Au rythme actuel (${fmtHours(averageMonthlyHours)}/mois), vous atteindriez ${fmtHours(projectedTotalHours)} d'ici la fin du forfait — soit ${fmtHours(overshoot)} hors forfait. Anticipons une ré-évaluation.`;
+  } else if (status === "overage") {
+    if (consumedHours > totalHours) {
+      const over = round1(consumedHours - totalHours);
+      statusDetail = `${fmtHours(over)} consommées au-delà du forfait à ce jour.`;
+    } else {
+      const overshoot = round1(projectedTotalHours - totalHours);
+      statusDetail = `Au rythme actuel (${fmtHours(averageMonthlyHours)}/mois), le dépassement projeté est de ${fmtHours(overshoot)}.`;
+    }
+  }
+
+  return (
+    <PageSection breakBefore>
+      <SectionTitle eyebrow={`Forfait ${yearLabel}`}>Suivi de la banque d&apos;heures</SectionTitle>
+
+      {/* Bloc 1 — Statut + barre de progression */}
+      <div
+        className="break-inside-avoid"
+        style={{
+          marginBottom: "20px",
+          padding: "14px 16px",
+          background: statusVisual.bg,
+          border: `1px solid ${statusVisual.border}`,
+          borderRadius: "6px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            marginBottom: "10px",
+          }}
+        >
+          <span
+            className="mrd-eyebrow"
+            style={{ color: statusVisual.color, fontSize: "10px" }}
+          >
+            Banque d&apos;heures · {totalHours} h
+          </span>
+          <span
+            className="mrd-mono"
+            style={{
+              fontSize: "13px",
+              fontWeight: 600,
+              fontVariantNumeric: "tabular-nums",
+              color: THEME.ink,
+            }}
+          >
+            {fmtHours(consumedHours)} / {totalHours} h
+            <span style={{ color: THEME.slate, fontWeight: 400, marginLeft: "8px" }}>
+              ({fmtPct(consumedShare)})
+            </span>
+          </span>
+        </div>
+        {/* Barre de progression */}
+        <div
+          style={{
+            width: "100%",
+            height: "10px",
+            background: "#FFFFFF",
+            border: `1px solid ${statusVisual.border}`,
+            borderRadius: "3px",
+            overflow: "hidden",
+            marginBottom: "10px",
+          }}
+        >
+          <div
+            style={{
+              width: `${Math.min(100, consumedShare * 100)}%`,
+              height: "100%",
+              background: statusVisual.color,
+            }}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "8px",
+            fontSize: "11.5px",
+            color: THEME.ink,
+            lineHeight: 1.45,
+          }}
+        >
+          <span style={{ color: statusVisual.color, fontWeight: 700, flexShrink: 0 }}>
+            {statusVisual.icon}
+          </span>
+          <span>
+            <strong>{statusVisual.label}.</strong> {statusDetail}
+          </span>
+        </div>
+      </div>
+
+      {/* Bloc 2 — Histogramme mensuel */}
+      <div className="break-inside-avoid" style={{ marginBottom: "20px" }}>
+        <h3
+          className="mrd-eyebrow"
+          style={{ fontSize: "10px", color: THEME.accent, margin: "0 0 12px 0" }}
+        >
+          Historique mensuel
+        </h3>
+        <MonthlyBarsChart
+          months={monthlyHistory}
+          target={targetMonthlyHours}
+          maxValue={maxBarValue}
+          status={status}
+        />
+        <div
+          style={{
+            marginTop: "8px",
+            display: "flex",
+            gap: "20px",
+            fontSize: "10px",
+            color: THEME.slate,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            <span style={{ display: "inline-block", width: "10px", height: "3px", background: THEME.blue, verticalAlign: "middle", marginRight: "5px" }} />
+            Mois rapporté
+          </span>
+          <span>
+            <span style={{ display: "inline-block", width: "10px", height: "3px", background: THEME.slateLight, verticalAlign: "middle", marginRight: "5px" }} />
+            Mois écoulés
+          </span>
+          <span>
+            <span style={{ display: "inline-block", width: "10px", height: "1px", borderTop: `1px dashed ${THEME.slate}`, verticalAlign: "middle", marginRight: "5px" }} />
+            Rythme cible ({fmtHours(targetMonthlyHours)}/mois)
+          </span>
+        </div>
+      </div>
+
+      {/* Bloc 3 — Projection (compact) */}
+      <div className="break-inside-avoid">
+        <h3
+          className="mrd-eyebrow"
+          style={{ fontSize: "10px", color: THEME.accent, margin: "0 0 10px 0" }}
+        >
+          Projection fin de période
+        </h3>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11.5px" }}>
+          <tbody>
+            <tr style={{ borderBottom: `1px solid ${THEME.hairLight}` }}>
+              <td style={{ padding: "5px 10px 5px 0", color: THEME.ink }}>Total consommé à ce jour</td>
+              <td className="mrd-mono" style={{ padding: "5px 0", textAlign: "right", fontVariantNumeric: "tabular-nums", color: THEME.ink, fontWeight: 500 }}>
+                {fmtHours(consumedHours)}
+              </td>
+            </tr>
+            <tr style={{ borderBottom: `1px solid ${THEME.hairLight}` }}>
+              <td style={{ padding: "5px 10px 5px 0", color: THEME.ink }}>Moyenne mensuelle (mois écoulés)</td>
+              <td className="mrd-mono" style={{ padding: "5px 0", textAlign: "right", fontVariantNumeric: "tabular-nums", color: THEME.ink, fontWeight: 500 }}>
+                {fmtHours(averageMonthlyHours)} / mois
+              </td>
+            </tr>
+            <tr>
+              <td style={{ padding: "6px 10px 6px 0", color: THEME.ink, fontWeight: 600 }}>
+                Projection au {formatPeriodEnd(periodEnd)}
+              </td>
+              <td
+                className="mrd-mono"
+                style={{
+                  padding: "6px 0",
+                  textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                  fontWeight: 600,
+                  color: status === "overage" ? "#DC2626" : status === "warning" ? THEME.warning : THEME.ink,
+                }}
+              >
+                {fmtHours(projectedTotalHours)}
+                {projectedTotalHours > totalHours ? (
+                  <span style={{ marginLeft: "6px", fontSize: "10px" }}>
+                    (+{fmtHours(round1(projectedTotalHours - totalHours))} hors forfait)
+                  </span>
+                ) : null}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </PageSection>
+  );
+}
+
+// Helpers locaux pour HourBankTrackingSection
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+function formatPeriodEnd(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("fr-CA", { day: "numeric", month: "long", year: "numeric" });
+}
+function countMonthsRemaining(periodEndIso: string): number {
+  const end = new Date(periodEndIso + "T00:00:00");
+  const now = new Date();
+  if (end < now) return 0;
+  const months =
+    (end.getFullYear() - now.getFullYear()) * 12 +
+    (end.getMonth() - now.getMonth());
+  return Math.max(0, months);
+}
+
+function MonthlyBarsChart({
+  months,
+  target,
+  maxValue,
+  status,
+}: {
+  months: NonNullable<MonthlyReportPayload["hourBankTracking"]>["monthlyHistory"];
+  target: number;
+  maxValue: number;
+  status: NonNullable<MonthlyReportPayload["hourBankTracking"]>["status"];
+}) {
+  // Hauteur du graphique en px (rendue dans le PDF — le scale 0.75x du
+  // Chrome PDF renderer ne touche que header/footer, ici c'est dans le
+  // body donc valeur réelle).
+  const CHART_HEIGHT = 110;
+  const targetTopPct = maxValue > 0 ? (1 - target / maxValue) * 100 : 100;
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        height: `${CHART_HEIGHT + 22}px`, // place pour les labels mois
+        width: "100%",
+        borderBottom: `1px solid ${THEME.hair}`,
+      }}
+    >
+      {/* Ligne cible (pointillés) */}
+      <div
+        style={{
+          position: "absolute",
+          top: `${targetTopPct}%`,
+          left: 0,
+          right: 0,
+          height: "0",
+          borderTop: `1px dashed ${THEME.slate}`,
+          opacity: 0.5,
+        }}
+      />
+      {/* Barres */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: `${CHART_HEIGHT}px`,
+          display: "flex",
+          alignItems: "flex-end",
+          gap: "4px",
+          padding: "0 2px",
+        }}
+      >
+        {months.map((m, idx) => {
+          const heightPct = maxValue > 0 ? (m.hours / maxValue) * 100 : 0;
+          const isOverPace = m.hours > target * 1.5;
+          let barColor = THEME.slateLight;
+          if (m.isCurrentReportMonth) {
+            barColor =
+              status === "overage" ? "#DC2626" :
+              status === "warning" ? THEME.warning :
+              THEME.blue;
+          } else if (isOverPace && !m.isFuture) {
+            barColor = THEME.warning;
+          }
+          return (
+            <div
+              key={idx}
+              style={{
+                flex: "1 1 0",
+                position: "relative",
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "flex-end",
+              }}
+            >
+              {/* Valeur au-dessus de la barre */}
+              {m.hours > 0 ? (
+                <div
+                  className="mrd-mono"
+                  style={{
+                    fontSize: "8.5px",
+                    color: m.isCurrentReportMonth ? THEME.ink : THEME.slate,
+                    fontWeight: m.isCurrentReportMonth ? 600 : 400,
+                    fontVariantNumeric: "tabular-nums",
+                    marginBottom: "2px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {m.hours}
+                </div>
+              ) : null}
+              <div
+                style={{
+                  width: "100%",
+                  height: `${heightPct}%`,
+                  minHeight: m.hours > 0 ? "2px" : "0",
+                  background: m.isFuture ? "transparent" : barColor,
+                  border: m.isFuture ? `1px dashed ${THEME.hair}` : "none",
+                  borderRadius: "1.5px 1.5px 0 0",
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      {/* Labels mois sous les barres */}
+      <div
+        style={{
+          position: "absolute",
+          top: `${CHART_HEIGHT + 4}px`,
+          left: 0,
+          right: 0,
+          display: "flex",
+          gap: "4px",
+          padding: "0 2px",
+        }}
+      >
+        {months.map((m, idx) => (
+          <div
+            key={idx}
+            style={{
+              flex: "1 1 0",
+              textAlign: "center",
+              fontSize: "9px",
+              fontWeight: m.isCurrentReportMonth ? 600 : 400,
+              color: m.isCurrentReportMonth ? THEME.ink : THEME.slate,
+              textTransform: "lowercase",
+            }}
+          >
+            {m.label}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RecapSection({ recap }: { recap: NonNullable<MonthlyReportPayload["recap"]> }) {
+  // byCoverage est volontairement non destructuré : non rendu dans le PDF
+  // client (cf. note RecapSection plus bas).
+  const { byTimeBucket, byActivity, byCategory, trips } = recap;
+
+  return (
+    <PageSection breakBefore>
+      <SectionTitle eyebrow="Synthèse">Récapitulatif du mois</SectionTitle>
+
+      {/* Bloc Couverture (forfait vs hors forfait) — INTENTIONNELLEMENT RETIRÉ
+          du PDF client : exposer ce ratio met en évidence le volume hors
+          forfait quand il existe, et risque de provoquer des questions
+          défensives côté client. Les chiffres restent calculés côté builder
+          (utilisés ailleurs : analytics interne, total payload), juste pas
+          rendus dans le récap. */}
+
+      {/* Bloc 2 — Plages horaires */}
+      <RecapBlock title="Heures par plage horaire">
+        <RecapMiniTable
+          rows={[
+            { label: "Jour ouvrable (standard)", hours: byTimeBucket.dayHours, share: byTimeBucket.dayShare },
+            { label: "Soir (after-hours semaine)", hours: byTimeBucket.eveningHours, share: byTimeBucket.eveningShare },
+            { label: "Fin de semaine", hours: byTimeBucket.weekendHours, share: byTimeBucket.weekendShare },
+            { label: "Urgence", hours: byTimeBucket.urgentHours, share: byTimeBucket.urgentShare },
+          ]}
+        />
+        <p
+          style={{
+            marginTop: "8px",
+            fontSize: "10px",
+            fontStyle: "italic",
+            color: THEME.slate,
+            lineHeight: 1.5,
+          }}
+        >
+          Les heures urgentes ont préséance sur fin de semaine et soir ; une
+          intervention urgente le samedi est comptabilisée dans « Urgence »
+          uniquement.
+        </p>
+      </RecapBlock>
+
+      {/* Bloc 3 — Types d'activité */}
+      <RecapBlock title="Heures par type d'activité">
+        {byActivity.length === 0 ? (
+          <EmptyNote>Aucune heure facturable saisie sur la période.</EmptyNote>
+        ) : (
+          <RecapMiniTable
+            rows={byActivity.map((a) => ({
+              label: ACTIVITY_LABELS[a.timeType] ?? a.timeType,
+              hours: a.hours,
+              share: a.share,
+            }))}
+          />
+        )}
+      </RecapBlock>
+
+      {/* Bloc 4 — Déplacements */}
+      <RecapBlock title="Déplacements">
+        <RecapMiniTable
+          showShare={false}
+          rows={[
+            { label: "Total déplacements", hours: trips.total, unit: "" },
+            ...(trips.ftigActive
+              ? [
+                  { label: "Inclus au quota FTIG", hours: trips.includedFtig, unit: "" },
+                  { label: "Hors quota / facturables", hours: trips.billable, unit: "" },
+                ]
+              : []),
+          ]}
+        />
+      </RecapBlock>
+
+      {/* Bloc 5 — Catégories (graphique barres horizontales) */}
+      <RecapBlock title="Heures par catégorie de ticket">
+        {byCategory.length === 0 ? (
+          <EmptyNote>Aucune activité catégorisée sur la période.</EmptyNote>
+        ) : (
+          <CategoryBarChart items={byCategory} />
+        )}
+      </RecapBlock>
+    </PageSection>
+  );
+}
+
+function RecapBlock({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div
+      className="break-inside-avoid"
+      style={{
+        marginBottom: "20px",
+        paddingBottom: "16px",
+        borderBottom: `1px solid ${THEME.hair}`,
+      }}
+    >
+      <h3
+        className="mrd-eyebrow"
+        style={{
+          fontSize: "10px",
+          color: THEME.accent,
+          margin: "0 0 10px 0",
+        }}
+      >
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+interface RecapRow {
+  label: string;
+  hours: number;
+  share?: number;
+  unit?: string;
+}
+function RecapMiniTable({ rows, showShare = true }: { rows: RecapRow[]; showShare?: boolean }) {
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11.5px" }}>
+      <tbody>
+        {rows.map((r, idx) => (
+          <tr key={idx} style={{ borderBottom: idx < rows.length - 1 ? `1px solid ${THEME.hairLight}` : "none" }}>
+            <td style={{ padding: "5px 10px 5px 0", color: THEME.ink }}>{r.label}</td>
+            <td
+              className="mrd-mono"
+              style={{
+                padding: "5px 10px 5px 0",
+                textAlign: "right",
+                fontVariantNumeric: "tabular-nums",
+                color: THEME.ink,
+                fontWeight: 500,
+                width: "90px",
+              }}
+            >
+              {r.unit === "" ? r.hours.toLocaleString("fr-CA") : fmtHours(r.hours)}
+            </td>
+            {showShare ? (
+              <td
+                className="mrd-mono"
+                style={{
+                  padding: "5px 0",
+                  textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                  color: THEME.slate,
+                  width: "60px",
+                }}
+              >
+                {fmtPct(r.share ?? 0)}
+              </td>
+            ) : null}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function CategoryBarChart({
+  items,
+}: {
+  items: NonNullable<MonthlyReportPayload["recap"]>["byCategory"];
+}) {
+  const maxHours = Math.max(...items.map((i) => i.hours), 0);
+  if (maxHours <= 0) {
+    return <EmptyNote>Aucune activité catégorisée sur la période.</EmptyNote>;
+  }
+  // Top 8 + ligne « Autres » si plus long, en gardant « Non classé » à la fin
+  // de toute façon (déjà trié ainsi par le builder).
+  const named = items.filter((i) => i.categoryId !== null);
+  const uncat = items.find((i) => i.categoryId === null);
+  const TOP = 8;
+  const visibleNamed = named.slice(0, TOP);
+  const overflow = named.slice(TOP);
+  const overflowAgg = overflow.length > 0
+    ? {
+        categoryId: "__other__" as const,
+        name: `Autres (${overflow.length})`,
+        hours: overflow.reduce((s, x) => s + x.hours, 0),
+        share: overflow.reduce((s, x) => s + x.share, 0),
+      }
+    : null;
+
+  const rows = [
+    ...visibleNamed,
+    ...(overflowAgg ? [overflowAgg] : []),
+    ...(uncat ? [uncat] : []),
+  ];
+
+  return (
+    <div>
+      {rows.map((row, idx) => {
+        const isUncat = row.categoryId === null;
+        const isOverflow = row.categoryId === "__other__";
+        const widthPct = maxHours > 0 ? (row.hours / maxHours) * 100 : 0;
+        return (
+          <div
+            key={idx}
+            className="break-inside-avoid"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "5px 0",
+              borderBottom: idx < rows.length - 1 ? `1px solid ${THEME.hairLight}` : "none",
+              fontSize: "11.5px",
+            }}
+          >
+            <div
+              style={{
+                width: "32%",
+                color: isUncat ? THEME.slate : THEME.ink,
+                fontStyle: isUncat ? "italic" : "normal",
+                fontWeight: isUncat || isOverflow ? 400 : 500,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+              title={row.name}
+            >
+              {row.name}
+            </div>
+            <div
+              style={{
+                flex: 1,
+                position: "relative",
+                height: "10px",
+                background: THEME.hairLight,
+                borderRadius: "2px",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${widthPct}%`,
+                  height: "100%",
+                  background: isUncat ? THEME.slateLight : isOverflow ? THEME.slate : THEME.blue,
+                }}
+              />
+            </div>
+            <div
+              className="mrd-mono"
+              style={{
+                width: "70px",
+                textAlign: "right",
+                fontVariantNumeric: "tabular-nums",
+                color: THEME.ink,
+                fontWeight: 500,
+              }}
+            >
+              {fmtHours(row.hours)}
+            </div>
+            <div
+              className="mrd-mono"
+              style={{
+                width: "50px",
+                textAlign: "right",
+                fontVariantNumeric: "tabular-nums",
+                color: THEME.slate,
+              }}
+            >
+              {fmtPct(row.share)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

@@ -60,7 +60,7 @@ export function toEngineContract(
         totalHoursPurchased: Number(settings.hourBank.totalHoursPurchased ?? 0),
         hoursConsumed: Number(settings.hourBank.hoursConsumed ?? 0),
         eligibleTimeTypes: settings.hourBank.eligibleTimeTypes ?? [
-          "remote_work", "onsite_work", "preparation", "follow_up", "other",
+          "remote_work", "onsite_work", "other",
         ],
         carryOverHours: settings.hourBank.carryOverHours ?? false,
         allowOverage: settings.hourBank.allowOverage ?? true,

@@ -59,9 +59,11 @@ export default async function InternalMonthlyReportRenderPage({
   // Logo servi depuis /public. En dev + prod, même URL.
   const logoSrc = "/images/cetix-logo-bleu-horizontal-HD.png";
 
-  // Variante "heures seulement" demandée par l'utilisateur — masque tous
-  // les montants $ et taux horaires.
-  const hideRates = variant === "hours_only";
+  // Défaut : SANS montants $ (rapport officiel envoyé au client / portail).
+  // ?variant=with_amounts → version réservée aux agents avec montants $.
+  // L'ancien ?variant=hours_only reste accepté pour ne pas casser d'éventuels
+  // anciens liens — il produit le même résultat que le défaut.
+  const hideRates = variant !== "with_amounts";
 
   return (
     <div className={`${geist.variable} ${geistMono.variable}`}>

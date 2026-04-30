@@ -85,6 +85,11 @@ export async function POST(
       select: { id: true, number: true, subject: true },
     });
     created.push(ticket);
+
+    // Triage IA fire-and-forget — auto-catégorisation systématique.
+    import("@/lib/ai/features/triage")
+      .then((m) => m.triageTicketAsync(ticket.id))
+      .catch(() => {});
   }
 
   return NextResponse.json({ created, count: created.length }, { status: 201 });

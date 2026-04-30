@@ -315,6 +315,7 @@ export function OrgMonthlyReportsTab({
                     variant="outline"
                     size="sm"
                     asChild
+                    title="Rapport PDF officiel (heures + déplacements, sans montants)"
                   >
                     <a
                       href={`/api/v1/reports/monthly/${r.id}/pdf`}
@@ -323,6 +324,21 @@ export function OrgMonthlyReportsTab({
                     >
                       <Download className="h-4 w-4 mr-1" />
                       PDF
+                    </a>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    asChild
+                    title="Variante interne avec montants $ (agents seulement)"
+                  >
+                    <a
+                      href={`/api/v1/reports/monthly/${r.id}/pdf?variant=with_amounts`}
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      <Download className="h-4 w-4 mr-1" />
+                      Avec montants&nbsp;$
                     </a>
                   </Button>
                   <Button

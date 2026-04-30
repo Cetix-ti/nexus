@@ -247,103 +247,125 @@ function AssignedRow({
   }
 
   return (
-    <li className="flex items-center gap-3 px-3 py-2.5 bg-white">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className={cn(
-            "text-[13px] font-medium truncate",
-            a.active ? "text-slate-800" : "text-slate-400 line-through",
-          )}>
-            {a.name}
-          </p>
-          <button
-            type="button"
-            onClick={() => onChange({ active: !a.active })}
-            className={cn(
-              "text-[10.5px] font-semibold rounded-full px-2 py-0.5 ring-1",
-              a.active
-                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                : "bg-slate-100 text-slate-500 ring-slate-200",
-            )}
-          >
-            {a.active ? "Actif" : "Inactif"}
-          </button>
+    // Layout responsive : empilé verticalement sur mobile (< sm), une seule
+    // ligne sur ≥ sm. Sur mobile : nom + badge + bouton trash sur la 1re
+    // ligne, contrôles Qté/Prix/Total qui wrappent sur la 2e (ou plus si
+    // viewport très étroit). Évite le débordement horizontal du tableau
+    // qui forçait un scroll latéral pénible sur téléphone.
+    <li className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-3 py-2.5 bg-white">
+      {/* Nom + badge + (trash mobile-only) */}
+      <div className="flex items-start gap-2 sm:flex-1 sm:min-w-0">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className={cn(
+              "text-[13px] font-medium",
+              a.active ? "text-slate-800" : "text-slate-400 line-through",
+            )}>
+              {a.name}
+            </p>
+            <button
+              type="button"
+              onClick={() => onChange({ active: !a.active })}
+              className={cn(
+                "text-[10.5px] font-semibold rounded-full px-2 py-0.5 ring-1",
+                a.active
+                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                  : "bg-slate-100 text-slate-500 ring-slate-200",
+              )}
+            >
+              {a.active ? "Actif" : "Inactif"}
+            </button>
+          </div>
+          {a.description && (
+            <p className="text-[11px] text-slate-500 line-clamp-2 sm:truncate">{a.description}</p>
+          )}
         </div>
-        {a.description && (
-          <p className="text-[11px] text-slate-500 truncate">{a.description}</p>
-        )}
+        {/* Trash bouton mobile : aligné à droite sur la 1re ligne */}
+        <button
+          type="button"
+          onClick={onRemove}
+          className="sm:hidden text-slate-300 hover:text-red-500 p-1 -m-1"
+          title="Retirer"
+          aria-label="Retirer"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
 
-      <div className="flex items-center gap-1.5 shrink-0">
-        <label className="text-[10.5px] text-slate-500 font-medium">Qté</label>
-        <Input
-          type="number"
-          min={1}
-          step={1}
-          value={qtyInput}
-          onChange={(e) => setQtyInput(e.target.value)}
-          onBlur={commitQty}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); commitQty(); }
-          }}
-          className="w-14 h-8 text-[12.5px] text-center tabular-nums"
-        />
-      </div>
-
-      <div className="flex items-center gap-1.5 shrink-0">
-        <label className="text-[10.5px] text-slate-500 font-medium">Prix</label>
-        <div className="relative">
+      {/* Contrôles : flex-wrap pour passer sur 2 lignes si vraiment étroit */}
+      <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap sm:shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <label className="text-[10.5px] text-slate-500 font-medium">Qté</label>
           <Input
             type="number"
-            min={0}
-            step={0.01}
-            value={priceInput}
-            placeholder={`Hérité : ${a.defaultMonthlyPrice.toFixed(2)}`}
-            onChange={(e) => setPriceInput(e.target.value)}
-            onBlur={commitPrice}
+            min={1}
+            step={1}
+            value={qtyInput}
+            onChange={(e) => setQtyInput(e.target.value)}
+            onBlur={commitQty}
             onKeyDown={(e) => {
-              if (e.key === "Enter") { e.preventDefault(); commitPrice(); }
+              if (e.key === "Enter") { e.preventDefault(); commitQty(); }
             }}
-            className={cn(
-              "w-28 h-8 pr-6 text-[12.5px] text-right tabular-nums",
-              a.isPriceOverridden && "border-blue-400 bg-blue-50/40 ring-1 ring-blue-300/60",
-            )}
+            className="w-14 h-8 text-[12.5px] text-center tabular-nums"
           />
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10.5px] text-slate-400">
-            $
-          </span>
         </div>
-        {a.isPriceOverridden && (
-          <button
-            type="button"
-            onClick={() => onChange({ monthlyPrice: null })}
-            className="text-slate-400 hover:text-blue-600"
-            title="Revenir au prix catalogue"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
 
-      <div className="w-24 text-right shrink-0">
-        <p className="text-[13px] font-bold tabular-nums text-slate-800">
-          {fmtMoney(a.effectiveTotal)}
-        </p>
-        {a.quantity > 1 && (
-          <p className="text-[10px] text-slate-500 tabular-nums">
-            {a.quantity} × {fmtMoney(a.effectiveUnitPrice)}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <label className="text-[10.5px] text-slate-500 font-medium">Prix</label>
+          <div className="relative">
+            <Input
+              type="number"
+              min={0}
+              step={0.01}
+              value={priceInput}
+              placeholder={`Hérité : ${a.defaultMonthlyPrice.toFixed(2)}`}
+              onChange={(e) => setPriceInput(e.target.value)}
+              onBlur={commitPrice}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); commitPrice(); }
+              }}
+              className={cn(
+                "w-28 h-8 pr-6 text-[12.5px] text-right tabular-nums",
+                a.isPriceOverridden && "border-blue-400 bg-blue-50/40 ring-1 ring-blue-300/60",
+              )}
+            />
+            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10.5px] text-slate-400">
+              $
+            </span>
+          </div>
+          {a.isPriceOverridden && (
+            <button
+              type="button"
+              onClick={() => onChange({ monthlyPrice: null })}
+              className="text-slate-400 hover:text-blue-600"
+              title="Revenir au prix catalogue"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="ml-auto sm:ml-0 sm:w-24 text-right shrink-0">
+          <p className="text-[13px] font-bold tabular-nums text-slate-800">
+            {fmtMoney(a.effectiveTotal)}
           </p>
-        )}
-      </div>
+          {a.quantity > 1 && (
+            <p className="text-[10px] text-slate-500 tabular-nums">
+              {a.quantity} × {fmtMoney(a.effectiveUnitPrice)}
+            </p>
+          )}
+        </div>
 
-      <button
-        type="button"
-        onClick={onRemove}
-        className="text-slate-300 hover:text-red-500"
-        title="Retirer"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
+        {/* Trash bouton desktop seulement */}
+        <button
+          type="button"
+          onClick={onRemove}
+          className="hidden sm:block text-slate-300 hover:text-red-500"
+          title="Retirer"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </li>
   );
 }

@@ -7,7 +7,7 @@
   "fromEmail": "nexus@cetix.ca",
   "fromName": "Cetix",
   "replyTo": "nexus@cetix.ca",
-  "subjectPrefix": "[Nexus]",
+  "subjectPrefix": "",
   "ticketCreationEnabled": true,
   "allowInvalidCerts": false,
   "isConfigured": true,

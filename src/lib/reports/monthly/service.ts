@@ -99,7 +99,10 @@ export async function generateMonthlyReport(params: GenerateParams) {
   // Rendu PDF. Peut échouer si Puppeteer / Chromium non disponible — on
   // laisse remonter l'erreur, le record reste en DB sans PDF (l'UI peut
   // tenter un nouveau rendu via un bouton "Regénérer PDF").
-  const pdfBuffer = await renderReportToPdf(record.id);
+  // Le PDF persistant est SANS montants $ (version officielle pour le client
+  // + portail). La variante avec montants est générée à la volée pour les
+  // agents via ?variant=with_amounts.
+  const pdfBuffer = await renderReportToPdf(record.id, { hideRates: true });
 
   const stored = await writeReportPdf({
     orgSlug: org.slug,
@@ -160,7 +163,8 @@ export async function regeneratePdfOnly(reportId: string) {
   });
   if (!report) throw new Error(`Report not found: ${reportId}`);
 
-  const pdfBuffer = await renderReportToPdf(report.id);
+  // Voir generateMonthlyReport : le PDF persistant est sans montants $.
+  const pdfBuffer = await renderReportToPdf(report.id, { hideRates: true });
 
   if (report.filePath) {
     await deleteReportPdf(report.filePath);

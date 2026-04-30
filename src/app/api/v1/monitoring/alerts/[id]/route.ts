@@ -76,5 +76,12 @@ export async function POST(
     data: { ticketId: ticket.id, stage: "INVESTIGATING" },
   });
 
+  // Triage IA fire-and-forget — auto-catégorisation systématique. Si l'IA
+  // n'arrive pas à trancher, le ticket sera marqué categorySource="AI" +
+  // categoryId=null (notice "à classer manuellement" sur la fiche).
+  import("@/lib/ai/features/triage")
+    .then((m) => m.triageTicketAsync(ticket.id))
+    .catch(() => {});
+
   return NextResponse.json({ ticketId: ticket.id, ticketNumber: ticket.number }, { status: 201 });
 }

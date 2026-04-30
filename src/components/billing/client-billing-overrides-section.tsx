@@ -279,10 +279,6 @@ export interface WorkTypeOption {
     | "remote_work"
     | "onsite_work"
     | "travel"
-    | "preparation"
-    | "administration"
-    | "waiting"
-    | "follow_up"
     | "internal"
     | "other";
   /** @deprecated Le tarif est maintenant porté par les paliers (RateTierOption).
@@ -391,15 +387,11 @@ export function loadAllSystemTypes(): SystemTypeEntry[] {
   const overrides = loadSystemTypeLabels();
   const customs = loadCustomSystemTypes();
   const builtins: SystemTypeEntry[] = [
-    { id: "remote_work",    label: overrides.remote_work    ?? "Travail à distance", mapsTo: "remote_work",    builtin: true },
-    { id: "onsite_work",    label: overrides.onsite_work    ?? "Travail sur site",   mapsTo: "onsite_work",    builtin: true },
-    { id: "travel",         label: overrides.travel         ?? "Déplacement",        mapsTo: "travel",         builtin: true },
-    { id: "preparation",    label: overrides.preparation    ?? "Préparation",        mapsTo: "preparation",    builtin: true },
-    { id: "administration", label: overrides.administration ?? "Administration",    mapsTo: "administration", builtin: true },
-    { id: "waiting",        label: overrides.waiting        ?? "Attente",            mapsTo: "waiting",        builtin: true },
-    { id: "follow_up",      label: overrides.follow_up      ?? "Suivi",              mapsTo: "follow_up",      builtin: true },
-    { id: "internal",       label: overrides.internal       ?? "Temps interne",      mapsTo: "internal",       builtin: true },
-    { id: "other",          label: overrides.other          ?? "Autre",              mapsTo: "other",          builtin: true },
+    { id: "remote_work", label: overrides.remote_work ?? "Travail à distance", mapsTo: "remote_work", builtin: true },
+    { id: "onsite_work", label: overrides.onsite_work ?? "Travail sur site",   mapsTo: "onsite_work", builtin: true },
+    { id: "travel",      label: overrides.travel      ?? "Déplacement",        mapsTo: "travel",      builtin: true },
+    { id: "internal",    label: overrides.internal    ?? "Temps interne",      mapsTo: "internal",    builtin: true },
+    { id: "other",       label: overrides.other       ?? "Autre",              mapsTo: "other",       builtin: true },
   ];
   return [...builtins, ...customs.map((c): SystemTypeEntry => ({ id: c.id, label: c.label, mapsTo: c.mapsTo, builtin: false }))];
 }
@@ -2464,19 +2456,12 @@ function ClientBillingOverridesSectionInner({
               )}
             </div>
 
-            {/* Types de travail couverts par le forfait — sans plafond.
-                Toute saisie sur ces types = non facturable en supplément. */}
-            <div>
-              <h4 className="text-[12px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                Types de travail inclus dans le forfait
-              </h4>
-              {/* Section retirée : `includedWorkTypeIds` et
-                  `onsiteWorkTypeIds` étaient des fields persistés mais
-                  jamais consommés par le moteur. La cascade FTIG actuelle
-                  utilise SEULEMENT `excludedWorkTypeIds` (étiquette
-                  cosmétique « hors contrat ») — les autres listes étaient
-                  des reliquats v1 et créaient de la confusion UX. */}
-            </div>
+            {/* Sections legacy `includedWorkTypeIds` / `onsiteWorkTypeIds`
+                retirées : champs persistés mais jamais consommés par le
+                moteur. La cascade FTIG actuelle utilise SEULEMENT
+                `excludedWorkTypeIds` (étiquette cosmétique « hors contrat »).
+                Les autres listes étaient des reliquats v1 qui créaient de
+                la confusion UX. */}
 
             {/* Travail sur place non inclus au forfait — taux horaire utilisé
                 pour les projets ou les heures régulières qui débordent

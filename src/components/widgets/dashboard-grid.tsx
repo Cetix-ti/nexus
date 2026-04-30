@@ -109,16 +109,31 @@ function useLiveResize(
 ) {
   const [dragging, setDragging] = useState(false);
   const [preview, setPreview] = useState<{ w: number; h: number } | null>(null);
-  const startRef = useRef({ x: 0, y: 0, w: 0, h: 0, colW: 0 });
+  // `cellW` et `cellH` : taille visuelle réelle d'1 unité (1 colonne ou
+  // 1 rangée) du widget courant, mesurée au pointerdown. Avant on
+  // utilisait `ROW_PX = 60` constant — incorrect si la rangée s'est
+  // étirée à cause du contenu (gridAutoRows: minmax(60px, auto)). Tirer
+  // de 100 px sur une rangée de 300 px donnait +1.67 → round à +2 →
+  // le widget grossissait de plusieurs rangées en cumulé.
+  const startRef = useRef({ x: 0, y: 0, w: 0, h: 0, cellW: 0, cellH: 0 });
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       e.preventDefault();
       e.stopPropagation();
       const el = e.currentTarget as HTMLElement;
+      const widget = el.closest("[data-widget-id]") as HTMLElement | null;
       const container = el.closest("[data-grid-container]") as HTMLElement | null;
-      const colW = (container?.clientWidth || 1000) / GRID_COLS;
-      startRef.current = { x: e.clientX, y: e.clientY, w: item.w, h: item.h, colW };
+      // Cellule = taille visuelle / span actuel. Si w=10 et widget fait
+      // 600 px → cellW=60 px par colonne. Idem cellH.
+      const widgetRect = widget?.getBoundingClientRect();
+      const cellW = widgetRect && item.w > 0
+        ? widgetRect.width / item.w
+        : (container?.clientWidth || 1000) / GRID_COLS;
+      const cellH = widgetRect && item.h > 0
+        ? widgetRect.height / item.h
+        : ROW_PX;
+      startRef.current = { x: e.clientX, y: e.clientY, w: item.w, h: item.h, cellW, cellH };
       setDragging(true);
       setPreview({ w: item.w, h: item.h });
       el.setPointerCapture(e.pointerId);
@@ -129,9 +144,19 @@ function useLiveResize(
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!dragging) return;
-      const { x, y, w, h, colW } = startRef.current;
-      const dCols = Math.round((e.clientX - x) / colW);
-      const dRows = Math.round((e.clientY - y) / ROW_PX);
+      const { x, y, w, h, cellW, cellH } = startRef.current;
+      // Hystérésis : on ne snap au prochain palier qu'à 60 % du chemin
+      // vers ce palier (au lieu de 50 % avec round). Évite les sauts
+      // intempestifs sur de petits mouvements de souris.
+      const snap = (delta: number, cell: number): number => {
+        if (cell <= 0) return 0;
+        const ratio = delta / cell;
+        const floor = Math.floor(ratio);
+        const frac = ratio - floor;
+        return frac >= 0.6 ? floor + 1 : frac <= -0.4 ? floor : floor;
+      };
+      const dCols = snap(e.clientX - x, cellW);
+      const dRows = snap(e.clientY - y, cellH);
       const nextW = axis === "y" ? w : clamp(w + dCols, 1, GRID_COLS);
       const nextH = axis === "x" ? h : clamp(h + dRows, 1, MAX_ROWS);
       setPreview((prev) => {
@@ -146,7 +171,7 @@ function useLiveResize(
     (e: React.PointerEvent) => {
       if (!dragging) return;
       const el = e.currentTarget as HTMLElement;
-      el.releasePointerCapture(e.pointerId);
+      try { el.releasePointerCapture(e.pointerId); } catch { /* déjà relâché */ }
       setDragging(false);
       if (preview && (preview.w !== item.w || preview.h !== item.h)) {
         onCommit(preview.w, preview.h);
@@ -557,13 +582,15 @@ export function DashboardGrid({
             gridAutoRows: isMobile
               ? "auto"
               : `minmax(${ROW_PX}px, auto)`,
-            // `grid-auto-flow: dense` en mode édition : les widgets plus
-            // petits comblent automatiquement les trous laissés par des
-            // widgets plus larges placés avant. Élimine les "vides" que
-            // l'utilisateur voyait en cherchant à placer un widget dans
-            // un slot manifestement libre. Hors édition, flow standard
-            // (row) pour garder une lecture séquentielle prévisible.
-            gridAutoFlow: editMode && !isMobile ? "row dense" : undefined,
+            // `grid-auto-flow: row` (sans `dense`) en édition : les
+            // widgets gardent leur position dans l'ordre du tableau. Avec
+            // `dense`, le moteur CSS réarrangeait activement les widgets
+            // pour combler les trous → l'utilisateur voyait « tout ses
+            // widgets se déplacer n'importe comment » à chaque drop.
+            // Sans `dense`, le widget déplacé prend sa nouvelle position
+            // et les autres restent où ils sont (sauf si le drop les
+            // pousse explicitement via arrayMove de dnd-kit).
+            gridAutoFlow: editMode && !isMobile ? "row" : undefined,
             ...gridBgStyle,
           }}
         >

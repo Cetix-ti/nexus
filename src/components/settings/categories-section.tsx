@@ -41,7 +41,10 @@ interface ApiCategory {
   description: string | null;
   icon: string | null;
   sortOrder: number;
+  scope: "CLIENT" | "INTERNAL";
 }
+
+type ScopeTab = "CLIENT" | "INTERNAL";
 
 /** Parse un chemin "Niveau1 > Niveau2 > Niveau3" en segments trimés. */
 function parsePath(path: string): string[] {
@@ -89,84 +92,13 @@ interface Category {
   color: string;
   ticketCount: number;
   subcategories: Subcategory[];
+  scope: ScopeTab;
 }
 
-const initialCategories: Category[] = [
-  {
-    id: "c1",
-    name: "Matériel",
-    description: "Problèmes liés au matériel informatique",
-    color: "#3B82F6",
-    ticketCount: 142,
-    subcategories: [
-      { id: "s1", name: "Postes de travail", ticketCount: 48 },
-      { id: "s2", name: "Imprimantes", ticketCount: 32 },
-      { id: "s3", name: "Périphériques", ticketCount: 28 },
-      { id: "s4", name: "Mobile", ticketCount: 34 },
-    ],
-  },
-  {
-    id: "c2",
-    name: "Logiciels",
-    description: "Installation, mise à jour et bugs logiciels",
-    color: "#8B5CF6",
-    ticketCount: 198,
-    subcategories: [
-      { id: "s5", name: "Microsoft Office", ticketCount: 67 },
-      { id: "s6", name: "Navigateurs", ticketCount: 24 },
-      { id: "s7", name: "Antivirus", ticketCount: 18 },
-      { id: "s8", name: "Applications métier", ticketCount: 89 },
-    ],
-  },
-  {
-    id: "c3",
-    name: "Réseau & VPN",
-    description: "Connectivité, VPN, WiFi",
-    color: "#10B981",
-    ticketCount: 87,
-    subcategories: [
-      { id: "s9", name: "VPN", ticketCount: 34 },
-      { id: "s10", name: "WiFi", ticketCount: 28 },
-      { id: "s11", name: "Pare-feu", ticketCount: 25 },
-    ],
-  },
-  {
-    id: "c4",
-    name: "Compte & Accès",
-    description: "Mots de passe, MFA, droits d'accès",
-    color: "#F59E0B",
-    ticketCount: 124,
-    subcategories: [
-      { id: "s12", name: "Réinitialisation MDP", ticketCount: 56 },
-      { id: "s13", name: "MFA", ticketCount: 23 },
-      { id: "s14", name: "Permissions", ticketCount: 45 },
-    ],
-  },
-  {
-    id: "c5",
-    name: "Email",
-    description: "Outlook, Exchange, courriels",
-    color: "#EF4444",
-    ticketCount: 76,
-    subcategories: [
-      { id: "s15", name: "Configuration", ticketCount: 18 },
-      { id: "s16", name: "Spam", ticketCount: 31 },
-      { id: "s17", name: "Synchronisation", ticketCount: 27 },
-    ],
-  },
-  {
-    id: "c6",
-    name: "Sécurité",
-    description: "Incidents de sécurité et menaces",
-    color: "#DC2626",
-    ticketCount: 42,
-    subcategories: [
-      { id: "s18", name: "Phishing", ticketCount: 19 },
-      { id: "s19", name: "Malware", ticketCount: 12 },
-      { id: "s20", name: "Audit", ticketCount: 11 },
-    ],
-  },
-];
+// Avant : 6 catégories de demo en dur. Remplacées dès le mount par un fetch
+// `/api/v1/categories`. On part d'un état vide pour ne pas afficher de
+// fausses données pendant le 1er render.
+const initialCategories: Category[] = [];
 
 export function CategoriesSection() {
   const [categories, setCategories] = useState<Category[]>(initialCategories);
@@ -184,6 +116,43 @@ export function CategoriesSection() {
   const [applyError, setApplyError] = useState<string | null>(null);
   // Nonce pour déclencher un reload des catégories après une apply.
   const [reloadNonce, setReloadNonce] = useState(0);
+  // Onglet de scope actif : sépare la vue Clients ↔ Interne. Le reste de
+  // la page se filtre sur cet état (rendu, ajout, suggestions appliquées).
+  const [activeScope, setActiveScope] = useState<ScopeTab>("CLIENT");
+  // Sync depuis N8N (data table freshservice_ticket_categories) — wipe
+  // total puis reconstruction de l'arbre. UI gating : confirm + busy.
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  async function syncFromN8n() {
+    if (
+      !window.confirm(
+        "Cette action va SUPPRIMER toutes les catégories existantes (clients + internes) et les remplacer par celles de la data table N8N.\n\nLes tickets historiques perdront leur catégorie.\n\nContinuer ?",
+      )
+    ) {
+      return;
+    }
+    setSyncing(true);
+    setSyncResult(null);
+    setSyncError(null);
+    try {
+      const res = await fetch("/api/v1/admin/categories/sync", { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setSyncResult(
+        `${data.categoriesCreated} catégories créées · ${data.ticketsCleared} tickets décatégorisés · ${data.rootsCreated.length} racines`,
+      );
+      setReloadNonce((n) => n + 1);
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function runAudit() {
     setAuditLoading(true);
@@ -232,9 +201,10 @@ export function CategoriesSection() {
               color: COLORS[i % COLORS.length],
               ticketCount: 0,
               subcategories: subs,
+              scope: r.scope === "INTERNAL" ? "INTERNAL" : "CLIENT",
             };
           });
-          if (mapped.length > 0) setCategories(mapped);
+          setCategories(mapped);
         }
       })
       .catch(() => {});
@@ -400,10 +370,16 @@ export function CategoriesSection() {
       color: "#64748B",
       ticketCount: 0,
       subcategories: [],
+      scope: activeScope,
     };
     setCategories((prev) => [...prev, newCat]);
     setEditingId(newCat.id);
   }
+
+  // Vue filtrée par l'onglet actif. Le reste du rendu consomme `visibleCategories`
+  // au lieu de `categories` directement, pour que la page entière (audit,
+  // édition, expansion) se comporte comme deux univers indépendants.
+  const visibleCategories = categories.filter((c) => c.scope === activeScope);
 
   return (
     <div className="space-y-5">
@@ -413,10 +389,26 @@ export function CategoriesSection() {
             Catégories
           </h2>
           <p className="mt-1 text-[13px] text-slate-500">
-            Organisez vos tickets par catégories et sous-catégories
+            Organisez vos tickets par catégories et sous-catégories. Les
+            tickets clients et internes ont des arbres distincts — un même
+            label peut exister dans les deux.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="md"
+            onClick={syncFromN8n}
+            disabled={syncing}
+            title="Wipe + import depuis N8N (freshservice_ticket_categories)"
+          >
+            {syncing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FolderTree className="h-3.5 w-3.5" />
+            )}
+            {syncing ? "Synchro…" : "Synchroniser depuis N8N"}
+          </Button>
           <Button
             variant="outline"
             size="md"
@@ -437,6 +429,54 @@ export function CategoriesSection() {
           </Button>
         </div>
       </div>
+
+      {/* Onglet scope : sépare l'arbre clients de l'arbre interne. La
+          racine choisie ici dirige aussi addCategory + l'audit IA. */}
+      <div className="flex items-center gap-1 border-b border-slate-200">
+        {([
+          { key: "CLIENT" as ScopeTab, label: "Tickets clients" },
+          { key: "INTERNAL" as ScopeTab, label: "Tickets internes" },
+        ]).map((t) => {
+          const count = categories.filter((c) => c.scope === t.key).length;
+          const active = activeScope === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setActiveScope(t.key)}
+              className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px transition-colors ${
+                active
+                  ? "border-blue-600 text-blue-700"
+                  : "border-transparent text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              {t.label}
+              <span className="ml-1.5 text-[11px] text-slate-400">({count})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Feedback de sync — succès / erreur, message éphémère. */}
+      {syncResult && (
+        <Card className="border-emerald-200 bg-emerald-50/60">
+          <CardContent className="p-3 text-[12.5px] text-emerald-800 flex items-center justify-between gap-3">
+            <span>Synchronisation terminée — {syncResult}</span>
+            <button onClick={() => setSyncResult(null)} className="text-emerald-600 hover:text-emerald-900">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </CardContent>
+        </Card>
+      )}
+      {syncError && (
+        <Card className="border-red-200 bg-red-50/60">
+          <CardContent className="p-3 text-[12.5px] text-red-800 flex items-center justify-between gap-3">
+            <span>Échec synchronisation : {syncError}</span>
+            <button onClick={() => setSyncError(null)} className="text-red-600 hover:text-red-900">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Rapport d'audit IA — apparaît après un clic "Audit IA".
           L'utilisateur ne peut pas appliquer les changements en un clic
@@ -573,7 +613,14 @@ export function CategoriesSection() {
       <Card>
         <CardContent className="p-0">
           <div className="divide-y divide-slate-100">
-            {categories.map((cat) => {
+            {visibleCategories.length === 0 && (
+              <div className="p-8 text-center text-[13px] text-slate-500 italic">
+                Aucune catégorie {activeScope === "CLIENT" ? "client" : "interne"}.
+                Cliquez « Nouvelle catégorie » pour en créer une, ou « Synchroniser
+                depuis N8N » pour importer depuis Freshservice.
+              </div>
+            )}
+            {visibleCategories.map((cat) => {
               const isOpen = expanded.has(cat.id);
               return (
                 <div key={cat.id}>

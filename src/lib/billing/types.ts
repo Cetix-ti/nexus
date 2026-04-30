@@ -11,21 +11,13 @@ export type TimeType =
   | "remote_work"      // travail à distance
   | "onsite_work"      // travail sur site
   | "travel"           // déplacement
-  | "preparation"     // préparation
-  | "administration"  // administration
-  | "waiting"         // attente
-  | "follow_up"       // suivi
-  | "internal"        // temps interne
+  | "internal"        // temps interne (jamais facturé)
   | "other";          // autre
 
 export const TIME_TYPE_LABELS: Record<TimeType, string> = {
   remote_work: "Travail à distance",
   onsite_work: "Travail sur site",
   travel: "Déplacement",
-  preparation: "Préparation",
-  administration: "Administration",
-  waiting: "Attente",
-  follow_up: "Suivi",
   internal: "Temps interne",
   other: "Autre",
 };
@@ -34,10 +26,6 @@ export const TIME_TYPE_ICONS: Record<TimeType, string> = {
   remote_work: "🖥️",
   onsite_work: "🏢",
   travel: "🚗",
-  preparation: "📋",
-  administration: "📊",
-  waiting: "⏳",
-  follow_up: "🔄",
   internal: "👥",
   other: "📌",
 };

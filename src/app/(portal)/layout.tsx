@@ -61,7 +61,7 @@ const navItems: NavItem[] = [
   { labelKey: "portal.nav.policies",        label: "Politiques",     href: "/portal/policies",        icon: ShieldCheck, requiresPermission: "canSeePolicies" },
   { labelKey: "portal.nav.software",        label: "Logiciels",      href: "/portal/software",        icon: Package,     requiresPermission: "canSeeSoftware" },
   { labelKey: "portal.nav.changes",         label: "Changements",    href: "/portal/changes",         icon: GitCommit,   requiresPermission: "canSeeChanges" },
-  { labelKey: "portal.nav.renewals",        label: "Échéances",      href: "/portal/renewals",        icon: CalendarClock, requiresPermission: "canSeeRenewals" },
+  { labelKey: "portal.nav.renewals",        label: "Échéances",      href: "/portal/renewals",        icon: CalendarClock, adminOnly: true },
   { labelKey: "portal.nav.budget",          label: "Budget TI",      href: "/portal/budget",          icon: Wallet,      requiresPermission: "canSeeBudget" },
 ];
 

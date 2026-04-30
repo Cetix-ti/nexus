@@ -121,10 +121,18 @@ interface CategoryNode {
   path: string[]; // chemin complet du root vers ce node
 }
 
-async function listCategoryPaths(organizationId: string): Promise<CategoryNode[]> {
+async function listCategoryPaths(
+  organizationId: string,
+  isInternal: boolean,
+): Promise<CategoryNode[]> {
+  // Filtrage par scope : un ticket interne ne doit voir que les catégories
+  // INTERNAL ; un ticket client uniquement les CLIENT. L'IA reçoit donc
+  // une liste plus focalisée → meilleure précision et moins de fausses
+  // assignations entre univers.
   const cats = await prisma.category.findMany({
     where: {
       isActive: true,
+      scope: isInternal ? "INTERNAL" : "CLIENT",
       OR: [{ organizationId: null }, { organizationId }],
     },
     select: { id: true, name: true, parentId: true },
@@ -666,6 +674,7 @@ export async function triageTicket(ticketId: string): Promise<TriageResult | nul
         subject: true,
         description: true,
         organizationId: true,
+        isInternal: true,
         organization: { select: { name: true } },
       },
     });
@@ -702,7 +711,7 @@ export async function triageTicket(ticketId: string): Promise<TriageResult | nul
 
     const [similar, categories, orgFacts, orgVocabulary] = await Promise.all([
       findSimilarOpenTickets(ticket.organizationId, ticket.subject, ticket.id, 120),
-      listCategoryPaths(ticket.organizationId),
+      listCategoryPaths(ticket.organizationId, ticket.isInternal),
       getOrgContextFacts(ticket.organizationId, 10),
       // Vocabulaire client spécifique extrait par le job
       // `client-vocabulary-extractor` (hostnames internes, noms d'apps,
@@ -1099,20 +1108,38 @@ export async function applyTriageIfConfident(
     const humanLocked = fresh.categorySource === "MANUAL";
     const categoryFloor =
       POLICY_TRIAGE.autoApplyFloor ?? CATEGORY_DEFAULT_FLOOR;
-    if (
-      result.categoryId &&
-      (result.categoryConfidence ?? 0) >= categoryFloor &&
-      !humanLocked
-    ) {
-      // Si la catégorie courante est identique à la suggestion, on ne
-      // refait pas l'update (évite du churn updatedAt pour rien).
-      if (fresh.categoryId !== result.categoryId) {
-        updates.categoryId = result.categoryId;
+    if (!humanLocked) {
+      // Trois cas, dans cet ordre :
+      //   (a) Confiance ≥ floor ET categoryId résolu → on applique la
+      //       catégorie + categorySource="AI". Notice UI : "Catégorisé par
+      //       l'IA à XX%" (acceptable / éditable).
+      //   (b) Triage exécuté mais (confiance < floor OU pas de match) →
+      //       on N'applique PAS de catégorie mais on marque tout de même
+      //       categorySource="AI" + categoryId=null. Notice UI :
+      //       "L'IA n'a pas pu trancher — à classer manuellement".
+      //       Cette trace permet de distinguer un ticket "jamais triagé"
+      //       (categorySource=null, ex: legacy/migration FS) d'un ticket
+      //       "triagé sans succès" — et donc de pousser l'agent à agir.
+      //   (c) Cas (a) où categoryId est identique à la valeur courante :
+      //       skip l'update categoryId pour ne pas churn updatedAt.
+      const confidentMatch =
+        result.categoryId &&
+        (result.categoryConfidence ?? 0) >= categoryFloor;
+      if (confidentMatch) {
+        if (fresh.categoryId !== result.categoryId) {
+          updates.categoryId = result.categoryId;
+        }
+        updates.categorySource = "AI";
+        updates.categoryConfidence = result.categoryConfidence ?? null;
+      } else {
+        // Cas (b) : trace la tentative IA infructueuse. On force categoryId
+        // à null seulement s'il l'était déjà (ne pas écraser une catégorie
+        // attribuée par un AUTRE chemin entre-temps — défensif).
+        if (fresh.categoryId === null) {
+          updates.categorySource = "AI";
+          updates.categoryConfidence = result.categoryConfidence ?? null;
+        }
       }
-      // On persiste la SOURCE (AI) et la CONFIDENCE dans tous les cas pour
-      // que l'UI puisse afficher "Catégorisé par l'IA à XX%".
-      updates.categorySource = "AI";
-      updates.categoryConfidence = result.categoryConfidence ?? null;
     }
 
     // Priorité — on touche seulement si haute confiance ET source par défaut.

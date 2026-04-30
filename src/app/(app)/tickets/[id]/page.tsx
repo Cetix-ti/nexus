@@ -436,8 +436,11 @@ export default function TicketDetailPage() {
         }
       })
       .catch(() => {});
-    // Load categories for classification
-    fetch("/api/v1/categories", { signal })
+    // Load categories for classification — filtré par scope selon le
+    // type du ticket (interne vs client). Un ticket interne ne voit que
+    // les catégories INTERNAL, un ticket client uniquement les CLIENT.
+    const catScope = ticket.isInternal ? "INTERNAL" : "CLIENT";
+    fetch(`/api/v1/categories?scope=${catScope}`, { signal })
       .then((r) => r.ok ? r.json() : [])
       .then((d) => {
         if (!signal.aborted && Array.isArray(d)) {
@@ -1895,20 +1898,42 @@ export default function TicketDetailPage() {
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
-                  {/* Notice IA — visible quand la catégorie courante a été
-                      appliquée automatiquement par le triage. Le tech peut
-                      l'accepter (ne rien faire) ou changer (passe en
-                      MANUAL automatiquement). */}
-                  {(ticket as { categorySource?: string }).categorySource === "AI" && (
-                    <div className="mt-1 flex items-center gap-1 text-[10.5px] text-violet-700 bg-violet-50 border border-violet-100 rounded px-1.5 py-0.5">
-                      <Sparkles className="h-2.5 w-2.5 shrink-0" />
-                      <span>
-                        Catégorisé par l'IA
-                        {typeof (ticket as { categoryConfidence?: number }).categoryConfidence === "number" &&
-                          ` à ${Math.round(((ticket as { categoryConfidence?: number }).categoryConfidence ?? 0) * 100)} %`}
-                      </span>
-                    </div>
-                  )}
+                  {/* Notice IA — 3 cas :
+                      (1) categorySource=AI + categoryId présent → "Catégorisé
+                          par l'IA à XX %" (violet, info).
+                      (2) categorySource=AI + categoryId absent → "L'IA n'a
+                          pas pu trancher — à classer manuellement" (ambre,
+                          appel à l'action).
+                      (3) categorySource=null → ticket pré-IA (legacy) ou
+                          jamais passé par le triage → pas de notice.
+                      Le tech qui choisit manuellement passe en MANUAL et
+                      la notice disparaît. */}
+                  {(() => {
+                    const src = (ticket as { categorySource?: string }).categorySource;
+                    const conf = (ticket as { categoryConfidence?: number }).categoryConfidence;
+                    const catId = (ticket as { categoryId?: string | null }).categoryId;
+                    if (src !== "AI") return null;
+                    if (catId) {
+                      return (
+                        <div className="mt-1 flex items-center gap-1 text-[10.5px] text-violet-700 bg-violet-50 border border-violet-100 rounded px-1.5 py-0.5">
+                          <Sparkles className="h-2.5 w-2.5 shrink-0" />
+                          <span>
+                            Catégorisé par l&apos;IA
+                            {typeof conf === "number" && ` à ${Math.round(conf * 100)} %`}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="mt-1 flex items-center gap-1 text-[10.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                        <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+                        <span>
+                          L&apos;IA n&apos;a pas pu déterminer la catégorie avec confiance — à classer manuellement
+                          {typeof conf === "number" && ` (confiance ${Math.round(conf * 100)} %)`}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
                 {catLevel1 && categories.some((c) => c.parentId === catLevel1) && (
                   <div>

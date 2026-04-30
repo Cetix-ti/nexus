@@ -36,18 +36,18 @@ export async function GET(
   if (!meta) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   try {
-    // Variante "heures seulement" : toujours générée à la volée, pas
-    // persistée. Le fichier sur disque reste la version $ "officielle"
-    // pour ne pas dupliquer le stockage.
-    const pdf =
-      variant === "hours_only"
-        ? await renderReportToPdf(id, { hideRates: true })
-        : await readReportPdfOrGenerate(id);
+    // Défaut : version SANS montants $ (= fichier persistant, version
+    // officielle envoyée au client / portail). La variante avec montants
+    // est générée à la volée pour les agents seulement, jamais persistée.
+    const withAmounts = variant === "with_amounts";
+    const pdf = withAmounts
+      ? await renderReportToPdf(id, { hideRates: false })
+      : await readReportPdfOrGenerate(id);
     const filename = buildReportFilename({
       clientCode: meta.organization.clientCode,
       slug: meta.organization.slug,
       period: meta.period,
-      hoursOnly: variant === "hours_only",
+      withAmounts,
     });
 
     return new NextResponse(new Uint8Array(pdf), {

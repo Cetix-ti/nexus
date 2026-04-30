@@ -8,8 +8,8 @@
 //   -1     : suffixe de version. Statique pour l'instant ; pourra évoluer en
 //            n° de révision si on commence à versionner les regen.
 //
-// Variante « heures seulement » → suffixe `-HEURES` :
-//   SADB-RAPPORT-260430-1-HEURES.pdf
+// Variante « avec montants $ » (agents seulement) → suffixe `-MONTANTS` :
+//   SADB-RAPPORT-260430-1-MONTANTS.pdf
 //
 // Le format est compatible avec un tri lexicographique chronologique : les
 // rapports d'un même client se rangent naturellement dans l'ordre de la
@@ -20,7 +20,7 @@ export function buildReportFilename(opts: {
   clientCode?: string | null;
   slug: string;
   period: Date;
-  hoursOnly?: boolean;
+  withAmounts?: boolean;
 }): string {
   const code = (opts.clientCode || opts.slug || "RAPPORT")
     .toUpperCase()
@@ -40,6 +40,6 @@ export function buildReportFilename(opts: {
   const dd = String(lastDay.getDate()).padStart(2, "0");
   const yymmdd = `${yy}${mm}${dd}`;
 
-  const suffix = opts.hoursOnly ? "-HEURES" : "";
+  const suffix = opts.withAmounts ? "-MONTANTS" : "";
   return `${code}-RAPPORT-${yymmdd}-1${suffix}.pdf`;
 }

@@ -119,6 +119,7 @@ export async function buildMonthlyReportPayload(
       address: true,
       city: true,
       province: true,
+      orgBillingConfig: true,
       mileageRate: {
         select: { kmRoundTrip: true, billToClient: true, flatFee: true },
       },
@@ -156,6 +157,7 @@ export async function buildMonthlyReportPayload(
       hasTravelBilled: true,
       travelDurationMinutes: true,
       coverageStatus: true,
+      coverageReason: true,
       hourlyRate: true,
       amount: true,
     },
@@ -187,6 +189,8 @@ export async function buildMonthlyReportPayload(
       resolvedAt: true,
       closedAt: true,
       requesterId: true,
+      categoryId: true,
+      category: { select: { id: true, name: true } },
       // Résumé IA pré-généré (warmup en arrière-plan après chaque
       // génération de rapport). Si null/non-confiant, on n'affiche rien.
       aiSummary: true,
@@ -338,6 +342,15 @@ export async function buildMonthlyReportPayload(
     }
     const agentName = agentOf(e.agentId).fullName;
     bt.agents.set(agentName, (bt.agents.get(agentName) ?? 0) + e.durationMinutes);
+    // Calcul des minutes effectivement facturées : si l'entrée a un
+    // amount + un hourlyRate > 0, on dérive ce qui a été facturé. Si
+    // entryBillableMinutes < durationMinutes, le reste est inclus au
+    // forfait (cas du dépassement partiel — ex: 0.75 h FTIG + 0.25 h
+    // facturé).
+    let entryBillableMinutes: number | null = null;
+    if (e.amount != null && e.hourlyRate != null && e.hourlyRate > 0) {
+      entryBillableMinutes = Math.round((e.amount / e.hourlyRate) * 60 * 100) / 100;
+    }
     bt.entries.push({
       id: e.id,
       date: isoDate(e.startedAt),
@@ -357,6 +370,8 @@ export async function buildMonthlyReportPayload(
       hasTravelBilled: e.hasTravelBilled,
       travelDurationMinutes: e.travelDurationMinutes ?? null,
       hourlyRate: e.hourlyRate ?? null,
+      billableMinutes: entryBillableMinutes,
+      coverageReason: e.coverageReason ?? "",
     });
     byTicketMap.set(e.ticketId, bt);
 
@@ -594,6 +609,217 @@ export async function buildMonthlyReportPayload(
   // Tri final : par numéro de ticket croissant.
   ticketsBlocks.sort((a, b) => a.displayId.localeCompare(b.displayId));
 
+  // 12.5) Agrégats pour la page de récap (orientés HEURES, pas tickets).
+  //
+  //  - byCoverage     : inclus / facturable / non facturable
+  //  - byTimeBucket   : jour / soir / weekend / urgence (mutuellement
+  //                     exclusifs, priorité Urgent > Weekend > Soir > Jour)
+  //  - byActivityType : remote / onsite / travel / autre — exclut internal
+  //  - byCategory     : minutes par catégorie de ticket. Tickets sans
+  //                     catégorie regroupés sous "Non classé".
+  //
+  // On exclut systématiquement le temps interne (coverageStatus
+  // 'internal_time' OU timeType 'internal') de tous ces agrégats — ils
+  // ne sont pas pertinents pour le client.
+  const visibleEntries = entries.filter(
+    (e) => e.coverageStatus !== "internal_time" && e.timeType !== "internal",
+  );
+
+  const byCoverageMin = { covered: 0, billable: 0, nonBillable: 0 };
+  const byTimeBucketMin = { day: 0, evening: 0, weekend: 0, urgent: 0 };
+  const byActivityMin: Record<string, number> = {};
+  const byCategoryMin = new Map<string, { name: string; minutes: number }>();
+
+  for (const e of visibleEntries) {
+    if (isCoveredStatus(e.coverageStatus)) byCoverageMin.covered += e.durationMinutes;
+    else if (isBillableStatus(e.coverageStatus)) byCoverageMin.billable += e.durationMinutes;
+    else if (isNonBillableStatus(e.coverageStatus)) byCoverageMin.nonBillable += e.durationMinutes;
+
+    if (e.isUrgent) byTimeBucketMin.urgent += e.durationMinutes;
+    else if (e.isWeekend) byTimeBucketMin.weekend += e.durationMinutes;
+    else if (e.isAfterHours) byTimeBucketMin.evening += e.durationMinutes;
+    else byTimeBucketMin.day += e.durationMinutes;
+
+    const at = e.timeType || "other";
+    byActivityMin[at] = (byActivityMin[at] ?? 0) + e.durationMinutes;
+
+    const ticket = ticketById.get(e.ticketId);
+    const catId = ticket?.categoryId ?? "__uncat__";
+    const catName = ticket?.category?.name ?? "Non classé";
+    const cur = byCategoryMin.get(catId) ?? { name: catName, minutes: 0 };
+    cur.minutes += e.durationMinutes;
+    byCategoryMin.set(catId, cur);
+  }
+
+  const visibleTotalMin = Object.values(byCoverageMin).reduce((s, x) => s + x, 0);
+  const safeShare = (m: number) => (visibleTotalMin > 0 ? m / visibleTotalMin : 0);
+
+  const byCoverage = {
+    coveredHours: round1(byCoverageMin.covered / 60),
+    billableHours: round1(byCoverageMin.billable / 60),
+    nonBillableHours: round1(byCoverageMin.nonBillable / 60),
+    coveredShare: safeShare(byCoverageMin.covered),
+    billableShare: safeShare(byCoverageMin.billable),
+    nonBillableShare: safeShare(byCoverageMin.nonBillable),
+  };
+
+  const byTimeBucket = {
+    dayHours: round1(byTimeBucketMin.day / 60),
+    eveningHours: round1(byTimeBucketMin.evening / 60),
+    weekendHours: round1(byTimeBucketMin.weekend / 60),
+    urgentHours: round1(byTimeBucketMin.urgent / 60),
+    dayShare: safeShare(byTimeBucketMin.day),
+    eveningShare: safeShare(byTimeBucketMin.evening),
+    weekendShare: safeShare(byTimeBucketMin.weekend),
+    urgentShare: safeShare(byTimeBucketMin.urgent),
+  };
+
+  const byActivity = Object.entries(byActivityMin)
+    .map(([timeType, minutes]) => ({
+      timeType,
+      hours: round1(minutes / 60),
+      share: safeShare(minutes),
+    }))
+    .sort((a, b) => b.hours - a.hours);
+
+  const byCategory = Array.from(byCategoryMin.entries())
+    .map(([id, v]) => ({
+      categoryId: id === "__uncat__" ? null : id,
+      name: v.name,
+      hours: round1(v.minutes / 60),
+      share: safeShare(v.minutes),
+    }))
+    // Tri : non-classé en dernier, sinon par heures décroissantes.
+    .sort((a, b) => {
+      if (a.categoryId === null) return 1;
+      if (b.categoryId === null) return -1;
+      return b.hours - a.hours;
+    });
+
+  // Déplacements pour le récap : reprend trips.count et la ventilation FTIG
+  // déjà calculée. On la dérive ici pour avoir un objet stable consommable
+  // par le composant Recap sans qu'il ait à reparcourir trips.lines.
+  const tripsRecap = {
+    total: tripLines.length,
+    includedFtig: tripLines.filter((t) => t.ftigStatus === "included").length,
+    billable: tripLines.filter((t) => t.ftigStatus === "billable").length,
+    ftigActive: tripLines.some((t) => t.ftigStatus !== "none"),
+  };
+
+  // 12.6) Suivi de banque d'heures (si configurée sur l'org).
+  //   - Lit orgBillingConfig.hourBank pour total / startDate / endDate.
+  //   - Agrège les heures consommées par mois sur la période complète,
+  //     en ne comptant que les saisies marquées comme banque d'heures
+  //     (coverage_status = 'deducted_from_hour_bank').
+  //   - Calcule cumul, projection, status (on_track / warning / overage).
+  //   - Si pas de banque configurée → hourBankTracking reste undefined
+  //     et la section ne sera pas rendue.
+  const billingCfg = (org.orgBillingConfig ?? null) as
+    | { hourBank?: { hourlyRate?: number; totalHours?: number; overageRate?: number; startDate?: string; endDate?: string } }
+    | null;
+  const hb = billingCfg?.hourBank;
+  let hourBankTracking: MonthlyReportPayload["hourBankTracking"];
+  if (hb && typeof hb.totalHours === "number" && hb.totalHours > 0 && hb.startDate && hb.endDate) {
+    // Parse les dates en heure LOCALE pour éviter le décalage UTC qui
+    // ferait qu'un "2026-01-01" stocké en string parsé en UTC tombe sur
+    // "2025-12-31" en heure locale (et fait apparaître un mois fantôme
+    // dans l'histogramme).
+    const [hbStartY, hbStartM, hbStartD] = hb.startDate.slice(0, 10).split("-").map(Number);
+    const [hbEndY, hbEndM, hbEndD] = hb.endDate.slice(0, 10).split("-").map(Number);
+    const hbStart = new Date(hbStartY, hbStartM - 1, hbStartD, 0, 0, 0, 0);
+    const hbEnd = new Date(hbEndY, hbEndM - 1, hbEndD, 23, 59, 59, 999);
+    // Période effective de calcul cumul/projection : du début de la
+    // banque jusqu'à la fin du mois rapporté inclus.
+    const cutoffEnd = end < hbEnd ? end : hbEnd;
+
+    // Heures consommées (banque) sur la période startDate → cutoffEnd.
+    const consumed = await prisma.timeEntry.aggregate({
+      where: {
+        organizationId,
+        coverageStatus: "deducted_from_hour_bank",
+        startedAt: { gte: hbStart, lte: cutoffEnd },
+        approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+      },
+      _sum: { durationMinutes: true },
+    });
+    const consumedMinutes = consumed._sum.durationMinutes ?? 0;
+    const consumedHours = round1(consumedMinutes / 60);
+
+    // Histo mensuel : itération de hbStart à hbEnd, mois par mois.
+    // Récupère toutes les saisies banque sur la période COMPLÈTE pour
+    // grouper côté JS (évite GROUP BY en SQL → portable + simple).
+    const allHbEntries = await prisma.timeEntry.findMany({
+      where: {
+        organizationId,
+        coverageStatus: "deducted_from_hour_bank",
+        startedAt: { gte: hbStart, lte: hbEnd },
+        approvalStatus: { notIn: EXCLUDED_APPROVAL_STATUSES as unknown as string[] },
+      },
+      select: { startedAt: true, durationMinutes: true },
+    });
+    const monthlyMap = new Map<string, number>(); // "YYYY-MM" → minutes
+    for (const e of allHbEntries) {
+      const k = `${e.startedAt.getFullYear()}-${String(e.startedAt.getMonth() + 1).padStart(2, "0")}`;
+      monthlyMap.set(k, (monthlyMap.get(k) ?? 0) + e.durationMinutes);
+    }
+
+    const monthlyHistory: NonNullable<typeof hourBankTracking>["monthlyHistory"] = [];
+    const currentReportKey = period; // "YYYY-MM"
+    const cursor = new Date(hbStart.getFullYear(), hbStart.getMonth(), 1);
+    const endCursor = new Date(hbEnd.getFullYear(), hbEnd.getMonth(), 1);
+    while (cursor <= endCursor) {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+      const minutes = monthlyMap.get(key) ?? 0;
+      const isCurrentReportMonth = key === currentReportKey;
+      const isFuture = cursor > new Date(start.getFullYear(), start.getMonth(), 1);
+      const label = cursor.toLocaleDateString("fr-CA", { month: "short" }).replace(/\./g, "");
+      monthlyHistory.push({
+        month: key,
+        label,
+        hours: round1(minutes / 60),
+        isCurrentReportMonth,
+        isFuture,
+      });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    // Métriques calculées
+    const totalMonthsInPeriod =
+      (hbEnd.getFullYear() - hbStart.getFullYear()) * 12 +
+      (hbEnd.getMonth() - hbStart.getMonth()) + 1;
+    const targetMonthlyHours =
+      totalMonthsInPeriod > 0 ? round1(hb.totalHours / totalMonthsInPeriod) : 0;
+
+    // Mois écoulés du début à la fin du mois rapporté inclus
+    const elapsedMonths =
+      (start.getFullYear() - hbStart.getFullYear()) * 12 +
+      (start.getMonth() - hbStart.getMonth()) + 1;
+    const averageMonthlyHours =
+      elapsedMonths > 0 ? round1(consumedHours / elapsedMonths) : 0;
+    const projectedTotalHours = round1(averageMonthlyHours * totalMonthsInPeriod);
+
+    let status: NonNullable<typeof hourBankTracking>["status"];
+    if (consumedHours <= 0) status = "no_data";
+    else if (consumedHours > hb.totalHours) status = "overage";
+    else if (projectedTotalHours > hb.totalHours * 1.1) status = "overage";
+    else if (projectedTotalHours > hb.totalHours) status = "warning";
+    else status = "on_track";
+
+    hourBankTracking = {
+      totalHours: hb.totalHours,
+      consumedHours,
+      remainingHours: round1(Math.max(0, hb.totalHours - consumedHours)),
+      consumedShare: hb.totalHours > 0 ? consumedHours / hb.totalHours : 0,
+      periodStart: hb.startDate.slice(0, 10),
+      periodEnd: hb.endDate.slice(0, 10),
+      monthlyHistory,
+      targetMonthlyHours,
+      averageMonthlyHours,
+      projectedTotalHours,
+      status,
+    };
+  }
+
   // 13) Payload final.
   const payload: MonthlyReportPayload = {
     schemaVersion: 1,
@@ -651,6 +877,14 @@ export async function buildMonthlyReportPayload(
       totalAmount: round2(tripLines.reduce((s, t) => s + (t.billedAmount ?? 0), 0)),
     },
     tickets: ticketsBlocks,
+    recap: {
+      byCoverage,
+      byTimeBucket,
+      byActivity,
+      byCategory,
+      trips: tripsRecap,
+    },
+    hourBankTracking,
   };
 
   return payload;

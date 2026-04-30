@@ -742,6 +742,11 @@ export async function syncMonitoringAlerts(
                     where: { id: alertRow.id },
                     data: { ticketId: ticket.id },
                   });
+                  // Triage IA fire-and-forget — auto-catégorisation
+                  // systématique des tickets issus du monitoring email.
+                  import("@/lib/ai/features/triage")
+                    .then((m) => m.triageTicketAsync(ticket.id))
+                    .catch(() => {});
                 } catch (err) {
                   // Non bloquant : l'alerte est déjà persistée, le ticket
                   // pourra être créé à la main depuis l'UI si besoin.

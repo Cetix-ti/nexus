@@ -15,7 +15,10 @@ function allowedVis(role: PortalRole): ContentVisibility[] {
 export async function GET(req: Request) {
   const portalUser = await getCurrentPortalUser();
   if (!portalUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!portalUser.permissions.canSeeRenewals) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Échéances : strictement ADMIN-only côté portail client. Le flag
+  // canSeeRenewals existe encore pour configurer d'autres surfaces, mais
+  // n'élargit plus l'accès au-delà des admins ici.
+  if (portalUser.portalRole !== "ADMIN") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const rangeDays = Math.max(1, Math.min(parseInt((searchParams.get("range") ?? "90d").replace("d", "")) || 90, 365));

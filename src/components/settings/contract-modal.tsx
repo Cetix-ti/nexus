@@ -46,7 +46,7 @@ type TabKey = (typeof TABS)[number]["key"];
 const DEFAULT_HB: HourBankSettings = {
   totalHoursPurchased: 50,
   hoursConsumed: 0,
-  eligibleTimeTypes: ["remote_work", "onsite_work", "preparation", "follow_up"],
+  eligibleTimeTypes: ["remote_work", "onsite_work"],
   carryOverHours: false,
   allowOverage: true,
   overageRate: 145,
@@ -58,7 +58,7 @@ const DEFAULT_HB: HourBankSettings = {
 
 const DEFAULT_MSP: MSPPlanSettings = {
   monthlyAmount: 2500,
-  includedTimeTypes: ["remote_work", "onsite_work", "preparation", "follow_up"],
+  includedTimeTypes: ["remote_work", "onsite_work"],
   includesRemoteSupport: true,
   includesOnsiteSupport: true,
   includesTravel: false,

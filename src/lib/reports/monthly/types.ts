@@ -77,6 +77,15 @@ export interface MonthlyReportTimeEntryLine {
   hasTravelBilled?: boolean;
   travelDurationMinutes?: number | null;
   hourlyRate?: number | null;
+  /** Minutes effectivement facturées (≤ durationMinutes). Quand
+   *  l'entrée est PARTIELLEMENT couverte par le forfait (ex: 0.75 h
+   *  inclus + 0.25 h facturé), cette valeur permet au PDF de le rendre
+   *  explicitement, sinon le client lit « 1 h × 75 $/h » et s'étonne
+   *  que le montant soit 18.75 $ au lieu de 75 $. */
+  billableMinutes?: number | null;
+  /** Raison textuelle de la décision de couverture — affichée si
+   *  l'entrée est facturable mais partiellement incluse. */
+  coverageReason?: string;
 }
 
 /** Bloc détaillé d'un ticket dans le rapport. */
@@ -164,6 +173,117 @@ export interface MonthlyReportContractInfo {
   hourlyRate: number | null;
 }
 
+/**
+ * Page de récap (dernière page du PDF) — agrégats orientés HEURES, sans
+ * mention de montants. Calculés en excluant le temps interne (jamais
+ * pertinent côté client). Toutes les heures sont en décimal.
+ */
+export interface MonthlyReportRecap {
+  /** Heures par couverture contrat. Les "covered" sont incluses au forfait
+   *  (incl. banque d'heures) ; "billable" = au-delà du forfait ; "nonBillable"
+   *  = geste commercial / exclu de la facturation. */
+  byCoverage: {
+    coveredHours: number;
+    billableHours: number;
+    nonBillableHours: number;
+    coveredShare: number;
+    billableShare: number;
+    nonBillableShare: number;
+  };
+
+  /** Heures par plage horaire — mutuellement exclusives, priorité descendante
+   *  Urgent > Weekend > Soir > Jour. Une heure urgente le samedi est
+   *  comptabilisée dans `urgentHours` uniquement. */
+  byTimeBucket: {
+    dayHours: number;
+    eveningHours: number;
+    weekendHours: number;
+    urgentHours: number;
+    dayShare: number;
+    eveningShare: number;
+    weekendShare: number;
+    urgentShare: number;
+  };
+
+  /** Heures par type d'activité (timeType). Trié par heures décroissantes.
+   *  N'inclut pas "internal". */
+  byActivity: Array<{
+    timeType: string;
+    hours: number;
+    share: number;
+  }>;
+
+  /** Heures par catégorie de ticket. Tickets sans catégorie regroupés sous
+   *  "Non classé" avec categoryId=null, toujours en dernière position. */
+  byCategory: Array<{
+    categoryId: string | null;
+    name: string;
+    hours: number;
+    share: number;
+  }>;
+
+  /** Récap déplacements (effectifs, sans montants $). */
+  trips: {
+    total: number;
+    includedFtig: number;
+    billable: number;
+    /** True si l'org a un quota FTIG actif sur la période. */
+    ftigActive: boolean;
+  };
+}
+
+/**
+ * Suivi de banque d'heures — section dédiée du PDF affichée uniquement
+ * quand l'org a une `orgBillingConfig.hourBank` configurée. Aide le client
+ * à visualiser sa consommation cumulée vs son forfait, et à anticiper un
+ * éventuel dépassement.
+ *
+ * Toutes les heures sont en décimal. Les seuils en pourcentage sont
+ * calculés vs `totalHours` du forfait.
+ */
+export interface MonthlyReportHourBankTracking {
+  /** Total d'heures du forfait (ex: 450 h annuelles). */
+  totalHours: number;
+  /** Heures consommées depuis le début de la période du forfait jusqu'à
+   *  la fin du mois rapporté (inclus). */
+  consumedHours: number;
+  /** Heures restantes (= max(0, totalHours - consumedHours)). */
+  remainingHours: number;
+  /** Pourcentage consommé (0-1). */
+  consumedShare: number;
+  /** Période du forfait (typiquement année calendaire). */
+  periodStart: string; // ISO yyyy-mm-dd
+  periodEnd: string;   // ISO yyyy-mm-dd
+  /** Histo mensuel : tous les mois de la période, du startDate au endDate
+   *  inclus. Mois sans saisie = hours: 0. Triés chronologiquement. */
+  monthlyHistory: Array<{
+    /** "YYYY-MM" — clé du mois. */
+    month: string;
+    /** Libellé court FR ("avr.", "mai", "juin", …) pour l'axe X. */
+    label: string;
+    hours: number;
+    /** True si c'est le mois rapporté (à mettre en valeur visuelle). */
+    isCurrentReportMonth: boolean;
+    /** True si le mois est dans le futur par rapport au mois rapporté
+     *  (à griser / pointiller). */
+    isFuture: boolean;
+  }>;
+  /** Rythme cible mensuel (= totalHours / nombre de mois du forfait).
+   *  Affiché comme ligne horizontale de référence sur le graphique. */
+  targetMonthlyHours: number;
+  /** Moyenne réelle des mois écoulés (du startDate au mois rapporté). */
+  averageMonthlyHours: number;
+  /** Projection cumulée à la fin de la période, basée sur la moyenne
+   *  des mois écoulés. */
+  projectedTotalHours: number;
+  /** Status calculé pour l'affichage du bandeau et la couleur :
+   *   - "on_track"  : projection ≤ totalHours (vert)
+   *   - "warning"   : projection > totalHours mais ≤ +10% (ambre)
+   *   - "overage"   : déjà en dépassement OU projection > +10% (rouge)
+   *   - "no_data"   : aucune heure consommée (état neutre, début de cycle). */
+  status: "on_track" | "warning" | "overage" | "no_data";
+}
+
 export interface MonthlyReportPayload {
   /** Version du schéma payload. Incrémentée si breaking change de structure. */
   schemaVersion: 1;
@@ -187,4 +307,14 @@ export interface MonthlyReportPayload {
   byRequester: MonthlyReportRequesterBreakdown[];
   trips: MonthlyReportTripsSection;
   tickets: MonthlyReportTicketBlock[];
+
+  /** Récap final (présent à partir du schemaVersion 1 enrichi). Les anciens
+   *  payloads sans recap continuent d'être lus — le composant document gère
+   *  l'absence. */
+  recap?: MonthlyReportRecap;
+
+  /** Suivi de banque d'heures — présent uniquement si l'org a une banque
+   *  d'heures configurée (`orgBillingConfig.hourBank.rate > 0` et
+   *  `total > 0`). Sinon `undefined` et la section n'est pas rendue. */
+  hourBankTracking?: MonthlyReportHourBankTracking;
 }

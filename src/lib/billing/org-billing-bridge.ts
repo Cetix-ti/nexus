@@ -225,7 +225,7 @@ export async function buildVirtualContractFromOrgConfig(
     if (!inRange) return null;
 
     const eligibleTimeTypes: TimeType[] = [
-      "remote_work", "onsite_work", "preparation", "follow_up", "other",
+      "remote_work", "onsite_work", "other",
     ];
     const overageRate = Number(b.overageRate ?? b.hourlyRate ?? 0);
     const hourBankSettings: HourBankSettings = {

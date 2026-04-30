@@ -352,13 +352,29 @@ export async function runAiTask(task: AiTask): Promise<AiResult> {
       const isTimeout =
         err instanceof Error &&
         (err.name === "AbortError" || /timeout|aborted/i.test(err.message));
-      return await logAndReturn(
+      const reason = err instanceof Error ? err.message : String(err);
+
+      // Fallback cross-provider pour les erreurs transitoires (rate limit,
+      // 5xx, panne réseau). Avant : on retournait l'erreur direct → tous les
+      // tickets échouaient en série quand Anthropic était rate-limité, alors
+      // qu'OpenAI / Ollama étaient dispos. Maintenant on log la tentative,
+      // exclut le provider, et on tente le suivant dans la même boucle.
+      //
+      // Les erreurs « définitives » (auth invalide, 400 bad request) seront
+      // re-rejetées par le provider suivant aussi → on convergera vers une
+      // erreur finale sans boucler indéfiniment (max 2 attempts dans la for).
+      const isRetryable =
+        isTimeout ||
+        /429|rate|limit|5\d\d|timeout|network|fetch failed|ECONN|ETIMEDOUT/i.test(reason);
+
+      // Log de la tentative échouée (visibilité dashboard) — sans return.
+      await logAndReturn(
         {
           ok: false,
           latencyMs: Date.now() - t0,
           error: {
             kind: isTimeout ? "timeout" : "provider_error",
-            reason: err instanceof Error ? err.message : String(err),
+            reason,
           },
         },
         task,
@@ -369,6 +385,21 @@ export async function runAiTask(task: AiTask): Promise<AiResult> {
           status: isTimeout ? "timeout" : "error",
         },
       );
+
+      if (isRetryable && attempt < 1) {
+        excludedProviders.add(provider.kind);
+        console.warn(
+          `[ai-orchestrator] ${provider.kind}/${model} échec retryable (${reason.slice(0, 100)}) — fallback provider suivant`,
+        );
+        continue; // essaie provider suivant
+      }
+
+      // Pas retryable, ou dernier essai : on retourne l'erreur (déjà loggée).
+      return {
+        ok: false,
+        latencyMs: Date.now() - t0,
+        error: { kind: isTimeout ? "timeout" : "provider_error", reason },
+      };
     }
 
     // Validation optionnelle — si le validateur rejette, on considère que
