@@ -29,6 +29,7 @@ import {
   CalendarClock,
   Wallet,
   CheckCircle2,
+  Plus,
 } from "lucide-react";
 import { usePortalUser } from "@/lib/portal/use-portal-user";
 import { PortalImpersonationBanner } from "@/components/portal/impersonation-banner";
@@ -553,6 +554,19 @@ export default function PortalLayout({
               {orgName}
             </p>
           </div>
+          {/* Raccourci création de ticket — disponible sur toutes les pages
+              portail pour les contacts qui ont la permission. Évite à
+              l'utilisateur de naviguer vers Billets puis "Nouveau". */}
+          {permissions.canCreateTickets && (
+            <Link
+              href="/portal/tickets/new"
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors shrink-0"
+              style={{ backgroundColor: brand?.primaryColor || "#2563EB" }}
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+              {t("portal.tickets.newButton")}
+            </Link>
+          )}
         </div>
 
         {/* Main Content */}

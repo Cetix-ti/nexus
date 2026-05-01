@@ -698,6 +698,39 @@ function OverviewTab({
         <Card>
           <CardHeader><CardTitle>Visibilité client</CardTitle></CardHeader>
           <CardContent>
+            {/* Raccourci : bascule tous les flags d'un coup. La majorité
+                des projets sont soit "tout visible" soit "tout caché",
+                ça évite 10 clics individuels. */}
+            {(() => {
+              const allKeys = Object.keys(VISIBILITY_LABELS) as (keyof ProjectVisibilitySettings)[];
+              const allVisible = allKeys.every((k) => project.visibilitySettings[k]);
+              const targetVisible = !allVisible;
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = allKeys.reduce(
+                      (acc, k) => ({ ...acc, [k]: targetVisible }),
+                      {} as ProjectVisibilitySettings,
+                    );
+                    updateProject({
+                      visibilitySettings: next,
+                      // showProject ↔ isVisibleToClient toujours synchronisés.
+                      isVisibleToClient: targetVisible,
+                    });
+                  }}
+                  className={cn(
+                    "mb-3 w-full inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[12px] font-semibold transition-colors",
+                    targetVisible
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                      : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100",
+                  )}
+                >
+                  {targetVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                  {targetVisible ? "Tout rendre visible" : "Tout cacher"}
+                </button>
+              );
+            })()}
             <ul className="space-y-2">
               {(Object.keys(VISIBILITY_LABELS) as (keyof ProjectVisibilitySettings)[]).map((k) => {
                 const visible = project.visibilitySettings[k];
