@@ -221,6 +221,7 @@ model User {
   allowances                AgentAllowance[]
   sharedResources           SharedResource[]     @relation("SharedByUser")
   ticketReminders           TicketReminder[]
+  ticketViewerSessions      TicketViewer[]
   notifications             Notification[]
   assignedSecurityIncidents SecurityIncident[]   @relation("SecurityIncidentAssignee")
 
@@ -579,6 +580,7 @@ model Ticket {
   ticketTags           TicketTag[]
   relatedAssets        TicketAsset[]
   approvals            TicketApproval[]
+  viewers              TicketViewer[]
   collaborators        TicketCollaborator[]
   reminders            TicketReminder[]
   subtasks             TicketSubtask[]
@@ -713,6 +715,28 @@ model TicketApproval {
   @@index([ticketId])
   @@index([approverEmail, status])
   @@map("ticket_approvals")
+}
+
+/// Présence d'agents sur la page d'un ticket en temps quasi-réel.
+/// Heartbeat client toutes les 15s → upsert (ticketId, userId) + bump
+/// lastSeenAt. Fenêtre d'activité côté lecture : lastSeenAt > now - 30s
+/// (couvre les drops réseau de 1 cycle). Cleanup au unmount best-effort.
+///
+/// Évite les WebSockets : polling simple suffit pour ce besoin (présence
+/// pas critique milliseconde) et reste compatible avec l'infra Next.js
+/// actuelle.
+model TicketViewer {
+  id          String   @id @default(cuid())
+  ticketId    String   @map("ticket_id")
+  userId      String   @map("user_id")
+  lastSeenAt  DateTime @default(now()) @updatedAt @map("last_seen_at")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, userId])
+  @@index([ticketId, lastSeenAt])
+  @@map("ticket_viewers")
 }
 
 model Comment {

@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { TicketPresenceStack } from "@/components/tickets/ticket-presence-stack";
 import { RichTextEditor, type Attachment } from "@/components/ui/rich-text-editor";
 import { AdvancedRichEditor } from "@/components/ui/advanced-rich-editor";
 import { ApprovalLockBadge } from "@/components/tickets/approval-lock-badge";
@@ -735,8 +736,14 @@ export default function TicketDetailPage() {
               {/* Eyebrow : numéro de ticket en mono signature, distincte du
                   topbar pour rappeler l'identité du ticket même si la barre
                   est scrollée hors vue. */}
-              <div className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.16em] text-blue-700/80">
-                Ticket {ticket.number}
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.16em] text-blue-700/80">
+                  Ticket {ticket.number}
+                </div>
+                {/* Présence des autres agents qui consultent ce ticket en
+                    temps quasi-réel (heartbeat 15s, fenêtre 30s). Affiché
+                    seulement quand >= 1 viewer actif (auto-hidden sinon). */}
+                <TicketPresenceStack ticketId={ticket.id} />
               </div>
 
               {editingSubject ? (
