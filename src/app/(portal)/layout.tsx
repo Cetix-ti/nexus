@@ -44,25 +44,37 @@ interface NavItem {
   requiresPermission?: string;
 }
 
-const navItems: NavItem[] = [
-  { labelKey: "portal.nav.home", href: "/portal", icon: Home },
-  { labelKey: "portal.nav.tickets", href: "/portal/tickets", icon: Ticket },
+/** Clé stable utilisée pour l'override global via Paramètres → Portail. */
+type NavTabKey =
+  | "home" | "tickets" | "approvals" | "assets" | "projects"
+  | "reports" | "finances" | "contacts"
+  | "particularities" | "policies" | "software" | "changes"
+  | "renewals" | "budget";
+
+interface NavItemWithKey extends NavItem {
+  /** Clé stable pour le toggle admin global (Paramètres → Portail). */
+  tabKey: NavTabKey;
+}
+
+const navItems: NavItemWithKey[] = [
+  { tabKey: "home", labelKey: "portal.nav.home", href: "/portal", icon: Home },
+  { tabKey: "tickets", labelKey: "portal.nav.tickets", href: "/portal/tickets", icon: Ticket },
   // Approbations : visible à tous les utilisateurs portail. La page filtre
   // côté serveur sur l'email du contact connecté — un user qui n'a aucune
   // approbation à traiter verra une page vide (pas un placeholder masqué).
-  { labelKey: "portal.nav.approvals", label: "Approbations", href: "/portal/approvals", icon: CheckCircle2 },
-  { labelKey: "portal.nav.assets", href: "/portal/assets", icon: Monitor },
-  { labelKey: "portal.nav.projects", href: "/portal/projects", icon: FolderKanban, adminOnly: true },
-  { labelKey: "portal.nav.reports", href: "/portal/reports", icon: BarChart3, adminOnly: true },
-  { labelKey: "portal.nav.finances", href: "/portal/finances", icon: DollarSign, adminOnly: true },
-  { labelKey: "portal.nav.contacts", href: "/portal/contacts", icon: Users, adminOnly: true },
+  { tabKey: "approvals", labelKey: "portal.nav.approvals", label: "Approbations", href: "/portal/approvals", icon: CheckCircle2 },
+  { tabKey: "assets", labelKey: "portal.nav.assets", href: "/portal/assets", icon: Monitor },
+  { tabKey: "projects", labelKey: "portal.nav.projects", href: "/portal/projects", icon: FolderKanban, adminOnly: true },
+  { tabKey: "reports", labelKey: "portal.nav.reports", href: "/portal/reports", icon: BarChart3, adminOnly: true },
+  { tabKey: "finances", labelKey: "portal.nav.finances", href: "/portal/finances", icon: DollarSign, adminOnly: true },
+  { tabKey: "contacts", labelKey: "portal.nav.contacts", href: "/portal/contacts", icon: Users, adminOnly: true },
   // Modules documentaires (gated par flag, ADMIN = défaut true via derive)
-  { labelKey: "portal.nav.particularities", label: "Particularités", href: "/portal/particularities", icon: Lightbulb, requiresPermission: "canSeeParticularities" },
-  { labelKey: "portal.nav.policies",        label: "Politiques",     href: "/portal/policies",        icon: ShieldCheck, requiresPermission: "canSeePolicies" },
-  { labelKey: "portal.nav.software",        label: "Logiciels",      href: "/portal/software",        icon: Package,     requiresPermission: "canSeeSoftware" },
-  { labelKey: "portal.nav.changes",         label: "Changements",    href: "/portal/changes",         icon: GitCommit,   requiresPermission: "canSeeChanges" },
-  { labelKey: "portal.nav.renewals",        label: "Échéances",      href: "/portal/renewals",        icon: CalendarClock, adminOnly: true },
-  { labelKey: "portal.nav.budget",          label: "Budget TI",      href: "/portal/budget",          icon: Wallet,      requiresPermission: "canSeeBudget" },
+  { tabKey: "particularities", labelKey: "portal.nav.particularities", label: "Particularités", href: "/portal/particularities", icon: Lightbulb, requiresPermission: "canSeeParticularities" },
+  { tabKey: "policies", labelKey: "portal.nav.policies",        label: "Politiques",     href: "/portal/policies",        icon: ShieldCheck, requiresPermission: "canSeePolicies" },
+  { tabKey: "software", labelKey: "portal.nav.software",        label: "Logiciels",      href: "/portal/software",        icon: Package,     requiresPermission: "canSeeSoftware" },
+  { tabKey: "changes", labelKey: "portal.nav.changes",         label: "Changements",    href: "/portal/changes",         icon: GitCommit,   requiresPermission: "canSeeChanges" },
+  { tabKey: "renewals", labelKey: "portal.nav.renewals",        label: "Échéances",      href: "/portal/renewals",        icon: CalendarClock, adminOnly: true },
+  { tabKey: "budget", labelKey: "portal.nav.budget",          label: "Budget TI",      href: "/portal/budget",          icon: Wallet,      requiresPermission: "canSeeBudget" },
 ];
 
 function getInitials(name: string): string {
@@ -100,7 +112,25 @@ export default function PortalLayout({
       .catch(() => {});
   }, [user?.id]);
 
+  // Flags globaux contrôlés par l'admin MSP (Paramètres → Portail). Une
+  // tab masquée globalement est JAMAIS rendue, peu importe les
+  // permissions / le rôle de l'utilisateur portail.
+  const [globalTabFlags, setGlobalTabFlags] = useState<Record<string, boolean> | null>(null);
+  useEffect(() => {
+    fetch("/api/v1/portal/nav-settings", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.tabs && typeof d.tabs === "object") setGlobalTabFlags(d.tabs);
+      })
+      .catch(() => {});
+  }, []);
+
   const visibleNav = navItems.filter((item) => {
+    // 1. Override global admin MSP : si la tab est explicitement
+    //    désactivée dans tenant_settings, on n'affiche pas — peu importe
+    //    le rôle. Si globalTabFlags pas encore chargé (null), on ne
+    //    filtre pas par cet axe (fail-open pendant le hydrate).
+    if (globalTabFlags && globalTabFlags[item.tabKey] === false) return false;
     if (item.adminOnly && !isAdmin) return false;
     if (item.requiresPermission) {
       const val = (permissions as unknown as Record<string, boolean>)[item.requiresPermission];

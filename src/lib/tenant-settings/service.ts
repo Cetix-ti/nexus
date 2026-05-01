@@ -46,11 +46,49 @@ export interface BackupKanbanSettings {
   lookbackDays: number;
 }
 
+/**
+ * Visibilité globale des onglets du portail client. Contrôlée par les
+ * admins MSP depuis Paramètres → Portail. Permet de cacher/montrer un
+ * onglet sans toucher aux permissions par-org/par-contact existantes
+ * (qui restent appliquées en plus).
+ *
+ * Sémantique :
+ *   - tab masquée globalement (false) → JAMAIS rendue, peu importe les
+ *     permissions de l'utilisateur portail
+ *   - tab visible globalement (true) → la visibilité finale dépend des
+ *     règles habituelles (adminOnly, requiresPermission, isApprover)
+ *
+ * V1 par défaut (ce qui apparaît immédiatement après le déploiement) :
+ *   home, tickets, approvals, assets, reports, contacts.
+ *   Tout le reste (projets, finances, particularités, politiques,
+ *   logiciels, changements, échéances, budget) est masqué — l'admin
+ *   les ouvre quand testés et prêts.
+ */
+export interface PortalNavSettings {
+  tabs: {
+    home: boolean;
+    tickets: boolean;
+    approvals: boolean;
+    assets: boolean;
+    projects: boolean;
+    reports: boolean;
+    finances: boolean;
+    contacts: boolean;
+    particularities: boolean;
+    policies: boolean;
+    software: boolean;
+    changes: boolean;
+    renewals: boolean;
+    budget: boolean;
+  };
+}
+
 const DEFAULTS: {
   "portal.branding": PortalBranding;
   "regional": RegionalSettings;
   "tickets": TicketSettings;
   "backup-kanban": BackupKanbanSettings;
+  "portal.nav": PortalNavSettings;
 } = {
   "portal.branding": {
     logo: null,
@@ -74,6 +112,27 @@ const DEFAULTS: {
     subcategoryId: null,
     priority: "HIGH",
     lookbackDays: 7,
+  },
+  "portal.nav": {
+    tabs: {
+      // V1 ON par défaut — onglets stables, prêts production.
+      home: true,
+      tickets: true,
+      approvals: true,
+      assets: true,
+      reports: true,
+      contacts: true,
+      // V1 OFF par défaut — non testés / pas prêts. L'admin les ouvre
+      // quand validés (paramètres → Portail).
+      projects: false,
+      finances: false,
+      particularities: false,
+      policies: false,
+      software: false,
+      changes: false,
+      renewals: false,
+      budget: false,
+    },
   },
 };
 
@@ -104,6 +163,10 @@ export async function setSetting<K extends keyof typeof DEFAULTS>(
 
 export async function getPortalBranding(): Promise<PortalBranding> {
   return getSetting("portal.branding");
+}
+
+export async function getPortalNavSettings(): Promise<PortalNavSettings> {
+  return getSetting("portal.nav");
 }
 
 // ----------------------------------------------------------------------------

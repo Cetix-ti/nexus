@@ -35,6 +35,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { PortalAccessSection } from "@/components/settings/portal-access-section";
+import { PortalNavSection } from "@/components/settings/portal-nav-section";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -159,6 +160,7 @@ const sectionGroups: SettingsGroup[] = [
     iconBg: "bg-cyan-50 ring-cyan-200/60",
     sections: [
       { key: "portal_access", label: "Portail client", icon: UserCogIcon },
+      { key: "portal_nav", label: "Onglets visibles", icon: ListFilter },
       { key: "portal_domain", label: "Domaine du portail", icon: Globe, superAdminOnly: true },
     ],
   },
@@ -1171,6 +1173,7 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   persistence_security: <PersistenceSecuritySection />,
   supervision: <SupervisionSection />,
   portal_domain: <PortalDomainSection />,
+  portal_nav: <PortalNavSection />,
   api: (
     <PlaceholderSection
       title="API et webhooks"
