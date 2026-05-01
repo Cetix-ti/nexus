@@ -459,7 +459,11 @@ export function TicketQuickViewModal({
           hasTravelBilled,
           isAfterHours,
           isWeekend,
-          ...(forceNonBillable ? { coverageStatus: "non_billable" } : {}),
+          // Flag manuel "Forcer non-facturable". Le serveur le persiste
+          // ET le moteur de billing l'utilise pour produire le bon
+          // coverageStatus + reason. (Le coverageStatus envoyé par le
+          // client est IGNORÉ — c'est le moteur qui décide.)
+          ...(forceNonBillable ? { forceNonBillable: true } : {}),
           // Type de prestation choisi (axe « quoi »).
           ...(selectedWorkType?.id ? { workTypeId: selectedWorkType.id } : {}),
           // Palier tarifaire choisi (axe « combien »). Drive le taux
