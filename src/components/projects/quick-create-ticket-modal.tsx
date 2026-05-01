@@ -69,7 +69,11 @@ export function QuickCreateTicketModal({
 }: Props) {
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<"LOW" | "NORMAL" | "HIGH" | "URGENT">("NORMAL");
+  // Aligné sur l'enum DB TicketPriority (CRITICAL/HIGH/MEDIUM/LOW). Les
+  // valeurs « NORMAL »/« URGENT » utilisées avant ne correspondaient à
+  // RIEN en base → Prisma rejetait la création avec « Invalid value for
+  // argument priority. Expected TicketPriority. ».
+  const [priority, setPriority] = useState<"CRITICAL" | "HIGH" | "MEDIUM" | "LOW">("MEDIUM");
   const [status, setStatus] = useState<string>(initialStatus);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -191,9 +195,9 @@ export function QuickCreateTicketModal({
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="LOW">Faible</SelectItem>
-                  <SelectItem value="NORMAL">Normale</SelectItem>
+                  <SelectItem value="MEDIUM">Normale</SelectItem>
                   <SelectItem value="HIGH">Haute</SelectItem>
-                  <SelectItem value="URGENT">Urgente</SelectItem>
+                  <SelectItem value="CRITICAL">Critique</SelectItem>
                 </SelectContent>
               </Select>
             </div>
