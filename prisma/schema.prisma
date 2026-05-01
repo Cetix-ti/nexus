@@ -1554,6 +1554,11 @@ model TimeEntry {
   coverageReason        String       @default("") @map("coverage_reason")
   hourlyRate            Float?       @map("hourly_rate")
   amount                Float?
+  /// Flag posé par l'agent dans la modale de saisie : "Forcer non-facturable".
+  /// Permet de distinguer une décision manuelle (geste commercial, erreur,
+  /// tâche interne) d'un non-facturable dérivé par le moteur (temps interne,
+  /// pas de tarif…). Filtrable / groupable dans les widgets analytics.
+  forceNonBillable      Boolean      @default(false) @map("force_non_billable")
   approvalStatus        String       @default("draft") @map("approval_status")
   /// Type de prestation choisi par l'agent (axe "quoi"). Drive timeType,
   /// isOnsite et la couverture FREE/INCLUDED. Null si type système direct.

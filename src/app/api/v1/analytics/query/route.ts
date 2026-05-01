@@ -164,6 +164,12 @@ export const DATASETS: Record<string, DatasetDef> = {
       { name: "isAfterHours", label: "Hors heures", type: "boolean", groupable: true, aggregable: false },
       { name: "isWeekend", label: "Fin de semaine", type: "boolean", groupable: true, aggregable: false },
       { name: "isUrgent", label: "Urgent", type: "boolean", groupable: true, aggregable: false },
+      // Flag manuel "Forcer non-facturable" coché par l'agent dans la modale
+      // de saisie. Persiste l'intention humaine indépendamment de la décision
+      // finale du moteur (qui peut aussi non-facturer pour d'autres raisons).
+      // Permet de répondre à : "combien d'heures ont été TRAVAILLÉES mais
+      // explicitement non facturées (geste commercial / erreur) ?"
+      { name: "forceNonBillable", label: "Forcer non-facturable", type: "boolean", groupable: true, aggregable: false },
       // Stocké en minutes en DB mais exposé en heures pour l'affichage.
       // Le moteur divise toute valeur agrégée par 60 et arrondit 2 décimales.
       { name: "durationMinutes", label: "Durée (heures)", type: "number", groupable: false, aggregable: true, outputDivide: 60 },

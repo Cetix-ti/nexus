@@ -212,6 +212,11 @@ export async function createTimeEntry(input: {
       coverageReason: decision.reason,
       hourlyRate: decision.rate ?? null,
       amount: decision.amount ?? null,
+      // Persiste le flag explicite "Forcer non-facturable" coché par l'agent.
+      // Permet de distinguer dans les widgets analytics les non-facturables
+      // décidés MANUELLEMENT (geste commercial, erreur) vs ceux dérivés
+      // automatiquement par le moteur (temps interne, etc.).
+      forceNonBillable: input.forceNonBillable ?? false,
       workTypeId: input.workTypeId ?? null,
       rateTierId: input.rateTierId ?? null,
     },
@@ -310,6 +315,7 @@ export async function updateTimeEntry(id: string, patch: any) {
   if (patch.coverageReason !== undefined) data.coverageReason = patch.coverageReason;
   if (patch.hourlyRate !== undefined) data.hourlyRate = patch.hourlyRate;
   if (patch.amount !== undefined) data.amount = patch.amount;
+  if (patch.forceNonBillable !== undefined) data.forceNonBillable = !!patch.forceNonBillable;
   return prisma.timeEntry.update({ where: { id }, data });
 }
 
