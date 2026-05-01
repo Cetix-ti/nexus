@@ -33,7 +33,7 @@ export default function PortalSoftwarePage() {
   if (items === null) return <PageLoader />;
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
+    <div className="p-4 sm:p-6 w-full space-y-5">
       <div className="flex items-start gap-3">
         <div className="h-10 w-10 rounded-lg bg-violet-50 flex items-center justify-center"><Package className="h-5 w-5 text-violet-600" /></div>
         <div>

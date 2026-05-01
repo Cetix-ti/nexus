@@ -38,7 +38,7 @@ export default function PortalParticularitiesPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
+    <div className="p-4 sm:p-6 w-full space-y-5">
       <div className="flex items-start gap-3">
         <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center"><Lightbulb className="h-5 w-5 text-amber-600" /></div>
         <div>

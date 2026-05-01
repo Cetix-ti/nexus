@@ -63,6 +63,9 @@ import {
   type ProjectRole,
   type PhaseStatus,
   type MilestoneStatus,
+  type ProjectStatus,
+  type ProjectType,
+  type ProjectPriority,
 } from "@/lib/projects/types";
 import { ProjectKanbanView } from "@/components/projects/project-kanban-view";
 import { DuplicateProjectModal } from "@/components/projects/duplicate-project-modal";
@@ -536,12 +539,20 @@ function OverviewTab({
 }) {
   const isAtRisk = project.isAtRisk || project.status === "at_risk";
   const recent = activities.slice(0, 5);
+  const [editOpen, setEditOpen] = useState(false);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
       <div className="lg:col-span-2 space-y-5">
         <Card>
-          <CardHeader><CardTitle>Détails du projet</CardTitle></CardHeader>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle>Détails du projet</CardTitle>
+              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                <Pencil className="h-3.5 w-3.5" /> Modifier
+              </Button>
+            </div>
+          </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-[13px]">
               <Detail label="Client">
@@ -765,6 +776,202 @@ function OverviewTab({
           </CardContent>
         </Card>
       </div>
+
+      {editOpen && (
+        <EditProjectModal
+          project={project}
+          onClose={() => setEditOpen(false)}
+          onSave={async (patch) => {
+            await updateProject(patch);
+            setEditOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EDIT PROJECT MODAL — modifie les métadonnées du projet (nom, description,
+// statut, type, priorité, dates, manager, tags, riskNotes). Le PATCH
+// /api/v1/projects/[id] accepte déjà tous ces champs.
+// ---------------------------------------------------------------------------
+function EditProjectModal({
+  project,
+  onClose,
+  onSave,
+}: {
+  project: Project;
+  onClose: () => void;
+  onSave: (patch: Record<string, unknown>) => Promise<void>;
+}) {
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description ?? "");
+  const [status, setStatus] = useState(project.status);
+  const [type, setType] = useState(project.type);
+  const [priority, setPriority] = useState(project.priority);
+  const [startDate, setStartDate] = useState(project.startDate ? project.startDate.slice(0, 10) : "");
+  const [targetEndDate, setTargetEndDate] = useState(project.targetEndDate ? project.targetEndDate.slice(0, 10) : "");
+  const [managerId, setManagerId] = useState(project.managerId);
+  const [tagsInput, setTagsInput] = useState((project.tags ?? []).join(", "));
+  const [isAtRisk, setIsAtRisk] = useState(project.isAtRisk);
+  const [riskNotes, setRiskNotes] = useState(project.riskNotes ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Liste des agents pour le select "Responsable". Chargée une fois à
+  // l'ouverture, garde la valeur courante pré-sélectionnée même si
+  // l'agent n'est plus dans la liste active (ex: désactivé).
+  const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/v1/users?role=agent")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((arr) => {
+        if (!Array.isArray(arr)) return;
+        const list = arr
+          .map((u: any) => ({
+            id: u.id,
+            name: u.name || `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email,
+          }))
+          .filter((u: any) => u.id);
+        setAgents(list);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function save() {
+    if (!name.trim()) return;
+    setSaving(true); setError(null);
+    try {
+      const tags = tagsInput
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+      await onSave({
+        name: name.trim(),
+        description: description.trim(),
+        status,
+        type,
+        priority,
+        startDate: startDate || null,
+        targetEndDate: targetEndDate || null,
+        managerId,
+        tags,
+        isAtRisk,
+        riskNotes: riskNotes.trim() || null,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="relative w-full max-w-2xl my-8 rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <h2 className="text-[16px] font-semibold text-slate-900">Modifier le projet</h2>
+          <button onClick={onClose} className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <Input label="Nom" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <TextArea label="Description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Statut</label>
+              <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.entries(PROJECT_STATUS_LABELS) as [ProjectStatus, string][]).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Type</label>
+              <Select value={type} onValueChange={(v) => setType(v as ProjectType)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.entries(PROJECT_TYPE_LABELS) as [ProjectType, string][]).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Priorité</label>
+              <Select value={priority} onValueChange={(v) => setPriority(v as ProjectPriority)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.entries(PROJECT_PRIORITY_LABELS) as [ProjectPriority, string][]).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Responsable</label>
+              <Select value={managerId} onValueChange={setManagerId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {/* Inclut le manager courant même s'il n'est plus dans agents (désactivé). */}
+                  {agents.find((a) => a.id === managerId) === undefined && project.managerName && (
+                    <SelectItem value={managerId}>{project.managerName}</SelectItem>
+                  )}
+                  {agents.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Date de début" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <Input label="Date cible" type="date" value={targetEndDate} onChange={(e) => setTargetEndDate(e.target.value)} />
+          </div>
+          <Input
+            label="Tags (séparés par des virgules)"
+            value={tagsInput}
+            onChange={(e) => setTagsInput(e.target.value)}
+            placeholder="ex : migration, urgent, m365"
+          />
+          <div className="rounded-lg border border-slate-200 bg-slate-50/40 p-3 space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isAtRisk}
+                onChange={(e) => setIsAtRisk(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              <span className="text-[13px] font-medium text-slate-700">Marquer le projet à risque</span>
+            </label>
+            {isAtRisk && (
+              <TextArea
+                label="Notes sur les risques"
+                value={riskNotes}
+                onChange={(e) => setRiskNotes(e.target.value)}
+                rows={2}
+                placeholder="Décris brièvement le risque identifié…"
+              />
+            )}
+          </div>
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</div>
+          )}
+        </div>
+        <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+          <Button variant="outline" size="sm" onClick={onClose}>Annuler</Button>
+          <Button variant="primary" size="sm" onClick={save} disabled={saving || !name.trim()}>
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Enregistrer
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -853,6 +1060,10 @@ function EditableNumber({
 // ---------------------------------------------------------------------------
 function PhasesTab({ phases, projectId, onChanged }: { phases: Phase[]; projectId: string; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
+  // Phase en cours d'édition. Null = mode création (modale d'ajout).
+  // Sinon la modale s'ouvre pré-remplie avec les valeurs de la phase.
+  const [editingPhase, setEditingPhase] = useState<Phase | null>(null);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -872,7 +1083,11 @@ function PhasesTab({ phases, projectId, onChanged }: { phases: Phase[]; projectI
               : ph.status === "blocked" ? "bg-red-50 text-red-700 ring-red-200"
               : "bg-slate-50 text-slate-600 ring-slate-200";
             return (
-              <Card key={ph.id}>
+              <Card
+                key={ph.id}
+                className="cursor-pointer hover:shadow-md hover:border-blue-200 transition-all"
+                onClick={() => setEditingPhase(ph)}
+              >
                 <CardContent className="p-5">
                   <div className="flex items-start gap-4">
                     <div className="h-9 w-9 rounded-lg bg-slate-50 ring-1 ring-slate-200 flex items-center justify-center text-[13px] font-semibold text-slate-600 shrink-0">
@@ -903,56 +1118,127 @@ function PhasesTab({ phases, projectId, onChanged }: { phases: Phase[]; projectI
           })}
         </div>
       )}
-      {open && <PhaseModal projectId={projectId} onClose={() => setOpen(false)} onCreated={() => { setOpen(false); onChanged(); }} />}
+      {open && <PhaseModal projectId={projectId} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); onChanged(); }} />}
+      {editingPhase && (
+        <PhaseModal
+          projectId={projectId}
+          phase={editingPhase}
+          onClose={() => setEditingPhase(null)}
+          onSaved={() => { setEditingPhase(null); onChanged(); }}
+          onDeleted={() => { setEditingPhase(null); onChanged(); }}
+        />
+      )}
     </div>
   );
 }
 
-function PhaseModal({ projectId, onClose, onCreated }: { projectId: string; onClose: () => void; onCreated: () => void }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [status, setStatus] = useState<PhaseStatus>("not_started");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+// PhaseModal — création OU édition selon `phase` :
+//   - phase=undefined → POST /phases (création)
+//   - phase=Phase     → PATCH /phases/[id] (édition) + bouton Supprimer
+function PhaseModal({
+  projectId,
+  phase,
+  onClose,
+  onSaved,
+  onDeleted,
+}: {
+  projectId: string;
+  phase?: Phase;
+  onClose: () => void;
+  onSaved: () => void;
+  onDeleted?: () => void;
+}) {
+  const [name, setName] = useState(phase?.name ?? "");
+  const [description, setDescription] = useState(phase?.description ?? "");
+  const [status, setStatus] = useState<PhaseStatus>(phase?.status ?? "not_started");
+  const [startDate, setStartDate] = useState(phase?.startDate ? phase.startDate.slice(0, 10) : "");
+  const [endDate, setEndDate] = useState(phase?.endDate ? phase.endDate.slice(0, 10) : "");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isEdit = !!phase;
 
   async function save() {
     if (!name.trim()) return;
     setSaving(true); setError(null);
     try {
-      const res = await fetch(`/api/v1/projects/${projectId}/phases`, {
-        method: "POST",
+      const url = isEdit
+        ? `/api/v1/projects/${projectId}/phases/${phase!.id}`
+        : `/api/v1/projects/${projectId}/phases`;
+      const res = await fetch(url, {
+        method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description, status, startDate: startDate || undefined, endDate: endDate || undefined }),
+        body: JSON.stringify({
+          name,
+          description,
+          status,
+          startDate: startDate || (isEdit ? null : undefined),
+          endDate: endDate || (isEdit ? null : undefined),
+        }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Erreur");
-      onCreated();
+      onSaved();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setSaving(false); }
   }
 
+  async function remove() {
+    if (!isEdit || !confirm(`Supprimer la phase « ${phase!.name} » ? Cette action est irréversible.`)) return;
+    setDeleting(true); setError(null);
+    try {
+      const res = await fetch(`/api/v1/projects/${projectId}/phases/${phase!.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).error || "Erreur");
+      onDeleted?.();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setDeleting(false); }
+  }
+
   return (
-    <ModalShell title="Nouvelle phase" onClose={onClose} onSubmit={save} saving={saving} disabled={!name.trim()}>
-      <Input label="Nom" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-      <TextArea label="Description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
-      <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Statut</label>
-        <Select value={status} onValueChange={(v) => setStatus(v as PhaseStatus)}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {Object.entries(PHASE_STATUS_LABELS).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="relative w-full max-w-md my-8 rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <h2 className="text-[16px] font-semibold text-slate-900">{isEdit ? "Modifier la phase" : "Nouvelle phase"}</h2>
+          <button onClick={onClose} className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <Input label="Nom" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <TextArea label="Description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Statut</label>
+            <Select value={status} onValueChange={(v) => setStatus(v as PhaseStatus)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(PHASE_STATUS_LABELS).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Début" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <Input label="Fin" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          </div>
+          {error && <p className="text-[12px] text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-between gap-3 border-t border-slate-200 px-6 py-4">
+          {isEdit ? (
+            <Button variant="outline" size="sm" onClick={remove} disabled={deleting || saving} className="text-red-700 border-red-200 hover:bg-red-50">
+              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              Supprimer
+            </Button>
+          ) : <span />}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>Annuler</Button>
+            <Button variant="primary" size="sm" onClick={save} disabled={saving || !name.trim()}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              Enregistrer
+            </Button>
+          </div>
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Input label="Début" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-        <Input label="Fin" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-      </div>
-      {error && <p className="text-[12px] text-red-600">{error}</p>}
-    </ModalShell>
+    </div>
   );
 }
 
@@ -1068,6 +1354,12 @@ function MilestoneModal({ projectId, onClose, onCreated }: { projectId: string; 
 // ---------------------------------------------------------------------------
 function TeamTab({ members, projectId, onChanged }: { members: Member[]; projectId: string; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
+  // Membre en cours d'édition. Cliquer sur la card ouvre la modale
+  // d'édition (rôle, allocation horaire). La suppression reste exposée
+  // via la corbeille de la card pour rester accessible sans ouvrir la
+  // modale.
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -1081,7 +1373,11 @@ function TeamTab({ members, projectId, onChanged }: { members: Member[]; project
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {members.map((m) => (
-            <Card key={m.id}>
+            <Card
+              key={m.id}
+              className="cursor-pointer hover:shadow-md hover:border-blue-200 transition-all"
+              onClick={() => setEditingMember(m)}
+            >
               <CardContent className="p-5">
                 <div className="flex items-start gap-3">
                   {m.agentAvatar ? (
@@ -1101,7 +1397,9 @@ function TeamTab({ members, projectId, onChanged }: { members: Member[]; project
                       <h3 className="text-[14px] font-semibold text-slate-900 truncate">{m.agentName}</h3>
                       <button
                         type="button"
-                        onClick={async () => {
+                        onClick={async (e) => {
+                          // Ne pas ouvrir la modale d'édition.
+                          e.stopPropagation();
                           if (!confirm(`Retirer ${m.agentName} du projet ?`)) return;
                           const res = await fetch(`/api/v1/projects/${projectId}/members?memberId=${m.id}`, { method: "DELETE" });
                           if (res.ok) onChanged();
@@ -1131,7 +1429,79 @@ function TeamTab({ members, projectId, onChanged }: { members: Member[]; project
         </div>
       )}
       {open && <MemberModal projectId={projectId} existingUserIds={new Set(members.map((m) => m.userId))} onClose={() => setOpen(false)} onCreated={() => { setOpen(false); onChanged(); }} />}
+      {editingMember && (
+        <EditMemberModal
+          projectId={projectId}
+          member={editingMember}
+          onClose={() => setEditingMember(null)}
+          onSaved={() => { setEditingMember(null); onChanged(); }}
+        />
+      )}
     </div>
+  );
+}
+
+// EditMemberModal — édite rôle + allocation d'un membre existant.
+// Suppression : passe par la corbeille de la card (déjà en place).
+function EditMemberModal({
+  projectId,
+  member,
+  onClose,
+  onSaved,
+}: {
+  projectId: string;
+  member: Member;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [role, setRole] = useState<ProjectRole>(member.role);
+  const [hours, setHours] = useState(member.allocatedHoursPerWeek != null ? String(member.allocatedHoursPerWeek) : "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true); setError(null);
+    try {
+      const res = await fetch(`/api/v1/projects/${projectId}/members/${member.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role,
+          allocatedHoursPerWeek: hours.trim() === "" ? null : Number(hours),
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Erreur");
+      onSaved();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <ModalShell title={`Modifier — ${member.agentName}`} onClose={onClose} onSubmit={save} saving={saving}>
+      <div className="rounded-lg bg-slate-50 p-3 text-[12px] text-slate-600">
+        <Mail className="inline h-3 w-3 mr-1" />
+        {member.agentEmail}
+      </div>
+      <div>
+        <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Rôle</label>
+        <Select value={role} onValueChange={(v) => setRole(v as ProjectRole)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {Object.entries(PROJECT_ROLE_LABELS).map(([k, v]) => (
+              <SelectItem key={k} value={k}>{v}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <Input
+        label="Heures / semaine (vide = non spécifié)"
+        type="number"
+        step="0.5"
+        value={hours}
+        onChange={(e) => setHours(e.target.value)}
+      />
+      {error && <p className="text-[12px] text-red-600">{error}</p>}
+    </ModalShell>
   );
 }
 

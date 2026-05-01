@@ -114,7 +114,7 @@ export default function PortalProjectDetailPage({
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl flex items-center justify-center py-24">
+      <div className="w-full flex items-center justify-center py-24">
         <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
       </div>
     );
@@ -122,7 +122,7 @@ export default function PortalProjectDetailPage({
 
   if (notFound || !project) {
     return (
-      <div className="mx-auto max-w-6xl">
+      <div className="w-full">
         <Link
           href="/portal/projects"
           className="inline-flex items-center gap-2 text-sm font-medium text-[#2563EB] hover:text-blue-700"
@@ -146,7 +146,7 @@ export default function PortalProjectDetailPage({
 
   if (!portalPerms.canSeeProjectDetails) {
     return (
-      <div className="mx-auto max-w-6xl">
+      <div className="w-full">
         <Link
           href="/portal/projects"
           className="inline-flex items-center gap-2 text-sm font-medium text-[#2563EB] hover:text-blue-700"
@@ -194,7 +194,7 @@ export default function PortalProjectDetailPage({
   ];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="w-full space-y-6">
       <Link
         href="/portal/projects"
         className="inline-flex items-center gap-2 text-sm font-medium text-[#2563EB] hover:text-blue-700"

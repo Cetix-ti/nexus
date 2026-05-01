@@ -94,7 +94,7 @@ export default function PortalBudgetPage() {
 
   if (error) {
     return (
-      <div className="p-4 sm:p-6 max-w-5xl mx-auto">
+      <div className="p-4 sm:p-6 w-full">
         <Card><div className="p-4 text-sm text-red-700 bg-red-50 border border-red-100 rounded">{error}</div></Card>
       </div>
     );
@@ -103,7 +103,7 @@ export default function PortalBudgetPage() {
 
   if (data.status === "UNAVAILABLE" || !data.budget) {
     return (
-      <div className="p-4 sm:p-6 max-w-5xl mx-auto">
+      <div className="p-4 sm:p-6 w-full">
         <Card>
           <div className="p-6 text-center">
             <Wallet className="h-10 w-10 mx-auto text-slate-300 mb-2" />
@@ -123,7 +123,7 @@ export default function PortalBudgetPage() {
   const upcoming = data.upcoming ?? [];
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-4 sm:space-y-6">
+    <div className="p-4 sm:p-6 w-full space-y-4 sm:space-y-6">
       <div>
         <h1 className="text-lg sm:text-xl font-semibold text-slate-900 flex items-center gap-2">
           <Wallet className="h-5 w-5 text-blue-600" /> {b.title}

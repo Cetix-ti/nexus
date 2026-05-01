@@ -103,7 +103,7 @@ export default function PortalProjectsPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl flex items-center justify-center py-24">
+      <div className="w-full flex items-center justify-center py-24">
         <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
       </div>
     );
@@ -111,7 +111,7 @@ export default function PortalProjectsPage() {
 
   if (error) {
     return (
-      <div className="mx-auto max-w-6xl">
+      <div className="w-full">
         <div className="rounded-2xl border border-dashed border-red-300 bg-white p-12 text-center">
           <h3 className="text-base font-semibold text-red-700">{error}</h3>
           <button
@@ -126,7 +126,7 @@ export default function PortalProjectsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
+    <div className="w-full space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-neutral-900">{t("portal.projects.heading")}</h1>
         <p className="mt-2 text-base text-neutral-500">

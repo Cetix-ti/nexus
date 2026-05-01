@@ -110,7 +110,7 @@ export default function PortalApprovalsPage() {
   const rejectedCount = approvals.filter((a) => a.status === "REJECTED").length;
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
+    <div className="p-4 sm:p-6 w-full space-y-5">
       <div>
         <h1 className="text-[20px] font-semibold text-slate-900">
           Approbations
