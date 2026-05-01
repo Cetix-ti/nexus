@@ -18,6 +18,8 @@
 // ============================================================================
 
 import type { MonthlyReportPayload, MonthlyReportTicketBlock } from "@/lib/reports/monthly/types";
+import type { ResolvedDashboardAnnex } from "@/lib/reports/monthly/dashboard-annex-types";
+import { WidgetChart, type ChartType } from "@/components/widgets/widget-chart";
 
 // ---------------------------------------------------------------------------
 // Palette + tokens — exposés en CSS vars pour cohérence sur tout le doc.
@@ -259,12 +261,17 @@ export function MonthlyReportDocument({
   payload,
   logoSrc,
   hideRates = false,
+  dashboardAnnexes,
 }: {
   payload: MonthlyReportPayload;
   logoSrc: string;
   /** Variante "heures seulement" : masque tous les montants et taux $.
    *  Les libellés (palier, type) restent visibles, ainsi que les durées. */
   hideRates?: boolean;
+  /** Annexes dashboards (option "PDF avec graphiques"). Quand fournies,
+   *  rendues à la fin du PDF, après tous les autres blocs. Chaque dashboard
+   *  démarre une nouvelle page. Widgets résolus côté serveur (avec results). */
+  dashboardAnnexes?: ResolvedDashboardAnnex[];
 }) {
   const { organization, period, totals, byAgent, byRequester, trips, tickets } = payload;
   const summary = executiveSummaryText(payload, { hideRates });
@@ -338,6 +345,11 @@ export function MonthlyReportDocument({
           <HourBankTrackingSection tracking={payload.hourBankTracking} />
         ) : null}
         {payload.recap ? <RecapSection recap={payload.recap} /> : null}
+        {dashboardAnnexes && dashboardAnnexes.length > 0
+          ? dashboardAnnexes.map((d) => (
+              <DashboardAnnexSection key={d.id} dashboard={d} />
+            ))
+          : null}
       </div>
     </>
   );
@@ -1905,6 +1917,111 @@ function MonthlyBarsChart({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// DASHBOARD ANNEX — annexe "Graphiques" jointe au PDF (option "PDF avec
+// graphiques"). Chaque dashboard du tableau de bord agent (tagué
+// "Rapport mensuel" + attribué à cette org) est rendu sur sa propre page
+// avec son layout : titre, description, grille de widgets.
+//
+// Les `results` sont déjà résolus côté serveur (cf. resolveWidget dans
+// /internal/reports/monthly/[reportId]/page.tsx). Ce composant se contente
+// de les rendre via <WidgetChart> qui produit du SVG vectoriel (Recharts) —
+// PDF net même en zoom.
+// ===========================================================================
+function DashboardAnnexSection({ dashboard }: { dashboard: ResolvedDashboardAnnex }) {
+  return (
+    <PageSection breakBefore>
+      <SectionTitle eyebrow="Annexe — Graphiques">{dashboard.label}</SectionTitle>
+      {dashboard.description ? (
+        <p
+          style={{
+            margin: "0 0 18px 0",
+            fontSize: "11.5px",
+            color: THEME.slate,
+            lineHeight: 1.5,
+          }}
+        >
+          {dashboard.description}
+        </p>
+      ) : null}
+      {dashboard.widgets.length === 0 ? (
+        <EmptyNote>Aucun widget configuré pour ce dashboard.</EmptyNote>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(12, 1fr)",
+            gap: "12px",
+          }}
+        >
+          {dashboard.widgets.map((w) => (
+            <AnnexWidgetCard key={w.id} widget={w} />
+          ))}
+        </div>
+      )}
+    </PageSection>
+  );
+}
+
+function AnnexWidgetCard({ widget }: { widget: ResolvedDashboardAnnex["widgets"][number] }) {
+  // Conversion du span original (1-12) du grid agent vers notre grid PDF.
+  // Pour rester lisible en A4, on plafonne à 6 colonnes (= demi-largeur)
+  // sauf pour les tables et les KPI "number" qui peuvent prendre 12.
+  const span = Math.max(3, Math.min(12, widget.span ?? 6));
+  const colSpan = ["table", "list", "number"].includes(widget.chartType) ? span : Math.min(span, 6);
+
+  return (
+    <div
+      className="break-inside-avoid"
+      style={{
+        gridColumn: `span ${colSpan}`,
+        background: THEME.paperSubtle,
+        border: `1px solid ${THEME.hair}`,
+        borderRadius: "6px",
+        padding: "12px 14px",
+      }}
+    >
+      <h3
+        style={{
+          margin: "0 0 8px 0",
+          fontSize: "12px",
+          fontWeight: 600,
+          color: THEME.ink,
+          letterSpacing: "-0.005em",
+        }}
+      >
+        {widget.title}
+      </h3>
+      {widget.error ? (
+        <div
+          style={{
+            padding: "12px",
+            fontSize: "10.5px",
+            color: THEME.warning,
+            background: "#FFFBEB",
+            border: `1px solid #FDE68A`,
+            borderRadius: "4px",
+          }}
+        >
+          ⚠ Données indisponibles : {widget.error}
+        </div>
+      ) : widget.results.length === 0 && widget.total === 0 ? (
+        <EmptyNote>Aucune donnée pour la période.</EmptyNote>
+      ) : (
+        <div style={{ height: "180px", minHeight: "180px" }}>
+          <WidgetChart
+            results={widget.results}
+            chartType={widget.chartType as ChartType}
+            color={(widget.style as { primaryColor?: string } | undefined)?.primaryColor ?? THEME.blue}
+            name=""
+            style={widget.style as never}
+          />
+        </div>
+      )}
     </div>
   );
 }

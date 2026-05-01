@@ -93,14 +93,20 @@ async function getBrowser(): Promise<Browser> {
 
 export async function renderReportToPdf(
   reportId: string,
-  opts: { hideRates?: boolean } = {},
+  opts: { hideRates?: boolean; snapshotKey?: string } = {},
 ): Promise<Buffer> {
   const token = signReportToken(reportId);
   const base = getSelfBaseUrl();
   // Le défaut côté page interne est SANS montants $ (hideRates=true).
   // On envoie ?variant=with_amounts seulement quand on veut la version $.
   const variantQs = opts.hideRates === false ? `&variant=with_amounts` : "";
-  const url = `${base}/internal/reports/monthly/${reportId}?token=${encodeURIComponent(token)}${variantQs}`;
+  // snapshotKey : si fourni, la page de rendu interne y attache des
+  // dashboards en annexe (option "PDF avec graphiques"). Le payload des
+  // dashboards est lu depuis le cache mémoire serveur via cette clé.
+  const snapshotQs = opts.snapshotKey
+    ? `&snapshotKey=${encodeURIComponent(opts.snapshotKey)}`
+    : "";
+  const url = `${base}/internal/reports/monthly/${reportId}?token=${encodeURIComponent(token)}${variantQs}${snapshotQs}`;
 
   // Récupère le label de période pour le footer (ex « Avril 2026 »).
   // Best-effort : si la lecture échoue, on tombe sur un footer générique.

@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  BarChart3,
   Calendar,
   Download,
   FileText,
@@ -59,6 +60,74 @@ function monthsAround(): { value: string; label: string }[] {
   return options;
 }
 
+// ---------------------------------------------------------------------------
+// Localisation des dashboards "Rapport mensuel" pour une org dans le
+// localStorage agent. Sources :
+//   - nexus:reports:custom : dashboards créés par l'agent (full snapshot)
+//   - REPORT_CATALOG built-in : tags via la même config UI mais widgets
+//     construits à la volée — non géré ici (les built-ins n'ont pas de
+//     `widgets` arbitraires utilisables côté serveur).
+// On se concentre donc sur les CUSTOM dashboards (créés par l'agent dans
+// /analytics/dashboards). Pour qu'un built-in soit incluable ici, l'agent
+// peut le dupliquer en custom puis le tag.
+// ---------------------------------------------------------------------------
+const RAPPORT_MENSUEL_TAG_ID = "builtin_rapport_mensuel";
+const CUSTOM_REPORTS_KEY = "nexus:reports:custom";
+
+interface DashboardForExport {
+  id: string;
+  label: string;
+  description?: string;
+  organizationIds?: string[];
+  tags?: string[];
+  widgets?: Array<{
+    id: string;
+    title?: string;
+    chartType?: string;
+    span?: number;
+    query?: Record<string, unknown>;
+    style?: Record<string, unknown>;
+  }>;
+}
+
+function loadGraphDashboardsForOrg(orgId: string): DashboardForExport[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CUSTOM_REPORTS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return (arr as DashboardForExport[]).filter((d) => {
+      const orgs = Array.isArray(d.organizationIds) ? d.organizationIds : [];
+      const tags = Array.isArray(d.tags) ? d.tags : [];
+      return (
+        orgs.includes(orgId) &&
+        tags.includes(RAPPORT_MENSUEL_TAG_ID) &&
+        Array.isArray(d.widgets) &&
+        d.widgets.length > 0
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+function toSnapshot(d: DashboardForExport) {
+  return {
+    id: d.id,
+    label: d.label,
+    description: d.description,
+    widgets: (d.widgets ?? []).map((w) => ({
+      id: w.id,
+      title: w.title ?? "",
+      chartType: w.chartType ?? "bar",
+      span: w.span ?? 6,
+      query: w.query ?? {},
+      style: w.style ?? {},
+    })),
+  };
+}
+
 function fmtBytes(n: number | null): string {
   if (n == null) return "—";
   if (n < 1024) return `${n} o`;
@@ -99,6 +168,52 @@ export function OrgMonthlyReportsTab({
   const [error, setError] = useState<string | null>(null);
   const [autoPublish, setAutoPublish] = useState(initialAutoPublish);
   const [autoSaving, setAutoSaving] = useState(false);
+
+  // Détection des dashboards "Rapport mensuel" attribués à cette org dans
+  // le localStorage agent. Source : `nexus:reports:custom` (custom) +
+  // catalogue built-in (importé statiquement). Filtre :
+  //   - tags inclut "builtin_rapport_mensuel"
+  //   - organizationIds inclut organizationId
+  // Si > 0 → on affiche le bouton "PDF avec graphiques".
+  const [graphDashboards, setGraphDashboards] = useState<DashboardForExport[]>([]);
+  useEffect(() => {
+    setGraphDashboards(loadGraphDashboardsForOrg(organizationId));
+    // Re-check sur visibilitychange pour rester à jour si l'agent attribue
+    // un dashboard à l'org dans un autre onglet et revient.
+    const onFocus = () => setGraphDashboards(loadGraphDashboardsForOrg(organizationId));
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [organizationId]);
+
+  // POST le snapshot des dashboards au serveur, récupère le PDF en blob,
+  // ouvre dans un nouvel onglet. `withAmounts=true` pour la version interne.
+  const downloadWithGraphs = async (reportId: string, withAmounts: boolean) => {
+    if (graphDashboards.length === 0) return;
+    setBusyId(reportId);
+    try {
+      const r = await fetch(`/api/v1/reports/monthly/${reportId}/pdf-with-graphs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dashboards: graphDashboards.map(toSnapshot),
+          hideRates: !withAmounts,
+        }),
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data?.error ?? `HTTP ${r.status}`);
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener");
+      // Libère l'objet URL après quelques secondes (le tab a déjà chargé).
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -341,6 +456,26 @@ export function OrgMonthlyReportsTab({
                       Avec montants&nbsp;$
                     </a>
                   </Button>
+                  {/* PDF avec graphiques — visible uniquement si l'agent a au
+                      moins un dashboard custom tagué "Rapport mensuel"
+                      attribué à cette org dans son localStorage. Le snapshot
+                      est envoyé au serveur qui rend les widgets en annexe. */}
+                  {graphDashboards.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busyId === r.id}
+                      title={`PDF officiel + ${graphDashboards.length} dashboard${graphDashboards.length > 1 ? "s" : ""} en annexe`}
+                      onClick={() => downloadWithGraphs(r.id, false)}
+                    >
+                      {busyId === r.id ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <BarChart3 className="h-4 w-4 mr-1" />
+                      )}
+                      PDF + graphiques
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
