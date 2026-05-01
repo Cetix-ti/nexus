@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { TicketKanbanView } from "@/components/tickets/ticket-kanban-view";
 import { PendingApprovalsModal } from "@/components/tickets/pending-approvals-modal";
+import { AwaitingReplyPanel } from "@/components/tickets/awaiting-reply-panel";
 import { useSession } from "next-auth/react";
 import { KanbanBoardSwitcher } from "@/components/tickets/kanban-board-switcher";
 import { useKanbanBoardsStore } from "@/stores/kanban-boards-store";
@@ -369,6 +370,12 @@ export default function KanbanPage() {
         <StatPill label="Planifié" count={counts.scheduled || 0} dotClass="bg-teal-500" />
         <StatPill label="Résolu" count={counts.resolved || 0} dotClass="bg-emerald-500" />
       </div>
+
+      {/* Section "Réponses reçues" — tickets dont la dernière communication
+          vient d'un client et qui n'ont pas encore été traités par un
+          agent. Auto-cachée si liste vide. Refresh toutes les 30s + au
+          focus de la fenêtre. */}
+      <AwaitingReplyPanel />
 
       {/* Kanban board */}
       <TicketKanbanView tickets={filtered} hiddenColumns={hiddenColumns} />

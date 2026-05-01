@@ -89,6 +89,19 @@ export async function POST(
     include: { author: { select: { firstName: true, lastName: true, avatar: true } } },
   });
 
+  // Acknowledgment implicite : l'agent commente = il a vu la dernière
+  // réponse client. Évite que le ticket reste indéfiniment dans la
+  // section Kanban "Réponses reçues" alors qu'on a déjà répondu.
+  // Note : on update même pour les notes internes (l'agent a lu le fil).
+  await prisma.ticket
+    .update({
+      where: { id: ticket.id },
+      data: { lastClientReplyAcknowledgedAt: new Date() },
+    })
+    .catch(() => {
+      // Best-effort — pas critique pour la création du commentaire.
+    });
+
   const authorName = comment.author
     ? `${comment.author.firstName} ${comment.author.lastName}`
     : me.email;

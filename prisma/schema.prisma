@@ -574,6 +574,14 @@ model Ticket {
   /// requiresApproval=true && approvalStatus=PENDING.
   approvalLockOverride Boolean        @default(false) @map("approval_lock_override")
 
+  /// Dernière fois qu'un agent a "vu" la réponse client la plus récente.
+  /// Mis à jour automatiquement quand l'agent commente le ticket (le fait
+  /// de répondre vaut acknowledgment) OU via le bouton "Marquer comme vu"
+  /// dans la section Kanban "Réponses reçues". Si null → l'agent n'a
+  /// jamais ack la conversation. Utilisé pour filtrer "tickets avec
+  /// réponse client non vue" : last comment client createdAt > ce champ.
+  lastClientReplyAcknowledgedAt DateTime? @map("last_client_reply_acknowledged_at")
+
   comments             Comment[]
   attachments          Attachment[]
   activities           Activity[]
