@@ -127,10 +127,18 @@ interface HourBankConfig {
   totalAmount?: number;     // montant total de la banque (heures × taux, souvent auto-calculé mais ajustable)
   overageRate?: number;     // taux appliqué en dépassement (heures régulières au-delà de la banque)
   carryOver?: boolean;      // reporter les heures non utilisées en fin de période
-  // Inclusions dans la banque (sur la durée du contrat) :
+  // Inclusions dans la banque. Par défaut (frequencyMonths absent ou 0)
+  // les quantités s'appliquent SUR LA DURÉE TOTALE du contrat. Si une
+  // fréquence est définie, la quantité se renouvelle tous les N mois
+  // (ex: 5 déplacements tous les 3 mois). Permet aux contrats avec
+  // crédit récurrent (ex: forfait trimestriel inclus) sans avoir à
+  // multiplier la quantité × nombre de périodes.
   includedTravelCount?: number;     // nombre de déplacements inclus
+  includedTravelFrequencyMonths?: number;
   includedOnsiteHours?: number;     // heures sur place incluses
+  includedOnsiteFrequencyMonths?: number;
   includedEveningHours?: number;    // heures de soir incluses
+  includedEveningFrequencyMonths?: number;
   eveningCarryOver?: boolean;       // reporter les heures de soir non utilisées
   // Tarifs appliqués au-delà des inclusions :
   extraTravelRate?: number;         // déplacement hors banque
@@ -629,6 +637,105 @@ class BillingErrorBoundary extends React.Component<
     }
     return this.props.children;
   }
+}
+
+// ----------------------------------------------------------------------------
+// InclusionField — input couplé "quantité + fréquence" pour les inclusions
+// de la banque d'heures. Permet de choisir si la quantité s'applique sur la
+// durée totale du contrat (défaut, frequency=undefined ou 0) ou se renouvelle
+// tous les N mois (1=mensuel, 3=trimestriel, 6=semestriel, 12=annuel, autre).
+// ----------------------------------------------------------------------------
+const FREQUENCY_PRESETS: { label: string; months: number | null }[] = [
+  { label: "Sur la durée totale", months: null },
+  { label: "Tous les mois", months: 1 },
+  { label: "Tous les 3 mois", months: 3 },
+  { label: "Tous les 6 mois", months: 6 },
+  { label: "Tous les ans", months: 12 },
+];
+
+function InclusionField({
+  label,
+  count,
+  frequency,
+  onChangeCount,
+  onChangeFrequency,
+  countPlaceholder,
+  countStep = 1,
+}: {
+  label: string;
+  count: number | undefined;
+  frequency: number | undefined;
+  onChangeCount: (v: number | undefined) => void;
+  onChangeFrequency: (v: number | undefined) => void;
+  countPlaceholder?: string;
+  countStep?: number;
+}) {
+  // On considère "personnalisé" toute fréquence > 0 qui ne correspond
+  // pas exactement à un preset. Permet à l'admin de saisir 4, 8, 18 mois
+  // sans être enfermé dans les presets.
+  const matchesPreset = FREQUENCY_PRESETS.some(
+    (p) => p.months === (frequency ?? null),
+  );
+  const isCustom = !matchesPreset && (frequency ?? 0) > 0;
+  const [customMode, setCustomMode] = useState(isCustom);
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[12px] font-medium text-slate-700">{label}</label>
+      <Input
+        type="number"
+        min={0}
+        step={countStep}
+        placeholder={countPlaceholder}
+        value={count ?? ""}
+        onChange={(e) => {
+          const v = e.target.value === "" ? undefined : Number(e.target.value);
+          onChangeCount(v);
+        }}
+      />
+      <div className="flex items-center gap-1.5">
+        <select
+          value={customMode ? "__custom__" : String(frequency ?? "")}
+          onChange={(e) => {
+            const val = e.target.value;
+            if (val === "__custom__") {
+              setCustomMode(true);
+              // Si pas encore défini, on initialise à 2 mois pour
+              // matérialiser le mode personnalisé.
+              if (!frequency) onChangeFrequency(2);
+              return;
+            }
+            setCustomMode(false);
+            onChangeFrequency(val === "" ? undefined : Number(val));
+          }}
+          className="flex-1 h-8 rounded-md border border-slate-200 bg-white px-2 text-[11.5px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+        >
+          {FREQUENCY_PRESETS.map((p) => (
+            <option key={p.label} value={p.months === null ? "" : String(p.months)}>
+              {p.label}
+            </option>
+          ))}
+          <option value="__custom__">Personnalisé…</option>
+        </select>
+        {customMode && (
+          <div className="flex items-center gap-1 shrink-0">
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              value={frequency ?? ""}
+              onChange={(e) => {
+                const v = e.target.value === "" ? undefined : Number(e.target.value);
+                onChangeFrequency(v);
+              }}
+              className="!h-8 !w-16 !text-[11.5px]"
+            />
+            <span className="text-[11px] text-slate-500">mois</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function ClientBillingOverridesSection(props: ClientBillingOverridesSectionProps) {
@@ -1662,60 +1769,46 @@ function ClientBillingOverridesSectionInner({
             </div>
 
             {/* Inclusions dans la banque — ce qui est couvert par la banque
-                sans coût additionnel, et tarifs appliqués au-delà. */}
+                sans coût additionnel, et tarifs appliqués au-delà. Chaque
+                inclusion peut être globale (sur la durée du contrat) OU
+                récurrente (renouvelée tous les N mois). */}
             <div>
               <h4 className="text-[12px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
                 Inclusions dans la banque
               </h4>
+              <p className="text-[11px] text-slate-500 mb-3 leading-snug">
+                Période d&apos;inclusion : laisse «&nbsp;Sur la durée totale&nbsp;»
+                pour appliquer la quantité au contrat entier, ou choisis une
+                période pour renouveler le quota tous les N mois.
+              </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-1.5">
-                  <label className="text-[12px] font-medium text-slate-700">
-                    Déplacements inclus
-                  </label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={1}
-                    placeholder="0 = aucun"
-                    value={hourBankCfg.includedTravelCount ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value === "" ? undefined : Number(e.target.value);
-                      updateHourBank({ includedTravelCount: v });
-                    }}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[12px] font-medium text-slate-700">
-                    Heures sur place incluses
-                  </label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    placeholder="0 = aucune"
-                    value={hourBankCfg.includedOnsiteHours ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value === "" ? undefined : Number(e.target.value);
-                      updateHourBank({ includedOnsiteHours: v });
-                    }}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[12px] font-medium text-slate-700">
-                    Heures de soir incluses
-                  </label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    placeholder="0 = aucune"
-                    value={hourBankCfg.includedEveningHours ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value === "" ? undefined : Number(e.target.value);
-                      updateHourBank({ includedEveningHours: v });
-                    }}
-                  />
-                </div>
+                <InclusionField
+                  label="Déplacements inclus"
+                  countPlaceholder="0 = aucun"
+                  countStep={1}
+                  count={hourBankCfg.includedTravelCount}
+                  frequency={hourBankCfg.includedTravelFrequencyMonths}
+                  onChangeCount={(v) => updateHourBank({ includedTravelCount: v })}
+                  onChangeFrequency={(v) => updateHourBank({ includedTravelFrequencyMonths: v })}
+                />
+                <InclusionField
+                  label="Heures sur place incluses"
+                  countPlaceholder="0 = aucune"
+                  countStep={0.5}
+                  count={hourBankCfg.includedOnsiteHours}
+                  frequency={hourBankCfg.includedOnsiteFrequencyMonths}
+                  onChangeCount={(v) => updateHourBank({ includedOnsiteHours: v })}
+                  onChangeFrequency={(v) => updateHourBank({ includedOnsiteFrequencyMonths: v })}
+                />
+                <InclusionField
+                  label="Heures de soir incluses"
+                  countPlaceholder="0 = aucune"
+                  countStep={0.5}
+                  count={hourBankCfg.includedEveningHours}
+                  frequency={hourBankCfg.includedEveningFrequencyMonths}
+                  onChangeCount={(v) => updateHourBank({ includedEveningHours: v })}
+                  onChangeFrequency={(v) => updateHourBank({ includedEveningFrequencyMonths: v })}
+                />
                 <div className="sm:col-span-2 lg:col-span-3">
                   <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
                     <Switch
