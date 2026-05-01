@@ -15,6 +15,7 @@ import {
   Zap,
   User,
   Check,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PRIORITY_CONFIG, type Ticket, type TicketPriority } from "@/lib/mock-data";
@@ -71,6 +72,26 @@ export function TicketCard({ ticket, onClick }: TicketCardProps) {
         className="absolute left-0 top-3 bottom-3 w-[3px] rounded-full"
         style={{ backgroundColor: priority.color }}
       />
+
+      {/* Bouton "ouvrir dans nouvel onglet" — visible au hover. Le clic
+          card normal continue d'ouvrir la quickview, ce raccourci permet
+          d'ouvrir le ticket en page complète sans passer par le menu
+          contextuel ni utiliser Cmd/Ctrl+clic sur le numéro. */}
+      <Link
+        href={`/tickets/${ticket.id}`}
+        target="_blank"
+        rel="noopener"
+        onClick={(e) => e.stopPropagation()}
+        title="Ouvrir dans un nouvel onglet"
+        className={cn(
+          "absolute right-1.5 top-1.5 z-10",
+          "h-6 w-6 inline-flex items-center justify-center rounded-md",
+          "bg-white/0 text-slate-400 hover:bg-slate-100 hover:text-slate-700",
+          "opacity-0 group-hover:opacity-100 transition-opacity",
+        )}
+      >
+        <ExternalLink className="h-3.5 w-3.5" strokeWidth={2.25} />
+      </Link>
 
       <div className="pl-4 pr-3.5 py-3">
         {/* Row 1: ticket number + badges */}

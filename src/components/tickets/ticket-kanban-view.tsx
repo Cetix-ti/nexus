@@ -14,7 +14,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Plus, ChevronDown } from "lucide-react";
+import { Plus, ChevronDown, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TicketCard } from "./ticket-card";
 import { TicketQuickViewModal } from "./ticket-quick-view-modal";
@@ -27,6 +27,44 @@ import {
   type BoardGroupBy,
 } from "@/stores/kanban-boards-store";
 import { DEFAULT_COLUMNS_BY_GROUP } from "@/components/settings/kanban-columns-editor";
+
+// ----------------------------------------------------------------------------
+// Column drag handle (sortable header)
+// ----------------------------------------------------------------------------
+// Réordonnancement des colonnes : on rend juste l'icône GripVertical
+// draggable, pas la colonne entière — sinon ça entre en conflit avec
+// le drop zone des tickets dans la même colonne. L'ID est préfixé par
+// "col:" pour ne pas collisionner avec les ticket IDs.
+function ColumnDragHandle({
+  colValue,
+  disabled,
+}: {
+  colValue: string;
+  disabled?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef } = useDraggable({
+    id: `col:${colValue}`,
+    disabled,
+    data: { type: "column", colValue },
+  });
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      {...attributes}
+      {...listeners}
+      className={cn(
+        "h-5 w-5 inline-flex items-center justify-center rounded-md text-slate-400 transition-all",
+        disabled
+          ? "opacity-30 cursor-not-allowed"
+          : "cursor-grab active:cursor-grabbing hover:bg-white hover:text-slate-700 hover:shadow-sm"
+      )}
+      title={disabled ? "Réorganisation indisponible pour ce regroupement" : "Glisser pour réorganiser la colonne"}
+    >
+      <GripVertical className="h-3.5 w-3.5" strokeWidth={2.25} />
+    </button>
+  );
+}
 
 interface TicketKanbanViewProps {
   tickets: Ticket[];
@@ -110,12 +148,15 @@ const COLUMN_PAGE_INCREMENT = 20;
 export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanViewProps) {
   const router = useRouter();
   const columnsConfig = useKanbanStore((s) => s.columns);
+  const reorderKanbanColumns = useKanbanStore((s) => s.reorderColumns);
   const activeBoardId = useKanbanBoardsStore((s) => s.activeBoardId);
   const boards = useKanbanBoardsStore((s) => s.boards);
+  const updateBoard = useKanbanBoardsStore((s) => s.updateBoard);
   const activeBoard = boards.find((b) => b.id === activeBoardId) || boards[0];
   const groupBy: BoardGroupBy = activeBoard?.groupBy || "status";
   const [localTickets, setLocalTickets] = useState<Ticket[]>(tickets);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
+  const [activeColumnLabel, setActiveColumnLabel] = useState<string | null>(null);
   const [quickViewTicket, setQuickViewTicket] = useState<Ticket | null>(null);
   const [quickViewOpen, setQuickViewOpen] = useState(false);
   // Limite par colonne : key = col.value (status/priority/etc), value =
@@ -136,14 +177,70 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
   const inFlightRef = useRef(new Map<string, AbortController>());
 
   function handleDragStart(event: DragStartEvent) {
+    const data = event.active.data.current;
+    if (data?.type === "column") {
+      const colValue = data.colValue as string;
+      // On lit le label depuis visibleColumns pour l'overlay — évite de
+      // recalculer pendant le drag.
+      const col = visibleColumns.find((c) => c.value === colValue);
+      setActiveColumnLabel(col?.label ?? colValue);
+      return;
+    }
     const ticket = localTickets.find((t) => t.id === event.active.id);
     if (ticket) setActiveTicket(ticket);
   }
 
+  // Réordonne les colonnes et persiste. Cas gérés :
+  //  - board avec customColumns → updateBoard avec order recalculé
+  //  - groupBy === "status" sans customColumns → kanban-store.reorderColumns
+  //  - dynamique (organization/assignee/category) → no-op (pas de cible)
+  function handleColumnReorder(fromValue: string, toValue: string) {
+    if (fromValue === toValue) return;
+    const cols = activeBoard?.customColumns?.length ? activeBoard.customColumns : null;
+
+    if (cols && cols.length > 0) {
+      const fromIdx = cols.findIndex((c) => c.value === fromValue);
+      const toIdx = cols.findIndex((c) => c.value === toValue);
+      if (fromIdx === -1 || toIdx === -1) return;
+      const next = cols.slice();
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      const reordered = next.map((c, i) => ({ ...c, order: i }));
+      updateBoard(activeBoard.id, { customColumns: reordered });
+      return;
+    }
+
+    if (groupBy === "status") {
+      // Travaille sur le tableau columnsConfig de kanban-store (legacy).
+      const sorted = [...columnsConfig].sort((a, b) => a.order - b.order);
+      const fromIdx = sorted.findIndex((c) => c.status === fromValue);
+      const toIdx = sorted.findIndex((c) => c.status === toValue);
+      if (fromIdx === -1 || toIdx === -1) return;
+      const [moved] = sorted.splice(fromIdx, 1);
+      sorted.splice(toIdx, 0, moved);
+      reorderKanbanColumns(sorted.map((c) => c.id));
+    }
+    // Dynamic groupings : pas de persistance fiable, on ignore.
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     setActiveTicket(null);
+    setActiveColumnLabel(null);
     const { active, over } = event;
     if (!over) return;
+
+    // Reorder de colonnes : active porte data.type === "column" et over.id
+    // pointe sur une autre colonne (DroppableColumnBody → col.value).
+    if (active.data.current?.type === "column") {
+      const fromValue = active.data.current.colValue as string;
+      const toValue = over.id as string;
+      // over.id pour un body est la col.value brute. Si on dropait par
+      // erreur sur un autre droppable préfixé, on ignore.
+      if (typeof toValue === "string" && !toValue.startsWith("col:")) {
+        handleColumnReorder(fromValue, toValue);
+      }
+      return;
+    }
 
     // Drag-to-update only makes sense when grouping by status
     if (groupBy !== "status") return;
@@ -297,25 +394,35 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
             className="flex gap-4 px-1 pb-1"
             style={{ minHeight: "calc(100vh - 320px)" }}
           >
-            {visibleColumns.map((col) => (
+            {visibleColumns.map((col) => {
+              // Réordonnancement non supporté pour les regroupements
+              // dynamiques (auto-générés depuis les tickets) — pas
+              // d'endroit fiable où persister l'ordre.
+              const reorderDisabled =
+                groupBy === "organization" ||
+                groupBy === "assignee" ||
+                groupBy === "category";
+              return (
             <div
               key={col.id}
-              className="flex w-[260px] sm:w-[300px] min-w-[260px] sm:min-w-[300px] flex-shrink-0 flex-col rounded-xl border border-slate-200/80 bg-slate-50/40 shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
+              className="flex w-[260px] sm:w-[300px] min-w-[260px] sm:min-w-[300px] flex-shrink-0 flex-col rounded-xl border border-slate-200/80 bg-slate-50/40 shadow-[0_1px_2px_rgba(15,23,42,0.03)] max-h-[calc(100vh-220px)]"
             >
               {/* Column header */}
               <div
-                className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-200/80 rounded-t-xl ring-1 ring-inset"
+                className="flex items-center gap-1.5 px-3 py-3 border-b border-slate-200/80 rounded-t-xl ring-1 ring-inset"
                 style={{
                   backgroundColor: col.color + "12",
                   boxShadow: `inset 0 0 0 1px ${col.color}25`,
                 }}
               >
+                <ColumnDragHandle colValue={col.value} disabled={reorderDisabled} />
+
                 <span
                   className="h-2 w-2 rounded-full shrink-0"
                   style={{ backgroundColor: col.color }}
                 />
 
-                <h3 className="flex-1 text-[12.5px] font-semibold uppercase tracking-[0.04em] text-slate-700">
+                <h3 className="flex-1 text-[12.5px] font-semibold uppercase tracking-[0.04em] text-slate-700 truncate">
                   {col.label}
                 </h3>
 
@@ -372,7 +479,8 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
                 })()}
               </DroppableColumnBody>
             </div>
-          ))}
+              );
+            })}
           </div>
         </DoubleScroll>
 
@@ -380,6 +488,11 @@ export function TicketKanbanView({ tickets, hiddenColumns = [] }: TicketKanbanVi
           {activeTicket && (
             <div className="rotate-2 cursor-grabbing scale-105 shadow-2xl rounded-xl">
               <TicketCard ticket={activeTicket} />
+            </div>
+          )}
+          {activeColumnLabel && (
+            <div className="rotate-1 scale-105 shadow-2xl rounded-xl bg-white border border-slate-300 px-4 py-3 text-[12.5px] font-semibold uppercase tracking-[0.04em] text-slate-700">
+              {activeColumnLabel}
             </div>
           )}
         </DragOverlay>
