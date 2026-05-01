@@ -55,7 +55,6 @@ import { OrgAssetsTab } from "@/components/assets/org-assets-tab";
 import { OrgAssetsTabWrapper } from "@/components/assets/org-assets-tab-wrapper";
 import { OrgSlaSection } from "@/components/sla/org-sla-section";
 import { OrgPortalSection } from "@/components/portal/org-portal-section";
-import { OrgReportsTab } from "@/components/organizations/org-reports-tab";
 import { OrgAnalyticsWorkbench } from "@/components/organizations/org-analytics-workbench";
 import { OrgHistorySection } from "@/components/organizations/org-history-section";
 import { OrgNetworkSection } from "@/components/organizations/org-network-section";
@@ -1520,17 +1519,14 @@ export default function OrganizationDetailPage() {
         </div>
       )}
 
-      {/* Rapports : fusion analytique ad-hoc (OrgReportsTab) + rapports
-          mensuels (livrables client PDF). Un seul onglet, deux sections. */}
+      {/* Rapports — UNIQUEMENT les dashboards attribués à cette org
+          (via /analytics/dashboards → Attribuer). Le dashboard tagué
+          "Rapport mensuel" est mis en premier comme défaut. La section
+          "Historique" garde les rapports mensuels PDF générés. */}
       {activeTab === "reports" && canFinances && (
         <div className="space-y-6">
-          {/* Rapports personnalisés attribués à cette org — synchronisés
-              avec /analytics/dashboards. Wrappé en error boundary. */}
           <OrgAnalyticsWorkbench organizationId={orgId} organizationName={o.name} />
-
           <OrgHistorySection organizationId={orgId} />
-
-          <OrgReportsTab organizationId={orgId} />
         </div>
       )}
 

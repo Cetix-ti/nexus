@@ -16,7 +16,8 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { LayoutDashboard, Plus, ExternalLink, AlertTriangle, Calendar, Mail } from "lucide-react";
+import { LayoutDashboard, Plus, ExternalLink, AlertTriangle, Calendar, Mail, Star } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -30,7 +31,16 @@ interface DashboardSummary {
   /** @deprecated — ancien champ single, lu pour rétrocompat. */
   organizationId?: string;
   widgets?: string[];
+  /** IDs de balises (TagDef) attachées au rapport. Le tag "builtin_rapport_mensuel"
+      désigne le dashboard "par défaut" pour cette org dans la section Rapports. */
+  tags?: string[];
 }
+
+/** ID du tag built-in "Rapport mensuel" — défini dans
+ *  src/lib/analytics/dashboard-tags.ts. Un dashboard portant ce tag
+ *  est considéré comme le rapport "par défaut" pour l'org dans la
+ *  section Rapports (premier listé + badge). */
+const DEFAULT_TAG_ID = "builtin_rapport_mensuel";
 
 /** Retourne la liste normalisée d'orgIds attribuées à un dashboard. */
 function normalizedOrgs(d: DashboardSummary): string[] {
@@ -133,7 +143,17 @@ function WorkbenchInner({ organizationId, organizationName }: { organizationId: 
     };
   }, [organizationId]);
 
-  const scoped = allDashboards.filter((d) => normalizedOrgs(d).includes(organizationId));
+  const scoped = allDashboards
+    .filter((d) => normalizedOrgs(d).includes(organizationId))
+    .slice()
+    // Tri : le rapport tagué "Rapport mensuel" en premier (défaut),
+    // puis tri alphabétique par label pour stabilité.
+    .sort((a, b) => {
+      const aDefault = (a.tags ?? []).includes(DEFAULT_TAG_ID);
+      const bDefault = (b.tags ?? []).includes(DEFAULT_TAG_ID);
+      if (aDefault !== bDefault) return aDefault ? -1 : 1;
+      return (a.label || "").localeCompare(b.label || "", "fr");
+    });
   const scopedScheduled = allScheduledReports.filter(
     (r) => Array.isArray(r.organizationIds) && r.organizationIds.includes(organizationId),
   );
@@ -178,17 +198,34 @@ function WorkbenchInner({ organizationId, organizationName }: { organizationId: 
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {scoped.map((d) => {
+              const isDefault = (d.tags ?? []).includes(DEFAULT_TAG_ID);
               const href = `/analytics/dashboards?orgContext=${organizationId}&orgName=${orgNameEnc}&view=${d.id}`;
               return (
                 <Link
                   key={d.id}
                   href={href}
-                  className="group rounded-lg border border-slate-200 bg-white hover:border-blue-300 hover:shadow-sm transition-all p-3"
+                  className={cn(
+                    "group rounded-lg border bg-white hover:shadow-sm transition-all p-3",
+                    isDefault
+                      ? "border-blue-300 ring-1 ring-inset ring-blue-100 hover:border-blue-400"
+                      : "border-slate-200 hover:border-blue-300",
+                  )}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <div className="text-[13px] font-semibold text-slate-900 truncate group-hover:text-blue-700">
-                        {d.label || "(sans nom)"}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[13px] font-semibold text-slate-900 truncate group-hover:text-blue-700">
+                          {d.label || "(sans nom)"}
+                        </span>
+                        {isDefault && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[9.5px] font-semibold text-blue-700"
+                            title="Dashboard par défaut pour cette organisation (tagué « Rapport mensuel »)"
+                          >
+                            <Star className="h-2.5 w-2.5 fill-current" />
+                            Par défaut
+                          </span>
+                        )}
                       </div>
                       {d.description && (
                         <p className="text-[11.5px] text-slate-500 truncate mt-0.5">{d.description}</p>
