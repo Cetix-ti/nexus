@@ -394,6 +394,58 @@ const WIDGET_PRESETS: WidgetPreset[] = [
 // ===========================================================================
 // Page
 // ===========================================================================
+// ===========================================================================
+// Helpers UI partagés — galerie des modèles + galerie des widgets custom
+// ===========================================================================
+
+/** Sélecteur du nombre de colonnes de la galerie. Persiste en localStorage
+ *  via le state du composant parent. Plage 2-5. */
+function ColumnsPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const choices = [2, 3, 4, 5] as const;
+  return (
+    <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5">
+      <span className="px-2 text-[10.5px] font-medium uppercase tracking-wide text-slate-500">Colonnes</span>
+      {choices.map((n) => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(n)}
+          className={cn(
+            "h-6 w-7 rounded text-[11.5px] font-semibold tabular-nums transition-colors",
+            value === n
+              ? "bg-violet-600 text-white"
+              : "text-slate-600 hover:bg-slate-100",
+          )}
+          aria-label={`${n} colonnes`}
+        >
+          {n}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Mappe le nombre de colonnes vers les classes Tailwind responsive
+ *  appropriées. On garde toujours 1 colonne sur mobile et 2 sur sm —
+ *  l'override n'agit qu'à partir de lg pour les écrans larges. */
+function gridColsClass(n: number): string {
+  switch (n) {
+    case 2: return "lg:grid-cols-2";
+    case 3: return "lg:grid-cols-3";
+    case 4: return "lg:grid-cols-3 xl:grid-cols-4";
+    case 5: return "lg:grid-cols-3 xl:grid-cols-5";
+    default: return "lg:grid-cols-3";
+  }
+}
+
+/** Hauteur du chart d'aperçu : adaptative selon le nombre de colonnes
+ *  (cards plus étroites = chart plus court pour rester lisible). */
+function previewChartHeight(n: number): string {
+  if (n >= 5) return "h-[88px]";
+  if (n === 4) return "h-[100px]";
+  return "h-[120px]";
+}
+
 export default function WidgetEditorPage() {
   // Contexte organisation : si ?orgContext=<orgId> dans l'URL, la page se
   // comporte comme un atelier scoped à cette org — filtre les widgets et
@@ -427,6 +479,59 @@ export default function WidgetEditorPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Nombre de colonnes pour la grille des modèles + widgets de la galerie.
+  // Persisté côté agent pour conserver la préférence entre sessions.
+  // Plage 2-5 : moins de 2 = trop large par carte, plus de 5 = chart
+  // illisible dans une carte aussi étroite.
+  const COLUMNS_KEY = "nexus:widgets-grid-columns";
+  const [gridColumns, setGridColumns] = useState<number>(() => {
+    if (typeof window === "undefined") return 3;
+    const v = parseInt(localStorage.getItem(COLUMNS_KEY) ?? "3", 10);
+    return [2, 3, 4, 5].includes(v) ? v : 3;
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") localStorage.setItem(COLUMNS_KEY, String(gridColumns));
+  }, [gridColumns]);
+
+  // Cache des données réelles fetchées pour chaque widget custom — utilisé
+  // pour rendre l'aperçu visuel des cards de la galerie. Fetch en parallèle
+  // au mount, mise à jour quand un widget est créé/édité.
+  const [previewByWidgetId, setPreviewByWidgetId] = useState<Map<string, QueryResult[]>>(new Map());
+  const [previewLoadingIds, setPreviewLoadingIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    // Fetch sequentiel borné : on évite de saturer le moteur de query pour
+    // les agents avec beaucoup de widgets. Promise.all + slice limit.
+    if (widgets.length === 0) return;
+    let cancelled = false;
+    setPreviewLoadingIds(new Set(widgets.map((w) => w.id)));
+    Promise.all(
+      widgets.map(async (w) => {
+        try {
+          const r = await fetch("/api/v1/analytics/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(w.query),
+          });
+          if (!r.ok) return [w.id, [] as QueryResult[]] as const;
+          const j = await r.json();
+          return [w.id, (j?.results as QueryResult[]) ?? []] as const;
+        } catch {
+          return [w.id, [] as QueryResult[]] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      const map = new Map<string, QueryResult[]>();
+      for (const [id, res] of entries) map.set(id, res);
+      setPreviewByWidgetId(map);
+      setPreviewLoadingIds(new Set());
+    });
+    return () => { cancelled = true; };
+    // Dépendance sur la longueur + IDs concaténés : refetch quand un widget
+    // est ajouté/supprimé/édité (id change ou liste change).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [widgets.map((w) => `${w.id}:${w.query.dataset}:${w.query.aggregate}:${w.query.groupBy}`).join("|")]);
 
   // Load datasets schema
   useEffect(() => {
@@ -1089,8 +1194,9 @@ export default function WidgetEditorPage() {
                   Aperçu visuel des modèles. Clique pour créer en un clic, tu pourras ensuite ajuster avec tes vraies données.
                 </p>
               </div>
+              <ColumnsPicker value={gridColumns} onChange={setGridColumns} />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-3", gridColsClass(gridColumns))}>
               {WIDGET_PRESETS.map((p) => {
                 const mockResults = mockDataForPreset(p);
                 const chartTypeLabel = CHART_TYPES.find((c) => c.id === p.chartType)?.label ?? p.chartType;
@@ -1103,12 +1209,13 @@ export default function WidgetEditorPage() {
                     className="group text-left rounded-xl border border-slate-200 bg-white hover:border-violet-400 hover:shadow-md transition-all overflow-hidden flex flex-col"
                   >
                     {/* Aperçu visuel — vrai rendu du chart avec données mockées
-                        plausibles. Permet de reconnaître le type au coup d'œil. */}
+                        plausibles. overflow-hidden pour clipper Recharts qui
+                        peut dépasser légèrement son container. */}
                     <div
-                      className="relative border-b border-slate-100 px-3 py-3 group-hover:bg-slate-50/50 transition-colors"
+                      className="relative border-b border-slate-100 px-3 py-3 group-hover:bg-slate-50/50 transition-colors overflow-hidden"
                       style={{ backgroundColor: p.color + "08" }}
                     >
-                      <div className="h-[110px] pointer-events-none">
+                      <div className={cn(previewChartHeight(gridColumns), "pointer-events-none overflow-hidden")}>
                         <WidgetChart
                           results={mockResults}
                           chartType={p.chartType}
@@ -1127,7 +1234,7 @@ export default function WidgetEditorPage() {
                     </div>
                     {/* Titre + description + dataset badge */}
                     <div className="p-3 flex-1 flex flex-col gap-1.5">
-                      <div className="text-[13px] font-semibold text-slate-900 leading-tight group-hover:text-violet-700 transition-colors">
+                      <div className="text-[13px] font-semibold text-slate-900 leading-tight group-hover:text-violet-700 transition-colors line-clamp-2">
                         {p.label}
                       </div>
                       <p className="text-[11.5px] text-slate-500 line-clamp-2 leading-snug">{p.description}</p>
@@ -1165,42 +1272,116 @@ export default function WidgetEditorPage() {
       )}
 
       {widgets.length > 0 && !creating && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {widgets.map((w) => {
-            const ds = datasets.find((d) => d.id === w.query.dataset);
-            const { base } = splitBucket(w.query.groupBy);
-            const grp = ds?.fields.find((f) => f.name === base);
-            return (
-              <Card key={w.id} className="hover:shadow-md transition-all">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: w.color + "20" }}>
-                        {CHART_TYPES.find((c) => c.id === w.chartType)?.icon ?? <BarChart3 className="h-4 w-4" />}
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+              <div>
+                <h3 className="text-[14px] font-semibold text-slate-900 inline-flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-blue-600" /> Mes widgets
+                </h3>
+                <p className="text-[11.5px] text-slate-500 mt-0.5">
+                  {widgets.length} widget{widgets.length > 1 ? "s" : ""} créé{widgets.length > 1 ? "s" : ""}. Aperçu calculé sur les vraies données.
+                </p>
+              </div>
+              <ColumnsPicker value={gridColumns} onChange={setGridColumns} />
+            </div>
+            <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-3", gridColsClass(gridColumns))}>
+              {widgets.map((w) => {
+                const ds = datasets.find((d) => d.id === w.query.dataset);
+                const { base } = splitBucket(w.query.groupBy);
+                const grp = ds?.fields.find((f) => f.name === base);
+                const chartTypeLabel = CHART_TYPES.find((c) => c.id === w.chartType)?.label ?? w.chartType;
+                const previewData = previewByWidgetId.get(w.id);
+                const isLoadingPreview = previewLoadingIds.has(w.id) && !previewData;
+                const hasData = previewData && previewData.length > 0;
+                return (
+                  <div
+                    key={w.id}
+                    className="group relative rounded-xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md transition-all overflow-hidden flex flex-col"
+                  >
+                    {/* Aperçu — vraies données fetchées en parallèle au mount */}
+                    <button
+                      type="button"
+                      onClick={() => startEdit(w)}
+                      className="block text-left w-full"
+                      title="Cliquer pour éditer"
+                    >
+                      <div
+                        className="relative border-b border-slate-100 px-3 py-3 group-hover:bg-slate-50/50 transition-colors overflow-hidden"
+                        style={{ backgroundColor: w.color + "08" }}
+                      >
+                        <div className={cn(previewChartHeight(gridColumns), "pointer-events-none overflow-hidden")}>
+                          {isLoadingPreview ? (
+                            <div className="h-full flex items-center justify-center">
+                              <div className="h-4 w-4 rounded-full border-2 border-slate-200 border-t-blue-500 animate-spin" />
+                            </div>
+                          ) : hasData ? (
+                            <WidgetChart
+                              results={previewData}
+                              chartType={w.chartType}
+                              color={w.color}
+                              name=""
+                              aggregate=""
+                              style={w.style}
+                            />
+                          ) : (
+                            <div className="h-full flex items-center justify-center text-[11px] text-slate-400 italic">
+                              Aucune donnée
+                            </div>
+                          )}
+                        </div>
+                        {/* Badge type de chart en overlay */}
+                        <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-full bg-white/90 backdrop-blur px-2 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200">
+                          {CHART_TYPES.find((c) => c.id === w.chartType)?.icon ?? <BarChart3 className="h-3 w-3" />}
+                          {chartTypeLabel}
+                        </span>
                       </div>
-                      <div>
-                        <p className="text-[13px] font-semibold text-slate-900">{w.name}</p>
-                        {w.description && <p className="text-[10px] text-slate-500">{w.description}</p>}
+                    </button>
+                    {/* Titre + description + actions + badges */}
+                    <div className="p-3 flex-1 flex flex-col gap-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[13px] font-semibold text-slate-900 leading-tight group-hover:text-blue-700 transition-colors line-clamp-2">
+                            {w.name}
+                          </div>
+                          {w.description && (
+                            <p className="text-[11.5px] text-slate-500 line-clamp-2 leading-snug mt-0.5">
+                              {w.description}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button onClick={() => startEdit(w)} className="h-6 w-6 rounded-md flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="Éditer">
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                          <button onClick={() => handleDuplicate(w)} className="h-6 w-6 rounded-md flex items-center justify-center text-slate-400 hover:text-violet-600 hover:bg-violet-50" title="Dupliquer">
+                            <Copy className="h-3 w-3" />
+                          </button>
+                          <button onClick={() => handleDelete(w.id)} className="h-6 w-6 rounded-md flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50" title="Supprimer">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mt-auto pt-1 flex items-center gap-1 flex-wrap">
+                        <Badge variant="default" className="text-[9.5px] uppercase tracking-wide">
+                          {ds?.label ?? w.query.dataset}
+                        </Badge>
+                        {grp && (
+                          <Badge variant="default" className="text-[9.5px]">↳ {grp.label}</Badge>
+                        )}
+                        {w.query.filters.length > 0 && (
+                          <Badge variant="warning" className="text-[9.5px]">
+                            {w.query.filters.length} filtre{w.query.filters.length > 1 ? "s" : ""}
+                          </Badge>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-0.5">
-                      <button onClick={() => startEdit(w)} className="h-7 w-7 rounded-md flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50"><Pencil className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => handleDuplicate(w)} className="h-7 w-7 rounded-md flex items-center justify-center text-slate-400 hover:text-violet-600 hover:bg-violet-50"><Copy className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => handleDelete(w.id)} className="h-7 w-7 rounded-md flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
-                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <Badge variant="default" className="text-[9px]">{ds?.label ?? w.query.dataset}</Badge>
-                    <Badge variant="default" className="text-[9px]">{AGGREGATES.find((a) => a.id === w.query.aggregate)?.label}</Badge>
-                    {grp && <Badge variant="default" className="text-[9px]">↳ {grp.label}</Badge>}
-                    <Badge variant="default" className="text-[9px]">{CHART_TYPES.find((c) => c.id === w.chartType)?.label}</Badge>
-                    {w.query.filters.length > 0 && <Badge variant="warning" className="text-[9px]">{w.query.filters.length} filtre{w.query.filters.length > 1 ? "s" : ""}</Badge>}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {aiOpen && (
