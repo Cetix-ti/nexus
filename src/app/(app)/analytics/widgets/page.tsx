@@ -53,6 +53,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { WidgetChart, type ChartDatum } from "@/components/widgets/widget-chart";
 
 // ===========================================================================
 // Types
@@ -257,6 +258,50 @@ interface WidgetPreset {
   chartType: ChartType;
   color: string;
   query: WidgetQuery;
+}
+
+/**
+ * Génère des données mockées plausibles pour l'aperçu d'un preset, selon
+ * son `chartType`. L'objectif n'est pas la réalité métier, mais de donner
+ * une représentation visuelle FIDÈLE du type de graphique au moment où
+ * l'agent parcourt les modèles. Les chiffres sont tirés d'une distribution
+ * descendante (premier le plus grand) qui rend bien sur les barres / pies.
+ */
+function mockDataForPreset(p: WidgetPreset): ChartDatum[] {
+  // Seed déterministe sur l'id pour que chaque preset ait toujours le même
+  // aperçu (pas de scintillement entre re-renders).
+  let seed = 0;
+  for (let i = 0; i < p.id.length; i++) seed = (seed * 31 + p.id.charCodeAt(i)) >>> 0;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return (seed & 0xFFFF) / 0xFFFF; };
+
+  const ct = p.chartType;
+  if (ct === "number") return [{ label: "Total", value: 42 + Math.floor(rnd() * 200) }];
+  if (ct === "gauge" || ct === "progress") {
+    return [{ label: "Total", value: 35 + Math.floor(rnd() * 50) }];
+  }
+  if (ct === "line" || ct === "area" || ct === "combo") {
+    const months = ["Janv", "Févr", "Mars", "Avr", "Mai", "Juin", "Juil"];
+    let v = 30 + Math.floor(rnd() * 30);
+    return months.map((m) => {
+      v = Math.max(8, v + Math.floor(rnd() * 24) - 9);
+      return { label: m, value: v };
+    });
+  }
+  if (ct === "pie" || ct === "donut" || ct === "funnel") {
+    const labels = ["Catégorie A", "Catégorie B", "Catégorie C", "Catégorie D"];
+    return labels.map((l, i) => ({ label: l, value: Math.max(5, 50 - i * 10 - Math.floor(rnd() * 8)) }));
+  }
+  if (ct === "table" || ct === "list") {
+    const labels = ["Premier", "Deuxième", "Troisième", "Quatrième"];
+    return labels.map((l, i) => ({ label: l, value: 100 - i * 18 - Math.floor(rnd() * 12) }));
+  }
+  if (ct === "scatter" || ct === "radar" || ct === "treemap" || ct === "heatmap" || ct === "sankey") {
+    const labels = ["Item 1", "Item 2", "Item 3", "Item 4", "Item 5"];
+    return labels.map((l, i) => ({ label: l, value: 30 + Math.floor(rnd() * 60) - i * 4 }));
+  }
+  // bar / horizontal_bar / stacked_bar par défaut
+  const labels = ["Premier", "Deuxième", "Troisième", "Quatrième", "Cinquième"];
+  return labels.map((l, i) => ({ label: l, value: Math.max(10, 70 - i * 12 - Math.floor(rnd() * 10)) }));
 }
 
 const WIDGET_PRESETS: WidgetPreset[] = [
@@ -1035,35 +1080,71 @@ export default function WidgetEditorPage() {
       {!creating && (
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
               <div>
                 <h3 className="text-[14px] font-semibold text-slate-900 inline-flex items-center gap-1.5">
                   <BarChart3 className="h-4 w-4 text-violet-600" /> Modèles prédéfinis
                 </h3>
                 <p className="text-[11.5px] text-slate-500 mt-0.5">
-                  Crée un widget en un clic à partir d&apos;un modèle courant. Tu peux ensuite l&apos;ajuster.
+                  Aperçu visuel des modèles. Clique pour créer en un clic, tu pourras ensuite ajuster avec tes vraies données.
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {WIDGET_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => startCreateFromPreset(p)}
-                  className="text-left rounded-lg border border-slate-200 bg-white hover:border-violet-300 hover:shadow-sm transition-all p-3"
-                >
-                  <div className="flex items-start gap-2">
-                    <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: p.color + "20" }}>
-                      {CHART_TYPES.find((c) => c.id === p.chartType)?.icon ?? <BarChart3 className="h-4 w-4" style={{ color: p.color }} />}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {WIDGET_PRESETS.map((p) => {
+                const mockResults = mockDataForPreset(p);
+                const chartTypeLabel = CHART_TYPES.find((c) => c.id === p.chartType)?.label ?? p.chartType;
+                const datasetLabel = datasets.find((d) => d.id === p.query.dataset)?.label ?? p.query.dataset;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => startCreateFromPreset(p)}
+                    className="group text-left rounded-xl border border-slate-200 bg-white hover:border-violet-400 hover:shadow-md transition-all overflow-hidden flex flex-col"
+                  >
+                    {/* Aperçu visuel — vrai rendu du chart avec données mockées
+                        plausibles. Permet de reconnaître le type au coup d'œil. */}
+                    <div
+                      className="relative border-b border-slate-100 px-3 py-3 group-hover:bg-slate-50/50 transition-colors"
+                      style={{ backgroundColor: p.color + "08" }}
+                    >
+                      <div className="h-[110px] pointer-events-none">
+                        <WidgetChart
+                          results={mockResults}
+                          chartType={p.chartType}
+                          color={p.color}
+                          name=""
+                          aggregate=""
+                        />
+                      </div>
+                      {/* Badge type de chart en overlay */}
+                      <span
+                        className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-full bg-white/90 backdrop-blur px-2 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200"
+                      >
+                        {CHART_TYPES.find((c) => c.id === p.chartType)?.icon ?? <BarChart3 className="h-3 w-3" />}
+                        {chartTypeLabel}
+                      </span>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[12.5px] font-semibold text-slate-900 truncate">{p.label}</div>
-                      <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{p.description}</p>
+                    {/* Titre + description + dataset badge */}
+                    <div className="p-3 flex-1 flex flex-col gap-1.5">
+                      <div className="text-[13px] font-semibold text-slate-900 leading-tight group-hover:text-violet-700 transition-colors">
+                        {p.label}
+                      </div>
+                      <p className="text-[11.5px] text-slate-500 line-clamp-2 leading-snug">{p.description}</p>
+                      <div className="mt-auto pt-1 flex items-center gap-1 flex-wrap">
+                        <Badge variant="default" className="text-[9.5px] uppercase tracking-wide">
+                          {datasetLabel}
+                        </Badge>
+                        {p.query.filters.length > 0 && (
+                          <Badge variant="warning" className="text-[9.5px]">
+                            {p.query.filters.length} filtre{p.query.filters.length > 1 ? "s" : ""}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
