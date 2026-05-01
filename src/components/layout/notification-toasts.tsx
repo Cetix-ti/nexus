@@ -102,8 +102,22 @@ function ToastCard({
  * Also polls for new in-app notifications and pushes them as toasts.
  */
 export function NotificationToasts() {
-  const { toasts, push, dismiss } = useNotificationToasts();
+  const { toasts, push, dismiss, setAutoDismissMs } = useNotificationToasts();
   const lastCheckRef = useRef<string | null>(null);
+
+  // Charge la durée d'affichage configurée par l'agent au mount. Si la
+  // prefs n'est pas dispo (utilisateur sans préférence custom), default
+  // 8s reste appliqué par le store.
+  useEffect(() => {
+    fetch("/api/v1/account/notifications", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (typeof d?.prefs?.inAppDuration === "number") {
+          setAutoDismissMs(d.prefs.inAppDuration);
+        }
+      })
+      .catch(() => {});
+  }, [setAutoDismissMs]);
 
   // Poll for new notifications every 30 seconds
   useEffect(() => {

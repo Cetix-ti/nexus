@@ -15,7 +15,12 @@ export interface NotificationToast {
 
 interface NotificationToastState {
   toasts: NotificationToast[];
+  /** Durée d'auto-dismiss en ms. 0 = permanent (l'agent ferme manuellement).
+   *  Lue depuis User.preferences.notifications.inAppDuration au mount du
+   *  composant NotificationToasts via setAutoDismissMs. */
+  autoDismissMs: number;
   push: (toast: Omit<NotificationToast, "id" | "createdAt">) => void;
+  setAutoDismissMs: (ms: number) => void;
   dismiss: (id: string) => void;
   dismissAll: () => void;
 }
@@ -23,18 +28,24 @@ interface NotificationToastState {
 let counter = 0;
 
 export const useNotificationToasts = create<NotificationToastState>(
-  (set) => ({
+  (set, get) => ({
     toasts: [],
+    autoDismissMs: 8000,
     push: (toast) => {
       const id = `toast-${++counter}-${Date.now()}`;
       set((s) => ({
         toasts: [...s.toasts, { ...toast, id, createdAt: Date.now() }].slice(-5),
       }));
-      // Auto-dismiss after 8 seconds
-      setTimeout(() => {
-        set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
-      }, 8000);
+      // Auto-dismiss configurable. Si autoDismissMs = 0 → toast permanent
+      // (l'agent doit cliquer × pour fermer).
+      const ms = get().autoDismissMs;
+      if (ms > 0) {
+        setTimeout(() => {
+          set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+        }, ms);
+      }
     },
+    setAutoDismissMs: (ms) => set({ autoDismissMs: Math.max(0, Math.round(ms)) }),
     dismiss: (id) =>
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
     dismissAll: () => set({ toasts: [] }),

@@ -40,6 +40,9 @@ export interface NotificationPrefs {
    *  events "ticket_assigned" et "ticket_unassigned_pool" quand le
    *  ticket a `requiresApproval=true && approvalStatus="PENDING"`. */
   skipPendingApproval: boolean;
+  /** Durée d'affichage des toasts in-app (en ms). 0 = permanent
+   *  (l'agent doit cliquer "x" pour fermer). Default 8000ms (8s). */
+  inAppDuration: number;
 }
 
 export function getDefaultPrefs(): NotificationPrefs {
@@ -54,6 +57,8 @@ export function getDefaultPrefs(): NotificationPrefs {
     // d'approbation activées par défaut (comportement V1). L'agent peut
     // désactiver explicitement.
     skipPendingApproval: false,
+    // 8 secondes — comportement historique du store de toasts.
+    inAppDuration: 8000,
   };
 }
 
@@ -92,10 +97,17 @@ export async function getUserNotificationPrefs(
         };
       }
     }
+    // Validation inAppDuration : entier dans [0, 600_000] (10 min max).
+    // 0 = permanent. Défaut 8000ms.
+    let inAppDuration = defaults.inAppDuration;
+    if (typeof raw.inAppDuration === "number" && Number.isFinite(raw.inAppDuration)) {
+      inAppDuration = Math.max(0, Math.min(600_000, Math.round(raw.inAppDuration)));
+    }
     return {
       channels,
       events,
       skipPendingApproval: raw.skipPendingApproval ?? defaults.skipPendingApproval,
+      inAppDuration,
     };
   } catch (err) {
     console.warn("[notifications/prefs] load failed, fallback defaults:", err);

@@ -593,7 +593,18 @@ interface ApiPrefs {
   /** Toggle global : exclure les notifications pour les tickets en
    *  attente d'approbation (default false). */
   skipPendingApproval: boolean;
+  /** Durée d'affichage des toasts in-app en ms. 0 = permanent. */
+  inAppDuration: number;
 }
+
+const TOAST_DURATION_OPTIONS: Array<{ value: number; label: string }> = [
+  { value: 3000,  label: "3 secondes" },
+  { value: 5000,  label: "5 secondes" },
+  { value: 8000,  label: "8 secondes (défaut)" },
+  { value: 15000, label: "15 secondes" },
+  { value: 30000, label: "30 secondes" },
+  { value: 0,     label: "Permanent (fermeture manuelle)" },
+];
 
 const CATEGORY_LABELS: Record<string, string> = {
   tickets: "Tickets",
@@ -766,6 +777,35 @@ function NotificationsTab() {
               </div>
             </div>
             <UserToggle checked={prefs.channels.email} onChange={() => toggleChannel("email")} />
+          </div>
+        </div>
+
+        {/* Durée des toasts in-app — l'agent peut prolonger ou rendre
+            permanent l'affichage des notifications popup en bas-droite. */}
+        <div className="mt-4 pt-4 border-t border-slate-100">
+          <div className="flex items-center justify-between gap-3 py-2.5">
+            <div className="flex items-start gap-3 min-w-0 flex-1">
+              <div className="h-9 w-9 rounded-lg bg-violet-50 flex items-center justify-center text-violet-600">
+                <Bell className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-slate-900">
+                  Durée d&apos;affichage des notifications
+                </p>
+                <p className="text-[12px] text-slate-500">
+                  Combien de temps les notifications popup restent à l&apos;écran avant disparition automatique.
+                </p>
+              </div>
+            </div>
+            <select
+              value={prefs.inAppDuration}
+              onChange={(e) => persist({ ...prefs, inAppDuration: Number(e.target.value) })}
+              className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[12.5px] text-slate-700 shrink-0"
+            >
+              {TOAST_DURATION_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
           </div>
         </div>
 

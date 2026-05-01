@@ -49,10 +49,17 @@ export async function PUT(req: Request) {
   // d'approbation". Booléen, default false.
   const skipPendingApproval = !!body.skipPendingApproval;
 
+  // Durée des toasts in-app (ms). 0 = permanent. Cap à 10 min.
+  let inAppDuration = 8000;
+  if (typeof body.inAppDuration === "number" && Number.isFinite(body.inAppDuration)) {
+    inAppDuration = Math.max(0, Math.min(600_000, Math.round(body.inAppDuration)));
+  }
+
   const saved = await saveUserNotificationPrefs(me.id, {
     channels,
     events,
     skipPendingApproval,
+    inAppDuration,
   });
   return NextResponse.json({ prefs: saved });
 }
