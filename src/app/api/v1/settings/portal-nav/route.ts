@@ -26,7 +26,7 @@ interface PutBody {
 }
 
 const TAB_KEYS = [
-  "home", "tickets", "approvals", "assets", "projects", "reports",
+  "home", "tickets", "approvals", "approvers", "assets", "projects", "reports",
   "finances", "contacts", "particularities", "policies", "software",
   "changes", "renewals", "budget",
 ] as const;

@@ -69,6 +69,7 @@ export interface PortalNavSettings {
     home: boolean;
     tickets: boolean;
     approvals: boolean;
+    approvers: boolean;
     assets: boolean;
     projects: boolean;
     reports: boolean;
@@ -119,6 +120,7 @@ const DEFAULTS: {
       home: true,
       tickets: true,
       approvals: true,
+      approvers: true, // admin-only au runtime — sûr d'être ON globalement
       assets: true,
       reports: true,
       contacts: true,

@@ -21,6 +21,7 @@ interface PortalNavTabs {
   home: boolean;
   tickets: boolean;
   approvals: boolean;
+  approvers: boolean;
   assets: boolean;
   projects: boolean;
   reports: boolean;
@@ -44,6 +45,7 @@ const TABS_META: Array<{
   { key: "home", label: "Accueil", description: "Page d'atterrissage du portail.", group: "v1" },
   { key: "tickets", label: "Billets", description: "Création et suivi des demandes par les clients.", group: "v1" },
   { key: "approvals", label: "Approbations", description: "Workflow d'approbation des billets soumis.", group: "v1" },
+  { key: "approvers", label: "Approbateurs (admin)", description: "Gestion de la cascade d'approbateurs (visible aux admins portail uniquement).", group: "v1" },
   { key: "assets", label: "Actifs", description: "Inventaire des actifs visibles par le client.", group: "v1" },
   { key: "reports", label: "Rapports", description: "Rapports mensuels publiés au client.", group: "v1" },
   { key: "contacts", label: "Contacts", description: "Annuaire des contacts de l'organisation.", group: "v1" },

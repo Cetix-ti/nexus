@@ -23,6 +23,7 @@ import {
   PanelLeft,
   Lightbulb,
   ShieldCheck,
+  UserCog,
   Package,
   GitCommit,
   CalendarClock,
@@ -46,7 +47,7 @@ interface NavItem {
 
 /** Clé stable utilisée pour l'override global via Paramètres → Portail. */
 type NavTabKey =
-  | "home" | "tickets" | "approvals" | "assets" | "projects"
+  | "home" | "tickets" | "approvals" | "approvers" | "assets" | "projects"
   | "reports" | "finances" | "contacts"
   | "particularities" | "policies" | "software" | "changes"
   | "renewals" | "budget";
@@ -63,6 +64,7 @@ const navItems: NavItemWithKey[] = [
   // côté serveur sur l'email du contact connecté — un user qui n'a aucune
   // approbation à traiter verra une page vide (pas un placeholder masqué).
   { tabKey: "approvals", labelKey: "portal.nav.approvals", label: "Approbations", href: "/portal/approvals", icon: CheckCircle2 },
+  { tabKey: "approvers", labelKey: "portal.nav.approvers", label: "Approbateurs", href: "/portal/approvers", icon: UserCog, adminOnly: true },
   { tabKey: "assets", labelKey: "portal.nav.assets", href: "/portal/assets", icon: Monitor },
   { tabKey: "projects", labelKey: "portal.nav.projects", href: "/portal/projects", icon: FolderKanban, adminOnly: true },
   { tabKey: "reports", labelKey: "portal.nav.reports", href: "/portal/reports", icon: BarChart3, adminOnly: true },

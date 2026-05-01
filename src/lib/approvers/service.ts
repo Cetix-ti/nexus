@@ -27,6 +27,7 @@ function flatten(row: any) {
     totalApproved: row.totalApproved,
     totalRejected: row.totalRejected,
     averageResponseHours: row.averageResponseHours,
+    escalateAfterHours: row.escalateAfterHours,
     addedBy: row.addedBy,
     createdAt: row.createdAt.toISOString(),
   };
@@ -54,6 +55,10 @@ export async function createApprover(input: any) {
     scopeMinAmount: input.scopeMinAmount,
     notifyByEmail: input.notifyByEmail ?? true,
     notifyBySms: input.notifyBySms ?? false,
+    escalateAfterHours:
+      typeof input.escalateAfterHours === "number" && input.escalateAfterHours > 0
+        ? Math.round(input.escalateAfterHours)
+        : null,
     addedBy: input.addedBy,
   };
   const row = await prisma.orgApprover.create({ data });
@@ -62,6 +67,17 @@ export async function createApprover(input: any) {
 
 export async function updateApprover(id: string, patch: any) {
   if (patch.scope) patch.scope = scopeToDb(patch.scope);
+  // Validation/normalisation escalateAfterHours :
+  // null OU absent = pas d'escalade. Sinon entier > 0.
+  if ("escalateAfterHours" in patch) {
+    if (patch.escalateAfterHours === null || patch.escalateAfterHours === undefined) {
+      patch.escalateAfterHours = null;
+    } else if (typeof patch.escalateAfterHours === "number" && patch.escalateAfterHours > 0) {
+      patch.escalateAfterHours = Math.round(patch.escalateAfterHours);
+    } else {
+      patch.escalateAfterHours = null;
+    }
+  }
   const row = await prisma.orgApprover.update({ where: { id }, data: patch });
   return flatten(row);
 }

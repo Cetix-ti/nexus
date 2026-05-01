@@ -1195,6 +1195,11 @@ model OrgApprover {
   totalApproved        Int           @default(0) @map("total_approved")
   totalRejected        Int           @default(0) @map("total_rejected")
   averageResponseHours Float?        @map("average_response_hours")
+  /// Délai en heures avant escalade automatique vers le niveau suivant.
+  /// Si une approbation reste PENDING > N heures, un job de fond bascule
+  /// la responsabilité sur l'approbateur de niveau supérieur. NULL =
+  /// pas d'escalade auto (comportement legacy V1).
+  escalateAfterHours   Int?          @map("escalate_after_hours")
   addedBy              String?       @map("added_by")
   createdAt            DateTime      @default(now()) @map("created_at")
   updatedAt            DateTime      @updatedAt @map("updated_at")
