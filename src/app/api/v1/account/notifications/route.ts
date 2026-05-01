@@ -45,6 +45,14 @@ export async function PUT(req: Request) {
     }
   }
 
-  const saved = await saveUserNotificationPrefs(me.id, { channels, events });
+  // Toggle global "ne pas recevoir de notif pour tickets en attente
+  // d'approbation". Booléen, default false.
+  const skipPendingApproval = !!body.skipPendingApproval;
+
+  const saved = await saveUserNotificationPrefs(me.id, {
+    channels,
+    events,
+    skipPendingApproval,
+  });
   return NextResponse.json({ prefs: saved });
 }

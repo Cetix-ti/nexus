@@ -590,6 +590,9 @@ interface ApiEventCatalog {
 interface ApiPrefs {
   channels: { inApp: boolean; email: boolean };
   events: Record<string, EventPref>;
+  /** Toggle global : exclure les notifications pour les tickets en
+   *  attente d'approbation (default false). */
+  skipPendingApproval: boolean;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -763,6 +766,33 @@ function NotificationsTab() {
               </div>
             </div>
             <UserToggle checked={prefs.channels.email} onChange={() => toggleChannel("email")} />
+          </div>
+        </div>
+
+        {/* Filtre transverse : tickets en attente d'approbation. Évite
+            de spammer l'agent quand un ticket entre dans le système mais
+            est verrouillé par un workflow d'approbation client — utile
+            si l'agent ne veut être alerté que des tickets immédiatement
+            actionnables. */}
+        <div className="mt-4 pt-4 border-t border-slate-100">
+          <div className="flex items-center justify-between py-2.5">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+                <Bell className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-slate-900">
+                  Ignorer les tickets en attente d&apos;approbation
+                </p>
+                <p className="text-[12px] text-slate-500">
+                  Quand activé, vous ne recevez aucune notification pour les nouveaux tickets verrouillés par un workflow d&apos;approbation client.
+                </p>
+              </div>
+            </div>
+            <UserToggle
+              checked={prefs.skipPendingApproval}
+              onChange={() => persist({ ...prefs, skipPendingApproval: !prefs.skipPendingApproval })}
+            />
           </div>
         </div>
       </Card>

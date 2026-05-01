@@ -91,6 +91,8 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
         isInternal: true,
         assigneeId: true,
         creatorId: true,
+        requiresApproval: true,
+        approvalStatus: true,
         requester: {
           select: { firstName: true, lastName: true, email: true, isActive: true },
         },
@@ -99,6 +101,11 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
       },
     });
     if (!ticket) return;
+    // Indique si on doit filtrer les destinataires selon leur préférence
+    // "skipPendingApproval". S'applique uniquement aux tickets vraiment
+    // en attente — un ticket déjà APPROVED/REJECTED a son flow normal.
+    const isPendingApproval =
+      !!ticket.requiresApproval && ticket.approvalStatus === "PENDING";
 
     const displayNumber = await formatTicketDisplay(ticket);
     const agentUrl = await getAgentTicketUrl(displayNumber);
@@ -123,9 +130,18 @@ export async function dispatchTicketCreatedNotifications(ticketId: string): Prom
 
     // --- Destinataires agents -----------------------------------------
     const event = ticket.assigneeId ? "ticket_assigned" : "ticket_unassigned_pool";
-    const recipients = ticket.assigneeId
+    const baseRecipients = ticket.assigneeId
       ? [ticket.assigneeId]
       : await listActiveAgents(ticket.creatorId);
+    // Filtre les agents qui ont demandé à NE PAS recevoir les notifs pour
+    // tickets en attente d'approbation (préférence skipPendingApproval).
+    // Les tickets non-approuvés (déjà décidés) passent par le filtre sans
+    // modification.
+    const { filterRecipientsForPendingApproval } = await import("./preferences");
+    const recipients = await filterRecipientsForPendingApproval(
+      baseRecipients,
+      isPendingApproval,
+    );
 
     // Payload pour la substitution {{var}} dans le template DB. Couvre
     // toutes les variables du catalogue (variable-catalog.ts) pour cet

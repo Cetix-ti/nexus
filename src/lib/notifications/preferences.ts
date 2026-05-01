@@ -35,6 +35,11 @@ export interface EventPref {
 export interface NotificationPrefs {
   channels: { inApp: boolean; email: boolean };
   events: Record<string, EventPref>;
+  /** Toggle global : si false, l'agent ne reçoit PAS de notification
+   *  pour les nouveaux tickets en attente d'approbation. Couvre les
+   *  events "ticket_assigned" et "ticket_unassigned_pool" quand le
+   *  ticket a `requiresApproval=true && approvalStatus="PENDING"`. */
+  skipPendingApproval: boolean;
 }
 
 export function getDefaultPrefs(): NotificationPrefs {
@@ -45,6 +50,10 @@ export function getDefaultPrefs(): NotificationPrefs {
   return {
     channels: { inApp: true, email: true },
     events,
+    // Default false : on garde les notifications de tickets en attente
+    // d'approbation activées par défaut (comportement V1). L'agent peut
+    // désactiver explicitement.
+    skipPendingApproval: false,
   };
 }
 
@@ -83,7 +92,11 @@ export async function getUserNotificationPrefs(
         };
       }
     }
-    return { channels, events };
+    return {
+      channels,
+      events,
+      skipPendingApproval: raw.skipPendingApproval ?? defaults.skipPendingApproval,
+    };
   } catch (err) {
     console.warn("[notifications/prefs] load failed, fallback defaults:", err);
     return getDefaultPrefs();
@@ -129,4 +142,26 @@ export async function canNotify(
     return getEventDefaults(eventKey)[channel];
   }
   return evPref[channel];
+}
+
+/**
+ * Retourne la liste des userIds qui veulent être notifiés pour un ticket
+ * en attente d'approbation (filtre `skipPendingApproval=true` éliminé).
+ * Si le ticket n'est PAS en attente d'approbation, retourne la liste
+ * complète sans filtrer (no-op).
+ *
+ * Appelé en amont de notifyUsers() dans dispatchTicketCreatedNotifications
+ * pour respecter la préférence agent.
+ */
+export async function filterRecipientsForPendingApproval(
+  recipients: string[],
+  isPendingApproval: boolean,
+): Promise<string[]> {
+  if (!isPendingApproval || recipients.length === 0) return recipients;
+  const out: string[] = [];
+  for (const uid of recipients) {
+    const prefs = await getUserNotificationPrefs(uid);
+    if (!prefs.skipPendingApproval) out.push(uid);
+  }
+  return out;
 }
