@@ -23,6 +23,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       members: {
         include: {
           user: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } },
+          contact: { select: { id: true, firstName: true, lastName: true, email: true } },
         },
         orderBy: { createdAt: "asc" },
       },
@@ -102,16 +103,26 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         targetDate: m.targetDate.toISOString(),
         achievedDate: m.achievedDate?.toISOString() ?? null,
         isCriticalPath: m.isCriticalPath,
+        phaseId: m.phaseId ?? null,
+        taskId: m.taskId ?? null,
+        validatedByTicketId: m.validatedByTicketId ?? null,
       })),
-      members: project.members.map((mem) => ({
-        id: mem.id,
-        userId: mem.userId,
-        agentName: `${mem.user.firstName} ${mem.user.lastName}`.trim(),
-        agentEmail: mem.user.email,
-        agentAvatar: mem.user.avatar ?? null,
-        role: mem.role,
-        allocatedHoursPerWeek: mem.allocatedHoursPerWeek,
-      })),
+      members: project.members.map((mem) => {
+        const isContact = !mem.userId && !!mem.contactId;
+        const person = isContact ? mem.contact : mem.user;
+        return {
+          id: mem.id,
+          userId: mem.userId ?? null,
+          contactId: mem.contactId ?? null,
+          memberType: isContact ? "contact" : "agent",
+          agentName: person ? `${person.firstName} ${person.lastName}`.trim() : "—",
+          agentEmail: person?.email ?? "",
+          // Contacts n'ont pas d'avatar dans le schéma actuel.
+          agentAvatar: !isContact ? (mem.user?.avatar ?? null) : null,
+          role: mem.role,
+          allocatedHoursPerWeek: mem.allocatedHoursPerWeek,
+        };
+      }),
     },
   });
 }

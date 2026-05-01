@@ -462,6 +462,7 @@ model Contact {
   softwareResponsibleAt SoftwareInstance[]      @relation("SoftwareInstanceClientOwner")
   softwareLicenses      SoftwareLicense[]       @relation("SoftwareLicenseContact")
   softwareAccesses      ContactSoftwareAccess[]
+  projectMemberships    ProjectMember[]
 
   @@map("contacts")
 }
@@ -546,6 +547,16 @@ model Ticket {
 
   projectId String?  @map("project_id")
   project   Project? @relation(fields: [projectId], references: [id])
+  /// Phase du projet à laquelle ce ticket est rattaché. Optionnel —
+  /// permet de regrouper les tickets par phase et de fermer la phase
+  /// quand tous ses tickets sont fermés.
+  phaseId   String?           @map("phase_id")
+  phase     ProjectPhase?     @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  /// Jalon validé par la fermeture de ce ticket (cf. auto-completion :
+  /// quand le ticket passe en resolved/closed, le jalon linké bascule
+  /// en achieved).
+  milestoneId String?         @map("milestone_id")
+  milestone   ProjectMilestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
 
   // Interne (administratif Cetix) vs client. isInternal=true exclut le
   // ticket des vues clients (liste, kanban, my-day) et le fait apparaitre
@@ -2474,6 +2485,9 @@ model ProjectPhase {
   estimatedHours Float? @map("estimated_hours")
   createdAt   DateTime  @default(now()) @map("created_at")
 
+  tickets    Ticket[]
+  milestones ProjectMilestone[]
+
   @@index([projectId])
   @@map("project_phases")
 }
@@ -2488,9 +2502,25 @@ model ProjectMilestone {
   achievedDate   DateTime? @map("achieved_date")
   status         String    @default("upcoming")
   isCriticalPath Boolean   @default(false) @map("is_critical_path")
+  /// Phase à laquelle ce jalon appartient. Optionnel — un jalon peut
+  /// flotter au niveau projet sans être attaché à une phase précise.
+  phaseId        String?       @map("phase_id")
+  phase          ProjectPhase? @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  /// Tâche projet qui valide ce jalon. Quand la tâche passe en
+  /// "completed", le jalon bascule automatiquement en "achieved".
+  taskId         String?       @map("task_id")
+  task           ProjectTask?  @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  /// Ticket qui valide ce jalon. Quand le ticket passe en
+  /// resolved/closed, le jalon bascule automatiquement en "achieved".
+  /// (Tickets ↔ jalon est lui aussi exposé via Ticket.milestoneId pour
+  /// permettre l'attribution depuis la quick-view kanban projet.)
+  validatedByTicketId String?  @map("validated_by_ticket_id")
   createdAt      DateTime  @default(now()) @map("created_at")
 
+  tickets        Ticket[]
+
   @@index([projectId])
+  @@index([phaseId])
   @@map("project_milestones")
 }
 
@@ -2498,13 +2528,21 @@ model ProjectMember {
   id                    String   @id @default(cuid())
   projectId             String   @map("project_id")
   project               Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  userId                String   @map("user_id")
-  user                  User     @relation(fields: [userId], references: [id])
+  /// userId OU contactId — exactement l'un des deux non-null. userId pour
+  /// les agents internes (techs Cetix), contactId pour les contacts client
+  /// (membre côté client : sponsor, super-utilisateur, chef de projet
+  /// client). Pas de contrainte XOR au niveau DB pour rester souple ; le
+  /// service applique la règle.
+  userId                String?  @map("user_id")
+  user                  User?    @relation(fields: [userId], references: [id])
+  contactId             String?  @map("contact_id")
+  contact               Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
   role                  String   @default("contributor")
   allocatedHoursPerWeek Float?   @map("allocated_hours_per_week")
   createdAt             DateTime @default(now()) @map("created_at")
 
   @@unique([projectId, userId])
+  @@unique([projectId, contactId])
   @@index([projectId])
   @@map("project_members")
 }
@@ -2565,6 +2603,8 @@ model ProjectTask {
   sortOrder         Int       @default(0) @map("sort_order")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  milestones        ProjectMilestone[]
 
   @@index([projectId, status])
   @@map("project_tasks")

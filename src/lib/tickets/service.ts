@@ -549,6 +549,8 @@ export async function updateTicket(
     requiresOnSite: boolean;
     calendarEventId: string | null;
     approvalLockOverride: boolean;
+    phaseId: string | null;
+    milestoneId: string | null;
   }>,
   userId?: string,
 ): Promise<UiTicket> {
@@ -635,6 +637,16 @@ export async function updateTicket(
       ? { connect: { id: patch.calendarEventId } }
       : { disconnect: true };
   }
+  if (patch.phaseId !== undefined) {
+    data.phase = patch.phaseId
+      ? { connect: { id: patch.phaseId } }
+      : { disconnect: true };
+  }
+  if (patch.milestoneId !== undefined) {
+    data.milestone = patch.milestoneId
+      ? { connect: { id: patch.milestoneId } }
+      : { disconnect: true };
+  }
 
   // Auto-set resolvedAt/closedAt
   if (patch.status) {
@@ -707,6 +719,31 @@ export async function updateTicket(
     }
     if (activities.length > 0) {
       await prisma.activity.createMany({ data: activities });
+    }
+  }
+
+  // Auto-completion des jalons : quand le ticket passe en RESOLVED/CLOSED,
+  // on marque "achieved" tout jalon linké via Ticket.milestoneId OU via
+  // Milestone.validatedByTicketId. Idempotent (skip ceux déjà achieved).
+  if (
+    patch.status &&
+    ["RESOLVED", "CLOSED"].includes(patch.status.toUpperCase()) &&
+    oldTicket &&
+    !["RESOLVED", "CLOSED"].includes(oldTicket.status.toUpperCase())
+  ) {
+    try {
+      await prisma.projectMilestone.updateMany({
+        where: {
+          OR: [
+            { id: t.milestoneId ?? "__none__" },
+            { validatedByTicketId: id },
+          ],
+          status: { not: "achieved" },
+        },
+        data: { status: "achieved", achievedDate: new Date() },
+      });
+    } catch (e) {
+      console.warn("[updateTicket] auto-complete milestones failed:", e);
     }
   }
 

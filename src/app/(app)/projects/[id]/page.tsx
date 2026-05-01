@@ -161,11 +161,17 @@ interface Milestone {
   targetDate: string;
   achievedDate: string | null;
   isCriticalPath: boolean;
+  phaseId?: string | null;
+  taskId?: string | null;
+  validatedByTicketId?: string | null;
 }
 
 interface Member {
   id: string;
-  userId: string;
+  userId: string | null;
+  contactId?: string | null;
+  /** "agent" (User interne) ou "contact" (Contact côté client). */
+  memberType?: "agent" | "contact";
   agentName: string;
   agentEmail: string;
   agentAvatar?: string | null;
@@ -489,6 +495,7 @@ export default function ProjectDetailPage() {
           <MilestonesTab
             milestones={milestones}
             projectId={project.id}
+            phases={phases}
             onChanged={loadProject}
           />
         )}
@@ -496,7 +503,7 @@ export default function ProjectDetailPage() {
         {tab === "similar" && <SimilarProjectsTab projectId={project.id} />}
         {tab === "activity" && <ActivityTab activities={[]} />}
         {tab === "team" && (
-          <TeamTab members={members} projectId={project.id} onChanged={loadProject} />
+          <TeamTab members={members} projectId={project.id} organizationId={project.organizationId} onChanged={loadProject} />
         )}
       </div>
 
@@ -1383,7 +1390,7 @@ function PhaseModal({
 // ---------------------------------------------------------------------------
 // MILESTONES
 // ---------------------------------------------------------------------------
-function MilestonesTab({ milestones, projectId, onChanged }: { milestones: Milestone[]; projectId: string; onChanged: () => void }) {
+function MilestonesTab({ milestones, projectId, phases, onChanged }: { milestones: Milestone[]; projectId: string; phases: Phase[]; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -1445,16 +1452,39 @@ function MilestonesTab({ milestones, projectId, onChanged }: { milestones: Miles
           </CardContent>
         </Card>
       )}
-      {open && <MilestoneModal projectId={projectId} onClose={() => setOpen(false)} onCreated={() => { setOpen(false); onChanged(); }} />}
+      {open && <MilestoneModal projectId={projectId} phases={phases} onClose={() => setOpen(false)} onCreated={() => { setOpen(false); onChanged(); }} />}
     </div>
   );
 }
 
-function MilestoneModal({ projectId, onClose, onCreated }: { projectId: string; onClose: () => void; onCreated: () => void }) {
+function MilestoneModal({
+  projectId,
+  phases,
+  onClose,
+  onCreated,
+}: {
+  projectId: string;
+  phases: Phase[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [isCriticalPath, setIsCriticalPath] = useState(false);
+  const [phaseId, setPhaseId] = useState<string>("");
+  const [validatedByTicketId, setValidatedByTicketId] = useState<string>("");
+  // Tickets liés au projet — pour le sélecteur "Validé par le ticket".
+  const [projectTickets, setProjectTickets] = useState<Array<{ id: string; number: number; subject: string }>>([]);
+  useEffect(() => {
+    fetch(`/api/v1/tickets?projectId=${projectId}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((arr) => {
+        if (!Array.isArray(arr)) return;
+        setProjectTickets(arr.map((t: any) => ({ id: t.id, number: t.number, subject: t.subject })));
+      })
+      .catch(() => {});
+  }, [projectId]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1465,7 +1495,14 @@ function MilestoneModal({ projectId, onClose, onCreated }: { projectId: string; 
       const res = await fetch(`/api/v1/projects/${projectId}/milestones`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description, targetDate, isCriticalPath }),
+        body: JSON.stringify({
+          name,
+          description,
+          targetDate,
+          isCriticalPath,
+          phaseId: phaseId || null,
+          validatedByTicketId: validatedByTicketId || null,
+        }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Erreur");
       onCreated();
@@ -1478,6 +1515,41 @@ function MilestoneModal({ projectId, onClose, onCreated }: { projectId: string; 
       <Input label="Nom" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
       <TextArea label="Description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
       <Input label="Date cible" type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} required />
+      {phases.length > 0 && (
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Phase liée (optionnel)</label>
+          <Select value={phaseId || "__none__"} onValueChange={(v) => setPhaseId(v === "__none__" ? "" : v)}>
+            <SelectTrigger><SelectValue placeholder="Aucune phase" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">Aucune phase</SelectItem>
+              {phases.map((p) => (
+                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {projectTickets.length > 0 && (
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-slate-700">
+            Validé par le ticket (optionnel)
+          </label>
+          <Select value={validatedByTicketId || "__none__"} onValueChange={(v) => setValidatedByTicketId(v === "__none__" ? "" : v)}>
+            <SelectTrigger><SelectValue placeholder="Aucun ticket" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">Aucun ticket</SelectItem>
+              {projectTickets.map((t) => (
+                <SelectItem key={t.id} value={t.id}>#{t.number} — {t.subject}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+            Quand ce ticket passera en «&nbsp;Résolu&nbsp;» ou
+            «&nbsp;Fermé&nbsp;», le jalon basculera automatiquement en
+            «&nbsp;Atteint&nbsp;».
+          </p>
+        </div>
+      )}
       <label className="flex items-center gap-2 text-[13px] text-slate-700">
         <input type="checkbox" checked={isCriticalPath} onChange={(e) => setIsCriticalPath(e.target.checked)} />
         Chemin critique
@@ -1490,7 +1562,7 @@ function MilestoneModal({ projectId, onClose, onCreated }: { projectId: string; 
 // ---------------------------------------------------------------------------
 // TEAM
 // ---------------------------------------------------------------------------
-function TeamTab({ members, projectId, onChanged }: { members: Member[]; projectId: string; onChanged: () => void }) {
+function TeamTab({ members, projectId, organizationId, onChanged }: { members: Member[]; projectId: string; organizationId: string; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
   // Membre en cours d'édition. Cliquer sur la card ouvre la modale
   // d'édition (rôle, allocation horaire). La suppression reste exposée
@@ -1566,7 +1638,16 @@ function TeamTab({ members, projectId, onChanged }: { members: Member[]; project
           ))}
         </div>
       )}
-      {open && <MemberModal projectId={projectId} existingUserIds={new Set(members.map((m) => m.userId))} onClose={() => setOpen(false)} onCreated={() => { setOpen(false); onChanged(); }} />}
+      {open && (
+        <MemberModal
+          projectId={projectId}
+          organizationId={organizationId}
+          existingUserIds={new Set(members.map((m) => m.userId).filter((u): u is string => !!u))}
+          existingContactIds={new Set(members.map((m) => m.contactId).filter((c): c is string => !!c))}
+          onClose={() => setOpen(false)}
+          onCreated={() => { setOpen(false); onChanged(); }}
+        />
+      )}
       {editingMember && (
         <EditMemberModal
           projectId={projectId}
@@ -1643,9 +1724,28 @@ function EditMemberModal({
   );
 }
 
-function MemberModal({ projectId, existingUserIds, onClose, onCreated }: { projectId: string; existingUserIds: Set<string>; onClose: () => void; onCreated: () => void }) {
+function MemberModal({
+  projectId,
+  organizationId,
+  existingUserIds,
+  existingContactIds,
+  onClose,
+  onCreated,
+}: {
+  projectId: string;
+  organizationId: string;
+  existingUserIds: Set<string>;
+  existingContactIds: Set<string>;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  // Bascule "Agent (interne)" / "Contact (côté client)". Par défaut Agent
+  // — c'est le cas d'usage majoritaire (équipe Cetix sur un projet).
+  const [memberType, setMemberType] = useState<"agent" | "contact">("agent");
   const [users, setUsers] = useState<Array<{ id: string; firstName: string; lastName: string; email: string }>>([]);
+  const [contacts, setContacts] = useState<Array<{ id: string; firstName: string; lastName: string; email: string; jobTitle: string | null }>>([]);
   const [userId, setUserId] = useState("");
+  const [contactId, setContactId] = useState("");
   const [role, setRole] = useState<ProjectRole>("contributor");
   const [hours, setHours] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1658,14 +1758,29 @@ function MemberModal({ projectId, existingUserIds, onClose, onCreated }: { proje
       .catch(() => {});
   }, [existingUserIds]);
 
+  useEffect(() => {
+    if (memberType !== "contact") return;
+    fetch(`/api/v1/contacts?organizationId=${organizationId}`)
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((d) => setContacts((d.data ?? d ?? []).filter((c: any) => !existingContactIds.has(c.id))))
+      .catch(() => {});
+  }, [memberType, organizationId, existingContactIds]);
+
+  const canSave = memberType === "agent" ? !!userId : !!contactId;
+
   async function save() {
-    if (!userId) return;
+    if (!canSave) return;
     setSaving(true); setError(null);
     try {
       const res = await fetch(`/api/v1/projects/${projectId}/members`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, role, allocatedHoursPerWeek: hours ? Number(hours) : undefined }),
+        body: JSON.stringify({
+          userId: memberType === "agent" ? userId : undefined,
+          contactId: memberType === "contact" ? contactId : undefined,
+          role,
+          allocatedHoursPerWeek: hours ? Number(hours) : undefined,
+        }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Erreur");
       onCreated();
@@ -1674,20 +1789,71 @@ function MemberModal({ projectId, existingUserIds, onClose, onCreated }: { proje
   }
 
   return (
-    <ModalShell title="Ajouter un membre" onClose={onClose} onSubmit={save} saving={saving} disabled={!userId}>
+    <ModalShell title="Ajouter un membre" onClose={onClose} onSubmit={save} saving={saving} disabled={!canSave}>
       <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Utilisateur</label>
-        <Select value={userId} onValueChange={setUserId}>
-          <SelectTrigger><SelectValue placeholder="Sélectionner..." /></SelectTrigger>
-          <SelectContent>
-            {users.map((u) => (
-              <SelectItem key={u.id} value={u.id}>
-                {u.firstName} {u.lastName} — {u.email}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Type de membre</label>
+        <div className="flex items-center gap-1 rounded-lg bg-slate-100/80 p-1 ring-1 ring-inset ring-slate-200/60">
+          <button
+            type="button"
+            onClick={() => { setMemberType("agent"); setContactId(""); }}
+            className={cn(
+              "flex-1 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-all",
+              memberType === "agent"
+                ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/60"
+                : "text-slate-500 hover:text-slate-700",
+            )}
+          >
+            Agent (interne)
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMemberType("contact"); setUserId(""); }}
+            className={cn(
+              "flex-1 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-all",
+              memberType === "contact"
+                ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/60"
+                : "text-slate-500 hover:text-slate-700",
+            )}
+          >
+            Contact (côté client)
+          </button>
+        </div>
       </div>
+      {memberType === "agent" ? (
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Agent</label>
+          <Select value={userId} onValueChange={setUserId}>
+            <SelectTrigger><SelectValue placeholder="Sélectionner..." /></SelectTrigger>
+            <SelectContent>
+              {users.map((u) => (
+                <SelectItem key={u.id} value={u.id}>
+                  {u.firstName} {u.lastName} — {u.email}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : (
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Contact</label>
+          <Select value={contactId} onValueChange={setContactId}>
+            <SelectTrigger><SelectValue placeholder="Sélectionner..." /></SelectTrigger>
+            <SelectContent>
+              {contacts.length === 0 ? (
+                <div className="px-2 py-1.5 text-[12px] text-slate-400 italic">
+                  Aucun contact disponible pour cette organisation.
+                </div>
+              ) : (
+                contacts.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.firstName} {c.lastName}{c.jobTitle ? ` — ${c.jobTitle}` : ""}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div>
         <label className="mb-1.5 block text-[13px] font-medium text-slate-700">Rôle</label>
         <Select value={role} onValueChange={(v) => setRole(v as ProjectRole)}>

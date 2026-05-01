@@ -41,16 +41,23 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     data,
     include: {
       user: { select: { firstName: true, lastName: true, email: true, avatar: true } },
+      contact: { select: { firstName: true, lastName: true, email: true } },
     },
   });
+  // Un membre est soit un User (agent interne), soit un Contact (côté
+  // client). On lit le bon objet selon ce qui est non-null.
+  const isContact = !updated.userId && !!updated.contactId;
+  const person = isContact ? updated.contact : updated.user;
   return NextResponse.json({
     success: true,
     data: {
       id: updated.id,
-      userId: updated.userId,
-      agentName: `${updated.user.firstName} ${updated.user.lastName}`.trim(),
-      agentEmail: updated.user.email,
-      agentAvatar: updated.user.avatar ?? null,
+      userId: updated.userId ?? null,
+      contactId: updated.contactId ?? null,
+      memberType: isContact ? "contact" : "agent",
+      agentName: person ? `${person.firstName} ${person.lastName}`.trim() : "—",
+      agentEmail: person?.email ?? "",
+      agentAvatar: !isContact ? (updated.user?.avatar ?? null) : null,
       role: updated.role,
       allocatedHoursPerWeek: updated.allocatedHoursPerWeek,
     },

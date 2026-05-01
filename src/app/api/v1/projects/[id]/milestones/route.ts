@@ -35,6 +35,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       targetDate: new Date(body.targetDate),
       status: body.status ?? "upcoming",
       isCriticalPath: !!body.isCriticalPath,
+      phaseId: body.phaseId ? String(body.phaseId) : null,
+      taskId: body.taskId ? String(body.taskId) : null,
+      validatedByTicketId: body.validatedByTicketId ? String(body.validatedByTicketId) : null,
     },
   });
   return NextResponse.json({ success: true, data: milestone });
