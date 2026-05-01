@@ -3121,7 +3121,11 @@ function QueryWidgetRenderer({
     setWidget(w);
 
     // Cascade période :
-    //  - dashboardDays > 0 → range glissant [now - N, now]
+    //  - dashboardDays > 0 → range glissant [début jour J-N, fin jour J]
+    //    (fin de journée pour inclure les saisies de "today" même quand
+    //    leur timestamp UTC est dans le futur par rapport à maintenant —
+    //    cas typique en EDT/EST où une saisie à 13h locale = 17h UTC,
+    //    et `now` à 11h locale = 15h UTC l'aurait sinon exclue)
     //  - dashboardDays = 0 + customFrom/To → range fixe
     //  - sinon → pas d'override, le widget utilise ses propres dates
     //    (ou aucune si dateField absent).
@@ -3129,8 +3133,10 @@ function QueryWidgetRenderer({
     let overrideDateTo: string | undefined;
     if (dashboardDays > 0 && w.query?.dateField) {
       const to = new Date();
+      to.setHours(23, 59, 59, 999);
       const from = new Date();
       from.setDate(to.getDate() - dashboardDays);
+      from.setHours(0, 0, 0, 0);
       overrideDateFrom = from.toISOString();
       overrideDateTo = to.toISOString();
     } else if (dashboardDays === 0 && customFrom && customTo && w.query?.dateField) {
