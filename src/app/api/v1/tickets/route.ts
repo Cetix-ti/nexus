@@ -58,14 +58,42 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const me = await getCurrentUser();
+    // SECURITY : la création de ticket est strictement réservée aux
+    // agents authentifiés (Cetix). Les contacts portail passent par
+    // /api/v1/portal/tickets qui scope toujours à leur org. Sans ce
+    // check, un POST anonyme tombait sur la cascade fallback et le
+    // ticket atterrissait sur la PREMIÈRE org active du tenant — bug
+    // observé sur TK-28697 (créé depuis le portail SADB → rattaché
+    // par mégarde à « Les Blocs Normand Inc. »).
+    if (!me) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const body = await req.json();
 
     if (!body.subject) {
       return NextResponse.json({ error: "Le sujet est requis" }, { status: 400 });
     }
 
-    // Resolve organization by name if ID not provided
-    let organizationId = body.organizationId;
+    // Si le ticket est rattaché à un projet, l'organisation EST CELLE
+    // DU PROJET — non négociable. Cette dérivation est faite AVANT la
+    // résolution depuis body.organizationId/Name pour que personne ne
+    // puisse passer un mauvais id (volontairement ou par bug UI).
+    let organizationId: string | undefined;
+    if (body.projectId) {
+      const project = await prisma.project.findUnique({
+        where: { id: String(body.projectId) },
+        select: { id: true, organizationId: true },
+      });
+      if (!project) {
+        return NextResponse.json({ error: "Projet introuvable" }, { status: 404 });
+      }
+      organizationId = project.organizationId;
+    }
+
+    // Sinon, résolution classique : organizationId fourni, ou lookup par name.
+    if (!organizationId) {
+      organizationId = body.organizationId;
+    }
     if (!organizationId && body.organizationName) {
       const org = await prisma.organization.findFirst({
         where: { name: { equals: body.organizationName, mode: "insensitive" } },
@@ -92,11 +120,13 @@ export async function POST(req: Request) {
         }
         organizationId = internal.id;
       } else {
-        const firstOrg = await prisma.organization.findFirst({
-          where: { isActive: true },
-          select: { id: true },
-        });
-        organizationId = firstOrg?.id;
+        // SECURITY : ne plus retomber silencieusement sur "première org
+        // active". Un appelant sans org explicite + sans projet doit
+        // recevoir une 400 plutôt qu'un ticket rattaché au hasard.
+        return NextResponse.json(
+          { error: "Organisation requise (organizationId, organizationName ou projectId)" },
+          { status: 400 },
+        );
       }
     }
     if (!organizationId) {
@@ -147,25 +177,11 @@ export async function POST(req: Request) {
       if (user) assigneeId = user.id;
     }
 
-    // Resolve creator — current user, then body, then first admin
-    let creatorId = me?.id ?? body.creatorId;
-    if (!creatorId) {
-      const admin = await prisma.user.findFirst({
-        where: { role: { in: ["SUPER_ADMIN", "MSP_ADMIN"] }, isActive: true },
-        select: { id: true },
-      });
-      creatorId = admin?.id;
-    }
-    if (!creatorId) {
-      const anyUser = await prisma.user.findFirst({
-        where: { isActive: true },
-        select: { id: true },
-      });
-      creatorId = anyUser?.id;
-    }
-    if (!creatorId) {
-      return NextResponse.json({ error: "Aucun agent trouvé" }, { status: 500 });
-    }
+    // Creator = utilisateur authentifié. Garanti non-null par le check
+    // d'auth en haut de la fonction. Plus de fallback "premier admin"
+    // pour ne plus laisser un POST anonyme se rattacher à un user au
+    // hasard (cf. bug TK-28697).
+    const creatorId: string = me.id;
 
     // Resolve category by name (accept both `category` and `categoryName`)
     let categoryId = body.categoryId ?? null;

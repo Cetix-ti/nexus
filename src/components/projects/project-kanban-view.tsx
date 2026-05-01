@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -26,18 +27,30 @@ import { useKanbanStore, type KanbanColumn } from "@/stores/kanban-store";
 
 interface ProjectKanbanViewProps {
   projectId: string;
+  /**
+   * Mode lecture seule. Activé depuis le portail client : on cache les
+   * boutons "+", on désactive le drag-create et la modale de création.
+   * Les contacts/admins portail ne doivent JAMAIS créer de ticket dans
+   * le kanban projet — réservé aux agents. Côté agent, omettre = false
+   * (UX inchangée).
+   */
+  readOnly?: boolean;
 }
 
-function DraggableCard({ ticket, onClick }: { ticket: Ticket; onClick: () => void }) {
+function DraggableCard({ ticket, onClick, readOnly }: { ticket: Ticket; onClick: () => void; readOnly?: boolean }) {
+  // En readOnly (portail client) : pas de drag, pas de drop. Le clic
+  // reste actif mais déclenche une navigation vers la fiche ticket en
+  // lecture seule (gérée par le parent via `onClick`).
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: ticket.id,
     data: { ticket },
+    disabled: readOnly,
   });
   return (
     <div
       ref={setNodeRef}
-      {...attributes}
-      {...listeners}
+      {...(readOnly ? {} : attributes)}
+      {...(readOnly ? {} : listeners)}
       className={cn("touch-none", isDragging && "opacity-30")}
     >
       <TicketCard ticket={ticket} onClick={onClick} />
@@ -99,7 +112,8 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
+export function ProjectKanbanView({ projectId, readOnly = false }: ProjectKanbanViewProps) {
+  const router = useRouter();
   const [projectData, setProjectData] = useState<{
     budgetHours?: number;
     tasks: { estimatedHours?: number | null }[];
@@ -110,6 +124,10 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
   const columnsConfig = useKanbanStore((s) => s.columns);
 
   useEffect(() => {
+    // En mode lecture seule (portail client), on n'appelle pas l'endpoint
+    // agent /api/v1/projects/[id] — il refusera 401 et le résultat ne
+    // servait qu'à la modale de création (désactivée en readOnly).
+    if (readOnly) return;
     let cancelled = false;
     fetch(`/api/v1/projects/${projectId}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -125,7 +143,7 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [projectId]);
+  }, [projectId, readOnly]);
 
   // État de la modale QuickCreateTicket — ouverte depuis les boutons "+"
   // des colonnes Kanban. Remplace le redirect vers /tickets/new pour
@@ -370,14 +388,19 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
                 <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-md bg-white px-1.5 text-[11px] font-bold text-slate-700 tabular-nums shadow-sm ring-1 ring-inset ring-slate-200/60">
                   {col.tickets.length}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => openCreateTicket(col.status)}
-                  title="Ajouter un ticket dans cette colonne"
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-white text-slate-500 hover:text-blue-600 shadow-sm ring-1 ring-inset ring-slate-200/60"
-                >
-                  <Plus className="h-3 w-3" />
-                </button>
+                {/* Bouton "+" agent uniquement. Cacher en readOnly
+                    (portail client) — les contacts/admins portail ne
+                    créent jamais de ticket dans le kanban projet. */}
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => openCreateTicket(col.status)}
+                    title="Ajouter un ticket dans cette colonne"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-white text-slate-500 hover:text-blue-600 shadow-sm ring-1 ring-inset ring-slate-200/60"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                )}
               </div>
               <DroppableColumnBody
                 status={col.status}
@@ -387,7 +410,16 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
                   <DraggableCard
                     key={ticket.id}
                     ticket={ticket}
-                    onClick={() => openQuickView(ticket)}
+                    readOnly={readOnly}
+                    // Côté portail (readOnly) : on redirige vers la
+                    // fiche ticket portail au lieu d'ouvrir la
+                    // quickview agent (qui permet d'éditer / saisir
+                    // du temps).
+                    onClick={() =>
+                      readOnly
+                        ? router.push(`/portal/tickets/${ticket.id}`)
+                        : openQuickView(ticket)
+                    }
                   />
                 ))}
               </DroppableColumnBody>
@@ -411,21 +443,23 @@ export function ProjectKanbanView({ projectId }: ProjectKanbanViewProps) {
         onStatusChange={handleStatusChangeFromModal}
       />
 
-      <QuickCreateTicketModal
-        open={quickCreateOpen}
-        onClose={() => setQuickCreateOpen(false)}
-        projectId={projectId}
-        projectName={projectData?.projectName}
-        organizationId={projectData?.organizationId}
-        organizationName={projectData?.organizationName}
-        initialStatus={quickCreateStatus}
-        onCreated={() => {
-          // Recharge la liste du Kanban après création réussie.
-          // L'option "En créer un autre" de la modale la garde ouverte ;
-          // sinon elle se ferme via onClose.
-          reloadTickets();
-        }}
-      />
+      {!readOnly && (
+        <QuickCreateTicketModal
+          open={quickCreateOpen}
+          onClose={() => setQuickCreateOpen(false)}
+          projectId={projectId}
+          projectName={projectData?.projectName}
+          organizationId={projectData?.organizationId}
+          organizationName={projectData?.organizationName}
+          initialStatus={quickCreateStatus}
+          onCreated={() => {
+            // Recharge la liste du Kanban après création réussie.
+            // L'option "En créer un autre" de la modale la garde ouverte ;
+            // sinon elle se ferme via onClose.
+            reloadTickets();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -429,7 +429,10 @@ export default function PortalProjectDetailPage({
 
       {tab === "kanban" && (
         <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-          <ProjectKanbanView projectId={project.id} />
+          {/* readOnly=true : le portail client ne crée jamais de tickets
+              dans le kanban projet (réservé aux agents) — cache le "+",
+              désactive le drag et redirige le clic sur la fiche portail. */}
+          <ProjectKanbanView projectId={project.id} readOnly />
         </div>
       )}
 
