@@ -173,10 +173,17 @@ export async function createTimeEntry(input: {
   // le rate / amount / coverage. Seuls les champs factuels (durée, type,
   // flags contextuels) viennent du client.
   const { resolveDecisionForEntry, bumpContractHourBank } = await import("./server-decide");
+  // On lit aussi project.isFullyBillable : un projet "100 % facturable"
+  // override toutes les règles contrat (banque, FTIG, inclusions) pour
+  // forcer billable. Cas typique : T&M pur, projet hors-contrat.
   const ticket = await prisma.ticket.findUnique({
     where: { id: input.ticketId },
-    select: { categoryId: true },
+    select: {
+      categoryId: true,
+      project: { select: { isFullyBillable: true } },
+    },
   });
+  const projectForceBillable = !!ticket?.project?.isFullyBillable;
   const { decision, contract } = await resolveDecisionForEntry({
     organizationId: input.organizationId,
     timeType: input.timeType,
@@ -188,6 +195,7 @@ export async function createTimeEntry(input: {
     isUrgent: input.isUrgent,
     ticketCategoryId: ticket?.categoryId ?? undefined,
     forceNonBillable: input.forceNonBillable,
+    forceBillable: projectForceBillable,
     workTypeId: input.workTypeId ?? null,
     rateTierId: input.rateTierId ?? null,
   });

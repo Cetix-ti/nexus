@@ -2419,6 +2419,12 @@ model Project {
   budgetAmount       Float?       @map("budget_amount")
   consumedAmount     Float        @default(0) @map("consumed_amount")
   isVisibleToClient  Boolean      @default(false) @map("is_visible_to_client")
+  /// Quand true, TOUT le temps saisi sur les tickets de ce projet est
+  /// forcé "billable" (override des règles contrat/banque/inclusion).
+  /// Utilisé pour les projets vendus en Time & Material pur (pas de
+  /// quota / pas d'inclusion forfait), ou les projets hors-contrat.
+  /// Propagé au TimeEntry via forceBillable=true côté createTimeEntry.
+  isFullyBillable    Boolean      @default(false) @map("is_fully_billable")
   // Toggles granulaires (par sous-ressource) de ce que le portail client
   // expose : phases, jalons, tâches, heures, budget, membres, activité.
   // Null = valeurs par défaut (tout caché). Forme : ProjectVisibilitySettings.
@@ -2460,6 +2466,12 @@ model ProjectPhase {
   status      String    @default("not_started")
   startDate   DateTime? @map("start_date")
   endDate     DateTime? @map("end_date")
+  /// Temps estimé pour compléter cette phase. Sert à pondérer le calcul
+  /// de Project.progressPercent : (somme des estimatedHours des phases
+  /// "completed") / (somme totale des estimatedHours du projet) × 100.
+  /// Si toutes les phases ont estimatedHours=null → fallback sur le ratio
+  /// (count completed / count total) × 100.
+  estimatedHours Float? @map("estimated_hours")
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@index([projectId])

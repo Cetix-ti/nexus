@@ -293,6 +293,8 @@ export interface Project {
   consumedAmount: number;
   // Visibility
   isVisibleToClient: boolean;
+  /** Tout le temps saisi sur les tickets de ce projet est forcé "billable". */
+  isFullyBillable?: boolean;
   visibilitySettings: ProjectVisibilitySettings;
   // Relations (denormalized counts for list view)
   phaseCount: number;

@@ -57,6 +57,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       budgetAmount: project.budgetAmount,
       consumedAmount: project.consumedAmount,
       isVisibleToClient: project.isVisibleToClient,
+      isFullyBillable: project.isFullyBillable,
       visibilitySettings: project.visibilitySettings ?? null,
       tags: project.tags,
       isAtRisk: project.isAtRisk,
@@ -91,6 +92,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         sortOrder: p.sortOrder,
         startDate: p.startDate?.toISOString() ?? null,
         endDate: p.endDate?.toISOString() ?? null,
+        estimatedHours: p.estimatedHours,
       })),
       milestones: project.milestones.map((m) => ({
         id: m.id,
@@ -129,6 +131,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (body.type !== undefined) data.type = body.type;
   if (body.progressPercent !== undefined) data.progressPercent = body.progressPercent;
   if (body.isVisibleToClient !== undefined) data.isVisibleToClient = body.isVisibleToClient;
+  if (body.isFullyBillable !== undefined) data.isFullyBillable = !!body.isFullyBillable;
   if (body.visibilitySettings !== undefined) data.visibilitySettings = body.visibilitySettings;
   if (body.isAtRisk !== undefined) data.isAtRisk = body.isAtRisk;
   if (body.riskNotes !== undefined) data.riskNotes = body.riskNotes;

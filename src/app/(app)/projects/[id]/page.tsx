@@ -6,6 +6,22 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { format, formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
+import {
   ChevronRight,
   Edit3,
   MoreHorizontal,
@@ -134,6 +150,7 @@ interface Phase {
   sortOrder: number;
   startDate: string | null;
   endDate: string | null;
+  estimatedHours: number | null;
 }
 
 interface Milestone {
@@ -816,6 +833,9 @@ function EditProjectModal({
   const [tagsInput, setTagsInput] = useState((project.tags ?? []).join(", "));
   const [isAtRisk, setIsAtRisk] = useState(project.isAtRisk);
   const [riskNotes, setRiskNotes] = useState(project.riskNotes ?? "");
+  // Toggle "100% facturable" : quand activé, toute saisie de temps sur
+  // un ticket de ce projet est forcée billable côté serveur.
+  const [isFullyBillable, setIsFullyBillable] = useState(!!project.isFullyBillable);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -859,6 +879,7 @@ function EditProjectModal({
         tags,
         isAtRisk,
         riskNotes: riskNotes.trim() || null,
+        isFullyBillable,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -959,6 +980,23 @@ function EditProjectModal({
                 placeholder="Décris brièvement le risque identifié…"
               />
             )}
+          </div>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isFullyBillable}
+                onChange={(e) => setIsFullyBillable(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              <span className="text-[13px] font-medium text-emerald-900">Projet 100&nbsp;% facturable</span>
+            </label>
+            <p className="text-[11.5px] text-emerald-800/80 leading-snug">
+              Toute saisie de temps sur les tickets de ce projet sera forcée
+              «&nbsp;facturable&nbsp;», peu importe le contrat client (banque
+              d&apos;heures, FTIG, inclusions). À utiliser pour les projets
+              T&amp;M ou hors-contrat.
+            </p>
           </div>
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</div>
@@ -1063,6 +1101,37 @@ function PhasesTab({ phases, projectId, onChanged }: { phases: Phase[]; projectI
   // Phase en cours d'édition. Null = mode création (modale d'ajout).
   // Sinon la modale s'ouvre pré-remplie avec les valeurs de la phase.
   const [editingPhase, setEditingPhase] = useState<Phase | null>(null);
+  // Liste locale pour permettre le drag-and-drop sans attendre un rerender
+  // serveur. Synchronisée avec `phases` (props) à chaque changement parent.
+  const [orderedPhases, setOrderedPhases] = useState<Phase[]>(phases);
+  useEffect(() => { setOrderedPhases(phases); }, [phases]);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const fromIdx = orderedPhases.findIndex((p) => p.id === active.id);
+    const toIdx = orderedPhases.findIndex((p) => p.id === over.id);
+    if (fromIdx === -1 || toIdx === -1) return;
+    // Reorder localement (optimiste).
+    const next = arrayMove(orderedPhases, fromIdx, toIdx);
+    setOrderedPhases(next);
+    // Persiste sortOrder pour TOUTES les phases — simple et idempotent.
+    // L'endpoint PATCH accepte déjà sortOrder dans le body.
+    await Promise.all(
+      next.map((p, i) =>
+        p.sortOrder === i
+          ? Promise.resolve()
+          : fetch(`/api/v1/projects/${projectId}/phases/${p.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sortOrder: i }),
+            })
+      ),
+    );
+    onChanged();
+  }
 
   return (
     <div>
@@ -1072,51 +1141,23 @@ function PhasesTab({ phases, projectId, onChanged }: { phases: Phase[]; projectI
           <Plus className="h-3.5 w-3.5 mr-1.5" /> Ajouter une phase
         </Button>
       </div>
-      {phases.length === 0 ? (
+      {orderedPhases.length === 0 ? (
         <EmptyBlock label="Aucune phase définie pour ce projet." />
       ) : (
-        <div className="space-y-3">
-          {phases.map((ph, idx) => {
-            const statusColor =
-              ph.status === "completed" ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-              : ph.status === "in_progress" ? "bg-blue-50 text-blue-700 ring-blue-200"
-              : ph.status === "blocked" ? "bg-red-50 text-red-700 ring-red-200"
-              : "bg-slate-50 text-slate-600 ring-slate-200";
-            return (
-              <Card
-                key={ph.id}
-                className="cursor-pointer hover:shadow-md hover:border-blue-200 transition-all"
-                onClick={() => setEditingPhase(ph)}
-              >
-                <CardContent className="p-5">
-                  <div className="flex items-start gap-4">
-                    <div className="h-9 w-9 rounded-lg bg-slate-50 ring-1 ring-slate-200 flex items-center justify-center text-[13px] font-semibold text-slate-600 shrink-0">
-                      {idx + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-3 mb-1">
-                        <h3 className="text-[14.5px] font-semibold text-slate-900">{ph.name}</h3>
-                        <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1", statusColor)}>
-                          {PHASE_STATUS_LABELS[ph.status]}
-                        </span>
-                      </div>
-                      {ph.description && <p className="text-[13px] text-slate-500 mb-3">{ph.description}</p>}
-                      <div className="mt-2 flex items-center gap-4 text-[11.5px] text-slate-500">
-                        {ph.startDate && (
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {format(new Date(ph.startDate), "d MMM", { locale: fr })}
-                            {ph.endDate && ` → ${format(new Date(ph.endDate), "d MMM", { locale: fr })}`}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={orderedPhases.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-3">
+              {orderedPhases.map((ph, idx) => (
+                <SortablePhaseCard
+                  key={ph.id}
+                  phase={ph}
+                  index={idx}
+                  onClick={() => setEditingPhase(ph)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
       {open && <PhaseModal projectId={projectId} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); onChanged(); }} />}
       {editingPhase && (
@@ -1135,6 +1176,81 @@ function PhasesTab({ phases, projectId, onChanged }: { phases: Phase[]; projectI
 // PhaseModal — création OU édition selon `phase` :
 //   - phase=undefined → POST /phases (création)
 //   - phase=Phase     → PATCH /phases/[id] (édition) + bouton Supprimer
+// Card de phase draggable pour réordonner verticalement (haut en bas).
+// Le drag handle est sur l'icône GripVertical à gauche — le reste de la
+// card reste cliquable pour ouvrir la modale d'édition.
+function SortablePhaseCard({
+  phase,
+  index,
+  onClick,
+}: {
+  phase: Phase;
+  index: number;
+  onClick: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: phase.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+  const statusColor =
+    phase.status === "completed" ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+    : phase.status === "in_progress" ? "bg-blue-50 text-blue-700 ring-blue-200"
+    : phase.status === "blocked" ? "bg-red-50 text-red-700 ring-red-200"
+    : "bg-slate-50 text-slate-600 ring-slate-200";
+  return (
+    <div ref={setNodeRef} style={style}>
+      <Card
+        className="cursor-pointer hover:shadow-md hover:border-blue-200 transition-all"
+        onClick={onClick}
+      >
+        <CardContent className="p-5">
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              {...attributes}
+              {...listeners}
+              onClick={(e) => e.stopPropagation()}
+              className="h-9 w-6 inline-flex items-center justify-center rounded-md text-slate-300 hover:bg-slate-100 hover:text-slate-600 cursor-grab active:cursor-grabbing shrink-0"
+              title="Glisser pour réordonner la phase"
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+            <div className="h-9 w-9 rounded-lg bg-slate-50 ring-1 ring-slate-200 flex items-center justify-center text-[13px] font-semibold text-slate-600 shrink-0">
+              {index + 1}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <h3 className="text-[14.5px] font-semibold text-slate-900">{phase.name}</h3>
+                <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1", statusColor)}>
+                  {PHASE_STATUS_LABELS[phase.status]}
+                </span>
+              </div>
+              {phase.description && <p className="text-[13px] text-slate-500 mb-3">{phase.description}</p>}
+              <div className="mt-2 flex items-center gap-4 text-[11.5px] text-slate-500">
+                {phase.startDate && (
+                  <span className="flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {format(new Date(phase.startDate), "d MMM", { locale: fr })}
+                    {phase.endDate && ` → ${format(new Date(phase.endDate), "d MMM", { locale: fr })}`}
+                  </span>
+                )}
+                {phase.estimatedHours != null && phase.estimatedHours > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Timer className="h-3 w-3" />
+                    {phase.estimatedHours} h estimé{phase.estimatedHours > 1 ? "es" : "e"}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function PhaseModal({
   projectId,
   phase,
@@ -1153,6 +1269,9 @@ function PhaseModal({
   const [status, setStatus] = useState<PhaseStatus>(phase?.status ?? "not_started");
   const [startDate, setStartDate] = useState(phase?.startDate ? phase.startDate.slice(0, 10) : "");
   const [endDate, setEndDate] = useState(phase?.endDate ? phase.endDate.slice(0, 10) : "");
+  const [estimatedHours, setEstimatedHours] = useState(
+    phase?.estimatedHours != null ? String(phase.estimatedHours) : "",
+  );
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1174,6 +1293,7 @@ function PhaseModal({
           status,
           startDate: startDate || (isEdit ? null : undefined),
           endDate: endDate || (isEdit ? null : undefined),
+          estimatedHours: estimatedHours.trim() === "" ? null : Number(estimatedHours),
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Erreur");
@@ -1219,6 +1339,24 @@ function PhaseModal({
           <div className="grid grid-cols-2 gap-3">
             <Input label="Début" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             <Input label="Fin" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          </div>
+          <div>
+            <Input
+              label="Heures estimées"
+              type="number"
+              step="0.5"
+              min={0}
+              value={estimatedHours}
+              onChange={(e) => setEstimatedHours(e.target.value)}
+              placeholder="Vide = pas pondérée dans le calcul d'avancement"
+            />
+            <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+              Sert à pondérer le pourcentage d&apos;avancement du projet :
+              quand cette phase passe en «&nbsp;Terminée&nbsp;», ses heures
+              comptent dans le ratio (somme des heures terminées / total).
+              Sans heures saisies sur aucune phase, fallback sur le ratio
+              simple par nombre de phases.
+            </p>
           </div>
           {error && <p className="text-[12px] text-red-600">{error}</p>}
         </div>

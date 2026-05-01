@@ -42,8 +42,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       status: body.status ?? "not_started",
       startDate: body.startDate ? new Date(body.startDate) : null,
       endDate: body.endDate ? new Date(body.endDate) : null,
+      estimatedHours:
+        body.estimatedHours == null || body.estimatedHours === ""
+          ? null
+          : Number(body.estimatedHours),
       sortOrder,
     },
   });
+  // Recalcule progressPercent du projet (au cas où la nouvelle phase
+  // change le total des estimatedHours et donc le ratio).
+  const { recomputeProjectProgress } = await import("@/lib/projects/progress");
+  await recomputeProjectProgress(id);
   return NextResponse.json({ success: true, data: phase });
 }

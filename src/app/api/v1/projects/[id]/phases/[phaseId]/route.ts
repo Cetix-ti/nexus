@@ -36,8 +36,24 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   if (body.startDate !== undefined) data.startDate = body.startDate ? new Date(body.startDate) : null;
   if (body.endDate !== undefined) data.endDate = body.endDate ? new Date(body.endDate) : null;
   if (typeof body.sortOrder === "number") data.sortOrder = body.sortOrder;
+  if (body.estimatedHours !== undefined) {
+    data.estimatedHours =
+      body.estimatedHours == null || body.estimatedHours === ""
+        ? null
+        : Number(body.estimatedHours);
+  }
 
   const updated = await prisma.projectPhase.update({ where: { id: phaseId }, data });
+  // Si le statut OU les estimatedHours changent, recalcule le %
+  // d'avancement du projet. Skip pour les simples drag-reorder
+  // (sortOrder seul) — ça ne change pas l'avancement.
+  if (
+    typeof body.status === "string" ||
+    body.estimatedHours !== undefined
+  ) {
+    const { recomputeProjectProgress } = await import("@/lib/projects/progress");
+    await recomputeProjectProgress(id);
+  }
   return NextResponse.json({ success: true, data: updated });
 }
 
@@ -51,5 +67,9 @@ export async function DELETE(_req: NextRequest, ctx: Ctx) {
   if (deleted.count === 0) {
     return NextResponse.json({ error: "Phase introuvable" }, { status: 404 });
   }
+  // Recalcule après suppression — la phase supprimée n'est plus
+  // dans le total, le ratio change.
+  const { recomputeProjectProgress } = await import("@/lib/projects/progress");
+  await recomputeProjectProgress(id);
   return NextResponse.json({ success: true });
 }
