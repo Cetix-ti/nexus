@@ -195,6 +195,12 @@ export default function BackupsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [orgFilter, setOrgFilter] = useState("all");
   const [expiry, setExpiry] = useState<ExpiryInfo | null>(null);
+  const [autoSync, setAutoSync] = useState<{
+    enabled: boolean;
+    lastRun: string | null;
+    intervalMs: number | null;
+    healthy: boolean;
+  } | null>(null);
   const [view, setView] = useState<ViewState>({ type: "overview" });
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(0);
@@ -210,6 +216,28 @@ export default function BackupsPage() {
         if (d?.expiry) setExpiry(d.expiry);
       })
       .catch(() => {});
+  }, []);
+
+  // Sync auto en arrière-plan : on poll le statut toutes les 60s pour
+  // afficher "Dernière synchro auto : il y a Xs" dans le header. Donne
+  // de la confiance à l'utilisateur que la sync tourne sans qu'il ait à
+  // cliquer Synchroniser.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      fetch("/api/v1/veeam/job-status")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!cancelled && d) setAutoSync(d);
+        })
+        .catch(() => {});
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, []);
 
   // `load` charge les données de la page en parallèle sans bloquer — utilisé
@@ -520,6 +548,40 @@ export default function BackupsPage() {
           )}
         </div>
       </div>
+
+      {/* Indicateur de sync auto en arrière-plan. Le job tourne toutes les
+          5 min via le scheduler in-process — ça donne à l'utilisateur la
+          confirmation visuelle que c'est actif. Caché si scheduler off. */}
+      {autoSync && autoSync.enabled && view.type !== "kanban" && (
+        <div
+          className={cn(
+            "rounded-lg px-3 py-2 text-[11.5px] flex items-center gap-2",
+            autoSync.healthy
+              ? "bg-emerald-50/60 text-emerald-800 ring-1 ring-inset ring-emerald-200/60"
+              : "bg-amber-50/60 text-amber-900 ring-1 ring-inset ring-amber-200/60",
+          )}
+        >
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              autoSync.healthy ? "bg-emerald-500 animate-pulse" : "bg-amber-500",
+            )}
+          />
+          <span className="font-medium">
+            {autoSync.healthy ? "Sync auto active" : "Sync auto en attente"}
+          </span>
+          {autoSync.lastRun && (
+            <span className="text-slate-500">
+              · dernière vérification {timeAgo(autoSync.lastRun)}
+            </span>
+          )}
+          {autoSync.intervalMs && (
+            <span className="text-slate-400 ml-auto">
+              toutes les {Math.round(autoSync.intervalMs / 60_000)} min
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Kanban view — short-circuit le reste de la page */}
       {view.type === "kanban" && <BackupKanban />}
