@@ -62,32 +62,72 @@ function monthsAround(): { value: string; label: string }[] {
 
 // ---------------------------------------------------------------------------
 // Localisation des dashboards "Rapport mensuel" pour une org dans le
-// localStorage agent. Sources :
-//   - nexus:reports:custom : dashboards créés par l'agent (full snapshot)
-//   - REPORT_CATALOG built-in : tags via la même config UI mais widgets
-//     construits à la volée — non géré ici (les built-ins n'ont pas de
-//     `widgets` arbitraires utilisables côté serveur).
-// On se concentre donc sur les CUSTOM dashboards (créés par l'agent dans
-// /analytics/dashboards). Pour qu'un built-in soit incluable ici, l'agent
-// peut le dupliquer en custom puis le tag.
+// localStorage agent.
+//
+// Architecture :
+//   - `nexus:reports:custom`     : dashboards (avec `widgets: WidgetId[]` =
+//                                  juste des IDs) + tags + organizationIds
+//   - `nexus:custom-widgets-v2`  : définitions complètes des CustomWidget
+//                                  (query, chartType, style…). Les widgets
+//                                  built-in (id sans préfixe "custom_") ne
+//                                  sont PAS dans ce store et ne sont donc
+//                                  pas exécutables côté serveur — on les
+//                                  skip silencieusement.
+//
+// Pour qu'un dashboard apparaisse dans le bouton "PDF + graphiques", il
+// doit :
+//   - avoir le tag "builtin_rapport_mensuel"
+//   - être attribué à l'org cible (organizationIds inclut orgId)
+//   - contenir au moins UN widget custom (built-ins seuls = skip)
 // ---------------------------------------------------------------------------
 const RAPPORT_MENSUEL_TAG_ID = "builtin_rapport_mensuel";
 const CUSTOM_REPORTS_KEY = "nexus:reports:custom";
+const CUSTOM_WIDGETS_KEY = "nexus:custom-widgets-v2";
 
-interface DashboardForExport {
+interface CustomWidgetDef {
+  id: string;
+  name: string;
+  description?: string;
+  chartType: string;
+  color?: string;
+  style?: Record<string, unknown>;
+  query: Record<string, unknown>;
+}
+
+interface DashboardRaw {
   id: string;
   label: string;
   description?: string;
   organizationIds?: string[];
   tags?: string[];
-  widgets?: Array<{
-    id: string;
-    title?: string;
-    chartType?: string;
-    span?: number;
-    query?: Record<string, unknown>;
-    style?: Record<string, unknown>;
-  }>;
+  /** Liste d'IDs de widgets (built-in ex: "finance_kpis" ou custom ex:
+   *  "custom_1234567890"). On hydrate les custom au moment de l'export. */
+  widgets?: string[];
+}
+
+interface DashboardForExport {
+  id: string;
+  label: string;
+  description?: string;
+  /** Widgets hydratés (custom uniquement, built-ins skippés). */
+  hydratedWidgets: CustomWidgetDef[];
+}
+
+function loadCustomWidgets(): Map<string, CustomWidgetDef> {
+  if (typeof window === "undefined") return new Map();
+  try {
+    const raw = localStorage.getItem(CUSTOM_WIDGETS_KEY);
+    if (!raw) return new Map();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Map();
+    const map = new Map<string, CustomWidgetDef>();
+    for (const w of arr) {
+      if (w && typeof w.id === "string") map.set(w.id, w as CustomWidgetDef);
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
 }
 
 function loadGraphDashboardsForOrg(orgId: string): DashboardForExport[] {
@@ -97,16 +137,29 @@ function loadGraphDashboardsForOrg(orgId: string): DashboardForExport[] {
     if (!raw) return [];
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
-    return (arr as DashboardForExport[]).filter((d) => {
-      const orgs = Array.isArray(d.organizationIds) ? d.organizationIds : [];
-      const tags = Array.isArray(d.tags) ? d.tags : [];
-      return (
-        orgs.includes(orgId) &&
-        tags.includes(RAPPORT_MENSUEL_TAG_ID) &&
-        Array.isArray(d.widgets) &&
-        d.widgets.length > 0
-      );
-    });
+    const widgetMap = loadCustomWidgets();
+
+    return (arr as DashboardRaw[])
+      .filter((d) => {
+        const orgs = Array.isArray(d.organizationIds) ? d.organizationIds : [];
+        const tags = Array.isArray(d.tags) ? d.tags : [];
+        return orgs.includes(orgId) && tags.includes(RAPPORT_MENSUEL_TAG_ID);
+      })
+      .map((d) => {
+        const widgetIds = Array.isArray(d.widgets) ? d.widgets : [];
+        const hydrated = widgetIds
+          .map((wid) => widgetMap.get(wid))
+          .filter((w): w is CustomWidgetDef => !!w);
+        return {
+          id: d.id,
+          label: d.label,
+          description: d.description,
+          hydratedWidgets: hydrated,
+        };
+      })
+      // On garde uniquement les dashboards qui ont AU MOINS un widget
+      // custom (sinon le PDF aurait une page d'annexe vide).
+      .filter((d) => d.hydratedWidgets.length > 0);
   } catch {
     return [];
   }
@@ -117,13 +170,16 @@ function toSnapshot(d: DashboardForExport) {
     id: d.id,
     label: d.label,
     description: d.description,
-    widgets: (d.widgets ?? []).map((w) => ({
+    widgets: d.hydratedWidgets.map((w) => ({
       id: w.id,
-      title: w.title ?? "",
+      title: w.name ?? "",
       chartType: w.chartType ?? "bar",
-      span: w.span ?? 6,
+      // span : pas porté par CustomWidget v2 ; on prend 6 par défaut
+      // (demi-largeur), sauf si le dashboard d'origine porte une info de
+      // layout (à brancher plus tard si besoin).
+      span: 6,
       query: w.query ?? {},
-      style: w.style ?? {},
+      style: { ...(w.style ?? {}), primaryColor: w.color ?? "#3B82F6" },
     })),
   };
 }
