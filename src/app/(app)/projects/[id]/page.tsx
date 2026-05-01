@@ -35,6 +35,7 @@ import {
   Pencil,
   ThumbsUp,
   ThumbsDown,
+  Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,7 @@ import {
   type MilestoneStatus,
 } from "@/lib/projects/types";
 import { ProjectKanbanView } from "@/components/projects/project-kanban-view";
+import { DuplicateProjectModal } from "@/components/projects/duplicate-project-modal";
 
 // ---------------------------------------------------------------------------
 // Onglets
@@ -186,6 +188,9 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<TabKey>("overview");
+  // Modal "Dupliquer le projet" — ouvert depuis le bouton Copy dans le
+  // header. Permet de recréer un projet similaire pour un autre client.
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
 
   const loadProject = useCallback(async () => {
     const r = await fetch(`/api/v1/projects/${params.id}`);
@@ -341,6 +346,9 @@ export default function ProjectDetailPage() {
             }}>
               <Edit3 className="h-3.5 w-3.5 mr-1.5" /> Modifier le statut
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setDuplicateOpen(true)}>
+              <Copy className="h-3.5 w-3.5 mr-1.5" /> Dupliquer
+            </Button>
             <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => {
               if (confirm("Archiver ce projet ?")) {
                 fetch(`/api/v1/projects/${project.id}`, { method: "DELETE" })
@@ -471,6 +479,17 @@ export default function ProjectDetailPage() {
           <TeamTab members={members} projectId={project.id} onChanged={loadProject} />
         )}
       </div>
+
+      {/* Modal "Dupliquer le projet" — ouverte depuis le bouton Copy
+          dans le header. Le serveur clone vers une autre organisation
+          avec choix des éléments à inclure (phases / jalons / tâches /
+          tickets). Comments et time entries jamais clonés. */}
+      <DuplicateProjectModal
+        open={duplicateOpen}
+        onClose={() => setDuplicateOpen(false)}
+        sourceProjectId={project.id}
+        sourceProjectName={project.name}
+      />
     </div>
   );
 }
