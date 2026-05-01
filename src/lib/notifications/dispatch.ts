@@ -494,6 +494,13 @@ export async function dispatchTicketComment(opts: {
    */
   commentBodyHtml?: string | null;
   isInternal: boolean;
+  /**
+   * Niveau de visibilité ; si omis, dérive de isInternal pour la compat
+   * (true → "INTERNAL", false → "PUBLIC"). "ADMIN_APPROVERS" ajoute les
+   * approbateurs de l'org au pool de notification (en plus des watchers
+   * agents internes).
+   */
+  visibility?: "PUBLIC" | "ADMIN_APPROVERS" | "INTERNAL";
   mentionedUserIds?: string[];
 }): Promise<void> {
   try {
@@ -505,6 +512,7 @@ export async function dispatchTicketComment(opts: {
         subject: true,
         priority: true,
         isInternal: true,
+        organizationId: true,
         assigneeId: true,
         creatorId: true,
         organization: { select: { name: true } },
@@ -512,6 +520,11 @@ export async function dispatchTicketComment(opts: {
       },
     });
     if (!ticket) return;
+
+    // Visibilité résolue : si l'appelant fournit visibility, on la
+    // respecte ; sinon on dérive depuis isInternal pour la compat.
+    const visibility: "PUBLIC" | "ADMIN_APPROVERS" | "INTERNAL" =
+      opts.visibility ?? (opts.isInternal ? "INTERNAL" : "PUBLIC");
 
     const displayNumber = await formatTicketDisplay(ticket);
     const agentUrl = await getAgentTicketUrl(displayNumber);
@@ -525,11 +538,57 @@ export async function dispatchTicketComment(opts: {
       if (u) authorName = `${u.firstName} ${u.lastName}`.trim() || authorName;
     }
 
-    // Watchers = assignee + créateur + collaborateurs.
+    // Watchers = assignee + créateur + collaborateurs (toujours des
+    // agents internes — leurs notifs ne sont pas filtrées par
+    // visibility puisqu'ils peuvent voir tous les niveaux).
     const watchers = new Set<string>();
     if (ticket.assigneeId) watchers.add(ticket.assigneeId);
     if (ticket.creatorId) watchers.add(ticket.creatorId);
     for (const c of ticket.collaborators) watchers.add(c.userId);
+
+    // Pour ADMIN_APPROVERS : on ajoute aux destinataires les users
+    // shadow correspondant aux admins portail + approbateurs de l'org.
+    // On laisse notifyUsers honorer leurs préférences (channels).
+    if (visibility === "ADMIN_APPROVERS" && ticket.organizationId) {
+      try {
+        // Approbateurs : matched par contactEmail dans org_approvers.
+        const approverEmails = (
+          await prisma.orgApprover.findMany({
+            where: {
+              organizationId: ticket.organizationId,
+              isActive: true,
+            },
+            select: { contactEmail: true },
+          })
+        ).map((a) => a.contactEmail.toLowerCase());
+
+        // Admins portail : PortalAccessUser avec portalRole=ADMIN
+        // pour cette organisation.
+        const adminAccess = await prisma.portalAccessUser.findMany({
+          where: {
+            organizationId: ticket.organizationId,
+            portalRole: "ADMIN",
+          },
+          select: { email: true },
+        });
+        const adminEmails = adminAccess.map((a) => a.email.toLowerCase());
+
+        const recipientEmails = new Set([...approverEmails, ...adminEmails]);
+        if (recipientEmails.size > 0) {
+          // On résout vers les User shadow (ces contacts ont un User
+          // créé au moment de leur premier comment portail). Les users
+          // sans shadow user n'auront pas de notif in-app, mais ils
+          // seront couverts par l'email pipeline classique.
+          const shadowUsers = await prisma.user.findMany({
+            where: { email: { in: Array.from(recipientEmails) } },
+            select: { id: true },
+          });
+          for (const u of shadowUsers) watchers.add(u.id);
+        }
+      } catch (e) {
+        console.warn("[dispatchTicketComment] résolution approbateurs/admins échouée :", e);
+      }
+    }
 
     // Mentions : on notifie explicitement avec l'événement "ticket_mention"
     // et on les retire des watchers simples (évite double notif).
@@ -559,8 +618,14 @@ export async function dispatchTicketComment(opts: {
       commentIsInternal: !!opts.isInternal,
     });
 
+    const visibilitySuffix =
+      visibility === "INTERNAL"
+        ? " (note interne)"
+        : visibility === "ADMIN_APPROVERS"
+          ? " (admins+approbateurs)"
+          : "";
     const commonContent: Omit<NotifyContent, "title"> = {
-      body: `${displayNumber} · ${authorName}${opts.isInternal ? " (note interne)" : ""}`,
+      body: `${displayNumber} · ${authorName}${visibilitySuffix}`,
       link: `/tickets/${ticket.id}`,
       metadata: {
         ticketId: ticket.id,

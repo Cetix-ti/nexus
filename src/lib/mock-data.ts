@@ -28,6 +28,12 @@ export interface TicketComment {
   /** "portal" | "email" | "agent" — origine du message. */
   source?: string;
   isInternal: boolean;
+  /**
+   * Niveau de visibilité — orthogonal à isInternal pour permettre un
+   * 3e état "ADMIN_APPROVERS" (admins portail + approbateurs).
+   * Si absent (anciens commentaires), dérive de isInternal.
+   */
+  visibility?: "PUBLIC" | "ADMIN_APPROVERS" | "INTERNAL";
   createdAt: string;
 }
 

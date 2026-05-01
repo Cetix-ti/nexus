@@ -28,7 +28,15 @@ interface TicketComment {
   authorName: string;
   authorAvatar: string | null;
   content: string;
+  /** HTML safe sanitizé — préserve les fils Outlook (tableaux, listes…). */
+  contentHtml?: string | null;
   isInternal: boolean;
+  /**
+   * "PUBLIC" (tout le monde) | "ADMIN_APPROVERS" (admins portail +
+   * approbateurs uniquement) — les notes INTERNAL ne sont jamais
+   * exposées au portail.
+   */
+  visibility?: "PUBLIC" | "ADMIN_APPROVERS";
   createdAt: string;
 }
 
@@ -54,6 +62,13 @@ interface TicketDetail {
   resolvedAt: string | null;
   closedAt: string | null;
   comments: TicketComment[];
+  /**
+   * True si l'utilisateur courant peut écrire des notes "Admin +
+   * Approbateurs" (admin portail OU approbateur de l'org). Renseigné
+   * par /api/v1/portal/tickets/[id]. Active le sélecteur de visibilité
+   * dans le composer.
+   */
+  portalCanWritePrivateNotes?: boolean;
   // Approval workflow — exposés par /api/v1/portal/tickets/[id]
   // (lecture du ticket flatten qui inclut maintenant ces 3 champs).
   requiresApproval?: boolean;
@@ -162,6 +177,11 @@ export default function PortalTicketDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [reply, setReply] = useState("");
+  // Visibilité de la prochaine réponse. Toujours PUBLIC pour les users
+  // standards. Pour les admins portail + approbateurs, on expose un
+  // toggle "Note privée (admins + approbateurs)" qui poste avec
+  // visibility=ADMIN_APPROVERS.
+  const [replyVisibility, setReplyVisibility] = useState<"PUBLIC" | "ADMIN_APPROVERS">("PUBLIC");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
@@ -197,7 +217,10 @@ export default function PortalTicketDetailPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: reply.trim() }),
+          body: JSON.stringify({
+            content: reply.trim(),
+            visibility: replyVisibility,
+          }),
         },
       );
       if (!res.ok) {
@@ -462,8 +485,18 @@ export default function PortalTicketDetailPage() {
                   const isPortalUser =
                     msg.authorName.toLowerCase() ===
                     ticket.requesterName.toLowerCase();
+                  const isAdminApprovers = msg.visibility === "ADMIN_APPROVERS";
                   return (
-                    <div key={msg.id} className="p-5">
+                    <div
+                      key={msg.id}
+                      className={cn(
+                        "p-5",
+                        // Notes "Admin + Approbateurs" : fond légèrement
+                        // teinté pour indiquer visuellement que ce n'est
+                        // pas une discussion publique.
+                        isAdminApprovers && "bg-blue-50/40",
+                      )}
+                    >
                       <div className="flex items-start gap-3">
                         <div
                           className={cn(
@@ -476,13 +509,21 @@ export default function PortalTicketDetailPage() {
                           <User className="h-4 w-4" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-semibold text-neutral-900">
                               {msg.authorName}
                             </span>
                             {!isPortalUser && (
                               <span className="text-[10px] font-medium bg-blue-50 text-[#2563EB] rounded-full px-2 py-0.5">
                                 {tr("portal.ticketDetail.support")}
+                              </span>
+                            )}
+                            {isAdminApprovers && (
+                              <span
+                                className="text-[10px] font-medium bg-blue-100 text-blue-800 rounded-full px-2 py-0.5 ring-1 ring-inset ring-blue-200"
+                                title="Visible uniquement aux agents, admins portail et approbateurs de l'organisation"
+                              >
+                                Note privée
                               </span>
                             )}
                             <span className="text-xs text-neutral-400">
@@ -515,15 +556,61 @@ export default function PortalTicketDetailPage() {
 
             {/* Formulaire de réponse */}
             {!isClosed ? (
-              <div className="p-5 border-t border-neutral-100 bg-[#F9FAFB] rounded-b-xl">
-                <label className="text-sm font-medium text-neutral-700 block mb-2">
-                  {tr("portal.ticketDetail.writeReply")}
-                </label>
+              <div
+                className={cn(
+                  "p-5 border-t border-neutral-100 rounded-b-xl",
+                  replyVisibility === "ADMIN_APPROVERS"
+                    ? "bg-blue-50/60"
+                    : "bg-[#F9FAFB]",
+                )}
+              >
+                <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                  <label className="text-sm font-medium text-neutral-700">
+                    {tr("portal.ticketDetail.writeReply")}
+                  </label>
+                  {/* Toggle visibilité — seulement pour admins portail et
+                      approbateurs. Permet d'envoyer une note privée
+                      visible uniquement aux agents + autres admins +
+                      approbateurs (pas aux contacts standards). */}
+                  {ticket.portalCanWritePrivateNotes && (
+                    <div className="flex items-center gap-1 rounded-lg bg-white p-1 ring-1 ring-inset ring-neutral-200 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setReplyVisibility("PUBLIC")}
+                        className={cn(
+                          "rounded-md px-2.5 py-0.5 text-[11px] font-medium transition-all",
+                          replyVisibility === "PUBLIC"
+                            ? "bg-neutral-900 text-white shadow-sm"
+                            : "text-neutral-500 hover:text-neutral-700",
+                        )}
+                      >
+                        Réponse publique
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReplyVisibility("ADMIN_APPROVERS")}
+                        className={cn(
+                          "rounded-md px-2.5 py-0.5 text-[11px] font-medium transition-all",
+                          replyVisibility === "ADMIN_APPROVERS"
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : "text-neutral-500 hover:text-neutral-700",
+                        )}
+                        title="Visible uniquement aux agents + admins + approbateurs"
+                      >
+                        Note privée
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <textarea
                   rows={4}
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
-                  placeholder={tr("portal.ticketDetail.replyPlaceholder")}
+                  placeholder={
+                    replyVisibility === "ADMIN_APPROVERS"
+                      ? "Note visible uniquement aux agents, admins portail et approbateurs"
+                      : tr("portal.ticketDetail.replyPlaceholder")
+                  }
                   className="w-full rounded-lg border border-neutral-200 bg-white p-3 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 resize-none"
                   disabled={sending}
                 />

@@ -80,6 +80,33 @@ export async function POST(
   const bodyHtml = isHtml ? sanitizeEmailHtml(rawContent) : plainTextToHtml(rawContent);
   const bodyText = isHtml ? htmlToPlainText(bodyHtml) : rawContent;
 
+  // Visibilité depuis le portail. Par défaut PUBLIC. Si le contact est
+  // admin portail OU approbateur de l'org, il peut soumettre une note
+  // ADMIN_APPROVERS (visible aux agents + admins+approbateurs, pas aux
+  // contacts standards). Les notes INTERNAL restent inaccessibles depuis
+  // le portail (agents seulement).
+  let visibility: "PUBLIC" | "ADMIN_APPROVERS" = "PUBLIC";
+  if (body.visibility === "ADMIN_APPROVERS") {
+    const isPortalAdmin = user.portalRole === "ADMIN";
+    let isApprover = false;
+    if (!isPortalAdmin) {
+      const approverRow = await prisma.orgApprover.findFirst({
+        where: {
+          organizationId: user.organizationId,
+          contactEmail: user.email,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      isApprover = !!approverRow;
+    }
+    if (isPortalAdmin || isApprover) {
+      visibility = "ADMIN_APPROVERS";
+    }
+    // Sinon on retombe silencieusement sur PUBLIC plutôt que de 403 —
+    // évite qu'un changement de rôle invalide la soumission en cours.
+  }
+
   const comment = await prisma.comment.create({
     data: {
       ticketId: ticket.id,
@@ -87,6 +114,7 @@ export async function POST(
       body: bodyText,
       bodyHtml,
       isInternal: false, // Portal users can never create internal notes
+      visibility,
       source: "portal",
     },
     include: {
@@ -97,11 +125,15 @@ export async function POST(
   });
 
   // Re-ouvre le ticket s'il était RESOLVED/CLOSED — le client vient de
-  // répondre, il veut une réponse.
-  await prisma.ticket.updateMany({
-    where: { id: ticket.id, status: { in: ["RESOLVED", "CLOSED"] } },
-    data: { status: "OPEN", resolvedAt: null, closedAt: null },
-  });
+  // répondre, il veut une réponse. Note ADMIN_APPROVERS : ne ré-ouvre
+  // PAS, c'est une discussion latérale entre admins/approbateurs et
+  // agents qui ne signale pas une demande client.
+  if (visibility === "PUBLIC") {
+    await prisma.ticket.updateMany({
+      where: { id: ticket.id, status: { in: ["RESOLVED", "CLOSED"] } },
+      data: { status: "OPEN", resolvedAt: null, closedAt: null },
+    });
+  }
 
   // Dispatcher central qui notifie l'assigné + collaborateurs avec
   // préservation du HTML riche pour que l'email conserve gras / listes /
@@ -114,6 +146,7 @@ export async function POST(
         commentBody: bodyText,
         commentBodyHtml: bodyHtml,
         isInternal: false,
+        visibility,
       }),
     )
     .catch(() => {});
@@ -134,6 +167,7 @@ export async function POST(
         authorAvatar: comment.author.avatar ?? null,
         content: comment.body,
         isInternal: false,
+        visibility: comment.visibility,
         createdAt: comment.createdAt.toISOString(),
       },
     },

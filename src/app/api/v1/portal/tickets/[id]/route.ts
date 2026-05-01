@@ -17,6 +17,30 @@ export async function GET(
 
   const { id } = await params;
 
+  // Visibilité des commentaires côté portail :
+  //  - PUBLIC          : tout le monde
+  //  - ADMIN_APPROVERS : admins portail + approbateurs (même org)
+  //  - INTERNAL        : agents seulement → JAMAIS exposé au portail
+  // Un user portail "élargi" est admin OU listé dans org_approvers
+  // pour son organisation. Dans les deux cas il peut voir les notes
+  // ADMIN_APPROVERS, sinon il ne voit que les PUBLIC.
+  const isPortalAdmin = user.portalRole === "ADMIN";
+  let isApprover = false;
+  if (!isPortalAdmin) {
+    const approverRow = await prisma.orgApprover.findFirst({
+      where: {
+        organizationId: user.organizationId,
+        contactEmail: user.email,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    isApprover = !!approverRow;
+  }
+  const allowedVisibilities = isPortalAdmin || isApprover
+    ? ["PUBLIC", "ADMIN_APPROVERS"]
+    : ["PUBLIC"];
+
   // Find ticket by id or number, scoped to the portal user's organization
   const ticket = await prisma.ticket.findFirst({
     where: {
@@ -49,7 +73,12 @@ export async function GET(
         },
       },
       comments: {
-        where: { isInternal: false },
+        // Filtre par visibility selon le rôle. INTERNAL est exclu
+        // dans les deux cas — agents only.
+        where: {
+          isInternal: false,
+          visibility: { in: allowedVisibilities },
+        },
         include: {
           author: {
             select: { firstName: true, lastName: true, avatar: true },
@@ -138,8 +167,15 @@ export async function GET(
         contentHtml: c.bodyHtml ?? null,
         source: (c as { source?: string | null }).source ?? null,
         isInternal: false,
+        // visibility pour que le portail puisse afficher un badge
+        // "Visible aux admins+approbateurs" sur les notes restreintes.
+        visibility: c.visibility,
         createdAt: c.createdAt.toISOString(),
       })),
+      // Hint pour l'UI portail : indique si l'utilisateur courant a
+      // accès aux notes ADMIN_APPROVERS — pour activer le sélecteur
+      // de visibilité dans le composer.
+      portalCanWritePrivateNotes: isPortalAdmin || isApprover,
     },
   });
 }

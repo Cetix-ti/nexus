@@ -41,6 +41,9 @@ export async function GET(
       contentHtml: c.bodyHtml,
       source: c.source,
       isInternal: c.isInternal,
+      // visibility = vérité de référence pour le front. isInternal reste
+      // exposé pour la compat du code existant (composer agent legacy).
+      visibility: c.visibility,
       createdAt: c.createdAt.toISOString(),
     })),
     meta: { total: comments.length },
@@ -77,13 +80,28 @@ export async function POST(
   const bodyHtml = isHtml ? rawContent : null;
   const plainText = isHtml ? htmlToPlainText(rawContent) : rawContent;
 
+  // Visibilité du commentaire : "PUBLIC" (défaut) | "ADMIN_APPROVERS"
+  // (visible aux admins portail + approbateurs) | "INTERNAL" (agents
+  // seulement). On accepte aussi le legacy `isInternal: true` qui mappe
+  // vers "INTERNAL" pour ne pas casser les anciens callers.
+  const rawVisibility =
+    typeof body.visibility === "string" ? body.visibility : null;
+  const visibility: "PUBLIC" | "ADMIN_APPROVERS" | "INTERNAL" =
+    rawVisibility === "ADMIN_APPROVERS" || rawVisibility === "INTERNAL"
+      ? rawVisibility
+      : body.isInternal === true
+        ? "INTERNAL"
+        : "PUBLIC";
+  const isInternalDerived = visibility === "INTERNAL";
+
   const comment = await prisma.comment.create({
     data: {
       ticketId: ticket.id,
       authorId: me.id,
       body: plainText,
       bodyHtml,
-      isInternal: body.isInternal ?? false,
+      isInternal: isInternalDerived,
+      visibility,
       source: "agent",
     },
     include: { author: { select: { firstName: true, lastName: true, avatar: true } } },
@@ -107,8 +125,11 @@ export async function POST(
     : me.email;
 
   // Commentaire public → envoi par courriel au demandeur (threading MIME
-  // correct). Note interne → reste strictement interne (jamais envoyée).
-  if (!comment.isInternal) {
+  // correct). Note interne / admin+approbateurs → pas d'email au
+  // demandeur (réservé aux agents et/ou aux admins portail). Le
+  // dispatcher central ci-dessous gérera quand même les notifications
+  // ciblées (in-app, watchers).
+  if (visibility === "PUBLIC") {
     sendTicketReplyEmail(comment.id).catch((err) =>
       console.error("[ticket-reply email]", err),
     );
@@ -136,7 +157,8 @@ export async function POST(
         // HTML riche TipTap si l'agent a saisi une mise en forme. Sans
         // ça, les emails sortants perdaient les listes / images / gras.
         commentBodyHtml: bodyHtml,
-        isInternal: body.isInternal ?? false,
+        isInternal: isInternalDerived,
+        visibility,
         mentionedUserIds,
       }),
     )
@@ -152,6 +174,7 @@ export async function POST(
       authorAvatar: comment.author?.avatar ?? null,
       content: comment.body,
       isInternal: comment.isInternal,
+      visibility: comment.visibility,
       createdAt: comment.createdAt.toISOString(),
     },
   }, { status: 201 });

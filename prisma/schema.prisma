@@ -754,6 +754,15 @@ model Comment {
   body       String  @db.Text
   bodyHtml   String? @map("body_html") @db.Text
   isInternal Boolean @default(false) @map("is_internal")
+  /// Niveau de visibilité du commentaire — orthogonal à isInternal pour
+  /// permettre un 3e état "ADMIN_APPROVERS" (visible aux agents + admins
+  /// portail + approbateurs, mais pas aux contacts standards).
+  ///   - "PUBLIC"          : visible à tout le monde (défaut)
+  ///   - "ADMIN_APPROVERS" : agents + admins portail + approbateurs
+  ///   - "INTERNAL"        : agents uniquement (= isInternal=true)
+  /// On garde isInternal sync (true ssi visibility="INTERNAL") pour la
+  /// compat avec l'existant (filtres legacy `where: { isInternal: false }`).
+  visibility String  @default("PUBLIC") @map("visibility")
 
   // Threading courriel ↔ ticket (Freshservice-style) :
   //  - messageId           : le MIME Message-ID de CE commentaire (si créé depuis

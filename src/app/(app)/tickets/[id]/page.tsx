@@ -188,12 +188,15 @@ function SidebarField({
   );
 }
 
+type CommentVisibility = "PUBLIC" | "ADMIN_APPROVERS" | "INTERNAL";
+
 interface LocalComment {
   id: string;
   kind: "comment";
   authorName: string;
   content: string;
   isInternal: boolean;
+  visibility?: CommentVisibility;
   createdAt: string;
 }
 
@@ -223,7 +226,11 @@ export default function TicketDetailPage() {
       ? "Organisation"
       : "Retour";
   const [commentText, setCommentText] = useState("");
-  const [isInternal, setIsInternal] = useState(false);
+  // Niveau de visibilité du prochain commentaire à envoyer. Source de
+  // vérité pour le composer ; isInternal en est dérivé pour la compat
+  // avec le code existant qui le lit (badge ambre, exclusion email…).
+  const [visibility, setVisibility] = useState<CommentVisibility>("PUBLIC");
+  const isInternal = visibility === "INTERNAL";
   const [localComments, setLocalComments] = useState<LocalComment[]>([]);
   const [sending, setSending] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -595,6 +602,7 @@ export default function TicketDetailPage() {
       // agents/portail), sinon le plain text.
       content: (c as { contentHtml?: string }).contentHtml || c.content,
       isInternal: c.isInternal,
+      visibility: ((c as { visibility?: string }).visibility ?? (c.isInternal ? "INTERNAL" : "PUBLIC")) as CommentVisibility,
       createdAt: c.createdAt,
     })),
     ...localComments,
@@ -629,7 +637,7 @@ export default function TicketDetailPage() {
       const res = await fetch(`/api/v1/tickets/${ticket!.id}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: finalContent, isInternal }),
+        body: JSON.stringify({ content: finalContent, isInternal, visibility }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -639,6 +647,7 @@ export default function TicketDetailPage() {
           authorName: data.data?.authorName ?? "Moi",
           content: finalContent,
           isInternal,
+          visibility,
           createdAt: data.data?.createdAt ?? new Date().toISOString(),
         };
         setLocalComments((prev) => [...prev, newComment]);
@@ -1091,22 +1100,40 @@ export default function TicketDetailPage() {
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1">
+                          {(() => {
+                            const itemVisibility =
+                              ((item as { visibility?: string }).visibility as
+                                | CommentVisibility
+                                | undefined) ??
+                              (item.isInternal ? "INTERNAL" : "PUBLIC");
+                            return (
                           <div
                             className={cn(
                               "rounded-lg border p-3",
-                              item.isInternal
+                              itemVisibility === "INTERNAL"
                                 ? "border-amber-200 bg-amber-50"
-                                : "border-gray-200 bg-white"
+                                : itemVisibility === "ADMIN_APPROVERS"
+                                  ? "border-blue-200 bg-blue-50/60"
+                                  : "border-gray-200 bg-white"
                             )}
                           >
                             <div className="mb-1.5 flex items-center gap-2">
                               <span className="text-sm font-medium text-gray-900">
                                 {item.authorName}
                               </span>
-                              {item.isInternal && (
+                              {itemVisibility === "INTERNAL" && (
                                 <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
                                   <Lock className="h-2.5 w-2.5" />
                                   Interne
+                                </span>
+                              )}
+                              {itemVisibility === "ADMIN_APPROVERS" && (
+                                <span
+                                  className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700"
+                                  title="Visible aux agents + admins portail + approbateurs"
+                                >
+                                  <Lock className="h-2.5 w-2.5" />
+                                  Admin+Approb.
                                 </span>
                               )}
                               <span className="text-xs text-gray-400">
@@ -1118,6 +1145,8 @@ export default function TicketDetailPage() {
                               dangerouslySetInnerHTML={{ __html: item.content }}
                             />
                           </div>
+                            );
+                          })()}
                         </div>
                       </>
                     ) : (
@@ -1174,21 +1203,39 @@ export default function TicketDetailPage() {
                 <h3 className="text-[13px] font-semibold text-slate-700">Répondre au ticket</h3>
                 <div className="flex items-center gap-1 rounded-lg bg-slate-100/80 p-1 ring-1 ring-inset ring-slate-200/60 shrink-0">
                   <button
-                    onClick={() => { setIsInternal(false); setTimelineTab("messages"); }}
+                    onClick={() => { setVisibility("PUBLIC"); setTimelineTab("messages"); }}
                     className={cn(
                       "rounded-md px-3 py-1 text-[11.5px] font-medium transition-all",
-                      !isInternal
+                      visibility === "PUBLIC"
                         ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/60"
                         : "text-slate-500 hover:text-slate-700"
                     )}
                   >
                     Réponse publique
                   </button>
+                  {/* Admin + Approbateurs : visible aux admins portail et
+                      aux approbateurs de l'org, en plus des agents. PAS
+                      aux contacts standards. Pour les discussions
+                      "demi-privées" (escalade approbation, validation
+                      budget…). */}
                   <button
-                    onClick={() => { setIsInternal(true); setTimelineTab("notes"); }}
+                    onClick={() => { setVisibility("ADMIN_APPROVERS"); setTimelineTab("notes"); }}
                     className={cn(
                       "rounded-md px-3 py-1 text-[11.5px] font-medium transition-all flex items-center gap-1",
-                      isInternal
+                      visibility === "ADMIN_APPROVERS"
+                        ? "bg-blue-50 text-blue-800 shadow-sm ring-1 ring-blue-200"
+                        : "text-slate-500 hover:text-slate-700"
+                    )}
+                    title="Visible aux admins portail et aux approbateurs de l'organisation"
+                  >
+                    <Lock className="h-2.5 w-2.5" strokeWidth={2.5} />
+                    Admin + Approb.
+                  </button>
+                  <button
+                    onClick={() => { setVisibility("INTERNAL"); setTimelineTab("notes"); }}
+                    className={cn(
+                      "rounded-md px-3 py-1 text-[11.5px] font-medium transition-all flex items-center gap-1",
+                      visibility === "INTERNAL"
                         ? "bg-amber-50 text-amber-800 shadow-sm ring-1 ring-amber-200"
                         : "text-slate-500 hover:text-slate-700"
                     )}
@@ -1273,7 +1320,7 @@ export default function TicketDetailPage() {
                       <AiEscalationBrief
                         ticketId={ticket.id}
                         onInsertDraft={(text) => {
-                          setIsInternal(true);
+                          setVisibility("INTERNAL");
                           setCommentText(text);
                         }}
                       />
