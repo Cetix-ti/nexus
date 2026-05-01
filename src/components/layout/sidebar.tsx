@@ -365,7 +365,14 @@ export function Sidebar({ forceExpanded = false }: { forceExpanded?: boolean } =
     fetch("/api/v1/me")
       .then((r) => r.ok ? r.json() : null)
       .then((d) => {
-        if (d?.capabilities) setUserCapabilities(d.capabilities);
+        // effectiveCapabilities = union des capabilities personnelles
+        // (overrides) + permissions accordées au rôle (rolePermissions).
+        // Sans ça, un SUPER_ADMIN dont les perms finances/billing/
+        // purchasing viennent du rôle (et non d'un override perso) voit
+        // ces sections cachées dans la sidebar — alors que le serveur
+        // les autorise via hasCapability.
+        const caps: string[] | undefined = d?.effectiveCapabilities ?? d?.capabilities;
+        if (caps) setUserCapabilities(caps);
       })
       .catch(() => {});
   }, [sessionStatus]);

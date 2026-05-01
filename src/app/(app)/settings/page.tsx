@@ -1199,7 +1199,13 @@ export default function SettingsPage() {
   useEffect(() => {
     fetch("/api/v1/me")
       .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d?.capabilities) setUserCapabilities(d.capabilities); })
+      // effectiveCapabilities = overrides perso ∪ permissions du rôle.
+      // Sans fallback sur effectiveCapabilities, un SUPER_ADMIN sans
+      // overrides perso voit les sections gated cachées (finances etc.).
+      .then((d) => {
+        const caps: string[] | undefined = d?.effectiveCapabilities ?? d?.capabilities;
+        if (caps) setUserCapabilities(caps);
+      })
       .catch(() => {});
   }, []);
 
