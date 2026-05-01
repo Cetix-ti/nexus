@@ -268,14 +268,27 @@ export function AgentProfilesSection() {
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
                     Signature électronique
                   </p>
-                  <div className="rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 px-4 py-3">
+                  {/* overflow-hidden + selectors d'enfants pour clamp les
+                      tables / images des signatures email. Sans ça, une
+                      table avec width="700" sortait de la card vers la
+                      droite (cf. signatures Outlook style Aptos). */}
+                  <div className="rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 px-4 py-3 overflow-hidden">
                     {agent.signatureHtml ? (
                       <div
-                        className="text-[12px] text-slate-700 leading-relaxed [&_strong]:font-semibold [&_a]:text-blue-600 [&_a]:underline"
+                        className={
+                          "text-[12px] text-slate-700 leading-relaxed " +
+                          "[&_strong]:font-semibold [&_a]:text-blue-600 [&_a]:underline " +
+                          // Force toutes les tables / images à respecter
+                          // la largeur du container — empêche les
+                          // signatures Outlook avec width fixe de
+                          // déborder.
+                          "[&_table]:!max-w-full [&_table]:!w-auto [&_table]:block [&_table]:overflow-x-auto " +
+                          "[&_img]:!max-w-full [&_img]:h-auto"
+                        }
                         dangerouslySetInnerHTML={{ __html: agent.signatureHtml }}
                       />
                     ) : (
-                      <pre className="font-sans text-[12px] text-slate-700 whitespace-pre-wrap leading-relaxed">
+                      <pre className="font-sans text-[12px] text-slate-700 whitespace-pre-wrap leading-relaxed break-words">
                         {agent.signature}
                       </pre>
                     )}
