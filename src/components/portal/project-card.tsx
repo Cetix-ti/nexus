@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { format } from "date-fns";
+import { format, type Locale } from "date-fns";
 import { fr } from "date-fns/locale";
 import {
   AlertTriangle,
@@ -22,6 +22,16 @@ import { useLocaleStore } from "@/stores/locale-store";
 interface ProjectCardProps {
   project: Project;
   compact?: boolean;
+}
+
+// Tolère startDate/targetEndDate vides (projet rendu visible sans dates
+// fixées). Sans ça, new Date("") → Invalid Date → date-fns format() throw
+// → page /portal/projects crash.
+function safeFormatDate(value: string | null | undefined, fmt: string, locale?: Locale): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return format(d, fmt, locale ? { locale } : undefined);
 }
 
 export function ProjectCard({ project, compact = false }: ProjectCardProps) {
@@ -71,9 +81,7 @@ export function ProjectCard({ project, compact = false }: ProjectCardProps) {
         <div className="mt-3 flex items-center justify-between text-[11px] text-neutral-400">
           <span className="flex items-center gap-1">
             <CalendarCheck className="h-3 w-3" />
-            {format(new Date(project.targetEndDate), "d MMM yyyy", {
-              locale: locale === "fr" ? fr : undefined,
-            })}
+            {safeFormatDate(project.targetEndDate, "d MMM yyyy", locale === "fr" ? fr : undefined)}
           </span>
           <span className="flex items-center gap-1 text-[#2563EB] group-hover:gap-1.5 transition-all">
             {t("portal.projectCard.view")} <ArrowRight className="h-3 w-3" />
@@ -145,16 +153,14 @@ export function ProjectCard({ project, compact = false }: ProjectCardProps) {
           <Calendar className="h-3.5 w-3.5 text-neutral-400" />
           {t("portal.projectCard.start")}{" "}
           <span className="font-medium text-neutral-700">
-            {format(new Date(project.startDate), "d MMM yyyy", { locale: locale === "fr" ? fr : undefined })}
+            {safeFormatDate(project.startDate, "d MMM yyyy", locale === "fr" ? fr : undefined)}
           </span>
         </span>
         <span className="flex items-center gap-1.5">
           <CalendarCheck className="h-3.5 w-3.5 text-neutral-400" />
           {t("portal.projectCard.target")}{" "}
           <span className="font-medium text-neutral-700">
-            {format(new Date(project.targetEndDate), "d MMM yyyy", {
-              locale: locale === "fr" ? fr : undefined,
-            })}
+            {safeFormatDate(project.targetEndDate, "d MMM yyyy", locale === "fr" ? fr : undefined)}
           </span>
         </span>
         <span className="flex items-center gap-1.5">

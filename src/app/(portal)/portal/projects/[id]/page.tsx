@@ -2,8 +2,18 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { format } from "date-fns";
+import { format, type Locale } from "date-fns";
 import { fr } from "date-fns/locale";
+
+// Tolère startDate/targetEndDate/dueDate vides (projet rendu visible
+// sans dates fixées). Sans ça, new Date("") → Invalid Date → date-fns
+// format() throw → page crash.
+function safeFormatDate(value: string | null | undefined, fmt: string, locale?: Locale): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return format(d, fmt, locale ? { locale } : undefined);
+}
 import {
   ArrowLeft,
   AlertTriangle,
@@ -229,17 +239,13 @@ export default function PortalProjectDetailPage({
           <span className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-neutral-400" /> {t("portal.projectDetail.start")}{" "}
             <span className="font-medium text-neutral-800">
-              {format(new Date(project.startDate), "d MMM yyyy", {
-                locale: locale === "fr" ? fr : undefined,
-              })}
+              {safeFormatDate(project.startDate, "d MMM yyyy", locale === "fr" ? fr : undefined)}
             </span>
           </span>
           <span className="flex items-center gap-2">
             <CalendarCheck className="h-4 w-4 text-neutral-400" /> {t("portal.projectDetail.target")}{" "}
             <span className="font-medium text-neutral-800">
-              {format(new Date(project.targetEndDate), "d MMM yyyy", {
-                locale: locale === "fr" ? fr : undefined,
-              })}
+              {safeFormatDate(project.targetEndDate, "d MMM yyyy", locale === "fr" ? fr : undefined)}
             </span>
           </span>
           <span className="flex items-center gap-2">
@@ -401,9 +407,7 @@ export default function PortalProjectDetailPage({
                     {task.dueDate && (
                       <p className="text-xs text-neutral-400">
                         {t("portal.projectDetail.dueDate")} :{" "}
-                        {format(new Date(task.dueDate), "d MMM yyyy", {
-                          locale: locale === "fr" ? fr : undefined,
-                        })}
+                        {safeFormatDate(task.dueDate, "d MMM yyyy", locale === "fr" ? fr : undefined)}
                       </p>
                     )}
                   </div>
