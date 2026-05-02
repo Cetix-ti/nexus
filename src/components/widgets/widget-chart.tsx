@@ -142,7 +142,10 @@ export function WidgetChart({
         <p className="text-3xl font-bold tabular-nums" style={{ color: style.primaryColor }}>
           {fmt(results[0].value)}
         </p>
-        {aggregate && <p className="text-[10px] text-slate-400 mt-1">{aggregate}</p>}
+        {/* L'étiquette de la fonction d'agrégation (sum/avg/count/...)
+            n'est plus affichée — le titre du widget suffit à expliquer
+            la mesure et la mention "sum" sous le chiffre faisait juste
+            du bruit visuel. */}
       </div>
     );
   }
