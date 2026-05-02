@@ -250,9 +250,8 @@ function SortableWidget({
     : shouldExpandOnLaptop
     ? `span ${GRID_COLS}`
     : `span ${displayW}`;
-  // `gridAutoRows: 60px` is a FIXED-size implicit row, so `minHeight` alone
-  // doesn't grow it. We must spell out the row span so the grid layout
-  // reserves H rows of 60px each = H * 60px of vertical space per widget.
+  // `gridAutoRows: 60px` strict : span H réserve exactement H*60 px.
+  // minHeight gardé uniquement pour mobile (gridAutoRows: auto).
   const rowSpan = isMobile ? undefined : `span ${displayH}`;
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -261,7 +260,7 @@ function SortableWidget({
     zIndex: isDragging || isResizing ? 50 : undefined,
     gridColumn: colSpan,
     gridRow: rowSpan,
-    minHeight: isMobile ? "auto" : `${displayH * ROW_PX}px`,
+    minHeight: isMobile ? `${displayH * ROW_PX}px` : undefined,
   };
 
   if (!editMode) {
@@ -279,9 +278,12 @@ function SortableWidget({
         style={{
           gridColumn: colSpan,
           gridRow: rowSpan,
-          minHeight: isMobile ? "auto" : `${displayH * ROW_PX}px`,
+          // minHeight redondant si gridAutoRows strict — gardé pour
+          // mobile (gridAutoRows: auto) où il sert encore à forcer
+          // une hauteur minimale.
+          minHeight: isMobile ? "auto" : undefined,
         }}
-        className="w-full h-full flex flex-col [&>*]:flex-1 [&>*]:min-h-0"
+        className="w-full h-full flex flex-col overflow-hidden [&>*]:flex-1 [&>*]:min-h-0"
       >
         {children}
       </div>
@@ -577,11 +579,14 @@ export function DashboardGrid({
             gridTemplateColumns: isMobile
               ? "minmax(0, 1fr)"
               : `repeat(${GRID_COLS}, minmax(0, 1fr))`,
-            // `minmax(60px, auto)` — rows ≥ 60 px mais grandissent si le
-            // contenu est plus haut.
-            gridAutoRows: isMobile
-              ? "auto"
-              : `minmax(${ROW_PX}px, auto)`,
+            // STRICT 60 px par rangée. Avant on utilisait
+            // `minmax(60px, auto)` qui laissait le contenu (chart avec
+            // height fixe en px) faire grandir la rangée → un widget
+            // avec h=1 paraissait haut comme h=4 et la résize au-dessous
+            // de la taille visible était impossible. Avec un track
+            // strict, span H × 60 px = hauteur affichée du widget,
+            // peu importe le contenu (clamp via overflow sur la cell).
+            gridAutoRows: isMobile ? "auto" : `${ROW_PX}px`,
             // `grid-auto-flow: row` (sans `dense`) en édition : les
             // widgets gardent leur position dans l'ordre du tableau. Avec
             // `dense`, le moteur CSS réarrangeait activement les widgets
