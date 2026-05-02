@@ -12,13 +12,11 @@ import { cn } from "@/lib/utils";
 import type { DashboardItem } from "@/components/widgets/dashboard-grid";
 import type { ChartType } from "@/components/widgets/widget-chart";
 
-const SCALE_PRESETS: Array<{ label: string; value: number; hint: string }> = [
-  { label: "Compact",    value: 0.85, hint: "−15%" },
-  { label: "Normal",     value: 1,    hint: "100%" },
-  { label: "Grand",      value: 1.25, hint: "+25%" },
-  { label: "Très grand", value: 1.5,  hint: "+50%" },
-  { label: "Géant",      value: 1.75, hint: "+75%" },
-];
+// Bornes des sliders (50% → 200%, pas de 5%) pour un contrôle fluide
+// sans risquer un widget illisible. 1.0 = 100% par défaut.
+const SCALE_MIN = 0.5;
+const SCALE_MAX = 2.0;
+const SCALE_STEP = 0.05;
 
 function ScaleSection({
   label, hint, value, onChange,
@@ -28,30 +26,43 @@ function ScaleSection({
   value: number;
   onChange: (v: number) => void;
 }) {
+  const pct = Math.round(value * 100);
   return (
     <section>
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
-        {label}
-      </h3>
-      <p className="text-[10.5px] text-slate-500 mb-2 leading-relaxed">{hint}</p>
-      <div className="grid grid-cols-5 gap-1.5">
-        {SCALE_PRESETS.map((p) => (
-          <button
-            key={p.value}
-            type="button"
-            onClick={() => onChange(p.value)}
-            className={cn(
-              "rounded-md border px-1.5 py-2 text-center transition-colors",
-              value === p.value
-                ? "border-blue-500 bg-blue-50 text-blue-700"
-                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
-            )}
-            title={`${p.label} (${p.hint})`}
-          >
-            <div className="text-[11px] font-semibold">{p.label}</div>
-            <div className="text-[9.5px] text-slate-400 mt-0.5">{p.hint}</div>
-          </button>
-        ))}
+      <div className="flex items-baseline justify-between mb-1">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          {label}
+        </h3>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] tabular-nums text-slate-700 font-semibold">
+            {pct}%
+          </span>
+          {value !== 1 && (
+            <button
+              type="button"
+              onClick={() => onChange(1)}
+              className="text-[10px] text-slate-400 hover:text-slate-700 underline"
+              title="Revenir à 100%"
+            >
+              reset
+            </button>
+          )}
+        </div>
+      </div>
+      <p className="text-[10.5px] text-slate-500 mb-1.5 leading-relaxed">{hint}</p>
+      <input
+        type="range"
+        min={SCALE_MIN}
+        max={SCALE_MAX}
+        step={SCALE_STEP}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-blue-600"
+      />
+      <div className="mt-1 flex items-center justify-between text-[9.5px] text-slate-400 tabular-nums">
+        <span>{Math.round(SCALE_MIN * 100)}%</span>
+        <span className="text-slate-300">100%</span>
+        <span>{Math.round(SCALE_MAX * 100)}%</span>
       </div>
     </section>
   );
@@ -117,8 +128,14 @@ export function DashboardItemAppearance({
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         <p className="text-[11px] text-slate-500 leading-relaxed">
-          Ces réglages s&apos;appliquent uniquement à ce widget dans ce dashboard.
-          La définition du widget reste inchangée ailleurs.
+          Ces réglages s&apos;appliquent à ce widget dans ce dashboard.
+          La définition globale du widget reste inchangée ailleurs.
+          {" "}
+          <span className="text-slate-700 font-medium">
+            Sur un dashboard parent, les modifications se répercutent
+            automatiquement sur les dashboards enfants
+          </span>{" "}
+          qui partagent son layout.
         </p>
 
         {/* ---- Taille globale ---- */}
