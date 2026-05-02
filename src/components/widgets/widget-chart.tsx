@@ -135,6 +135,49 @@ export function WidgetChart({
     if (typeof label === "string") onDrillDown(label);
   }) : undefined;
 
+  // -------------------------------------------------------------------------
+  // Titres d'axes — config unifiée pour tous les charts cartésiens.
+  // Bug avant : `offset: -10` poussait le titre X HORS de la zone d'axe
+  // (height=30) → clippé. Le titre Y n'était pas centré (textAnchor par
+  // défaut au "start"). Fix :
+  //   - réserver de la place sur l'axe (height/width agrandis quand titre)
+  //   - offset:0 (sit au bord de la zone d'axe)
+  //   - textAnchor:middle pour centrer le texte sur son origine
+  //   - fill explicite (la couleur par défaut était trop pâle sur certains
+  //     thèmes — à confirmer sur le widget "heures par mois")
+  // -------------------------------------------------------------------------
+  const xTitle = (style.xAxisTitle ?? "").trim();
+  const yTitle = (style.yAxisTitle ?? "").trim();
+  const hasXTitle = xTitle.length > 0;
+  const hasYTitle = yTitle.length > 0;
+  const xAxisHeight = (style.xAxisRotation !== 0 ? 60 : 30) + (hasXTitle ? 22 : 0);
+  const yAxisWidth = hasYTitle ? 64 : 44;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const xAxisLabel: any = hasXTitle
+    ? {
+        value: xTitle,
+        position: "insideBottom",
+        offset: 0,
+        fill: "#475569",
+        fontSize: 11,
+        fontWeight: 500,
+        style: { textAnchor: "middle" },
+      }
+    : undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const yAxisLabel: any = hasYTitle
+    ? {
+        value: yTitle,
+        angle: -90,
+        position: "insideLeft",
+        offset: 0,
+        fill: "#475569",
+        fontSize: 11,
+        fontWeight: 500,
+        style: { textAnchor: "middle" },
+      }
+    : undefined;
+
   if (chartType === "number" || isSingle) {
     return (
       <div className="text-center py-4">
@@ -189,13 +232,14 @@ export function WidgetChart({
               tick={{ fontSize: 10 }}
               angle={style.xAxisRotation}
               textAnchor={style.xAxisRotation === 0 ? "middle" : "end"}
-              height={style.xAxisRotation !== 0 ? 60 : 30}
-              label={style.xAxisTitle ? { value: style.xAxisTitle, position: "insideBottom", offset: -10, fontSize: 11 } : undefined}
+              height={xAxisHeight}
+              label={xAxisLabel}
             />}
             {style.showYAxis && <YAxis
               tick={{ fontSize: 10 }}
               tickFormatter={fmtAxis}
-              label={style.yAxisTitle ? { value: style.yAxisTitle, angle: -90, position: "insideLeft", fontSize: 11 } : undefined}
+              width={yAxisWidth}
+              label={yAxisLabel}
             />}
             <ReTooltip formatter={fmtTooltip} />
             {style.showLegend && <Legend {...legendLayout} />}
@@ -216,8 +260,20 @@ export function WidgetChart({
         <ResponsiveContainer width="100%" height={Math.max(220, results.length * 32)}>
           <BarChart data={results} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
-            {style.showXAxis && <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={fmtAxis} />}
-            {style.showYAxis && <YAxis type="category" dataKey="label" tick={{ fontSize: 10 }} width={120} />}
+            {style.showXAxis && <XAxis
+              type="number"
+              tick={{ fontSize: 10 }}
+              tickFormatter={fmtAxis}
+              height={xAxisHeight}
+              label={xAxisLabel}
+            />}
+            {style.showYAxis && <YAxis
+              type="category"
+              dataKey="label"
+              tick={{ fontSize: 10 }}
+              width={Math.max(120, yAxisWidth)}
+              label={yAxisLabel}
+            />}
             <ReTooltip formatter={fmtTooltip} />
             {style.showLegend && <Legend {...legendLayout} />}
             <Bar dataKey="value" radius={cornerRadiusForHorizontalBar(style)} onClick={onBarClick} style={drillCursor}>
@@ -242,13 +298,14 @@ export function WidgetChart({
               tick={{ fontSize: 10 }}
               angle={style.xAxisRotation}
               textAnchor={style.xAxisRotation === 0 ? "middle" : "end"}
-              height={style.xAxisRotation !== 0 ? 60 : 30}
-              label={style.xAxisTitle ? { value: style.xAxisTitle, position: "insideBottom", offset: -10, fontSize: 11 } : undefined}
+              height={xAxisHeight}
+              label={xAxisLabel}
             />}
             {style.showYAxis && <YAxis
               tick={{ fontSize: 10 }}
               tickFormatter={fmtAxis}
-              label={style.yAxisTitle ? { value: style.yAxisTitle, angle: -90, position: "insideLeft", fontSize: 11 } : undefined}
+              width={yAxisWidth}
+              label={yAxisLabel}
             />}
             <ReTooltip formatter={fmtTooltip} />
             {style.showLegend && <Legend {...legendLayout} />}
@@ -273,13 +330,14 @@ export function WidgetChart({
               tick={{ fontSize: 10 }}
               angle={style.xAxisRotation}
               textAnchor={style.xAxisRotation === 0 ? "middle" : "end"}
-              height={style.xAxisRotation !== 0 ? 60 : 30}
-              label={style.xAxisTitle ? { value: style.xAxisTitle, position: "insideBottom", offset: -10, fontSize: 11 } : undefined}
+              height={xAxisHeight}
+              label={xAxisLabel}
             />}
             {style.showYAxis && <YAxis
               tick={{ fontSize: 10 }}
               tickFormatter={fmtAxis}
-              label={style.yAxisTitle ? { value: style.yAxisTitle, angle: -90, position: "insideLeft", fontSize: 11 } : undefined}
+              width={yAxisWidth}
+              label={yAxisLabel}
             />}
             <ReTooltip formatter={fmtTooltip} />
             {style.showLegend && <Legend {...legendLayout} />}
@@ -339,8 +397,21 @@ export function WidgetChart({
         <ResponsiveContainer width="100%" height={220}>
           <ReScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
-            {style.showXAxis && <XAxis dataKey="x" name="Index" tick={{ fontSize: 10 }} />}
-            {style.showYAxis && <YAxis dataKey="y" name="Valeur" tick={{ fontSize: 10 }} tickFormatter={fmtAxis} />}
+            {style.showXAxis && <XAxis
+              dataKey="x"
+              name="Index"
+              tick={{ fontSize: 10 }}
+              height={xAxisHeight}
+              label={xAxisLabel}
+            />}
+            {style.showYAxis && <YAxis
+              dataKey="y"
+              name="Valeur"
+              tick={{ fontSize: 10 }}
+              tickFormatter={fmtAxis}
+              width={yAxisWidth}
+              label={yAxisLabel}
+            />}
             <ReTooltip cursor={{ strokeDasharray: "3 3" }} formatter={fmtTooltip} />
             <Scatter data={scatterData} fill={style.primaryColor} />
           </ReScatterChart>
@@ -415,8 +486,20 @@ export function WidgetChart({
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }} barCategoryGap={`${style.barGapPercent}%`}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
-            {style.showXAxis && <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={style.xAxisRotation} textAnchor={style.xAxisRotation === 0 ? "middle" : "end"} height={style.xAxisRotation !== 0 ? 60 : 30} />}
-            {style.showYAxis && <YAxis tick={{ fontSize: 10 }} tickFormatter={fmtAxis} />}
+            {style.showXAxis && <XAxis
+              dataKey="label"
+              tick={{ fontSize: 10 }}
+              angle={style.xAxisRotation}
+              textAnchor={style.xAxisRotation === 0 ? "middle" : "end"}
+              height={xAxisHeight}
+              label={xAxisLabel}
+            />}
+            {style.showYAxis && <YAxis
+              tick={{ fontSize: 10 }}
+              tickFormatter={fmtAxis}
+              width={yAxisWidth}
+              label={yAxisLabel}
+            />}
             <ReTooltip formatter={fmtTooltip} />
             {style.showLegend && <Legend {...legendLayout} />}
             <Bar dataKey="value" radius={cornerRadiusForBar(style)} onClick={onBarClick} style={drillCursor}>
