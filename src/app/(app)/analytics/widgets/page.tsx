@@ -24,6 +24,7 @@ import {
   Ticket, Clock, User, Building2, FileText, Cpu, Briefcase,
   Receipt, ShoppingCart, Shield, Calendar, Database, Layers,
   RefreshCw, Check, Palette, Sparkles,
+  Folder as FolderIcon, ChevronDown, ChevronRight,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -106,7 +107,16 @@ interface CustomWidget {
    * Les widgets globaux (undefined) restent visibles partout.
    */
   organizationId?: string;
+  /**
+   * Dossier libre dans lequel le widget est rangé dans la galerie. Texte
+   * libre (pas d'entité Folder dédiée) : tous les widgets partageant le
+   * même nom sont regroupés. Vide / undefined = "Sans dossier".
+   */
+  folder?: string;
 }
+
+const NO_FOLDER_LABEL = "Sans dossier";
+const FOLDERS_COLLAPSE_KEY = "nexus:widgets-folder-collapsed";
 // `source` optionnel : quand la requête est dual-source (Sankey cashflow
 // Revenus + Dépenses par exemple), chaque ligne porte le libellé de son
 // dataset d'origine. Le renderer Sankey le détecte pour construire un
@@ -469,10 +479,43 @@ export default function WidgetEditorPage() {
   // Form state
   const [fName, setFName] = useState("");
   const [fDesc, setFDesc] = useState("");
+  const [fFolder, setFFolder] = useState("");
   const [fChart, setFChart] = useState<ChartType>("bar");
   const [fColor, setFColor] = useState(COLORS[0]);
   const [fStyle, setFStyle] = useState<VisualStyle>(() => ({ ...DEFAULT_STYLE }));
   const [fQuery, setFQuery] = useState<WidgetQuery>(emptyQuery());
+
+  // Liste des dossiers existants — dérivée des widgets pour alimenter la
+  // datalist de suggestion dans le champ Dossier du formulaire.
+  const existingFolders = useMemo(() => {
+    const set = new Set<string>();
+    for (const w of allWidgets) {
+      if (w.folder && w.folder.trim()) set.add(w.folder.trim());
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
+  }, [allWidgets]);
+
+  // État replié/déplié par dossier, persisté côté agent.
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = localStorage.getItem(FOLDERS_COLLAPSE_KEY);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return new Set(arr);
+      }
+    } catch {}
+    return new Set();
+  });
+  const toggleFolderCollapsed = (folder: string) => {
+    setCollapsedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folder)) next.delete(folder);
+      else next.add(folder);
+      try { localStorage.setItem(FOLDERS_COLLAPSE_KEY, JSON.stringify(Array.from(next))); } catch {}
+      return next;
+    });
+  };
 
   // Preview state
   const [previewResults, setPreviewResults] = useState<QueryResult[] | null>(null);
@@ -553,7 +596,7 @@ export default function WidgetEditorPage() {
 
   // ==== Form helpers ====
   function resetForm() {
-    setFName(""); setFDesc(""); setFChart("bar"); setFColor(COLORS[0]);
+    setFName(""); setFDesc(""); setFFolder(""); setFChart("bar"); setFColor(COLORS[0]);
     setFStyle({ ...DEFAULT_STYLE });
     setFQuery(emptyQuery()); setPreviewResults(null); setPreviewError(null);
   }
@@ -588,7 +631,8 @@ export default function WidgetEditorPage() {
 
   const [aiOpen, setAiOpen] = useState(false);
   function startEdit(w: CustomWidget) {
-    setFName(w.name); setFDesc(w.description); setFChart(w.chartType); setFColor(w.color);
+    setFName(w.name); setFDesc(w.description); setFFolder(w.folder ?? "");
+    setFChart(w.chartType); setFColor(w.color);
     setFStyle(mergeStyle(w.style, w.color));
     // Les widgets créés avant le changement "période au dashboard"
     // peuvent encore porter des dateFrom/dateTo. On les vide en édition
@@ -608,6 +652,7 @@ export default function WidgetEditorPage() {
       // Lors de l'édition on conserve l'orgId existant. En création, on
       // applique l'orgContext de l'URL (si on est en mode atelier organisation).
       organizationId: editing?.organizationId ?? orgContextId ?? undefined,
+      folder: fFolder.trim() || undefined,
     };
     // On écrit dans le pool global, pas la vue filtrée — sinon on perd les
     // widgets d'autres orgs.
@@ -631,6 +676,29 @@ export default function WidgetEditorPage() {
       organizationId: orgContextId ?? w.organizationId,
     };
     const u = [...allWidgets, d]; setWidgets(u); saveWidgets(u);
+  }
+
+  // Renomme un dossier : bulk-update du champ folder de tous les widgets
+  // qui le portaient. Fusionne automatiquement si le nouveau nom existe
+  // déjà (les widgets des deux dossiers atterrissent dans le même).
+  function renameFolder(oldName: string, newName: string) {
+    const trimmed = newName.trim();
+    if (trimmed === oldName) return;
+    const updated = allWidgets.map((w) => {
+      const current = (w.folder ?? "").trim();
+      if (current === oldName) return { ...w, folder: trimmed || undefined };
+      return w;
+    });
+    setWidgets(updated); saveWidgets(updated);
+  }
+
+  // Déplace tous les widgets d'un dossier vers "Sans dossier". On ne
+  // supprime pas les widgets — juste leur appartenance.
+  function emptyFolder(folder: string) {
+    const updated = allWidgets.map((w) =>
+      (w.folder ?? "").trim() === folder ? { ...w, folder: undefined } : w
+    );
+    setWidgets(updated); saveWidgets(updated);
   }
 
   function addFilter() {
@@ -1018,6 +1086,31 @@ export default function WidgetEditorPage() {
                   <Input label="Nom *" placeholder="Ex: Tickets par statut" value={fName} onChange={(e) => setFName(e.target.value)} />
                   <Input label="Description" placeholder="Optionnel" value={fDesc} onChange={(e) => setFDesc(e.target.value)} />
                 </div>
+                <div>
+                  {/* Champ libre + datalist : tape pour créer un nouveau dossier
+                      ou choisis-en un existant. Vide = "Sans dossier". */}
+                  <label className="block text-[12px] font-medium text-slate-700 mb-1">
+                    Dossier
+                  </label>
+                  <input
+                    type="text"
+                    list="nexus-widget-folders"
+                    value={fFolder}
+                    onChange={(e) => setFFolder(e.target.value)}
+                    placeholder="Ex : Facturation, Tickets, Performance…"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  <datalist id="nexus-widget-folders">
+                    {existingFolders.map((f) => (
+                      <option key={f} value={f} />
+                    ))}
+                  </datalist>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Laisser vide pour ranger dans «&nbsp;{NO_FOLDER_LABEL}&nbsp;».
+                    Les widgets partageant le même nom de dossier sont regroupés
+                    dans la galerie.
+                  </p>
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div>
@@ -1271,7 +1364,26 @@ export default function WidgetEditorPage() {
         </Card>
       )}
 
-      {widgets.length > 0 && !creating && (
+      {widgets.length > 0 && !creating && (() => {
+        // Regroupement par dossier. Les dossiers sont triés alphabétiquement,
+        // "Sans dossier" toujours à la fin. Si aucun widget n'a de dossier,
+        // on rend une seule section (label discret en haut, sans collapsible).
+        const groupsMap = new Map<string, CustomWidget[]>();
+        for (const w of widgets) {
+          const key = (w.folder ?? "").trim() || NO_FOLDER_LABEL;
+          if (!groupsMap.has(key)) groupsMap.set(key, []);
+          groupsMap.get(key)!.push(w);
+        }
+        const folderGroups = Array.from(groupsMap.entries())
+          .sort(([a], [b]) => {
+            if (a === NO_FOLDER_LABEL) return 1;
+            if (b === NO_FOLDER_LABEL) return -1;
+            return a.localeCompare(b, "fr");
+          })
+          .map(([folder, ws]) => ({ folder, widgets: ws }));
+        const hasMultipleFolders = folderGroups.length > 1 || folderGroups[0]?.folder !== NO_FOLDER_LABEL;
+
+        return (
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
@@ -1280,13 +1392,78 @@ export default function WidgetEditorPage() {
                   <Sparkles className="h-4 w-4 text-blue-600" /> Mes widgets
                 </h3>
                 <p className="text-[11.5px] text-slate-500 mt-0.5">
-                  {widgets.length} widget{widgets.length > 1 ? "s" : ""} créé{widgets.length > 1 ? "s" : ""}. Aperçu calculé sur les vraies données.
+                  {widgets.length} widget{widgets.length > 1 ? "s" : ""} créé{widgets.length > 1 ? "s" : ""}
+                  {hasMultipleFolders && ` · ${folderGroups.length} dossier${folderGroups.length > 1 ? "s" : ""}`}
+                  . Aperçu calculé sur les vraies données.
                 </p>
               </div>
               <ColumnsPicker value={gridColumns} onChange={setGridColumns} />
             </div>
-            <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-3", gridColsClass(gridColumns))}>
-              {widgets.map((w) => {
+            <div className="space-y-5">
+            {folderGroups.map(({ folder, widgets: groupWidgets }) => {
+              const isNoFolder = folder === NO_FOLDER_LABEL;
+              const collapsed = collapsedFolders.has(folder);
+              return (
+                <div key={folder} className="space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap border-b border-slate-100 pb-1.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleFolderCollapsed(folder)}
+                      className="h-6 w-6 inline-flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      title={collapsed ? "Déplier" : "Replier"}
+                    >
+                      {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    </button>
+                    {isNoFolder ? (
+                      <FolderIcon className="h-3.5 w-3.5 text-slate-400" />
+                    ) : (
+                      <FolderIcon className="h-3.5 w-3.5 text-blue-500" />
+                    )}
+                    <span className={cn(
+                      "text-[12.5px] font-semibold",
+                      isNoFolder ? "text-slate-500" : "text-slate-800",
+                    )}>
+                      {folder}
+                    </span>
+                    <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-full bg-slate-100 px-2 text-[10.5px] font-bold text-slate-600 tabular-nums">
+                      {groupWidgets.length}
+                    </span>
+                    {!isNoFolder && (
+                      <div className="ml-auto flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newName = window.prompt(
+                              `Renommer le dossier « ${folder} » :`,
+                              folder,
+                            );
+                            if (newName != null && newName.trim() !== folder) {
+                              renameFolder(folder, newName);
+                            }
+                          }}
+                          className="text-[11px] text-slate-500 hover:text-blue-600 px-1.5 py-0.5 rounded hover:bg-blue-50"
+                          title="Renommer le dossier (bulk update)"
+                        >
+                          Renommer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Vider le dossier « ${folder} » ? Les ${groupWidgets.length} widgets seront déplacés vers « ${NO_FOLDER_LABEL} ». Aucun widget ne sera supprimé.`)) {
+                              emptyFolder(folder);
+                            }
+                          }}
+                          className="text-[11px] text-slate-500 hover:text-amber-600 px-1.5 py-0.5 rounded hover:bg-amber-50"
+                          title="Déplace tous les widgets de ce dossier vers Sans dossier (les widgets eux-mêmes ne sont pas supprimés)"
+                        >
+                          Vider
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {!collapsed && (
+                    <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-3", gridColsClass(gridColumns))}>
+              {groupWidgets.map((w) => {
                 const ds = datasets.find((d) => d.id === w.query.dataset);
                 const { base } = splitBucket(w.query.groupBy);
                 const grp = ds?.fields.find((f) => f.name === base);
@@ -1379,10 +1556,16 @@ export default function WidgetEditorPage() {
                   </div>
                 );
               })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             </div>
           </CardContent>
         </Card>
-      )}
+        );
+      })()}
 
       {aiOpen && (
         <WidgetAiAssistant
