@@ -40,6 +40,8 @@ export interface VisualStyle {
   currency: string;               // "CAD" par défaut
   thousandSeparator: ThousandSep;
   showDataLabels: boolean;        // valeurs directement sur les barres/points
+  /** Taille du texte des valeurs sur les graphiques (px). Défaut 10. */
+  dataLabelFontSize?: number;
 
   // --- Légende ---
   showLegend: boolean;
@@ -71,6 +73,7 @@ export const DEFAULT_STYLE: VisualStyle = {
   currency: "CAD",
   thousandSeparator: "space",
   showDataLabels: false,
+  dataLabelFontSize: 10,
   showLegend: false,
   legendPosition: "bottom",
   showGrid: true,

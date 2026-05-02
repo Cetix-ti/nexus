@@ -135,6 +135,11 @@ export function WidgetChart({
     if (typeof label === "string") onDrillDown(label);
   }) : undefined;
 
+  // Taille de police pour les valeurs affichées sur les barres/points
+  // (`showDataLabels=true`). Réglable côté éditeur d'apparence ; clamp
+  // [8, 24] pour rester lisible sans déborder de la card.
+  const dataLabelFontSize = Math.max(8, Math.min(24, style.dataLabelFontSize ?? 10));
+
   // -------------------------------------------------------------------------
   // Titres d'axes — config unifiée pour tous les charts cartésiens.
   // Bug avant : `offset: -10` poussait le titre X HORS de la zone d'axe
@@ -245,7 +250,7 @@ export function WidgetChart({
             {style.showLegend && <Legend {...legendLayout} />}
             <Bar dataKey="value" radius={cornerRadiusForBar(style)} onClick={onBarClick} style={drillCursor}>
               {results.map((_, i) => <Cell key={i} fill={barColors[i]} />)}
-              {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={10} />}
+              {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={dataLabelFontSize} />}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -278,7 +283,7 @@ export function WidgetChart({
             {style.showLegend && <Legend {...legendLayout} />}
             <Bar dataKey="value" radius={cornerRadiusForHorizontalBar(style)} onClick={onBarClick} style={drillCursor}>
               {results.map((_, i) => <Cell key={i} fill={barColors[i]} />)}
-              {style.showDataLabels && <LabelList dataKey="value" position="right" formatter={fmtLabel} fontSize={10} />}
+              {style.showDataLabels && <LabelList dataKey="value" position="right" formatter={fmtLabel} fontSize={dataLabelFontSize} />}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -310,7 +315,7 @@ export function WidgetChart({
             <ReTooltip formatter={fmtTooltip} />
             {style.showLegend && <Legend {...legendLayout} />}
             <Line type="monotone" dataKey="value" stroke={style.primaryColor} strokeWidth={style.strokeWidth} dot={{ r: 3 }}>
-              {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={10} />}
+              {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={dataLabelFontSize} />}
             </Line>
           </LineChart>
         </ResponsiveContainer>
@@ -342,7 +347,7 @@ export function WidgetChart({
             <ReTooltip formatter={fmtTooltip} />
             {style.showLegend && <Legend {...legendLayout} />}
             <Area type="monotone" dataKey="value" stroke={style.primaryColor} strokeWidth={style.strokeWidth} fill={style.primaryColor} fillOpacity={0.25}>
-              {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={10} />}
+              {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={dataLabelFontSize} />}
             </Area>
           </AreaChart>
         </ResponsiveContainer>
@@ -365,8 +370,26 @@ export function WidgetChart({
               outerRadius={80}
               innerRadius={chartType === "donut" ? 45 : 0}
               label={style.showDataLabels ? ((e: unknown) => {
-                const entry = e as { name?: string; value?: number };
-                return `${entry.name ?? ""} · ${fmt(Number(entry.value ?? 0))}`;
+                // Recharts Pie passe x, y, name, value, cx (entre autres).
+                // On retourne un <text> SVG avec notre fontSize au lieu
+                // d'une string (qui hérite du style par défaut Recharts
+                // ~12px) — permet de contrôler la taille via l'éditeur.
+                const p = e as { x?: number; y?: number; cx?: number; name?: string; value?: number };
+                const cx = typeof p.cx === "number" ? p.cx : 0;
+                const x = typeof p.x === "number" ? p.x : 0;
+                const y = typeof p.y === "number" ? p.y : 0;
+                return (
+                  <text
+                    x={x}
+                    y={y}
+                    textAnchor={x > cx ? "start" : "end"}
+                    dominantBaseline="central"
+                    fontSize={dataLabelFontSize}
+                    fill="#475569"
+                  >
+                    {`${p.name ?? ""} · ${fmt(Number(p.value ?? 0))}`}
+                  </text>
+                );
               }) as unknown as undefined : false}
               labelLine={false}
               onClick={onDrillDown ? ((data: unknown) => {
@@ -504,7 +527,7 @@ export function WidgetChart({
             {style.showLegend && <Legend {...legendLayout} />}
             <Bar dataKey="value" radius={cornerRadiusForBar(style)} onClick={onBarClick} style={drillCursor}>
               {results.map((_, i) => <Cell key={i} fill={barColors[i]} />)}
-              {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={10} />}
+              {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={dataLabelFontSize} />}
             </Bar>
             {chartType === "combo" && (
               <Line type="monotone" dataKey="value" stroke="#dc2626" strokeWidth={style.strokeWidth} dot={{ r: 3 }} />
@@ -561,7 +584,7 @@ export function WidgetChart({
               <g>
                 <rect x={x} y={y} width={w} height={h} fill={fill} stroke="#fff" strokeWidth={2} rx={4} />
                 {w > 40 && h > 20 && (
-                  <text x={x + w / 2} y={y + h / 2} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="#fff" fontWeight={600}>
+                  <text x={x + w / 2} y={y + h / 2} textAnchor="middle" dominantBaseline="middle" fontSize={dataLabelFontSize} fill="#fff" fontWeight={600}>
                     {String(n).slice(0, Math.floor(w / 7))}
                   </text>
                 )}

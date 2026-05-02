@@ -298,6 +298,28 @@ function ValueFormatSection({ style, onChange }: { style: VisualStyle; onChange:
         <span className="text-[11.5px] text-slate-700">Afficher les valeurs sur les données</span>
         <Toggle checked={style.showDataLabels} onChange={(v) => onChange({ showDataLabels: v })} />
       </label>
+      {style.showDataLabels && (
+        <div className="mt-2 rounded border border-slate-200 px-2.5 py-2">
+          <div className="flex items-center justify-between gap-3 mb-1">
+            <label htmlFor="data-label-fontsize" className="text-[11.5px] text-slate-700">
+              Taille du texte (valeurs)
+            </label>
+            <span className="text-[11px] tabular-nums text-slate-500">
+              {style.dataLabelFontSize ?? 10}px
+            </span>
+          </div>
+          <input
+            id="data-label-fontsize"
+            type="range"
+            min={8}
+            max={24}
+            step={1}
+            value={style.dataLabelFontSize ?? 10}
+            onChange={(e) => onChange({ dataLabelFontSize: Number(e.target.value) })}
+            className="w-full accent-blue-600"
+          />
+        </div>
+      )}
     </Section>
   );
 }
