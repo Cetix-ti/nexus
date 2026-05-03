@@ -200,16 +200,15 @@ export async function createTimeEntry(input: {
     rateTierId: input.rateTierId ?? null,
   });
 
-  // Coût main-d'œuvre — snapshot au taux courant de l'agent.
-  // Inclut le temps de déplacement facturé : 1h facturée au client =
-  // 1h de coût interne, et le déplacement consomme aussi du temps de
-  // travail (et donc du salaire). Si l'agent n'a pas de hourlyCost
-  // défini, costAmount=null (les widgets l'interprètent comme 0).
-  const agentForCost = await prisma.user.findUnique({
-    where: { id: input.agentId },
-    select: { hourlyCost: true },
-  });
-  const costRateUsed = agentForCost?.hourlyCost ?? null;
+  // Coût main-d'œuvre — taux historisé par date d'effet. On lit le
+  // taux applicable à la date startedAt de la saisie, pas le taux
+  // courant. Conséquence : changer le taux d'un agent aujourd'hui
+  // n'affecte PAS les saisies passées (chacune valorisée à son taux
+  // d'époque). Inclut le temps de déplacement facturé : 1h facturée
+  // au client = 1h de coût interne, et le déplacement consomme aussi
+  // du temps de travail (et donc du salaire).
+  const { getHourlyCostAt } = await import("./hourly-cost");
+  const costRateUsed = await getHourlyCostAt(input.agentId, input.startedAt);
   const costMinutes =
     input.durationMinutes +
     (input.hasTravelBilled ? input.travelDurationMinutes ?? 0 : 0);

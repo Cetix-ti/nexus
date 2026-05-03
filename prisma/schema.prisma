@@ -194,12 +194,15 @@ model User {
   /// le CLIENT soit correctement facturé — seul le remboursement
   /// personnel est désactivé.
   mileageAllocationEnabled Boolean @default(true) @map("mileage_allocation_enabled")
-  /// Coût horaire de cet agent (CAD/h) — ce qu'il coûte à l'entreprise.
-  /// Utilisé pour calculer le coût de main-d'œuvre par TimeEntry et
-  /// la marge (revenue facturé - coût). null = non défini, le coût est
-  /// considéré 0 dans les calculs (ex: stagiaire bénévole, ou agent
-  /// pour qui on n'a pas saisi le taux).
+  /// @deprecated — remplacé par UserHourlyCost (historique daté).
+  /// Conservé temporairement pour compat des anciens callers ; en
+  /// pratique le calcul de coût se base désormais sur le résolveur
+  /// historique. Sera supprimé une fois la migration des données
+  /// confirmée.
   hourlyCost               Float?  @map("hourly_cost")
+  /// Historique des taux horaires de coût avec date d'effet. Permet
+  /// de calculer le coût d'une saisie au taux applicable à sa date.
+  hourlyCostHistory        UserHourlyCost[]
   signature                String? @db.Text
   signatureHtml            String? @map("signature_html") @db.Text
 
@@ -405,6 +408,30 @@ model PublishedDashboard {
   @@index([organizationId])
   @@index([dashboardKey])
   @@map("published_dashboards")
+}
+
+/// Historique des taux horaires de coût d'un agent. Append-only :
+/// chaque changement de taux crée une nouvelle ligne avec sa date
+/// d'effet. Le coût d'une TimeEntry à la date X = ligne la plus
+/// récente avec `effectiveFrom <= X`. Permet de changer un taux
+/// SANS toucher rétroactivement aux entries déjà saisies (chacune a
+/// son propre `costRateUsed` snapshot mais aussi, pour les entries
+/// futures sur des dates passées, le bon taux d'époque).
+model UserHourlyCost {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Coût horaire en CAD applicable à partir de effectiveFrom.
+  hourlyCost    Float    @map("hourly_cost")
+  /// Date d'effet : ce taux s'applique aux saisies dont
+  /// `startedAt >= effectiveFrom` (jusqu'à la prochaine entrée
+  /// d'historique pour ce user).
+  effectiveFrom DateTime @map("effective_from")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, effectiveFrom])
+  @@index([userId, effectiveFrom])
+  @@map("user_hourly_cost_history")
 }
 
 enum UserRole {

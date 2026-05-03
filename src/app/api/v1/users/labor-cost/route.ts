@@ -1,18 +1,32 @@
 // ============================================================================
 // /api/v1/users/labor-cost
 //
-// GET  : liste des agents (TECHNICIAN, SUPERVISOR, MSP_ADMIN, SUPER_ADMIN)
-//        avec leur hourlyCost. Réservé aux users avec capabilité "finances".
-// PATCH: { userId, hourlyCost } — met à jour le taux horaire d'un agent.
-//        Réservé "finances".
+// GET    : liste agents staff avec leur taux courant + historique.
+// POST   : { userId, hourlyCost, effectiveFrom } — ajoute (ou écrase)
+//          une entrée d'historique. effectiveFrom est obligatoire
+//          (ISO date). Le taux s'applique à partir de cette date.
+// DELETE : ?entryId=xxx — supprime une entrée d'historique.
+//
+// Réservé aux users avec capabilité "finances".
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser, hasCapability } from "@/lib/auth-utils";
 import { UserRole } from "@prisma/client";
+import {
+  setHourlyCost,
+  deleteHourlyCostEntry,
+  listHourlyCostHistory,
+  getCurrentHourlyCost,
+} from "@/lib/billing/hourly-cost";
 
-const STAFF_ROLES: UserRole[] = [UserRole.SUPER_ADMIN, UserRole.MSP_ADMIN, UserRole.SUPERVISOR, UserRole.TECHNICIAN];
+const STAFF_ROLES: UserRole[] = [
+  UserRole.SUPER_ADMIN,
+  UserRole.MSP_ADMIN,
+  UserRole.SUPERVISOR,
+  UserRole.TECHNICIAN,
+];
 
 export async function GET() {
   const me = await getCurrentUser();
@@ -22,9 +36,7 @@ export async function GET() {
   }
 
   const users = await prisma.user.findMany({
-    where: {
-      role: { in: STAFF_ROLES },
-    },
+    where: { role: { in: STAFF_ROLES } },
     select: {
       id: true,
       firstName: true,
@@ -32,14 +44,33 @@ export async function GET() {
       email: true,
       role: true,
       isActive: true,
-      hourlyCost: true,
     },
     orderBy: [{ isActive: "desc" }, { lastName: "asc" }, { firstName: "asc" }],
   });
-  return NextResponse.json({ data: users });
+
+  // Pour chaque agent, on charge son historique en parallèle. Le taux
+  // "courant" (affiché dans l'UI) est le plus récent (= première
+  // entrée de l'historique trié desc).
+  const results = await Promise.all(
+    users.map(async (u) => {
+      const history = await listHourlyCostHistory(u.id);
+      const current = history[0]?.hourlyCost ?? null;
+      return {
+        ...u,
+        hourlyCost: current,
+        history: history.map((h) => ({
+          id: h.id,
+          hourlyCost: h.hourlyCost,
+          effectiveFrom: h.effectiveFrom.toISOString(),
+          createdAt: h.createdAt.toISOString(),
+        })),
+      };
+    }),
+  );
+  return NextResponse.json({ data: results });
 }
 
-export async function PATCH(req: NextRequest) {
+export async function POST(req: NextRequest) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!hasCapability(me, "finances")) {
@@ -51,16 +82,17 @@ export async function PATCH(req: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: "userId requis" }, { status: 400 });
   }
-  // null = effacer le taux. Number sinon, ≥0.
-  let hourlyCost: number | null;
-  if (body.hourlyCost === null || body.hourlyCost === "") {
-    hourlyCost = null;
-  } else {
-    const n = Number(body.hourlyCost);
-    if (!Number.isFinite(n) || n < 0) {
-      return NextResponse.json({ error: "hourlyCost invalide" }, { status: 400 });
-    }
-    hourlyCost = Math.round(n * 100) / 100;
+  const cost = Number(body.hourlyCost);
+  if (!Number.isFinite(cost) || cost < 0) {
+    return NextResponse.json({ error: "hourlyCost invalide" }, { status: 400 });
+  }
+  const effectiveFromStr = typeof body.effectiveFrom === "string" ? body.effectiveFrom : null;
+  if (!effectiveFromStr) {
+    return NextResponse.json({ error: "effectiveFrom requis (ISO date)" }, { status: 400 });
+  }
+  const effectiveFrom = new Date(effectiveFromStr);
+  if (Number.isNaN(effectiveFrom.getTime())) {
+    return NextResponse.json({ error: "effectiveFrom invalide" }, { status: 400 });
   }
 
   const target = await prisma.user.findUnique({
@@ -77,10 +109,21 @@ export async function PATCH(req: NextRequest) {
     );
   }
 
-  const updated = await prisma.user.update({
-    where: { id: userId },
-    data: { hourlyCost },
-    select: { id: true, hourlyCost: true },
-  });
-  return NextResponse.json({ data: updated });
+  await setHourlyCost(userId, Math.round(cost * 100) / 100, effectiveFrom);
+  const current = await getCurrentHourlyCost(userId);
+  return NextResponse.json({ data: { userId, hourlyCost: current } });
+}
+
+export async function DELETE(req: NextRequest) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasCapability(me, "finances")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const entryId = req.nextUrl.searchParams.get("entryId");
+  if (!entryId) {
+    return NextResponse.json({ error: "entryId requis" }, { status: 400 });
+  }
+  await deleteHourlyCostEntry(entryId);
+  return NextResponse.json({ success: true });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { Fragment, useCallback, useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { WidgetSidebar } from "@/components/widgets/widget-sidebar";
 import {
@@ -2045,6 +2045,12 @@ function KpiCard({ label, value, trend, icon, bg, onClick }: {
 //   2. Feuille de temps — récap par tech sur la période : heures saisies /
 //      facturées / déplacement, revenus, coût, marge $ et %.
 // ===========================================================================
+interface LaborCostHistoryEntry {
+  id: string;
+  hourlyCost: number;
+  effectiveFrom: string;
+  createdAt: string;
+}
 interface LaborCostUser {
   id: string;
   firstName: string;
@@ -2053,6 +2059,7 @@ interface LaborCostUser {
   role: string;
   isActive: boolean;
   hourlyCost: number | null;
+  history: LaborCostHistoryEntry[];
 }
 interface LaborCostRow {
   id: string;
@@ -2083,8 +2090,14 @@ interface LaborCostSummary {
 function LaborCostTab({ days }: { days: string }) {
   const [users, setUsers] = useState<LaborCostUser[] | null>(null);
   const [summary, setSummary] = useState<LaborCostSummary | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  // Sélection : null = aucun, "userId" = panneau d'édition d'historique ouvert pour ce user.
+  const [openUserId, setOpenUserId] = useState<string | null>(null);
+  // Brouillon pour ajouter une nouvelle entrée d'historique.
   const [draftCost, setDraftCost] = useState<string>("");
+  const [draftEffective, setDraftEffective] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
   const [saving, setSaving] = useState(false);
 
   const reload = useCallback(() => {
@@ -2098,24 +2111,45 @@ function LaborCostTab({ days }: { days: string }) {
   }, [days]);
   useEffect(() => { reload(); }, [reload]);
 
-  async function saveCost(userId: string, value: string) {
+  async function saveNewRate(userId: string) {
+    if (draftCost.trim() === "" || draftEffective.trim() === "") return;
     setSaving(true);
     try {
-      const body = value.trim() === ""
-        ? { userId, hourlyCost: null }
-        : { userId, hourlyCost: Number(value) };
       const res = await fetch("/api/v1/users/labor-cost", {
-        method: "PATCH",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          userId,
+          hourlyCost: Number(draftCost),
+          effectiveFrom: new Date(draftEffective).toISOString(),
+        }),
       });
       if (res.ok) {
-        setEditingId(null);
+        setDraftCost("");
         reload();
       }
     } finally {
       setSaving(false);
     }
+  }
+
+  async function deleteEntry(entryId: string) {
+    if (!confirm("Supprimer cette entrée d'historique ?")) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/v1/users/labor-cost?entryId=${entryId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) reload();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function fmtDate(iso: string): string {
+    const d = new Date(iso);
+    if (d.getTime() < new Date("1980-01-01").getTime()) return "Toujours";
+    return d.toLocaleDateString("fr-CA", { year: "numeric", month: "short", day: "numeric" });
   }
 
   if (!users || !summary) {
@@ -2164,79 +2198,162 @@ function LaborCostTab({ days }: { days: string }) {
                 <tr className="border-b border-slate-200 text-left text-slate-500">
                   <th className="px-3 py-2 font-medium">Agent</th>
                   <th className="px-3 py-2 font-medium">Rôle</th>
-                  <th className="px-3 py-2 font-medium text-right">Coût horaire ($/h)</th>
-                  <th className="px-3 py-2 font-medium text-right">Action</th>
+                  <th className="px-3 py-2 font-medium text-right">Taux courant</th>
+                  <th className="px-3 py-2 font-medium text-right">Historique</th>
+                  <th className="px-3 py-2 font-medium text-right"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {users.map((u) => {
-                  const isEditing = editingId === u.id;
+                  const isOpen = openUserId === u.id;
                   return (
-                    <tr key={u.id} className={cn("hover:bg-slate-50/60", !u.isActive && "opacity-60")}>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <div className="h-7 w-7 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 flex items-center justify-center text-white text-[10px] font-semibold">
-                            {(u.firstName[0] ?? "") + (u.lastName[0] ?? "")}
+                    <Fragment key={u.id}>
+                      <tr className={cn("hover:bg-slate-50/60", !u.isActive && "opacity-60")}>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <div className="h-7 w-7 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 flex items-center justify-center text-white text-[10px] font-semibold">
+                              {(u.firstName[0] ?? "") + (u.lastName[0] ?? "")}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[12.5px] font-medium text-slate-800 truncate">
+                                {u.firstName} {u.lastName}
+                              </p>
+                              <p className="text-[10.5px] text-slate-400 truncate">{u.email}</p>
+                            </div>
+                            {!u.isActive && (
+                              <Badge variant="default" className="text-[9.5px] ml-1">Inactif</Badge>
+                            )}
                           </div>
-                          <div className="min-w-0">
-                            <p className="text-[12.5px] font-medium text-slate-800 truncate">
-                              {u.firstName} {u.lastName}
-                            </p>
-                            <p className="text-[10.5px] text-slate-400 truncate">{u.email}</p>
-                          </div>
-                          {!u.isActive && (
-                            <Badge variant="default" className="text-[9.5px] ml-1">Inactif</Badge>
+                        </td>
+                        <td className="px-3 py-2 text-slate-600">{u.role}</td>
+                        <td className="px-3 py-2 text-right">
+                          {u.hourlyCost != null ? (
+                            <span className="font-semibold tabular-nums text-slate-800">
+                              {fmtMoney(u.hourlyCost)}/h
+                            </span>
+                          ) : (
+                            <span className="italic text-slate-400">Non défini</span>
                           )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">{u.role}</td>
-                      <td className="px-3 py-2 text-right">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.5}
-                            autoFocus
-                            value={draftCost}
-                            onChange={(e) => setDraftCost(e.target.value)}
-                            onBlur={() => saveCost(u.id, draftCost)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                              if (e.key === "Escape") setEditingId(null);
-                            }}
-                            disabled={saving}
-                            className="w-28 rounded border border-slate-300 px-2 py-1 text-right text-[12.5px] focus:border-blue-500 focus:outline-none"
-                          />
-                        ) : u.hourlyCost != null ? (
-                          <span className="font-semibold tabular-nums text-slate-800">
-                            {fmtMoney(u.hourlyCost)}/h
-                          </span>
-                        ) : (
-                          <span className="italic text-slate-400">Non défini</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {isEditing ? (
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="text-[11px] text-slate-500 hover:text-slate-700"
-                            disabled={saving}
-                          >
-                            Annuler
-                          </button>
-                        ) : (
+                        </td>
+                        <td className="px-3 py-2 text-right text-[11px] text-slate-500 tabular-nums">
+                          {u.history.length} entrée{u.history.length > 1 ? "s" : ""}
+                        </td>
+                        <td className="px-3 py-2 text-right">
                           <button
                             onClick={() => {
-                              setEditingId(u.id);
-                              setDraftCost(u.hourlyCost != null ? String(u.hourlyCost) : "");
+                              setOpenUserId(isOpen ? null : u.id);
+                              setDraftCost("");
                             }}
                             className="text-[11px] text-blue-600 hover:text-blue-700 font-medium"
                           >
-                            Modifier
+                            {isOpen ? "Fermer" : "Gérer"}
                           </button>
-                        )}
-                      </td>
-                    </tr>
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr>
+                          <td colSpan={5} className="bg-slate-50/40 px-4 py-4">
+                            <div className="space-y-4">
+                              {/* Form : nouvelle entrée d'historique */}
+                              <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+                                <p className="text-[11.5px] font-semibold text-blue-900 mb-2">
+                                  Ajouter un changement de taux
+                                </p>
+                                <div className="flex flex-wrap items-end gap-2">
+                                  <div>
+                                    <label className="block text-[10.5px] text-slate-600 mb-0.5">
+                                      Date d'effet
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={draftEffective}
+                                      onChange={(e) => setDraftEffective(e.target.value)}
+                                      className="rounded border border-slate-300 px-2 py-1 text-[12px] focus:border-blue-500 focus:outline-none"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10.5px] text-slate-600 mb-0.5">
+                                      Coût horaire ($)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step={0.5}
+                                      value={draftCost}
+                                      onChange={(e) => setDraftCost(e.target.value)}
+                                      placeholder="Ex : 65"
+                                      className="w-32 rounded border border-slate-300 px-2 py-1 text-right text-[12px] focus:border-blue-500 focus:outline-none"
+                                    />
+                                  </div>
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => saveNewRate(u.id)}
+                                    disabled={saving || draftCost.trim() === "" || draftEffective.trim() === ""}
+                                  >
+                                    Ajouter
+                                  </Button>
+                                  <p className="ml-auto text-[10.5px] text-slate-500 max-w-md">
+                                    Le nouveau taux s'applique aux saisies dont la date de
+                                    début est ≥ la date d'effet. Les saisies plus anciennes
+                                    conservent leur taux d'époque.
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Liste de l'historique */}
+                              {u.history.length === 0 ? (
+                                <p className="text-[12px] text-slate-500 italic">
+                                  Aucun taux défini. Ajoute une entrée pour démarrer.
+                                </p>
+                              ) : (
+                                <div className="rounded-lg border border-slate-200 bg-white">
+                                  <table className="w-full text-[12px]">
+                                    <thead>
+                                      <tr className="border-b border-slate-100 text-left text-slate-500">
+                                        <th className="px-3 py-1.5 font-medium">Effectif depuis</th>
+                                        <th className="px-3 py-1.5 font-medium text-right">Taux</th>
+                                        <th className="px-3 py-1.5 font-medium text-right">Saisi le</th>
+                                        <th className="px-3 py-1.5 font-medium text-right"></th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {u.history.map((h, idx) => (
+                                        <tr key={h.id} className={idx === 0 ? "bg-emerald-50/30" : ""}>
+                                          <td className="px-3 py-1.5 text-slate-700">
+                                            {fmtDate(h.effectiveFrom)}
+                                            {idx === 0 && (
+                                              <span className="ml-2 text-[9.5px] font-semibold text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5">
+                                                Courant
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="px-3 py-1.5 text-right font-semibold tabular-nums">
+                                            {fmtMoney(h.hourlyCost)}/h
+                                          </td>
+                                          <td className="px-3 py-1.5 text-right text-[10.5px] text-slate-400">
+                                            {new Date(h.createdAt).toLocaleDateString("fr-CA")}
+                                          </td>
+                                          <td className="px-3 py-1.5 text-right">
+                                            <button
+                                              onClick={() => deleteEntry(h.id)}
+                                              disabled={saving}
+                                              className="text-[10.5px] text-red-600 hover:text-red-700"
+                                            >
+                                              Supprimer
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>
