@@ -3199,19 +3199,26 @@ function QueryWidgetRenderer({
   } : undefined;
 
   // Délègue le rendu au composant partagé qui gère les 19 types de
-  // graphiques — mêmes règles que dans /analytics/widgets.
+  // graphiques — mêmes règles que dans /analytics/widgets. La chaîne
+  // `h-full flex flex-col` est CRITIQUE : elle propage la hauteur de
+  // la cellule de grille jusqu'à la zone d'affichage du chart.
+  // Sans ça, le ResizeObserver de WidgetChart mesure 0 px et le
+  // graphique ne rend rien.
   return (
-    <Card>
-      <CardContent className="p-4">
+    <Card className="h-full flex flex-col">
+      <CardContent className="p-4 flex-1 min-h-0 flex flex-col">
         {widget.name && (
           <div
             style={titleScale !== 1 ? { zoom: titleScale } : undefined}
-            className="mb-1"
+            className="mb-1 shrink-0"
           >
             <p className="text-[12px] font-semibold text-slate-800">{widget.name}</p>
           </div>
         )}
-        <div style={chartScale !== 1 ? { zoom: chartScale } : undefined}>
+        <div
+          style={chartScale !== 1 ? { zoom: chartScale } : undefined}
+          className="flex-1 min-h-0"
+        >
           <WidgetChart
             results={result}
             chartType={(overrideChartType || widget.chartType) as ChartType}
