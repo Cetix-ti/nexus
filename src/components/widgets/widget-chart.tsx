@@ -223,9 +223,11 @@ export function WidgetChart({
 
   if (chartType === "bar") {
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height={220}>
+        <div className="flex-1 min-h-0 relative">
+          <div className="absolute inset-0">
+            <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={results}
             margin={{ top: 10, right: 10, left: 0, bottom: 20 }}
@@ -253,16 +255,20 @@ export function WidgetChart({
               {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={dataLabelFontSize} />}
             </Bar>
           </BarChart>
-        </ResponsiveContainer>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (chartType === "horizontal_bar") {
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height={Math.max(220, results.length * 32)}>
+        <div className="flex-1 min-h-0 relative">
+          <div className="absolute inset-0">
+            <ResponsiveContainer width="100%" height="100%">
           <BarChart data={results} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -286,16 +292,20 @@ export function WidgetChart({
               {style.showDataLabels && <LabelList dataKey="value" position="right" formatter={fmtLabel} fontSize={dataLabelFontSize} />}
             </Bar>
           </BarChart>
-        </ResponsiveContainer>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (chartType === "line") {
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height={220}>
+        <div className="flex-1 min-h-0 relative">
+          <div className="absolute inset-0">
+            <ResponsiveContainer width="100%" height="100%">
           <LineChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -318,16 +328,20 @@ export function WidgetChart({
               {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={dataLabelFontSize} />}
             </Line>
           </LineChart>
-        </ResponsiveContainer>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (chartType === "area") {
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height={220}>
+        <div className="flex-1 min-h-0 relative">
+          <div className="absolute inset-0">
+            <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -350,16 +364,20 @@ export function WidgetChart({
               {style.showDataLabels && <LabelList dataKey="value" position="top" formatter={fmtLabel} fontSize={dataLabelFontSize} />}
             </Area>
           </AreaChart>
-        </ResponsiveContainer>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (chartType === "pie" || chartType === "donut") {
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height={220}>
+        <div className="flex-1 min-h-0 relative">
+          <div className="absolute inset-0">
+            <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={results}
@@ -407,7 +425,9 @@ export function WidgetChart({
             <ReTooltip formatter={((v: any) => fmt(Number(v))) as any} />
             {style.showLegend && <Legend {...legendLayout} />}
           </PieChart>
-        </ResponsiveContainer>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     );
   }
@@ -415,9 +435,11 @@ export function WidgetChart({
   if (chartType === "scatter") {
     const scatterData = results.map((r, i) => ({ x: i + 1, y: r.value, label: r.label }));
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height={220}>
+        <div className="flex-1 min-h-0 relative">
+          <div className="absolute inset-0">
+            <ResponsiveContainer width="100%" height="100%">
           <ReScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -438,16 +460,20 @@ export function WidgetChart({
             <ReTooltip cursor={{ strokeDasharray: "3 3" }} formatter={fmtTooltip} />
             <Scatter data={scatterData} fill={style.primaryColor} />
           </ReScatterChart>
-        </ResponsiveContainer>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (chartType === "radar") {
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height={240}>
+        <div className="flex-1 min-h-0 relative">
+          <div className="absolute inset-0">
+            <ResponsiveContainer width="100%" height="100%">
           <RadarChart data={results}>
             <PolarGrid stroke="#e2e8f0" />
             <PolarAngleAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -456,7 +482,9 @@ export function WidgetChart({
             <ReTooltip formatter={fmtTooltip} />
             {style.showLegend && <Legend {...legendLayout} />}
           </RadarChart>
-        </ResponsiveContainer>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     );
   }
@@ -484,9 +512,11 @@ export function WidgetChart({
       links = results.map((r, i) => ({ source: 0, target: i + 1, value: r.value || 1 }));
     }
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height={240}>
+        <div className="flex-1 min-h-0 relative">
+          <div className="absolute inset-0">
+            <ResponsiveContainer width="100%" height="100%">
           <Sankey
             data={{ nodes, links }}
             nodePadding={20}
@@ -497,16 +527,20 @@ export function WidgetChart({
           >
             <ReTooltip formatter={fmtTooltip} />
           </Sankey>
-        </ResponsiveContainer>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (chartType === "combo" || chartType === "stacked_bar") {
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height={240}>
+        <div className="flex-1 min-h-0 relative">
+          <div className="absolute inset-0">
+            <ResponsiveContainer width="100%" height="100%">
           <BarChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }} barCategoryGap={`${style.barGapPercent}%`}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -533,7 +567,9 @@ export function WidgetChart({
               <Line type="monotone" dataKey="value" stroke="#dc2626" strokeWidth={style.strokeWidth} dot={{ r: 3 }} />
             )}
           </BarChart>
-        </ResponsiveContainer>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     );
   }
@@ -542,7 +578,7 @@ export function WidgetChart({
     const sorted = [...results].sort((a, b) => b.value - a.value);
     const maxVal = sorted[0]?.value ?? 1;
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <div className="space-y-1">
           {sorted.map((r, i) => {
@@ -571,9 +607,11 @@ export function WidgetChart({
       fill: pieColors[i % pieColors.length],
     }));
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height={240}>
+        <div className="flex-1 min-h-0 relative">
+          <div className="absolute inset-0">
+            <ResponsiveContainer width="100%" height="100%">
           <Treemap
             data={tmData}
             dataKey="size"
@@ -593,7 +631,9 @@ export function WidgetChart({
           >
             <ReTooltip formatter={fmtTooltip} />
           </Treemap>
-        </ResponsiveContainer>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     );
   }
@@ -602,7 +642,7 @@ export function WidgetChart({
     const maxVal = Math.max(1, ...results.map((r) => r.value));
     const cols = Math.ceil(Math.sqrt(results.length));
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
           {results.map((r, i) => {
@@ -648,7 +688,7 @@ export function WidgetChart({
 
   if (chartType === "table") {
     return (
-      <div className="py-2">
+      <div className="py-2 h-full flex flex-col min-h-0">
         <table className="w-full text-[11px]">
           <thead>
             <tr className="border-b border-slate-200">
