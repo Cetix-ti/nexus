@@ -200,6 +200,24 @@ export async function createTimeEntry(input: {
     rateTierId: input.rateTierId ?? null,
   });
 
+  // Coût main-d'œuvre — snapshot au taux courant de l'agent.
+  // Inclut le temps de déplacement facturé : 1h facturée au client =
+  // 1h de coût interne, et le déplacement consomme aussi du temps de
+  // travail (et donc du salaire). Si l'agent n'a pas de hourlyCost
+  // défini, costAmount=null (les widgets l'interprètent comme 0).
+  const agentForCost = await prisma.user.findUnique({
+    where: { id: input.agentId },
+    select: { hourlyCost: true },
+  });
+  const costRateUsed = agentForCost?.hourlyCost ?? null;
+  const costMinutes =
+    input.durationMinutes +
+    (input.hasTravelBilled ? input.travelDurationMinutes ?? 0 : 0);
+  const costAmount =
+    costRateUsed != null
+      ? Math.round((costMinutes / 60) * costRateUsed * 100) / 100
+      : null;
+
   const created = await prisma.timeEntry.create({
     data: {
       ticketId: input.ticketId,
@@ -220,6 +238,8 @@ export async function createTimeEntry(input: {
       coverageReason: decision.reason,
       hourlyRate: decision.rate ?? null,
       amount: decision.amount ?? null,
+      costAmount,
+      costRateUsed,
       // Persiste le flag explicite "Forcer non-facturable" coché par l'agent.
       // Permet de distinguer dans les widgets analytics les non-facturables
       // décidés MANUELLEMENT (geste commercial, erreur) vs ceux dérivés

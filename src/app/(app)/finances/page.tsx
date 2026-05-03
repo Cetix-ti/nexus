@@ -113,6 +113,7 @@ const TABS = [
   { key: "invoices", label: "Facturation", icon: Receipt },
   { key: "addons", label: "Services connexes", icon: Package },
   { key: "time", label: "Saisies de temps", icon: Clock },
+  { key: "labor_cost", label: "Coût main-d'œuvre", icon: Users },
   { key: "expenses", label: "Dépenses", icon: Wallet },
   { key: "expense_reports", label: "Comptes de dépenses", icon: Briefcase },
   { key: "purchase_orders", label: "Bons de commande", icon: ShoppingCart },
@@ -936,6 +937,13 @@ export default function FinancesPage() {
             </Card>
           )}
         </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* TAB: Coût main-d'œuvre */}
+      {/* ================================================================ */}
+      {tab === "labor_cost" && (
+        <LaborCostTab days={days} />
       )}
 
       {/* ================================================================ */}
@@ -2024,5 +2032,305 @@ function KpiCard({ label, value, trend, icon, bg, onClick }: {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ===========================================================================
+// LaborCostTab — coût de main-d'œuvre
+//
+// Deux sections :
+//   1. Taux horaire — édite le hourlyCost de chaque agent staff. Le coût
+//      saisi devient le snapshot pour les FUTURES TimeEntry. Les saisies
+//      passées conservent leur costRateUsed historique.
+//   2. Feuille de temps — récap par tech sur la période : heures saisies /
+//      facturées / déplacement, revenus, coût, marge $ et %.
+// ===========================================================================
+interface LaborCostUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  hourlyCost: number | null;
+}
+interface LaborCostRow {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  avatar: string | null;
+  hourlyCost: number | null;
+  hoursLogged: number;
+  hoursBilled: number;
+  hoursTravel: number;
+  entryCount: number;
+  revenue: number;
+  cost: number;
+  margin: number;
+  marginPct: number;
+}
+interface LaborCostSummary {
+  period: { from: string; to: string; days: number };
+  rows: LaborCostRow[];
+  totals: {
+    hoursLogged: number; hoursBilled: number; hoursTravel: number;
+    revenue: number; cost: number; margin: number;
+  };
+}
+
+function LaborCostTab({ days }: { days: string }) {
+  const [users, setUsers] = useState<LaborCostUser[] | null>(null);
+  const [summary, setSummary] = useState<LaborCostSummary | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftCost, setDraftCost] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+
+  const reload = useCallback(() => {
+    Promise.all([
+      fetch("/api/v1/users/labor-cost").then((r) => (r.ok ? r.json() : { data: [] })),
+      fetch(`/api/v1/finances/labor-cost?days=${days}`).then((r) => (r.ok ? r.json() : null)),
+    ]).then(([u, s]) => {
+      setUsers(u.data ?? []);
+      if (s) setSummary(s);
+    });
+  }, [days]);
+  useEffect(() => { reload(); }, [reload]);
+
+  async function saveCost(userId: string, value: string) {
+    setSaving(true);
+    try {
+      const body = value.trim() === ""
+        ? { userId, hourlyCost: null }
+        : { userId, hourlyCost: Number(value) };
+      const res = await fetch("/api/v1/users/labor-cost", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setEditingId(null);
+        reload();
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!users || !summary) {
+    return (
+      <div className="flex items-center justify-center py-12 text-[13px] text-slate-400">
+        Chargement…
+      </div>
+    );
+  }
+
+  const t = summary.totals;
+  const totalMarginPct = t.revenue > 0 ? Math.round((t.margin / t.revenue) * 100) : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* KPI totaux */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <KpiCard label="Revenus période" value={fmtMoney(t.revenue)} icon={<DollarSign className="h-4 w-4 text-emerald-600" />} bg="bg-emerald-50" />
+        <KpiCard label="Coût main-d'œuvre" value={fmtMoney(t.cost)} icon={<Users className="h-4 w-4 text-orange-600" />} bg="bg-orange-50" />
+        <KpiCard
+          label="Marge brute"
+          value={fmtMoney(t.margin)}
+          icon={<TrendingUp className={cn("h-4 w-4", t.margin >= 0 ? "text-emerald-600" : "text-red-600")} />}
+          bg={t.margin >= 0 ? "bg-emerald-50" : "bg-red-50"}
+        />
+        <KpiCard label="% marge" value={`${totalMarginPct}%`} icon={<PieChart className="h-4 w-4 text-violet-600" />} bg="bg-violet-50" />
+      </div>
+
+      {/* Section 1 — Taux horaire */}
+      <Card>
+        <CardContent className="p-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+            <div>
+              <h3 className="text-[15px] font-semibold text-slate-900">Taux horaire de coût</h3>
+              <p className="text-[12px] text-slate-500 mt-0.5">
+                Coût interne par heure pour chaque agent. Appliqué en
+                snapshot sur les nouvelles saisies de temps. Inclut le
+                temps de déplacement facturé : 1 h facturée + 30 min de
+                trajet = 1.5 h × taux horaire.
+              </p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-slate-500">
+                  <th className="px-3 py-2 font-medium">Agent</th>
+                  <th className="px-3 py-2 font-medium">Rôle</th>
+                  <th className="px-3 py-2 font-medium text-right">Coût horaire ($/h)</th>
+                  <th className="px-3 py-2 font-medium text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.map((u) => {
+                  const isEditing = editingId === u.id;
+                  return (
+                    <tr key={u.id} className={cn("hover:bg-slate-50/60", !u.isActive && "opacity-60")}>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 flex items-center justify-center text-white text-[10px] font-semibold">
+                            {(u.firstName[0] ?? "") + (u.lastName[0] ?? "")}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[12.5px] font-medium text-slate-800 truncate">
+                              {u.firstName} {u.lastName}
+                            </p>
+                            <p className="text-[10.5px] text-slate-400 truncate">{u.email}</p>
+                          </div>
+                          {!u.isActive && (
+                            <Badge variant="default" className="text-[9.5px] ml-1">Inactif</Badge>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">{u.role}</td>
+                      <td className="px-3 py-2 text-right">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.5}
+                            autoFocus
+                            value={draftCost}
+                            onChange={(e) => setDraftCost(e.target.value)}
+                            onBlur={() => saveCost(u.id, draftCost)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                              if (e.key === "Escape") setEditingId(null);
+                            }}
+                            disabled={saving}
+                            className="w-28 rounded border border-slate-300 px-2 py-1 text-right text-[12.5px] focus:border-blue-500 focus:outline-none"
+                          />
+                        ) : u.hourlyCost != null ? (
+                          <span className="font-semibold tabular-nums text-slate-800">
+                            {fmtMoney(u.hourlyCost)}/h
+                          </span>
+                        ) : (
+                          <span className="italic text-slate-400">Non défini</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {isEditing ? (
+                          <button
+                            onClick={() => setEditingId(null)}
+                            className="text-[11px] text-slate-500 hover:text-slate-700"
+                            disabled={saving}
+                          >
+                            Annuler
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingId(u.id);
+                              setDraftCost(u.hourlyCost != null ? String(u.hourlyCost) : "");
+                            }}
+                            className="text-[11px] text-blue-600 hover:text-blue-700 font-medium"
+                          >
+                            Modifier
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Section 2 — Feuille de temps par technicien */}
+      <Card>
+        <CardContent className="p-5">
+          <div className="mb-4">
+            <h3 className="text-[15px] font-semibold text-slate-900">Feuille de temps — période ({summary.period.days} jours)</h3>
+            <p className="text-[12px] text-slate-500 mt-0.5">
+              Heures saisies, revenus facturés, coût main-d'œuvre et
+              marge par agent. Heures de déplacement facturé incluses
+              dans le calcul du coût.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-slate-500">
+                  <th className="px-3 py-2 font-medium">Agent</th>
+                  <th className="px-3 py-2 font-medium text-right">Saisies</th>
+                  <th className="px-3 py-2 font-medium text-right">H. saisies</th>
+                  <th className="px-3 py-2 font-medium text-right">H. facturables</th>
+                  <th className="px-3 py-2 font-medium text-right">H. trajet</th>
+                  <th className="px-3 py-2 font-medium text-right">Revenus</th>
+                  <th className="px-3 py-2 font-medium text-right">Coût</th>
+                  <th className="px-3 py-2 font-medium text-right">Marge $</th>
+                  <th className="px-3 py-2 font-medium text-right">Marge %</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {summary.rows
+                  .filter((r) => r.entryCount > 0 || r.isActive)
+                  .map((r) => (
+                    <tr key={r.id} className={cn("hover:bg-slate-50/60", !r.isActive && "opacity-60")}>
+                      <td className="px-3 py-2">
+                        <p className="text-[12.5px] font-medium text-slate-800 truncate">{r.name}</p>
+                        {r.hourlyCost != null && (
+                          <p className="text-[10px] text-slate-400">{fmtMoney(r.hourlyCost)}/h</p>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-slate-500 tabular-nums">{r.entryCount}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.hoursLogged}h</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-emerald-700 font-medium">{r.hoursBilled}h</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-500">{r.hoursTravel}h</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-emerald-700 font-bold">{fmtMoney(r.revenue)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-orange-700">{fmtMoney(r.cost)}</td>
+                      <td className={cn(
+                        "px-3 py-2 text-right tabular-nums font-bold",
+                        r.margin >= 0 ? "text-emerald-700" : "text-red-700",
+                      )}>
+                        {fmtMoney(r.margin)}
+                      </td>
+                      <td className={cn(
+                        "px-3 py-2 text-right tabular-nums font-medium",
+                        r.marginPct >= 30 ? "text-emerald-700" : r.marginPct >= 10 ? "text-amber-700" : "text-red-700",
+                      )}>
+                        {r.marginPct}%
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 font-semibold bg-slate-50/60">
+                  <td className="px-3 py-2">Total</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-500"></td>
+                  <td className="px-3 py-2 text-right tabular-nums">{t.hoursLogged}h</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-emerald-700">{t.hoursBilled}h</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">{t.hoursTravel}h</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-emerald-700">{fmtMoney(t.revenue)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-orange-700">{fmtMoney(t.cost)}</td>
+                  <td className={cn(
+                    "px-3 py-2 text-right tabular-nums",
+                    t.margin >= 0 ? "text-emerald-700" : "text-red-700",
+                  )}>
+                    {fmtMoney(t.margin)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{totalMarginPct}%</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {summary.rows.every((r) => r.entryCount === 0) && (
+            <div className="text-center py-8 text-[12.5px] text-slate-400 italic">
+              Aucune saisie de temps sur la période. Ajuste la fenêtre
+              ou attends que les agents enregistrent des saisies.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

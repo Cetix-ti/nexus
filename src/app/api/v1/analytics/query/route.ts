@@ -173,8 +173,13 @@ export const DATASETS: Record<string, DatasetDef> = {
       // Stocké en minutes en DB mais exposé en heures pour l'affichage.
       // Le moteur divise toute valeur agrégée par 60 et arrondit 2 décimales.
       { name: "durationMinutes", label: "Durée (heures)", type: "number", groupable: false, aggregable: true, outputDivide: 60 },
-      { name: "amount", label: "Montant ($)", type: "number", groupable: false, aggregable: true },
-      { name: "hourlyRate", label: "Taux horaire ($)", type: "number", groupable: false, aggregable: true },
+      { name: "amount", label: "Montant facturé ($)", type: "number", groupable: false, aggregable: true },
+      { name: "hourlyRate", label: "Taux horaire client ($)", type: "number", groupable: false, aggregable: true },
+      // Coût main-d'œuvre snapshot — calculé à la saisie depuis
+      // User.hourlyCost × (durée + déplacement facturé). Permet de
+      // bâtir des widgets "marge", "rentabilité", "coût par client".
+      { name: "costAmount", label: "Coût main-d'œuvre ($)", type: "number", groupable: false, aggregable: true },
+      { name: "costRateUsed", label: "Taux coût horaire ($)", type: "number", groupable: false, aggregable: true },
       { name: "startedAt", label: "Date de début", type: "date", groupable: true, aggregable: false },
       { name: "createdAt", label: "Date de saisie", type: "date", groupable: true, aggregable: false },
     ],

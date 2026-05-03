@@ -194,6 +194,12 @@ model User {
   /// le CLIENT soit correctement facturé — seul le remboursement
   /// personnel est désactivé.
   mileageAllocationEnabled Boolean @default(true) @map("mileage_allocation_enabled")
+  /// Coût horaire de cet agent (CAD/h) — ce qu'il coûte à l'entreprise.
+  /// Utilisé pour calculer le coût de main-d'œuvre par TimeEntry et
+  /// la marge (revenue facturé - coût). null = non défini, le coût est
+  /// considéré 0 dans les calculs (ex: stagiaire bénévole, ou agent
+  /// pour qui on n'a pas saisi le taux).
+  hourlyCost               Float?  @map("hourly_cost")
   signature                String? @db.Text
   signatureHtml            String? @map("signature_html") @db.Text
 
@@ -1611,6 +1617,16 @@ model TimeEntry {
   coverageReason        String       @default("") @map("coverage_reason")
   hourlyRate            Float?       @map("hourly_rate")
   amount                Float?
+  /// Coût main-d'œuvre snapshot — taux horaire de coût de l'agent au
+  /// moment de la saisie × (durée + déplacement facturé). En CAD.
+  /// Indépendant de hourlyRate (qui est le tarif CLIENT) — celui-ci
+  /// représente le coût INTERNE pour Cetix. Calculé automatiquement
+  /// à la création/modification depuis User.hourlyCost.
+  costAmount            Float?       @map("cost_amount")
+  /// Snapshot du taux horaire de coût utilisé pour ce calcul. Permet
+  /// de retrouver "à quel coût horaire on a calculé" même si l'agent
+  /// change son taux plus tard. null = agent sans taux défini.
+  costRateUsed          Float?       @map("cost_rate_used")
   /// Flag posé par l'agent dans la modale de saisie : "Forcer non-facturable".
   /// Permet de distinguer une décision manuelle (geste commercial, erreur,
   /// tâche interne) d'un non-facturable dérivé par le moteur (temps interne,
