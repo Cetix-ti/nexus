@@ -13,6 +13,7 @@
 // pie / donut quand `onDrillDown` est passé.
 // ============================================================================
 
+import { useCallback, useRef, useState } from "react";
 import {
   ResponsiveContainer,
   BarChart, Bar,
@@ -107,6 +108,44 @@ export function WidgetChart({
   style: rawStyle,
   onDrillDown,
 }: WidgetChartProps) {
+  // ResizeObserver — mesure la taille réelle de la zone d'affichage du
+  // chart en pixels et la passe directement à ResponsiveContainer.
+  // Évite tous les pièges du calcul CSS height="100%" + flex chain
+  // (race avec ResizeObserver Recharts → graphique invisible).
+  //
+  // Callback ref plutôt qu'useEffect : se rebind correctement quand
+  // chartType change (l'ancien div se démonte, le nouveau se monte,
+  // React appelle setChartHost avec le nouveau DOM node — on
+  // disconnect l'ancien observer + observe le nouveau en une étape).
+  const chartObserverRef = useRef<ResizeObserver | null>(null);
+  const [chartSize, setChartSize] = useState<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
+  const setChartHost = useCallback((el: HTMLDivElement | null) => {
+    if (chartObserverRef.current) {
+      chartObserverRef.current.disconnect();
+      chartObserverRef.current = null;
+    }
+    if (!el) return;
+    const initial = el.getBoundingClientRect();
+    setChartSize({
+      width: Math.round(initial.width),
+      height: Math.round(initial.height),
+    });
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const r = entry.contentRect;
+      setChartSize({
+        width: Math.round(r.width),
+        height: Math.round(r.height),
+      });
+    });
+    ro.observe(el);
+    chartObserverRef.current = ro;
+  }, []);
+
   if (!results || results.length === 0) {
     return <p className="text-center py-4 text-[12px] text-slate-400">Aucun résultat</p>;
   }
@@ -225,9 +264,9 @@ export function WidgetChart({
     return (
       <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <div className="flex-1 min-h-0 relative">
-          <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height="100%">
+        <div ref={setChartHost} className="flex-1 min-h-0">
+          {chartSize.width > 0 && chartSize.height > 0 && (
+            <ResponsiveContainer width={chartSize.width} height={chartSize.height}>
           <BarChart
             data={results}
             margin={{ top: 10, right: 10, left: 0, bottom: 20 }}
@@ -256,7 +295,7 @@ export function WidgetChart({
             </Bar>
           </BarChart>
             </ResponsiveContainer>
-          </div>
+          )}
         </div>
       </div>
     );
@@ -266,9 +305,9 @@ export function WidgetChart({
     return (
       <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <div className="flex-1 min-h-0 relative">
-          <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height="100%">
+        <div ref={setChartHost} className="flex-1 min-h-0">
+          {chartSize.width > 0 && chartSize.height > 0 && (
+            <ResponsiveContainer width={chartSize.width} height={chartSize.height}>
           <BarChart data={results} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -293,7 +332,7 @@ export function WidgetChart({
             </Bar>
           </BarChart>
             </ResponsiveContainer>
-          </div>
+          )}
         </div>
       </div>
     );
@@ -303,9 +342,9 @@ export function WidgetChart({
     return (
       <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <div className="flex-1 min-h-0 relative">
-          <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height="100%">
+        <div ref={setChartHost} className="flex-1 min-h-0">
+          {chartSize.width > 0 && chartSize.height > 0 && (
+            <ResponsiveContainer width={chartSize.width} height={chartSize.height}>
           <LineChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -329,7 +368,7 @@ export function WidgetChart({
             </Line>
           </LineChart>
             </ResponsiveContainer>
-          </div>
+          )}
         </div>
       </div>
     );
@@ -339,9 +378,9 @@ export function WidgetChart({
     return (
       <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <div className="flex-1 min-h-0 relative">
-          <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height="100%">
+        <div ref={setChartHost} className="flex-1 min-h-0">
+          {chartSize.width > 0 && chartSize.height > 0 && (
+            <ResponsiveContainer width={chartSize.width} height={chartSize.height}>
           <AreaChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -365,7 +404,7 @@ export function WidgetChart({
             </Area>
           </AreaChart>
             </ResponsiveContainer>
-          </div>
+          )}
         </div>
       </div>
     );
@@ -375,9 +414,9 @@ export function WidgetChart({
     return (
       <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <div className="flex-1 min-h-0 relative">
-          <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height="100%">
+        <div ref={setChartHost} className="flex-1 min-h-0">
+          {chartSize.width > 0 && chartSize.height > 0 && (
+            <ResponsiveContainer width={chartSize.width} height={chartSize.height}>
           <PieChart>
             <Pie
               data={results}
@@ -426,7 +465,7 @@ export function WidgetChart({
             {style.showLegend && <Legend {...legendLayout} />}
           </PieChart>
             </ResponsiveContainer>
-          </div>
+          )}
         </div>
       </div>
     );
@@ -437,9 +476,9 @@ export function WidgetChart({
     return (
       <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <div className="flex-1 min-h-0 relative">
-          <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height="100%">
+        <div ref={setChartHost} className="flex-1 min-h-0">
+          {chartSize.width > 0 && chartSize.height > 0 && (
+            <ResponsiveContainer width={chartSize.width} height={chartSize.height}>
           <ReScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -461,7 +500,7 @@ export function WidgetChart({
             <Scatter data={scatterData} fill={style.primaryColor} />
           </ReScatterChart>
             </ResponsiveContainer>
-          </div>
+          )}
         </div>
       </div>
     );
@@ -471,9 +510,9 @@ export function WidgetChart({
     return (
       <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <div className="flex-1 min-h-0 relative">
-          <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height="100%">
+        <div ref={setChartHost} className="flex-1 min-h-0">
+          {chartSize.width > 0 && chartSize.height > 0 && (
+            <ResponsiveContainer width={chartSize.width} height={chartSize.height}>
           <RadarChart data={results}>
             <PolarGrid stroke="#e2e8f0" />
             <PolarAngleAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -483,7 +522,7 @@ export function WidgetChart({
             {style.showLegend && <Legend {...legendLayout} />}
           </RadarChart>
             </ResponsiveContainer>
-          </div>
+          )}
         </div>
       </div>
     );
@@ -514,9 +553,9 @@ export function WidgetChart({
     return (
       <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <div className="flex-1 min-h-0 relative">
-          <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height="100%">
+        <div ref={setChartHost} className="flex-1 min-h-0">
+          {chartSize.width > 0 && chartSize.height > 0 && (
+            <ResponsiveContainer width={chartSize.width} height={chartSize.height}>
           <Sankey
             data={{ nodes, links }}
             nodePadding={20}
@@ -528,7 +567,7 @@ export function WidgetChart({
             <ReTooltip formatter={fmtTooltip} />
           </Sankey>
             </ResponsiveContainer>
-          </div>
+          )}
         </div>
       </div>
     );
@@ -538,9 +577,9 @@ export function WidgetChart({
     return (
       <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <div className="flex-1 min-h-0 relative">
-          <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height="100%">
+        <div ref={setChartHost} className="flex-1 min-h-0">
+          {chartSize.width > 0 && chartSize.height > 0 && (
+            <ResponsiveContainer width={chartSize.width} height={chartSize.height}>
           <BarChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }} barCategoryGap={`${style.barGapPercent}%`}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -568,7 +607,7 @@ export function WidgetChart({
             )}
           </BarChart>
             </ResponsiveContainer>
-          </div>
+          )}
         </div>
       </div>
     );
@@ -609,9 +648,9 @@ export function WidgetChart({
     return (
       <div className="py-2 h-full flex flex-col min-h-0">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <div className="flex-1 min-h-0 relative">
-          <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height="100%">
+        <div ref={setChartHost} className="flex-1 min-h-0">
+          {chartSize.width > 0 && chartSize.height > 0 && (
+            <ResponsiveContainer width={chartSize.width} height={chartSize.height}>
           <Treemap
             data={tmData}
             dataKey="size"
@@ -632,7 +671,7 @@ export function WidgetChart({
             <ReTooltip formatter={fmtTooltip} />
           </Treemap>
             </ResponsiveContainer>
-          </div>
+          )}
         </div>
       </div>
     );
