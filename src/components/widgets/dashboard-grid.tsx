@@ -281,7 +281,7 @@ function SortableWidget({
           gridRow: rowSpan,
           minHeight: isMobile ? "auto" : `${displayH * ROW_PX}px`,
         }}
-        className="w-full h-full flex flex-col [&>*]:flex-1 [&>*]:min-h-0"
+        className="w-full h-full flex flex-col overflow-hidden [&>*]:flex-1 [&>*]:min-h-0"
       >
         {children}
       </div>
@@ -300,7 +300,7 @@ function SortableWidget({
         onSelect?.();
       }}
       className={cn(
-        "relative rounded-xl bg-white transition-shadow flex flex-col",
+        "relative rounded-xl bg-white transition-shadow flex flex-col overflow-hidden",
         isDragging
           ? "ring-2 ring-blue-500 shadow-2xl"
           : isResizing
@@ -577,14 +577,15 @@ export function DashboardGrid({
             gridTemplateColumns: isMobile
               ? "minmax(0, 1fr)"
               : `repeat(${GRID_COLS}, minmax(0, 1fr))`,
-            // `minmax(60px, auto)` — rows ≥ 60 px mais grandissent si
-            // le contenu est plus haut. Ce n'est pas idéal pour la
-            // gestion fine de la hauteur (un widget avec h=1 peut
-            // paraître plus grand à cause du chart 220px), mais le
-            // strict 60px cassait l'affichage des graphiques. Mieux
-            // vaut un widget visible et pas pile à la taille demandée
-            // qu'un widget bien dimensionné mais invisible.
-            gridAutoRows: isMobile ? "auto" : `minmax(${ROW_PX}px, auto)`,
+            // `${ROW_PX}px` STRICT : chaque rangée fait exactement
+            // 60 px, donc span H × 60 = hauteur exacte. Le chart à
+            // l'intérieur s'adapte via le ResizeObserver de
+            // WidgetChart — il prend les pixels mesurés du chart host
+            // et passe les bonnes valeurs à ResponsiveContainer.
+            // Conséquence : réduire H fait visiblement rapetisser le
+            // widget (l'inverse du bug minmax+auto où le contenu
+            // pouvait faire grandir les rangées).
+            gridAutoRows: isMobile ? "auto" : `${ROW_PX}px`,
             // `grid-auto-flow: row` (sans `dense`) en édition : les
             // widgets gardent leur position dans l'ordre du tableau. Avec
             // `dense`, le moteur CSS réarrangeait activement les widgets
