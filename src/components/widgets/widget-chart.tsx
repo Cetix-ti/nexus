@@ -223,9 +223,9 @@ export function WidgetChart({
 
   if (chartType === "bar") {
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={220}>
           <BarChart
             data={results}
             margin={{ top: 10, right: 10, left: 0, bottom: 20 }}
@@ -260,9 +260,9 @@ export function WidgetChart({
 
   if (chartType === "horizontal_bar") {
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={Math.max(220, results.length * 32)}>
           <BarChart data={results} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -293,9 +293,9 @@ export function WidgetChart({
 
   if (chartType === "line") {
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={220}>
           <LineChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -325,9 +325,9 @@ export function WidgetChart({
 
   if (chartType === "area") {
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={220}>
           <AreaChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -357,9 +357,9 @@ export function WidgetChart({
 
   if (chartType === "pie" || chartType === "donut") {
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={220}>
           <PieChart>
             <Pie
               data={results}
@@ -415,9 +415,9 @@ export function WidgetChart({
   if (chartType === "scatter") {
     const scatterData = results.map((r, i) => ({ x: i + 1, y: r.value, label: r.label }));
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={220}>
           <ReScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -445,9 +445,9 @@ export function WidgetChart({
 
   if (chartType === "radar") {
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={240}>
           <RadarChart data={results}>
             <PolarGrid stroke="#e2e8f0" />
             <PolarAngleAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -484,9 +484,9 @@ export function WidgetChart({
       links = results.map((r, i) => ({ source: 0, target: i + 1, value: r.value || 1 }));
     }
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={240}>
           <Sankey
             data={{ nodes, links }}
             nodePadding={20}
@@ -504,9 +504,9 @@ export function WidgetChart({
 
   if (chartType === "combo" || chartType === "stacked_bar") {
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={240}>
           <BarChart data={results} margin={{ top: 10, right: 10, left: 0, bottom: 20 }} barCategoryGap={`${style.barGapPercent}%`}>
             {gridDash !== undefined && <CartesianGrid strokeDasharray={gridDash} stroke="#e2e8f0" />}
             {style.showXAxis && <XAxis
@@ -542,7 +542,7 @@ export function WidgetChart({
     const sorted = [...results].sort((a, b) => b.value - a.value);
     const maxVal = sorted[0]?.value ?? 1;
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <div className="space-y-1">
           {sorted.map((r, i) => {
@@ -571,9 +571,9 @@ export function WidgetChart({
       fill: pieColors[i % pieColors.length],
     }));
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={240}>
           <Treemap
             data={tmData}
             dataKey="size"
@@ -602,7 +602,7 @@ export function WidgetChart({
     const maxVal = Math.max(1, ...results.map((r) => r.value));
     const cols = Math.ceil(Math.sqrt(results.length));
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         {showTitle && <p className="text-[11px] text-slate-500 mb-2">{name}</p>}
         <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
           {results.map((r, i) => {
@@ -648,7 +648,7 @@ export function WidgetChart({
 
   if (chartType === "table") {
     return (
-      <div className="py-2 flex flex-col h-full min-h-0 [&>:last-child]:flex-1 [&>:last-child]:min-h-0">
+      <div className="py-2">
         <table className="w-full text-[11px]">
           <thead>
             <tr className="border-b border-slate-200">
