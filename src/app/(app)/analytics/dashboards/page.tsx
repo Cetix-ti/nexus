@@ -13,6 +13,22 @@ import {
 } from "@/lib/analytics/dashboard-tags";
 import { DashboardGrid, type DashboardItem } from "@/components/widgets/dashboard-grid";
 import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
+import {
   TrendingUp,
   TrendingDown,
   CheckCircle2,
@@ -446,6 +462,28 @@ const CUSTOM_REPORTS_KEY = "nexus:reports:custom";
 const FOLDERS_KEY = "nexus:reports:folders";
 const RECENT_KEY = "nexus:reports:recent";
 const COLLAPSED_SECTIONS_KEY = "nexus:reports:sidebar-collapsed-sections";
+const GALLERY_SORT_KEY = "nexus:reports:gallery-sort";
+
+// Modes de tri pour la galerie. "manual" = ordre des arrays (création).
+type GallerySort = "manual" | "name_asc" | "name_desc" | "recent" | "favorites_first";
+const GALLERY_SORT_LABELS: Record<GallerySort, string> = {
+  manual:           "Ordre manuel",
+  name_asc:         "Nom (A → Z)",
+  name_desc:        "Nom (Z → A)",
+  recent:           "Récents en premier",
+  favorites_first:  "Favoris en premier",
+};
+
+function loadGallerySort(): GallerySort {
+  try {
+    const raw = localStorage.getItem(GALLERY_SORT_KEY);
+    if (raw === "name_asc" || raw === "name_desc" || raw === "recent" || raw === "favorites_first") return raw;
+  } catch {}
+  return "manual";
+}
+function saveGallerySort(s: GallerySort) {
+  try { localStorage.setItem(GALLERY_SORT_KEY, s); } catch {}
+}
 const MAX_RECENT = 5;
 
 // Une "Folder" regroupe des dashboards par l'utilisateur. Les folders sont
@@ -625,6 +663,14 @@ export default function ReportsPage() {
   const [newReportParentId, setNewReportParentId] = useState<string>("");
   const [showParentPanel, setShowParentPanel] = useState(false);
   const [folders, setFolders] = useState<DashboardFolder[]>(() => loadFolders());
+  // Mode de tri appliqué à chaque section de la galerie. Persisté entre
+  // sessions. Affecte aussi bien "Sans dossier" que les sections par
+  // dossier — chaque section trie ses propres reports.
+  const [gallerySort, setGallerySortState] = useState<GallerySort>(() => loadGallerySort());
+  const setGallerySort = (s: GallerySort) => {
+    setGallerySortState(s);
+    saveGallerySort(s);
+  };
   const [recent, setRecent] = useState<string[]>(() => loadRecent());
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(
     () => loadCollapsedSections(),
@@ -1064,6 +1110,32 @@ export default function ReportsPage() {
       saveFolders(next);
       return next;
     });
+  }
+
+  // Réordonne les dossiers (drag-and-drop dans la galerie). Le nouvel
+  // ordre est persisté immédiatement, et la sidebar le reflète au
+  // prochain render puisqu'elle lit le même state `folders`.
+  function reorderFolders(fromId: string, toId: string) {
+    if (fromId === toId) return;
+    setFolders((prev) => {
+      const fromIdx = prev.findIndex((f) => f.id === fromId);
+      const toIdx = prev.findIndex((f) => f.id === toId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      const next = arrayMove(prev, fromIdx, toIdx);
+      saveFolders(next);
+      return next;
+    });
+  }
+  // Sensors dnd-kit pour le drag des dossiers de la galerie. Activé
+  // après 6 px de mouvement pour ne pas piéger les clics sur les
+  // boutons d'action de l'en-tête (collapse, renommer).
+  const folderDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+  function handleFolderDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    reorderFolders(String(active.id), String(over.id));
   }
 
   function deleteFolder(folderId: string) {
@@ -2068,20 +2140,53 @@ export default function ReportsPage() {
       {/* Galerie — page par défaut : dashboards regroupés par dossier */}
       {/* ============================================================ */}
       {view === GALLERY_VIEW && (() => {
-        // Regroupe les dashboards par dossier. Un dashboard peut être
+        // Tri appliqué à chaque section. "manual" = ordre original
+        // (création / array). Les autres modes trient une copie pour
+        // ne pas muter la source.
+        const sortFn = (a: ReportDef, b: ReportDef): number => {
+          switch (gallerySort) {
+            case "name_asc":
+              return (a.label || "").localeCompare(b.label || "", "fr");
+            case "name_desc":
+              return (b.label || "").localeCompare(a.label || "", "fr");
+            case "recent": {
+              // Plus récent en haut. Recent[] est ordonné le plus récent
+              // d'abord. Index plus petit = plus récent. Absent (-1) = bas.
+              const ai = recent.indexOf(a.id);
+              const bi = recent.indexOf(b.id);
+              if (ai === -1 && bi === -1) return 0;
+              if (ai === -1) return 1;
+              if (bi === -1) return -1;
+              return ai - bi;
+            }
+            case "favorites_first": {
+              const af = favorites.includes(a.id) ? 0 : 1;
+              const bf = favorites.includes(b.id) ? 0 : 1;
+              if (af !== bf) return af - bf;
+              return (a.label || "").localeCompare(b.label || "", "fr");
+            }
+            default:
+              return 0;
+          }
+        };
+        const applySort = (reports: ReportDef[]) =>
+          gallerySort === "manual" ? reports : [...reports].sort(sortFn);
+
+        // Regroupe les dashboards par dossier. Un dossier peut être
         // dans 0, 1 ou plusieurs dossiers → on le duplique visuellement.
         // "Sans dossier" en premier (cohérent avec l'habitude). Les
-        // dossiers sont ensuite affichés dans leur ordre de création.
+        // dossiers suivent l'ordre de l'array `folders` (réordonnable).
         const unfolderedReports = allReports.filter(
           (r) => !folders.some((f) => f.dashboardIds.includes(r.id)),
         );
-        const sections: Array<{ key: string; title: string; icon: React.ReactNode; reports: ReportDef[] }> = [];
+        const sections: Array<{ key: string; title: string; icon: React.ReactNode; reports: ReportDef[]; isFolder: boolean }> = [];
         if (unfolderedReports.length > 0) {
           sections.push({
             key: "__none__",
             title: "Sans dossier",
             icon: <LayoutDashboard className="h-4 w-4 text-slate-400" />,
-            reports: unfolderedReports,
+            reports: applySort(unfolderedReports),
+            isFolder: false,
           });
         }
         for (const folder of folders) {
@@ -2093,14 +2198,34 @@ export default function ReportsPage() {
               key: folder.id,
               title: folder.name,
               icon: <Folder className="h-4 w-4 text-slate-500" />,
-              reports,
+              reports: applySort(reports),
+              isFolder: true,
             });
           }
         }
 
+        // Ne mettre que les dossiers réels dans la SortableContext —
+        // "Sans dossier" reste fixe en haut, non draggable.
+        const folderSectionIds = sections.filter((s) => s.isFolder).map((s) => s.key);
+
         return (
-          <div className="space-y-8">
-            {sections.map((section) => (
+          <div className="space-y-5">
+            {/* Barre de tri — affecte chaque section. */}
+            <div className="flex items-center justify-end gap-2 text-[12px] text-slate-600">
+              <label htmlFor="gallery-sort" className="text-slate-500">Trier par</label>
+              <select
+                id="gallery-sort"
+                value={gallerySort}
+                onChange={(e) => setGallerySort(e.target.value as GallerySort)}
+                className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                {(Object.entries(GALLERY_SORT_LABELS) as [GallerySort, string][]).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-8">
+            {sections.filter((s) => !s.isFolder).map((section) => (
               <div key={section.key} className="space-y-3">
                 <div className="flex items-center gap-2 border-b border-slate-200 pb-1.5">
                   {section.icon}
@@ -2140,6 +2265,56 @@ export default function ReportsPage() {
                 </div>
               </div>
             ))}
+            {/* Sections "dossier" — réordonnables par drag-and-drop. */}
+            {folderSectionIds.length > 0 && (
+              <DndContext
+                sensors={folderDragSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleFolderDragEnd}
+              >
+                <SortableContext items={folderSectionIds} strategy={verticalListSortingStrategy}>
+                  {sections.filter((s) => s.isFolder).map((section) => (
+                    <SortableFolderSection
+                      key={section.key}
+                      id={section.key}
+                      title={section.title}
+                      icon={section.icon}
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+                        {section.reports.map((r) => (
+                          <GalleryCard
+                            key={`${section.key}:${r.id}`}
+                            report={r}
+                            isFav={favorites.includes(r.id)}
+                            isPrimary={r.id === primaryId}
+                            widgetCount={resolveWidgets(r).length}
+                            childCount={getChildren(r.id).length}
+                            tagDefs={r.tags?.map((id) => tagDefById[id]).filter(Boolean) as TagDef[] ?? []}
+                            orgIds={getReportOrgs(r)}
+                            orgNameById={orgNameById}
+                            folders={folders}
+                            onOpen={() => setView(r.id)}
+                            onTagOrg={() => setTaggingReportId(r.id)}
+                            onTagLabels={() => setAssignTagsReportId(r.id)}
+                            onDuplicate={() => duplicateReport(r.id)}
+                            onToggleFolder={(folderId) => {
+                              const folder = folders.find((f) => f.id === folderId);
+                              if (!folder) return;
+                              if (folder.dashboardIds.includes(r.id)) {
+                                removeDashboardFromFolder(folderId, r.id);
+                              } else {
+                                addDashboardToFolder(folderId, r.id);
+                              }
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </SortableFolderSection>
+                  ))}
+                </SortableContext>
+              </DndContext>
+            )}
+            </div>
           </div>
         );
       })()}
@@ -4831,5 +5006,46 @@ function ParentChildrenPanel({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+
+// ===========================================================================
+// SortableFolderSection — section pliable de dossier dans la galerie,
+// réordonnable verticalement par drag-and-drop. Le drag handle est sur
+// l'icône GripVertical à gauche du titre — le reste de l'en-tête
+// reste cliquable pour les actions normales.
+// ===========================================================================
+function SortableFolderSection({
+  id, title, icon, children,
+}: {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className="space-y-3">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-1.5">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="h-5 w-5 inline-flex items-center justify-center rounded text-slate-300 hover:bg-slate-100 hover:text-slate-600 cursor-grab active:cursor-grabbing"
+          title="Glisser pour réordonner ce dossier"
+        >
+          <GripVertical className="h-3.5 w-3.5" strokeWidth={2.25} />
+        </button>
+        {icon}
+        <h3 className="text-[13px] font-semibold text-slate-800">{title}</h3>
+      </div>
+      {children}
+    </div>
   );
 }
