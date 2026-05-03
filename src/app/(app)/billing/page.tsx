@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageLoader } from "@/components/ui/page-loader";
+import { useAllOrganizations } from "@/lib/hooks/use-all-organizations";
 import {
   Receipt,
   AlertTriangle,
@@ -127,13 +128,10 @@ export default function BillingPage() {
     };
   }, []);
 
-  const orgs = useMemo(() => {
-    const map = new Map<string, string>();
-    apiTimeEntries.forEach((e) =>
-      map.set(e.organizationId, e.organizationName)
-    );
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [apiTimeEntries]);
+  // Liste exhaustive des orgs actives — l'utilisateur peut filtrer
+  // sur n'importe quelle org, même si elle n'a pas encore de saisies
+  // de temps sur la période courante.
+  const orgs = useAllOrganizations();
 
   const filteredTime = useMemo(
     () =>

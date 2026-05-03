@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useMemo, useEffect } from "react";
 import { usePersistentState } from "@/lib/hooks/use-persistent-state";
+import { useAllOrganizations } from "@/lib/hooks/use-all-organizations";
 import { useTicketsStore } from "@/stores/tickets-store";
 import { useOrgLogosStore } from "@/stores/org-logos-store";
 import { useSearchParams } from "next/navigation";
@@ -87,13 +88,14 @@ function TicketsPageInner() {
   const [priorityFilter, setPriorityFilter] = usePersistentState("nexus.tickets.priority", "all");
   const [orgFilter, setOrgFilter] = usePersistentState("nexus.tickets.org", "all");
 
-  const organizations = useMemo(() => {
-    const names = new Set<string>();
-    for (const t of tickets) {
-      if (t.organizationName && t.organizationName !== "—") names.add(t.organizationName);
-    }
-    return [...names].sort();
-  }, [tickets]);
+  // Liste exhaustive des orgs (pas dérivée des tickets visibles) —
+  // permet de filtrer une org même sans tickets sur la période /
+  // l'onglet courant.
+  const allOrgs = useAllOrganizations();
+  const organizations = useMemo(
+    () => allOrgs.map((o) => o.name).sort((a, b) => a.localeCompare(b, "fr")),
+    [allOrgs],
+  );
 
   const filtered = useMemo(() => {
     let result = [...tickets];

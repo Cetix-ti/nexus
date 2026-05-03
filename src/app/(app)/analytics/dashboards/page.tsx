@@ -12,6 +12,7 @@ import {
   tagStyle,
 } from "@/lib/analytics/dashboard-tags";
 import { DashboardGrid, type DashboardItem } from "@/components/widgets/dashboard-grid";
+import { useAllOrganizations } from "@/lib/hooks/use-all-organizations";
 import {
   DndContext,
   PointerSensor,
@@ -686,6 +687,19 @@ export default function ReportsPage() {
   const [taggingReportId, setTaggingReportId] = useState<string | null>(null);
   // Cache orgId → name pour afficher le badge "Pour [org]" sur les rapports.
   const [orgNameById, setOrgNameById] = useState<Record<string, string>>({});
+  // Liste exhaustive des organisations actives via hook partagé. Source
+  // de vérité pour les dropdowns de filtre (l'utilisateur peut filtrer
+  // même sur une org sans données sur la période courante).
+  const allOrgs = useAllOrganizations();
+  // Alimente automatiquement le cache nameById quand allOrgs arrive.
+  useEffect(() => {
+    if (allOrgs.length === 0) return;
+    setOrgNameById((prev) => {
+      const next = { ...prev };
+      for (const o of allOrgs) if (!next[o.id]) next[o.id] = o.name;
+      return next;
+    });
+  }, [allOrgs]);
   // Balises (labels libres) : définitions globales + modal CRUD + modal
   // d'attribution à un dashboard précis.
   const [tagDefs, setTagDefs] = useState<TagDef[]>(() => loadTagDefinitions());
@@ -1440,11 +1454,12 @@ export default function ReportsPage() {
 
   // Global filters — state déclaré plus haut (juste avant `load`).
 
-  // Org and agent lists for filter dropdowns
-  const orgList = data ? [...new Set([
-    ...data.ticketStats.byOrg.map((o) => ({ id: o.organizationId, name: o.organizationName })),
-    ...data.revenueByOrg.map((o) => ({ id: o.organizationId, name: o.organizationName })),
-  ].map((o) => JSON.stringify(o)))].map((s) => JSON.parse(s) as { id: string; name: string }) : [];
+  // Org list pour les dropdowns de filtre — utilise la liste EXHAUSTIVE
+  // des orgs actives (allOrgs, fetch unique au mount) plutôt que la
+  // dérivation à partir de `data` qui ne contiendrait que les orgs
+  // ayant déjà des tickets/saisies sur la période. L'utilisateur veut
+  // pouvoir filtrer sur n'importe quelle org, même sans données.
+  const orgList = allOrgs;
   const agentList = data ? data.agentBreakdown.map((a) => a.agentName) : [];
 
   // Apply filters to data

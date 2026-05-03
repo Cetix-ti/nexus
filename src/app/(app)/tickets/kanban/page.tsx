@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import { usePersistentState } from "@/lib/hooks/use-persistent-state";
+import { useAllOrganizations } from "@/lib/hooks/use-all-organizations";
 import { useTicketsStore } from "@/stores/tickets-store";
 import { useOrgLogosStore } from "@/stores/org-logos-store";
 import { useAgentAvatarsStore } from "@/stores/agent-avatars-store";
@@ -63,11 +64,14 @@ export default function KanbanPage() {
     loadKanbanFromServer();
   }, [loaded, loadAll, loadOrgLogos, loadAgentAvatars, loadKanbanFromServer]);
 
-  // Dynamic filter options from actual ticket data
-  const orgOptions = useMemo(() => {
-    const names = new Set(tickets.map((t) => t.organizationName));
-    return Array.from(names).sort().map((n) => ({ label: n, value: n }));
-  }, [tickets]);
+  // Liste exhaustive des orgs (pas seulement celles avec tickets dans
+  // les filtres courants). Permet de filtrer une org même si elle n'a
+  // pas encore de tickets visibles dans la période / scope actif.
+  const allOrgs = useAllOrganizations();
+  const orgOptions = useMemo(
+    () => allOrgs.map((o) => ({ label: o.name, value: o.name })),
+    [allOrgs],
+  );
 
   const assigneeOptions = useMemo(() => {
     const names = new Set<string>();
