@@ -33,6 +33,7 @@ import {
   Sparkles,
   Activity,
   Wallet,
+  Trash2,
 } from "lucide-react";
 import { PortalAccessSection } from "@/components/settings/portal-access-section";
 import { PortalNavSection } from "@/components/settings/portal-nav-section";
@@ -63,6 +64,7 @@ import { ExpensesConfigSection } from "@/components/settings/expenses-config-sec
 import { KanbanColumnsSection } from "@/components/settings/kanban-columns-section";
 import { KanbanBoardsSection } from "@/components/settings/kanban-boards-section";
 import { IntegrationsSection } from "@/components/settings/integrations-section";
+import { AteraMaintenanceSection } from "@/components/settings/atera-maintenance-section";
 import { AiIntelligenceSection } from "@/components/settings/ai-intelligence-section";
 import { BackgroundJobsSection } from "@/components/settings/background-jobs-section";
 import { PortalDomainSection } from "@/components/settings/portal-domain-section";
@@ -172,6 +174,7 @@ const sectionGroups: SettingsGroup[] = [
     iconBg: "bg-rose-50 ring-rose-200/60",
     sections: [
       { key: "integrations", label: "Intégrations", icon: Plug },
+      { key: "atera_maintenance", label: "Maintenance Atera", icon: Trash2, superAdminOnly: true },
       { key: "email_monitoring", label: "Synchronisation des alertes", icon: Bell },
       { key: "persistence_security", label: "Logiciels de persistance", icon: Shield },
       { key: "api", label: "API et webhooks", icon: Key },
@@ -1168,6 +1171,7 @@ const sectionContent: Record<SectionKey, React.ReactNode> = {
   expenses_config: <ExpensesConfigSection />,
   project_types: <ProjectTypesSection />,
   integrations: <IntegrationsSection />,
+  atera_maintenance: <AteraMaintenanceSection />,
   ai_intelligence: <AiIntelligenceSection />,
   email_monitoring: <MonitoringSection />,
   persistence_security: <PersistenceSecuritySection />,

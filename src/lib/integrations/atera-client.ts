@@ -3,8 +3,11 @@
 // Real implementation that hits the Atera REST API
 // ============================================================================
 
-const BASE_URL = process.env.ATERA_API_BASE || "https://app.atera.com/api/v3";
-const API_KEY = process.env.ATERA_API_KEY;
+// Read at call time (not module init) so scripts that load .env via dotenv
+// AFTER importing this module still see the values.
+const getBaseUrl = () =>
+  process.env.ATERA_API_BASE || "https://app.atera.com/api/v3";
+const getApiKey = () => process.env.ATERA_API_KEY;
 
 export interface AteraCustomer {
   CustomerID: number;
@@ -42,6 +45,12 @@ export interface AteraAgent {
   Online?: boolean;
   LastLoginUser?: string;
   HardwareInformation?: any;
+  // Date fields (présence variable selon le type d'agent et la version de l'API)
+  Created?: string;
+  Modified?: string;
+  LastSeen?: string;
+  LastRebootTime?: string;
+  ReportedFromIP?: string;
 }
 
 interface AteraResponse<T> {
@@ -58,17 +67,18 @@ async function ateraFetch<T>(
   endpoint: string,
   init: RequestInit = {}
 ): Promise<T> {
-  if (!API_KEY) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
     throw new Error(
       "ATERA_API_KEY n'est pas configurée. Ajoutez-la dans .env"
     );
   }
 
-  const url = endpoint.startsWith("http") ? endpoint : `${BASE_URL}${endpoint}`;
+  const url = endpoint.startsWith("http") ? endpoint : `${getBaseUrl()}${endpoint}`;
   const response = await fetch(url, {
     ...init,
     headers: {
-      "X-API-KEY": API_KEY,
+      "X-API-KEY": apiKey,
       Accept: "application/json",
       "Content-Type": "application/json",
       ...(init.headers || {}),
@@ -132,6 +142,98 @@ export async function listAteraAgentsForCustomer(
     page++;
   } while (page <= totalPages && page <= 20);
   return all;
+}
+
+/**
+ * Cache module-level pour `listAllAteraAgents`. Permet à un workflow comme
+ * "analyse → purge" (qui appelle 2× la liste complète à ~30s la fetch) de
+ * ne payer le coût qu'une fois quand les deux étapes s'enchaînent.
+ *
+ * Invalidation :
+ *   - TTL 60s
+ *   - `fresh: true` force le bypass
+ */
+const agentsCache: { data: AteraAgent[] | null; fetchedAt: number } = {
+  data: null,
+  fetchedAt: 0,
+};
+const AGENTS_CACHE_TTL_MS = 60_000;
+
+/**
+ * List ALL agents in the Atera tenant (across all customers).
+ * Auto-paginates. Used by maintenance scripts (purge inactifs, audit, etc.).
+ *
+ * Cache module-level 60s — voir `agentsCache` ci-dessus.
+ */
+export async function listAllAteraAgents(opts?: {
+  itemsInPage?: number;
+  maxPages?: number;
+  fresh?: boolean;
+  onPage?: (page: number, totalPages: number) => void;
+}): Promise<AteraAgent[]> {
+  if (
+    !opts?.fresh &&
+    agentsCache.data &&
+    Date.now() - agentsCache.fetchedAt < AGENTS_CACHE_TTL_MS
+  ) {
+    return agentsCache.data;
+  }
+
+  const itemsInPage = opts?.itemsInPage ?? 50;
+  const maxPages = opts?.maxPages ?? 1000;
+  const all: AteraAgent[] = [];
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const res = await ateraFetch<AteraResponse<AteraAgent>>(
+      `/agents?page=${page}&itemsInPage=${itemsInPage}`
+    );
+    all.push(...res.items);
+    totalPages = res.totalPages;
+    opts?.onPage?.(page, totalPages);
+    page++;
+  } while (page <= totalPages && page <= maxPages);
+
+  agentsCache.data = all;
+  agentsCache.fetchedAt = Date.now();
+  return all;
+}
+
+/**
+ * Invalide le cache des agents. À appeler après une purge pour que le
+ * prochain `listAllAteraAgents` retourne la liste fraîche (sans les agents
+ * qu'on vient de supprimer).
+ */
+export function invalidateAteraAgentsCache(): void {
+  agentsCache.data = null;
+  agentsCache.fetchedAt = 0;
+}
+
+/**
+ * Delete an Atera agent by AgentID.
+ * Irréversible : l'agent est retiré du tenant Atera et l'historique est perdu.
+ */
+export async function deleteAteraAgent(agentId: number): Promise<void> {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    throw new Error("ATERA_API_KEY n'est pas configurée. Ajoutez-la dans .env");
+  }
+  const url = `${getBaseUrl()}/agents/${agentId}`;
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      "X-API-KEY": apiKey,
+      Accept: "application/json",
+    },
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Atera DELETE /agents/${agentId} → ${response.status}: ${
+        text || response.statusText
+      }`
+    );
+  }
 }
 
 /**

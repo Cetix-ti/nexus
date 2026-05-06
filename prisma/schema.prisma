@@ -298,6 +298,11 @@ model User {
   bugsRejected                   BugReport[]              @relation("BugRejecter")
   bugCommentsAuthored            BugComment[]             @relation("BugCommentAuthor")
 
+  // Maintenance Atera (purge des actifs inactifs)
+  ateraExclusionsAdded           AteraExclusion[]         @relation("AteraExclusionAdder")
+  ateraPurgesDone                AteraPurgeLog[]          @relation("AteraPurgePurger")
+  ateraAlertRecipientLinks       AteraAlertRecipient[]    @relation("AteraAlertRecipientUser")
+
   @@map("users")
 }
 
@@ -4812,3 +4817,96 @@ model OrgBillingConfig {
 
   @@map("org_billing_configs")
 }
+// ============================================================================
+// MAINTENANCE ATERA — Purge des actifs inactifs
+// ============================================================================
+// Workflow : un super-admin ouvre Settings → Intégrations → Atera → Maintenance,
+// analyse les agents inactifs > N jours, exclut au besoin certains agents (DR,
+// saisonniers, etc.), puis lance la purge. Chaque suppression appelée sur l'API
+// Atera est tracée dans AteraPurgeLog (snapshot complet pour audit).
+
+/// Whitelist d'AgentID Atera à NE JAMAIS purger automatiquement.
+/// Utilisé pour exclure les serveurs DR (redémarrent rarement), postes
+/// saisonniers, machines en quarantaine, etc.
+model AteraExclusion {
+  id           String    @id @default(cuid())
+  agentId      Int       @unique @map("agent_id")
+  /// Snapshot pour la lisibilité même si l'agent n'existe plus côté Atera
+  machineName  String?   @map("machine_name")
+  customerName String?   @map("customer_name")
+  reason       String    @db.Text
+  addedById    String    @map("added_by_id")
+  addedBy      User      @relation("AteraExclusionAdder", fields: [addedById], references: [id])
+  /// NULL = exclusion permanente. Sinon, expire à cette date — l'UI alertera
+  /// quand expiresAt < now et la lib la considèrera comme inactive.
+  expiresAt    DateTime? @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([expiresAt])
+  @@map("atera_exclusions")
+}
+
+/// Trace d'une suppression effective d'agent Atera. Une ligne par agent purgé.
+/// Toutes les lignes d'un même run partagent le même `batchId` (UUID généré côté
+/// API au moment du POST /purge), ce qui permet de regrouper l'historique par
+/// opération dans l'UI.
+model AteraPurgeLog {
+  id      String @id @default(cuid())
+  /// UUID partagé par toutes les lignes d'une même opération
+  batchId String @map("batch_id")
+
+  /// Snapshots Atera (l'agent n'existe plus côté Atera après la purge)
+  agentId           Int       @map("agent_id")
+  deviceGuid        String?   @map("device_guid")
+  machineName       String?   @map("machine_name")
+  customerName      String?   @map("customer_name")
+  osType            String?   @map("os_type")
+  lastSeenAt        DateTime? @map("last_seen_at")
+  daysSinceLastSeen Int?      @map("days_since_last_seen")
+
+  /// Acteur de la purge (super-admin)
+  purgedById String  @map("purged_by_id")
+  purgedBy   User    @relation("AteraPurgePurger", fields: [purgedById], references: [id])
+  reason     String? @db.Text
+  ipAddress  String? @map("ip_address")
+  userAgent  String? @map("user_agent")
+
+  /// Asset Nexus lié (peut être null si pas de mapping en DB).
+  /// On ne met PAS de FK vers Asset car l'asset peut être supprimé après — on
+  /// garde juste l'ID en référence textuelle pour l'audit.
+  linkedAssetId     String? @map("linked_asset_id")
+  /// Action effectuée sur l'asset Nexus : "archived" | "kept" | "deleted" | "none"
+  linkedAssetAction String  @default("none") @map("linked_asset_action")
+
+  /// Statut côté API Atera : "ok" | "error" | "already_deleted"
+  status       String
+  errorMessage String? @map("error_message") @db.Text
+
+  purgedAt DateTime @default(now()) @map("purged_at")
+
+  @@index([batchId])
+  @@index([purgedById, purgedAt])
+  @@index([agentId])
+  @@index([linkedAssetId])
+  @@map("atera_purge_logs")
+}
+
+/// Destinataires des emails récap après une purge Atera.
+/// Soit un user Nexus (`userId`), soit un email libre (`email`). Au moins
+/// l'un des deux doit être renseigné.
+model AteraAlertRecipient {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  user      User?    @relation("AteraAlertRecipientUser", fields: [userId], references: [id], onDelete: Cascade)
+  /// Email libre (pour adresses externes / listes de diffusion)
+  email     String?
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId])
+  @@unique([email])
+  @@map("atera_alert_recipients")
+}
+
